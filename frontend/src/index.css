@@ -1,0 +1,108 @@
+/* =========================
+   LAYOUT (DARK MODE READY)
+========================= */
+
+/* Full App */
+.app-container {
+  display: flex;
+  height: 100vh;
+  background: var(--bg);
+  font-family: "Segoe UI", sans-serif;
+}
+
+/* Main Content */
+.main-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  transition: margin-left 0.3s ease;
+}
+
+.main-content.expanded {
+  margin-left: 70px;
+}
+
+/* Topbar */
+.topbar {
+  height: 60px;
+  background: var(--panel);
+  color: var(--text);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 25px;
+  border-bottom: 1px solid var(--border);
+}
+
+.topbar h3 {
+  margin: 0;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.user {
+  background: var(--hover);
+  color: var(--text);
+  padding: 6px 12px;
+  border-radius: 20px;
+  font-size: 14px;
+}
+
+/* Page Content */
+.page-content {
+  flex: 1;
+  padding: 20px;
+  background: var(--bg);
+}
+
+/* Card Container */
+.page-card {
+  background: var(--panel);
+  border-radius: 12px;
+  padding: 25px;
+  box-shadow: var(--shadow-soft);
+  border: 1px solid var(--border);
+}
+
+/* Layout wrapper */
+.layout {
+  display: flex;
+}
+
+/* =========================
+   THEME VARIABLES
+========================= */
+
+/* LIGHT */
+:root {
+  --bg: #f3f4f6;
+  --panel: #ffffff;
+  --text: #111827;
+  --text-2: #2c3e50;
+  --muted: #7f8c8d;
+  --border: #e5e7eb;
+  --hover: #f1f3f5;
+  --row-hover: #f8f9fc;
+  --shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+  --shadow-soft: 0px 4px 20px rgba(0, 0, 0, 0.08);
+}
+
+/* DARK */
+[data-theme="dark"] {
+  --bg: #0b1220;
+  --panel: #111a2e;
+  --text: #e5e7eb;
+  --text-2: #e5e7eb;
+  --muted: #9ca3af;
+  --border: #24304a;
+  --hover: #1b2640;
+  --row-hover: #16223a;
+  --shadow: 0 10px 25px rgba(0, 0, 0, 0.45);
+  --shadow-soft: 0 10px 30px rgba(0, 0, 0, 0.35);
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+}

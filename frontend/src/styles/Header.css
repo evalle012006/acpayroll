@@ -1,0 +1,126 @@
+.header {
+  height: 60px;
+  background: var(--panel);
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 20px;
+  box-shadow: var(--shadow-soft);
+  border-bottom: 1px solid var(--border);
+}
+
+.menu-toggle {
+  font-size: 20px;
+  cursor: pointer;
+  color: var(--text);
+}
+
+.admin-profile {
+  position: relative;
+}
+
+.admin-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  color: var(--text);
+}
+
+/* dropdown */
+.dropdown {
+  position: absolute;
+  right: 0;
+  top: 50px;
+  width: 180px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+  overflow: hidden;
+  animation: fadeIn 0.2s ease-in-out;
+  z-index: 1000;
+}
+
+.dropdown-item {
+  padding: 12px 15px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  transition: 0.2s;
+  color: var(--text);
+}
+
+.dropdown-item:hover {
+  background: var(--hover);
+}
+
+.dropdown-item.logout:hover {
+  background: rgba(239, 68, 68, 0.15); /* soft red */
+  color: #ef4444;
+}
+
+.icon {
+  font-size: 14px;
+}
+
+/* keep your existing */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-5px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.avatar-img {
+  width: 35px;
+  height: 35px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.avatar-placeholder {
+  width: 35px;
+  height: 35px;
+  background: #6c5ce7;
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  font-weight: bold;
+}
+
+/* right side group (theme + profile) */
+.header-right{
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.theme-btn{
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.theme-btn:hover{
+  background: var(--hover);
+}
+
+.theme-text{
+  font-size: 14px;
+}

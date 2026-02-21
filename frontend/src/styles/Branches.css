@@ -1,0 +1,464 @@
+/* Page shell */
+.saas-page {
+  background: var(--bg-main);
+  min-height: 100vh;
+}
+
+/* Header */
+.saas-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.saas-title h2 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 800;
+  color: var(--text-main);
+}
+
+.saas-title p {
+  margin: 6px 0 0;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.saas-actions {
+  display: flex;
+  gap: 10px;
+}
+
+/* Cards */
+.card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.08);
+}
+
+.controls-card {
+  padding: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.controls-left {
+  flex: 1;
+}
+
+.controls-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* Search */
+.search-wrap {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.input {
+  background: var(--bg-card);
+  color: var(--text-main);
+  border: 1px solid var(--border-color);
+  padding: 10px 12px;
+  border-radius: 12px;
+  outline: none;
+  font-size: 14px;
+  transition: all 0.2s ease;
+  min-width: 320px;
+}
+
+.input:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(91, 130, 255, 0.2);
+}
+
+/* Pill */
+.pill {
+  padding: 9px 12px;
+  border-radius: 999px;
+  font-size: 13px;
+  background: var(--bg-soft);
+  color: var(--text-main);
+  border: 1px solid var(--border-color);
+}
+
+/* Buttons */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  border: 1px solid transparent;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.2s ease, background 0.2s ease;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 10px 18px rgba(0, 0, 0, 0.12);
+}
+
+.btn:active {
+  transform: translateY(0);
+  box-shadow: 0 6px 12px rgba(0, 0, 0, 0.12);
+}
+
+.btn-primary {
+  background: linear-gradient(135deg, #4a74ff, #2d5bff);
+  color: #fff;
+}
+
+.btn-outline {
+  background: var(--bg-card);
+  border-color: var(--border-color);
+  color: var(--text-main);
+}
+
+.btn-ghost {
+  background: var(--bg-soft);
+  color: var(--text-main);
+  border-color: transparent;
+}
+
+/* Table */
+.table-card {
+  overflow: hidden;
+}
+
+.table-scroll {
+  width: 100%;
+  overflow: auto;
+}
+
+.saas-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  min-width: 900px;
+}
+
+.saas-table thead th {
+  background: var(--bg-soft);
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.saas-table tbody td {
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border-color);
+  font-size: 14px;
+  color: var(--text-main);
+  background: var(--bg-card);
+  transition: 0.2s ease;
+}
+
+.saas-table tbody tr:hover td {
+  background: rgba(91, 130, 255, 0.16);
+  color: var(--text-main);
+  font-weight: 800;
+  letter-spacing: 0.2px;
+}
+
+.empty {
+  text-align: center;
+  padding: 20px !important;
+  color: var(--text-muted);
+  background: var(--bg-card);
+}
+
+/* text helpers */
+.mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 13px;
+}
+
+.strong {
+  font-weight: 800;
+}
+
+/* Actions */
+.actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.action-btn {
+  padding: 7px 12px;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 700;
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.action-buttons button {
+  font-weight: 600;
+  transition: 0.2s ease;
+  border: none;
+}
+
+.action-buttons button {
+  font-weight: 600;
+  transition: 0.2s ease;
+  border: none;
+}
+
+.action-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 10px 18px rgba(0, 0, 0, 0.12);
+}
+
+.btn-payroll {
+  background: linear-gradient(135deg, #3b82f6, #2563eb);
+  color: white;
+}
+
+.btn-transpo {
+  background: linear-gradient(135deg, #f59e0b, #f97316);
+  color: white;
+}
+
+.btn-view {
+  background: linear-gradient(135deg, #10b981, #059669);
+  color: white;
+}
+
+.btn-edit {
+  background: var(--bg-soft);
+  color: var(--text-main);
+  border: 1px solid var(--border-color);
+}
+
+.btn-delete {
+  background: linear-gradient(135deg, #ef4444, #dc2626);
+  color: white;
+}
+
+/* Modal */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(17, 24, 39, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 18px;
+  z-index: 999;
+}
+
+.modal {
+  width: min(560px, 95vw);
+  background: var(--bg-card);
+  border-radius: 16px;
+  border: 1px solid var(--border-color);
+  box-shadow: 0 18px 45px rgba(0, 0, 0, 0.2);
+  overflow: hidden;
+  animation: pop 0.14s ease-out;
+}
+
+@keyframes pop {
+  from { transform: translateY(6px); opacity: 0.85; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+.modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border-color);
+  border-color: var(--border-color);
+}
+
+.modal-head h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--text-main);
+}
+
+.icon-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-soft);
+  color: var(--text-main);
+  cursor: pointer;
+}
+
+.modal-body {
+  padding: 16px;
+}
+
+.modal-body.grid-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.field label {
+  font-size: 12px;
+  font-weight: 700;
+  color: #6b7280;
+  display: block;
+  margin-bottom: 6px;
+}
+
+.field.full {
+  grid-column: 1 / -1;
+}
+
+.kv {
+  display: flex;
+  justify-content: space-between;
+  padding: 10px 0;
+  border-bottom: 1px dashed rgba(255,255,255,0.14);
+}
+
+.kv span {
+  color: #6b7280;
+  font-size: 13px;
+}
+
+.modal-foot {
+  padding: 14px 16px;
+  border-top: 1px solid var(--border-color);
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  border-color: var(--border-color);
+}
+
+.table-loading {
+  padding: 16px;
+  color: #6b7280;
+}
+
+/* Pagination */
+.pager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  background: var(--bg-card);
+  border-top: 1px solid var(--border-color);
+}
+
+.pager-left {
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.pager-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.pager-page {
+  padding: 8px 10px;
+  border-radius: 12px;
+  font-size: 13px;
+  background: var(--bg-soft);
+  color: var(--text-main);
+  border: 1px solid var(--border-color);
+}
+
+.btn-sm {
+  padding: 8px 10px;
+  border-radius: 10px;
+  font-size: 13px;
+}
+
+/* Page size selector */
+.page-size {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 12px;
+  background: var(--bg-soft);
+  color: var(--text-main);
+  border: 1px solid var(--border-color);
+  font-size: 13px;
+}
+
+.page-size select {
+  border-radius: 10px;
+  padding: 6px 8px;
+  outline: none;
+  background: var(--bg-card);
+  color: var(--text-main);
+  border: 1px solid var(--border-color);
+}
+
+.table-wrapper {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 14px;
+  overflow: hidden;
+}
+
+/* ✅ Header */
+.branch-table thead th {
+  background: var(--bg-soft) !important;
+  color: var(--text-muted) !important;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+/* ✅ Body cells */
+.branch-table tbody td {
+  background: var(--bg-card) !important;
+  color: var(--text-main) !important;
+  border-bottom: 1px solid var(--border-color);
+  transition: 0.2s ease;
+}
+
+/* ✅ Row hover - must target td */
+.branch-table tbody tr:hover td {
+  background: rgba(91, 130, 255, 0.12) !important; /* subtle highlight */
+  color: var(--text-main) !important;
+  font-weight: 600;
+}
+
+.branch-table tbody tr {
+  cursor: pointer;
+}
+
+.branch-table tbody tr:hover td {
+  font-weight: 700;
+  letter-spacing: 0.2px;
+}
+
+.actions .action-btn:hover {
+  filter: brightness(1.15);
+}
+
+.actions .action-btn:hover,
+.actions .action-btn:focus {
+  transform: translateY(-1px) scale(1.02);
+}
