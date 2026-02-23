@@ -1,21 +1,25 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import "../styles/Salary.css";
 import logo from "../assets/amber.jpg";
 import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
+import api from "../api/axiosClient";
 
 function Salary() {
   const [staff, setStaff] = useState([]);
+  const [balances, setBalances] = useState([]);
   const [selectedStaff, setSelectedStaff] = useState(null);
 
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
 
-  const toNum = (v) => Number(v ?? 0);
-  const money = (v) => `₱${toNum(v).toLocaleString()}`;
-
-  // ✅ Convert imported logo to base64 so it works inside print HTML and PDF
   const [logoBase64, setLogoBase64] = useState("");
+
+  const toNum = (v) => {
+    const n = Number(v ?? 0);
+    return Number.isFinite(n) ? n : 0;
+  };
+  const money = (v) => `₱ ${toNum(v).toLocaleString()}`;
 
   useEffect(() => {
     const img = new Image();
@@ -32,14 +36,39 @@ function Salary() {
   }, []);
 
   useEffect(() => {
-    fetch("http://localhost:5000/staff")
-      .then((res) => {
-        if (!res.ok) throw new Error("Network response was not ok");
-        return res.json();
-      })
-      .then((data) => setStaff(data || []))
-      .catch((err) => console.error("Staff fetch error:", err));
+    const run = async () => {
+      try {
+        const [sRes, bRes] = await Promise.all([
+          api.get("/staff"),
+          api.get("/staff-balances"),
+        ]);
+
+        setStaff(Array.isArray(sRes.data) ? sRes.data : []);
+        setBalances(Array.isArray(bRes.data) ? bRes.data : []);
+      } catch (err) {
+        console.error("Salary fetch error:", err);
+        setStaff([]);
+        setBalances([]);
+      }
+    };
+    run();
   }, []);
+
+  useEffect(() => {
+    if (!selectedStaff) return;
+
+    const onKeyDown = (e) => {
+      if (e.key === "Escape") setSelectedStaff(null);
+    };
+
+    document.addEventListener("keydown", onKeyDown);
+    document.body.style.overflow = "hidden";
+
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      document.body.style.overflow = "";
+    };
+  }, [selectedStaff]);
 
   const handleSearch = () => setSearch(searchInput);
   const handleClear = () => {
@@ -47,16 +76,89 @@ function Salary() {
     setSearch("");
   };
 
-  const filteredStaff = staff.filter((emp) => {
-    const q = search.toLowerCase();
-    return (
-      String(emp.fullname || "").toLowerCase().includes(q) ||
-      String(emp.position || "").toLowerCase().includes(q) ||
-      String(emp.area || "").toLowerCase().includes(q)
-    );
-  });
+  const balancesByEmp = useMemo(() => {
+    const m = new Map();
+    for (const b of balances) {
+      m.set(String(b.employee_id), b);
+    }
+    return m;
+  }, [balances]);
 
-  // ✅ Build Payslip HTML (used by PRINT and PDF)
+  const staffWithComputed = useMemo(() => {
+    return staff.map((s) => {
+      const b = balancesByEmp.get(String(s.id)) || {};
+
+      const salary = toNum(s.salary);
+      const ecola = toNum(s.ecola);
+      const transportation = toNum(s.transportation);
+
+      const hdmf_er = 0, sss_er = 0, ph_er = 0;
+      const hdmf_ee = 0, sss_ee = 0, ph_ee = 0;
+      const total_er = hdmf_er + sss_er + ph_er;
+      const total_ee = hdmf_ee + sss_ee + ph_ee;
+
+      const tax = 0;
+      const utility_charge = 0;
+
+      const cbu = toNum(b.cbu);
+      const cashbond = toNum(b.cashbond);
+      const salary_advance = toNum(b.salary_advance);
+      const motorcycle_loan = toNum(b.motorcycle_loan);
+      const special_advance = toNum(b.special_advance);
+      const cash_advance = toNum(b.cash_advance);
+      const other_receivable = toNum(b.other_receivable);
+      const pagibig_mpl = 0;
+      const sss_loan = 0;
+
+      const staff_accounts_payable = toNum(b.staff_accounts_payable);
+
+      const totalCompensation = salary + ecola;
+      const grossPay = totalCompensation + transportation;
+
+      const total_deduction =
+        total_ee +
+        tax +
+        utility_charge +
+        cbu +
+        cashbond +
+        salary_advance +
+        motorcycle_loan +
+        special_advance +
+        cash_advance +
+        other_receivable +
+        pagibig_mpl +
+        sss_loan +
+        staff_accounts_payable;
+
+      const net_pay = totalCompensation - total_deduction;
+
+      return {
+        ...s,
+        hdmf_er, sss_er, ph_er, total_er,
+        hdmf_ee, sss_ee, ph_ee, total_ee,
+        tax, utility_charge,
+        cbu, cashbond, salary_advance, motorcycle_loan, special_advance, cash_advance, other_receivable,
+        pagibig_mpl, sss_loan,
+        staff_accounts_payable,
+        total_deduction,
+        net_pay,
+        payroll_date: new Date().toISOString(),
+        grossPay,
+      };
+    });
+  }, [staff, balancesByEmp]);
+
+  const filteredStaff = useMemo(() => {
+    const q = search.toLowerCase();
+    return staffWithComputed.filter((emp) => {
+      return (
+        String(emp.fullname || "").toLowerCase().includes(q) ||
+        String(emp.position || "").toLowerCase().includes(q) ||
+        String(emp.area || "").toLowerCase().includes(q)
+      );
+    });
+  }, [staffWithComputed, search]);
+
   const buildPayslipHTML = (s) => {
     const salary = toNum(s.salary);
     const ecola = toNum(s.ecola);
@@ -85,60 +187,34 @@ function Salary() {
             * { box-sizing: border-box; }
             body { font-family: Arial, sans-serif; color: #111; margin: 0; }
             .sheet { max-width: 820px; margin: 0 auto; }
-
-            .header {
-              display:flex; justify-content:space-between; align-items:flex-start;
-              border-bottom:2px solid #111; padding-bottom:10px; margin-bottom:14px;
-              gap: 10px;
-            }
+            .header { display:flex; justify-content:space-between; align-items:flex-start; border-bottom:2px solid #111; padding-bottom:10px; margin-bottom:14px; gap:10px; }
             .logo { height: 60px; }
             .company { flex: 1; }
             .company h1 { margin:0; font-size:18px; }
             .company .sub { margin-top:4px; font-size:12px; color:#333; }
             .meta { text-align:right; font-size:12px; color:#333; line-height:1.5; }
-            .meta strong { color:#111; }
-
-            .employee {
-              display:grid; grid-template-columns:1fr 1fr; gap:10px 18px;
-              border:1px solid #111; padding:10px; border-radius:8px; margin-bottom:14px;
-            }
+            .employee { display:grid; grid-template-columns:1fr 1fr; gap:10px 18px; border:1px solid #111; padding:10px; border-radius:8px; margin-bottom:14px; }
             .row { font-size:12px; display:flex; gap:8px; }
             .label { min-width:130px; color:#333; }
             .value { font-weight:600; }
-
             .grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
             .card { border:1px solid #111; border-radius:8px; padding:10px; }
             .card h3 { margin:0 0 8px 0; font-size:13px; text-transform:uppercase; }
-
             table { width:100%; border-collapse:collapse; font-size:12px; }
             td { padding:6px 0; border-bottom:1px dashed #bbb; }
             td:last-child { text-align:right; font-weight:600; }
             .total-row td { border-bottom:none; padding-top:8px; font-weight:700; }
-
-            .summary {
-              margin-top:12px; border-top:2px solid #111; padding-top:10px;
-              display:grid; grid-template-columns:1fr 1fr 1fr; gap:10px;
-            }
-            .pill {
-              border:1px solid #111; border-radius:10px; padding:10px; text-align:center;
-            }
+            .summary { margin-top:12px; border-top:2px solid #111; padding-top:10px; display:grid; grid-template-columns:1fr 1fr 1fr; gap:10px; }
+            .pill { border:1px solid #111; border-radius:10px; padding:10px; text-align:center; }
             .pill .big { font-size:16px; font-weight:800; margin-top:4px; }
-
-            .sign {
-              margin-top:16px; display:grid; grid-template-columns:1fr 1fr; gap:16px;
-            }
+            .sign { margin-top:16px; display:grid; grid-template-columns:1fr 1fr; gap:16px; }
             .line { border-top:1px solid #111; padding-top:6px; font-size:11px; color:#333; text-align:center; }
-
-            .foot {
-              margin-top:14px; font-size:11px; color:#333; display:flex; justify-content:space-between;
-            }
-
+            .foot { margin-top:14px; font-size:11px; color:#333; display:flex; justify-content:space-between; }
             @media print { button, a { display:none !important; } }
           </style>
         </head>
         <body>
           <div class="sheet">
-
             <div class="header">
               ${logoBase64 ? `<img src="${logoBase64}" class="logo" />` : ""}
               <div class="company">
@@ -161,7 +237,7 @@ function Salary() {
 
             <div class="grid">
               <div class="card">
-                <h3>Compensation:</h3>
+                <h3>Compensation</h3>
                 <table>
                   <tr><td>Salary</td><td>${money(salary)}</td></tr>
                   <tr><td>Ecola</td><td>${money(ecola)}</td></tr>
@@ -178,6 +254,7 @@ function Salary() {
                   <tr><td>CBU</td><td>${money(s.cbu)}</td></tr>
                   <tr><td>Cashbond</td><td>${money(s.cashbond)}</td></tr>
                   <tr><td>Salary Advance</td><td>${money(s.salary_advance)}</td></tr>
+                  <tr><td>Motorcycle Loan</td><td>${money(s.motorcycle_loan)}</td></tr>
                   <tr><td>Special Advance</td><td>${money(s.special_advance)}</td></tr>
                   <tr><td>Cash Advance</td><td>${money(s.cash_advance)}</td></tr>
                   <tr><td>Other Receivable</td><td>${money(s.other_receivable)}</td></tr>
@@ -237,7 +314,6 @@ function Salary() {
               <div>Note: This payslip is system-generated.</div>
               <div>AmberCash PH • Payroll System</div>
             </div>
-
           </div>
 
           <script>
@@ -252,7 +328,6 @@ function Salary() {
     `;
   };
 
-  // ✅ Print
   const printSalary = () => {
     if (!selectedStaff) return;
     const html = buildPayslipHTML(selectedStaff);
@@ -262,21 +337,17 @@ function Salary() {
     w.document.close();
   };
 
-  // ✅ Download PDF from the same payslip layout
   const downloadPayslip = async () => {
     if (!selectedStaff) return;
 
     const html = buildPayslipHTML(selectedStaff);
     const w = window.open("", "_blank", "width=900,height=650");
-
     w.document.open();
     w.document.write(html);
     w.document.close();
 
-    // Wait for content to render
     setTimeout(async () => {
       const element = w.document.body;
-
       const canvas = await html2canvas(element, { scale: 2, useCORS: true });
       const imgData = canvas.toDataURL("image/png");
 
@@ -287,120 +358,123 @@ function Salary() {
 
       pdf.addImage(imgData, "PNG", 10, 10, imgWidth, imgHeight);
       pdf.save(`Payslip-${selectedStaff.fullname}.pdf`);
-
       w.close();
     }, 600);
   };
 
-  // totals for modal display
-  const totalER = selectedStaff
-    ? toNum(selectedStaff.hdmf_er) + toNum(selectedStaff.sss_er) + toNum(selectedStaff.ph_er)
-    : 0;
-
-  const totalEE = selectedStaff
-    ? toNum(selectedStaff.hdmf_ee) + toNum(selectedStaff.sss_ee) + toNum(selectedStaff.ph_ee)
-    : 0;
-
-  const totalCompensation = selectedStaff
-    ? toNum(selectedStaff.salary) + toNum(selectedStaff.ecola)
-    : 0;
-
   return (
-    <div className="salary-container">
-      <h2 className="salary-title">Salary - All Staff</h2>
+    <div className="salary-page">
+      <div className="salary-page-header">
+        <div>
+          <h2 className="salary-title">Salary</h2>
+          <p className="salary-subtitle">Search staff and generate payslips</p>
+        </div>
 
-      {/* Search */}
-      <div className="search-container">
-        <input
-          type="text"
-          placeholder="Search by name, position, or area..."
-          value={searchInput}
-          onChange={(e) => setSearchInput(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && handleSearch()}
-          className="search-input"
-        />
-        <button className="search-btn" onClick={handleSearch}>Search</button>
-        <button className="clear-btn" onClick={handleClear}>Clear</button>
+        <div className="salary-actions">
+          <input
+            type="text"
+            placeholder="Search name, position, or area..."
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && handleSearch()}
+            className="search-input"
+          />
+
+          <button className="btn-secondary" onClick={handleClear} type="button">Clear</button>
+          <button className="btn-primary" onClick={handleSearch} type="button">Search</button>
+        </div>
       </div>
 
-      {/* Staff Table */}
-      <div className="table-wrapper">
-        <table className="salary-table">
-          <thead>
-            <tr>
-              <th>ID</th>
-              <th>Full Name</th>
-              <th>Position</th>
-              <th>Area</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filteredStaff.map((emp) => (
-              <tr key={emp.id}>
-                <td>{emp.id}</td>
-                <td>{emp.fullname}</td>
-                <td>{emp.position}</td>
-                <td>{emp.area}</td>
-                <td>
-                  <button className="view-btn" onClick={() => setSelectedStaff(emp)}>
-                    View
-                  </button>
-                </td>
+      <div className="salary-card">
+        <div className="salary-card-header">
+          <div className="salary-card-title">
+            Staff List <span className="salary-count">{filteredStaff.length}</span>
+          </div>
+        </div>
+
+        <div className="salary-table-wrapper">
+          <table className="salary-table">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Full Name</th>
+                <th>Position</th>
+                <th>Area</th>
+                <th>Actions</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {filteredStaff.map((emp) => (
+                <tr key={emp.id}>
+                  <td>{emp.id}</td>
+                  <td className="td-strong">{emp.fullname}</td>
+                  <td>{emp.position}</td>
+                  <td>{emp.area}</td>
+                  <td>
+                    <button className="view-btn" onClick={() => setSelectedStaff(emp)} type="button">
+                      View
+                    </button>
+                  </td>
+                </tr>
+              ))}
+
+              {filteredStaff.length === 0 && (
+                <tr>
+                  <td colSpan={5} className="empty-state">No staff found.</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
 
-      {/* Modal */}
       {selectedStaff && (
-        <div className="modal-overlay">
-          <div className="modal" id="salary-modal-content">
-            <h2>Salary Details - {selectedStaff.fullname}</h2>
+        <div className="modal-overlay" onMouseDown={(e) => e.target.classList.contains("modal-overlay") && setSelectedStaff(null)}>
+          <div className="modal salary-modal">
+            <div className="modal-head">
+              <div>
+                <h3 className="modal-title">Salary Details</h3>
+                <p className="modal-subtitle">{selectedStaff.fullname}</p>
+              </div>
+              <button className="modal-x" onClick={() => setSelectedStaff(null)} type="button">✕</button>
+            </div>
 
-            <h3>Basic Pay</h3>
-            <p>Salary: {money(selectedStaff.salary)}</p>
-            <p>Ecola: {money(selectedStaff.ecola)}</p>
-            <p><strong>Total Compensation: ₱{totalCompensation.toLocaleString()}</strong></p>
+            <div className="salary-modal-grid">
+              <div className="salary-box">
+                <div className="box-title">Basic Pay</div>
+                <div className="box-row"><span>Salary</span><strong>{money(selectedStaff.salary)}</strong></div>
+                <div className="box-row"><span>Ecola</span><strong>{money(selectedStaff.ecola)}</strong></div>
+                <div className="box-row total"><span>Total Compensation</span><strong>{money(toNum(selectedStaff.salary) + toNum(selectedStaff.ecola))}</strong></div>
+              </div>
 
-            <h3>Allowances</h3>
-            <p>Transportation: {money(selectedStaff.transportation)}</p>
+              <div className="salary-box">
+                <div className="box-title">Allowances</div>
+                <div className="box-row"><span>Transportation</span><strong>{money(selectedStaff.transportation)}</strong></div>
+              </div>
 
-            <h3>Employer Contributions (ER)</h3>
-            <p>HDMF: {money(selectedStaff.hdmf_er)}</p>
-            <p>SSS: {money(selectedStaff.sss_er)}</p>
-            <p>PhilHealth: {money(selectedStaff.ph_er)}</p>
-            <p><strong>Total ER: ₱{totalER.toLocaleString()}</strong></p>
+              <div className="salary-box full">
+                <div className="box-title">Deductions</div>
+                <div className="box-row"><span>CBU</span><strong>{money(selectedStaff.cbu)}</strong></div>
+                <div className="box-row"><span>Cashbond</span><strong>{money(selectedStaff.cashbond)}</strong></div>
+                <div className="box-row"><span>Salary Advance</span><strong>{money(selectedStaff.salary_advance)}</strong></div>
+                <div className="box-row"><span>Motorcycle Loan</span><strong>{money(selectedStaff.motorcycle_loan)}</strong></div>
+                <div className="box-row"><span>Special Advance</span><strong>{money(selectedStaff.special_advance)}</strong></div>
+                <div className="box-row"><span>Cash Advance</span><strong>{money(selectedStaff.cash_advance)}</strong></div>
+                <div className="box-row"><span>Other Receivable</span><strong>{money(selectedStaff.other_receivable)}</strong></div>
+                <div className="box-row"><span>Staff Accounts Payable</span><strong>{money(selectedStaff.staff_accounts_payable)}</strong></div>
+                <div className="box-row total"><span>Total Deduction</span><strong>{money(selectedStaff.total_deduction)}</strong></div>
+              </div>
 
-            <h3>Employee Contributions (EE)</h3>
-            <p>HDMF: {money(selectedStaff.hdmf_ee)}</p>
-            <p>SSS: {money(selectedStaff.sss_ee)}</p>
-            <p>PhilHealth: {money(selectedStaff.ph_ee)}</p>
-            <p><strong>Total EE: ₱{totalEE.toLocaleString()}</strong></p>
-
-            <h3>Deductions</h3>
-            <p>Tax: {money(selectedStaff.tax)}</p>
-            <p>Utility Charge: {money(selectedStaff.utility_charge)}</p>
-            <p>CBU: {money(selectedStaff.cbu)}</p>
-            <p>Cashbond: {money(selectedStaff.cashbond)}</p>
-            <p>Salary Advance: {money(selectedStaff.salary_advance)}</p>
-            <p>Special Advance: {money(selectedStaff.special_advance)}</p>
-            <p>Cash Advance: {money(selectedStaff.cash_advance)}</p>
-            <p>Other Receivable: {money(selectedStaff.other_receivable)}</p>
-            <p>Pag-IBIG MPL: {money(selectedStaff.pagibig_mpl)}</p>
-            <p>SSS Loan: {money(selectedStaff.sss_loan)}</p>
-            <p>Staff Accounts Payable: {money(selectedStaff.staff_accounts_payable)}</p>
-
-            <p><strong>Total Deduction: {money(selectedStaff.total_deduction)}</strong></p>
-
-            <h3>Net Pay</h3>
-            <p><strong>{money(selectedStaff.net_pay)}</strong></p>
+              <div className="salary-box full">
+                <div className="box-title">Net Pay</div>
+                <div className="net-pay">{money(selectedStaff.net_pay)}</div>
+              </div>
+            </div>
 
             <div className="modal-buttons">
-              <button className="save-btn" onClick={printSalary}>Print Payslip</button>
-              <button className="download-btn" onClick={downloadPayslip}>Download PDF</button>
-              <button className="cancel-btn" onClick={() => setSelectedStaff(null)}>Close</button>
+              <button className="btn-secondary" onClick={() => setSelectedStaff(null)} type="button">Close</button>
+              <button className="btn-secondary" onClick={downloadPayslip} type="button">Download PDF</button>
+              <button className="btn-primary" onClick={printSalary} type="button">Print Payslip</button>
             </div>
           </div>
         </div>

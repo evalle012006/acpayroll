@@ -1,10 +1,29 @@
-import React, { useState, useEffect } from "react";
-import axios from "axios";
-import { IoIosArrowDown } from "react-icons/io";
+import React, { useEffect, useMemo, useState, useCallback } from "react";
 import "../styles/Approval.css";
+import api from "../api/axiosClient";
+
+const leaveTypes = [
+  "All",
+  "Annual Leave",
+  "Sick Leave",
+  "Maternity Leave",
+  "Paternity Leave",
+  "Emergency Leave",
+  "Indefinite Leave",
+];
+
+const loanTypes = ["All", "Salary Advance", "Special Loan", "Cash Loan", "Motorcycle Loan"];
+
+const readUser = () => {
+  try {
+    return JSON.parse(localStorage.getItem("user") || "null");
+  } catch {
+    return null;
+  }
+};
 
 const Approval = () => {
-  const [active, setActive] = useState(null);
+  const user = useMemo(() => readUser(), []);
   const [leaveRequests, setLeaveRequests] = useState([]);
   const [loanRequests, setLoanRequests] = useState([]);
 
@@ -17,48 +36,97 @@ const Approval = () => {
   const [confirmModal, setConfirmModal] = useState({
     show: false,
     requestId: null,
-    type: "", // "leave" or "loan"
-    action: "", // "Approve" or "Reject"
+    type: "",
+    action: "",
   });
 
-  useEffect(() => {
-    fetchLeave();
-    fetchLoan();
+  const [loadingLeave, setLoadingLeave] = useState(false);
+  const [loadingLoan, setLoadingLoan] = useState(false);
+
+  const logout = useCallback(() => {
+    localStorage.removeItem("token");
+    localStorage.removeItem("user");
+    window.location.href = "/login";
   }, []);
 
-  const fetchLeave = async () => {
-    try {
-      const res = await axios.get("http://localhost:5000/api/leave-requests");
-      setLeaveRequests(res.data);
-    } catch (err) {
-      console.error(err);
-    }
-  };
+  const safeGet = useCallback(
+    async (url, setLoading) => {
+      try {
+        setLoading(true);
+        const res = await api.get(url);
+        return res.data || [];
+      } catch (err) {
+        const status = err?.response?.status;
+        if (status === 401) logout();
+        return [];
+      } finally {
+        setLoading(false);
+      }
+    },
+    [logout]
+  );
 
-  const fetchLoan = async () => {
-    try {
-      const res = await axios.get("http://localhost:5000/api/loan-requests");
-      setLoanRequests(res.data);
-    } catch (err) {
-      console.error(err);
+  const fetchLeave = useCallback(async () => {
+    const data = await safeGet("/leave-requests", setLoadingLeave);
+    setLeaveRequests(data);
+  }, [safeGet]);
+
+  const fetchLoan = useCallback(async () => {
+    const data = await safeGet("/loan-requests", setLoadingLoan);
+    setLoanRequests(data);
+  }, [safeGet]);
+
+  useEffect(() => {
+    const token = localStorage.getItem("token");
+    if (!user || !token) {
+      window.location.href = "/login";
+      return;
     }
-  };
+    fetchLeave();
+    fetchLoan();
+  }, [user, fetchLeave, fetchLoan]);
+
+  useEffect(() => {
+    const isOpen = showLeaveModal || showLoanModal || confirmModal.show;
+    if (!isOpen) return;
+
+    const onKeyDown = (e) => {
+      if (e.key === "Escape") {
+        setShowLeaveModal(false);
+        setShowLoanModal(false);
+        setConfirmModal({ show: false, requestId: null, type: "", action: "" });
+      }
+    };
+
+    document.addEventListener("keydown", onKeyDown);
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      document.body.style.overflow = "";
+    };
+  }, [showLeaveModal, showLoanModal, confirmModal.show]);
 
   const updateLeaveStatus = async (id, status) => {
     try {
-      await axios.put(`http://localhost:5000/api/leave-requests/${id}`, { status });
-      fetchLeave();
+      await api.put(`/leave-requests/${id}`, { status });
+      await fetchLeave();
     } catch (err) {
-      console.error(err);
+      const code = err?.response?.status;
+      if (code === 401) return logout();
+      if (code === 403) return alert("Access denied.");
+      alert(err?.response?.data?.message || "Failed to update leave request");
     }
   };
 
   const updateLoanStatus = async (id, status) => {
     try {
-      await axios.put(`http://localhost:5000/api/loan-requests/${id}`, { status });
-      fetchLoan();
+      await api.put(`/loan-requests/${id}`, { status });
+      await fetchLoan();
     } catch (err) {
-      console.error(err);
+      const code = err?.response?.status;
+      if (code === 401) return logout();
+      if (code === 403) return alert("Access denied.");
+      alert(err?.response?.data?.message || "Failed to update loan request");
     }
   };
 
@@ -66,231 +134,333 @@ const Approval = () => {
     setConfirmModal({ show: true, requestId: id, type, action });
   };
 
-  const confirmAction = () => {
+  const confirmAction = async () => {
     const { requestId, type, action } = confirmModal;
-
-    if (type === "leave") {
-      updateLeaveStatus(requestId, action);
-    } else {
-      updateLoanStatus(requestId, action);
-    }
-
     setConfirmModal({ show: false, requestId: null, type: "", action: "" });
+    if (!requestId) return;
+
+    if (type === "leave") await updateLeaveStatus(requestId, action);
+    else await updateLoanStatus(requestId, action);
   };
 
-  const toggleSection = (section) => {
-    setActive(active === section ? null : section);
+  const filteredLeave = useMemo(() => {
+    return leaveRequests.filter((item) =>
+      selectedLeaveType === "All" ? true : item.leave_type === selectedLeaveType
+    );
+  }, [leaveRequests, selectedLeaveType]);
+
+  const filteredLoan = useMemo(() => {
+    return loanRequests.filter((item) =>
+      selectedLoanType === "All" ? true : item.loan_type === selectedLoanType
+    );
+  }, [loanRequests, selectedLoanType]);
+
+  const badgeClass = (status) => {
+    if (status === "Approved") return "badge badge-approved";
+    if (status === "Rejected") return "badge badge-rejected";
+    return "badge badge-pending";
   };
 
   return (
-    <div className="approval-container">
-      <h1>Approval Management</h1>
-
-      <div className="accordion-item">
-        <div className="accordion-header" onClick={() => toggleSection("leave")}>
-          <span>Leave Approval</span>
-          <IoIosArrowDown className={`arrow ${active === "leave" ? "rotate" : ""}`} />
+    <div className="approval-page">
+      <div className="approval-page-header">
+        <div>
+          <h2 className="approval-title">Approvals</h2>
+          <p className="approval-subtitle">Review and approve leave and loan requests</p>
         </div>
-
-        {active === "leave" && (
-          <div className="accordion-content open">
-            <button className="view-btn" onClick={() => setShowLeaveModal(true)}>
-              View Leave Requests
-            </button>
-          </div>
-        )}
       </div>
 
-      <div className="accordion-item">
-        <div className="accordion-header" onClick={() => toggleSection("loan")}>
-          <span>Loan Approval</span>
-          <IoIosArrowDown className={`arrow ${active === "loan" ? "rotate" : ""}`} />
-        </div>
+      <div className="approval-grid">
+        <div className="approval-card">
+          <div className="approval-card-head">
+            <div>
+              <div className="approval-card-title">Leave Requests</div>
+              <div className="approval-card-meta">
+                Pending:{" "}
+                <span className="pill">{leaveRequests.filter((x) => x.status === "Pending").length}</span>
+              </div>
+            </div>
 
-        {active === "loan" && (
-          <div className="accordion-content open">
-            <button className="view-btn" onClick={() => setShowLoanModal(true)}>
-              View Loan Requests
+            <button className="btn-primary" onClick={() => setShowLeaveModal(true)} type="button">
+              View
             </button>
           </div>
-        )}
+
+          <div className="approval-card-body">
+            <div className="mini">
+              {loadingLeave ? "Loading leave requests…" : "Filter in modal • Approve/Reject with confirmation"}
+            </div>
+          </div>
+        </div>
+
+        <div className="approval-card">
+          <div className="approval-card-head">
+            <div>
+              <div className="approval-card-title">Loan Requests</div>
+              <div className="approval-card-meta">
+                Pending:{" "}
+                <span className="pill">{loanRequests.filter((x) => x.status === "Pending").length}</span>
+              </div>
+            </div>
+
+            <button className="btn-primary" onClick={() => setShowLoanModal(true)} type="button">
+              View
+            </button>
+          </div>
+
+          <div className="approval-card-body">
+            <div className="mini">
+              {loadingLoan ? "Loading loan requests…" : "Filter by loan type • View amounts, terms, totals"}
+            </div>
+          </div>
+        </div>
       </div>
 
       {showLeaveModal && (
-        <div className="modal-overlay" onClick={() => setShowLeaveModal(false)}>
-          <div className="modal-container" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <h3>Leave Requests</h3>
+        <div
+          className="modal-overlay"
+          onMouseDown={(e) => e.target.classList.contains("modal-overlay") && setShowLeaveModal(false)}
+        >
+          <div className="modal saas-modal">
+            <div className="modal-head">
+              <div>
+                <h3 className="modal-title">Leave Requests</h3>
+                <p className="modal-subtitle">Filter by type, then approve or reject</p>
+              </div>
+              <button className="modal-x" type="button" onClick={() => setShowLeaveModal(false)}>
+                ✕
+              </button>
             </div>
 
-            <div className="leave-type-buttons">
-              {["All","Annual Leave","Sick Leave","Maternity Leave","Paternity Leave","Emergency Leave","Indefinite Leave"]
-                .map(type => (
-                  <button
-                    key={type}
-                    className={`leave-btn ${selectedLeaveType === type ? "active" : ""}`}
-                    onClick={() => setSelectedLeaveType(type)}
-                  >
-                    {type}
-                  </button>
+            <div className="filters">
+              {leaveTypes.map((t) => (
+                <button
+                  key={t}
+                  className={`chip ${selectedLeaveType === t ? "active" : ""}`}
+                  onClick={() => setSelectedLeaveType(t)}
+                  type="button"
+                >
+                  {t}
+                </button>
               ))}
             </div>
 
-            <div className="modal-body">
-              <table className="leave-table">
-                <thead>
-                  <tr>
-                    <th>ID</th>
-                    <th>Name</th>
-                    <th>Type</th>
-                    <th>Start</th>
-                    <th>End</th>
-                    <th>Status</th>
-                    <th>Action</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {leaveRequests
-                    .filter(item =>
-                      selectedLeaveType === "All" ? true : item.leave_type === selectedLeaveType
-                    )
-                    .map(item => (
-                      <tr key={item.id}>
-                        <td>{item.id}</td>
-                        <td>{item.staff_name}</td>
-                        <td>{item.leave_type}</td>
-                        <td>{item.start_date}</td>
-                        <td>{item.end_date}</td>
-                        <td>
-                            <span className={item.status === "Approved" ? "status-badge approved" : item.status === "Rejected"
-                                ? "status-badge rejected" : "status-badge pending"}
-                            >
-                                {item.status}
-                            </span>
-                        </td>
+            <div className="table-card">
+              <div className="table-wrap">
+                <table className="table">
+                  <thead>
+                    <tr>
+                      <th>ID</th>
+                      <th>Name</th>
+                      <th>Type</th>
+                      <th>Start</th>
+                      <th>End</th>
+                      <th>Status</th>
+                      <th>Action</th>
+                    </tr>
+                  </thead>
 
-                        <td>
-                          {item.status === "Pending" ? (
-                            <>
-                            <button className="approve-btn" onClick={() => handleActionClick(item.id, "leave", "Approved")}>
-                                Approve
-                            </button>
-
-                            <button className="reject-btn" onClick={() => handleActionClick(item.id, "leave", "Rejected")}>
-                                Reject
-                            </button>
-                        </>
-
-                          ) : "-"}
+                  <tbody>
+                    {filteredLeave.length === 0 ? (
+                      <tr>
+                        <td colSpan={7} className="empty-state">
+                          No requests found.
                         </td>
                       </tr>
-                    ))}
-                </tbody>
-              </table>
+                    ) : (
+                      filteredLeave.map((item) => (
+                        <tr key={item.id}>
+                          <td>{item.id}</td>
+                          <td className="td-strong">{item.staff_name}</td>
+                          <td>{item.leave_type}</td>
+                          <td>{String(item.start_date || "").split("T")[0]}</td>
+                          <td>{String(item.end_date || "").split("T")[0]}</td>
+                          <td>
+                            <span className={badgeClass(item.status)}>{item.status}</span>
+                          </td>
+                          <td>
+                            {item.status === "Pending" ? (
+                              <div className="row-actions">
+                                <button
+                                  className="btn-success"
+                                  onClick={() => handleActionClick(item.id, "leave", "Approved")}
+                                  type="button"
+                                >
+                                  Approve
+                                </button>
+                                <button
+                                  className="btn-danger"
+                                  onClick={() => handleActionClick(item.id, "leave", "Rejected")}
+                                  type="button"
+                                >
+                                  Reject
+                                </button>
+                              </div>
+                            ) : (
+                              "-"
+                            )}
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
             </div>
 
-            <div className="modal-footer">
-              <button className="cancel-btn" onClick={() => setShowLeaveModal(false)}>Close</button>
+            <div className="modal-buttons">
+              <button className="btn-secondary" type="button" onClick={() => setShowLeaveModal(false)}>
+                Close
+              </button>
             </div>
           </div>
         </div>
       )}
 
       {showLoanModal && (
-        <div className="modal-overlay" onClick={() => setShowLoanModal(false)}>
-          <div className="modal-container" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <h3>Loan Requests</h3>
+        <div
+          className="modal-overlay"
+          onMouseDown={(e) => e.target.classList.contains("modal-overlay") && setShowLoanModal(false)}
+        >
+          <div className="modal saas-modal">
+            <div className="modal-head">
+              <div>
+                <h3 className="modal-title">Loan Requests</h3>
+                <p className="modal-subtitle">Filter by type, then approve or reject</p>
+              </div>
+              <button className="modal-x" type="button" onClick={() => setShowLoanModal(false)}>
+                ✕
+              </button>
             </div>
 
-            <div className="leave-type-buttons">
-              {["All","Salary Advance","Special Advance","Cash Advance","Motorcycle Loan"]
-                .map(type => (
-                  <button key={type} className={`leave-btn ${selectedLoanType === type ? "active" : ""}`}
-                    onClick={() => setSelectedLoanType(type)}>
-                        {type}
-                  </button>
+            <div className="filters">
+              {loanTypes.map((t) => (
+                <button
+                  key={t}
+                  className={`chip ${selectedLoanType === t ? "active" : ""}`}
+                  onClick={() => setSelectedLoanType(t)}
+                  type="button"
+                >
+                  {t}
+                </button>
               ))}
             </div>
 
-            <div className="modal-body">
-              <table className="leave-table">
-                <thead>
+            <div className="table-card">
+              <div className="table-wrap">
+                <table className="table">
+                  <thead>
                     <tr>
-                    <th>ID</th>
-                    <th>Name</th>
-                    <th>Loan Type</th>
-                    <th>Amount</th>
-                    <th>Term (Months)</th>
-                    <th>Interest (%)</th>
-                    <th>Per Month</th>
-                    <th>Total</th>
-                    <th>Status</th>
-                    <th>Action</th>
+                      <th>ID</th>
+                      <th>Name</th>
+                      <th>Loan Type</th>
+                      <th>Amount</th>
+                      <th>Term</th>
+                      <th>Interest</th>
+                      <th>Per Month</th>
+                      <th>Total</th>
+                      <th>Status</th>
+                      <th>Action</th>
                     </tr>
-                </thead>
+                  </thead>
 
-                <tbody>
-                  {loanRequests
-                    .filter(item =>
-                      selectedLoanType === "All" ? true : item.loan_type === selectedLoanType
-                    )
-                    .map(item => (
-                      <tr key={item.id}>
-                        <td>{item.id}</td>
-                        <td>{item.staff_name}</td>
-                        <td>{item.loan_type}</td>
-                        <td>₱{Number(item.amount).toLocaleString()}</td>
-                        <td>{item.term}</td>
-                        <td>{item.interest}%</td>
-                        <td>₱{Number(item.per_month).toLocaleString()}</td>
-                        <td>₱{Number(item.total).toLocaleString()}</td>
-
-                        <td>
-                            <span className={item.status === "Approved" ? "status-badge approved" : item.status === "Rejected"
-                                ? "status-badge rejected" : "status-badge pending"}>
-                                    {item.status}
-                            </span>
-                        </td>
-                        <td>
-                          {item.status === "Pending" ? (
-                            <>
-                        <button className="approve-btn" onClick={() => handleActionClick(item.id, "loan", "Approved")}>
-                            Approve
-                        </button>
-    
-                        <button className="reject-btn" onClick={() => handleActionClick(item.id, "loan", "Rejected")}>
-                            Reject
-                        </button>
-                    </>
-
-                          ) : "-"}
+                  <tbody>
+                    {filteredLoan.length === 0 ? (
+                      <tr>
+                        <td colSpan={10} className="empty-state">
+                          No requests found.
                         </td>
                       </tr>
-                    ))}
-                </tbody>
-              </table>
+                    ) : (
+                      filteredLoan.map((item) => (
+                        <tr key={item.id}>
+                          <td>{item.id}</td>
+                          <td className="td-strong">{item.staff_name}</td>
+                          <td>{item.loan_type}</td>
+                          <td>₱ {Number(item.amount || 0).toLocaleString()}</td>
+                          <td>{item.term}</td>
+                          <td>{item.interest}%</td>
+                          <td>₱ {Number(item.per_month || 0).toLocaleString()}</td>
+                          <td>₱ {Number(item.total || 0).toLocaleString()}</td>
+                          <td>
+                            <span className={badgeClass(item.status)}>{item.status}</span>
+                          </td>
+                          <td>
+                            {item.status === "Pending" ? (
+                              <div className="row-actions">
+                                <button
+                                  className="btn-success"
+                                  onClick={() => handleActionClick(item.id, "loan", "Approved")}
+                                  type="button"
+                                >
+                                  Approve
+                                </button>
+                                <button
+                                  className="btn-danger"
+                                  onClick={() => handleActionClick(item.id, "loan", "Rejected")}
+                                  type="button"
+                                >
+                                  Reject
+                                </button>
+                              </div>
+                            ) : (
+                              "-"
+                            )}
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
             </div>
 
-            <div className="modal-footer">
-              <button className="cancel-btn" onClick={() => setShowLoanModal(false)}>Close</button>
+            <div className="modal-buttons">
+              <button className="btn-secondary" type="button" onClick={() => setShowLoanModal(false)}>
+                Close
+              </button>
             </div>
           </div>
         </div>
       )}
 
       {confirmModal.show && (
-        <div className="modal-overlay" onClick={() => setConfirmModal({ show: false })}>
-          <div className="modal-container" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <h3>Confirm {confirmModal.action}</h3>
+        <div
+          className="modal-overlay"
+          onMouseDown={(e) =>
+            e.target.classList.contains("modal-overlay") &&
+            setConfirmModal({ show: false, requestId: null, type: "", action: "" })
+          }
+        >
+          <div className="modal confirm-modal">
+            <div className="modal-head">
+              <div>
+                <h3 className="modal-title">Confirm {confirmModal.action}</h3>
+                <p className="modal-subtitle">
+                  Are you sure you want to {String(confirmModal.action).toLowerCase()} this{" "}
+                  {confirmModal.type} request?
+                </p>
+              </div>
+              <button
+                className="modal-x"
+                type="button"
+                onClick={() => setConfirmModal({ show: false, requestId: null, type: "", action: "" })}
+              >
+                ✕
+              </button>
             </div>
-            <div className="modal-body">
-              <p>Are you sure you want to {confirmModal.action.toLowerCase()} this {confirmModal.type} request?</p>
-            </div>
-            <div className="modal-footer">
-              <button className="approve-btn" onClick={confirmAction}>Yes</button>
-              <button className="reject-btn" onClick={() => setConfirmModal({ show: false })}>No</button>
+
+            <div className="modal-buttons">
+              <button
+                className="btn-secondary"
+                type="button"
+                onClick={() => setConfirmModal({ show: false, requestId: null, type: "", action: "" })}
+              >
+                Cancel
+              </button>
+              <button className="btn-primary" type="button" onClick={confirmAction}>
+                Yes, {confirmModal.action}
+              </button>
             </div>
           </div>
         </div>

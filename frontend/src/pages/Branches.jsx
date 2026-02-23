@@ -1,70 +1,123 @@
 import { useNavigate } from "react-router-dom";
-import { useEffect, useMemo, useState } from "react";
-import axios from "axios";
+import { useEffect, useMemo, useState, useCallback } from "react";
 import "../styles/Branches.css";
+import api from "../api/axiosClient";
 
-const API = "http://localhost:5000";
+const readUser = () => {
+  try {
+    return JSON.parse(localStorage.getItem("user") || "null");
+  } catch {
+    return null;
+  }
+};
 
 const Branches = () => {
   const navigate = useNavigate();
+  const user = useMemo(() => readUser(), []);
+  const isAdmin = String(user?.role || "").toLowerCase() === "admin";
 
   const [branches, setBranches] = useState([]);
   const [loadingTable, setLoadingTable] = useState(false);
 
-  // form
   const [code, setCode] = useState("");
   const [name, setName] = useState("");
   const [area, setArea] = useState("");
   const [editId, setEditId] = useState(null);
-
-  // ui
-  const [showModal, setShowModal] = useState(false);
   const [saving, setSaving] = useState(false);
+
+  const [showModal, setShowModal] = useState(false);
   const [viewData, setViewData] = useState(null);
 
-  // search
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
-
-  // ✅ pagination
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
 
-  const fetchBranches = async () => {
+  const logout = useCallback(() => {
+    localStorage.removeItem("token");
+    localStorage.removeItem("user");
+    window.location.href = "/login";
+  }, []);
+
+  const fetchBranches = useCallback(async () => {
     try {
       setLoadingTable(true);
-      const res = await axios.get(`${API}/branches`);
+      const res = await api.get("/branches");
       setBranches(res.data || []);
     } catch (err) {
-      console.error("Fetch branches error:", err);
-      alert("Failed to load branches.");
+      const status = err?.response?.status;
+      if (status === 401) return logout();
+      if (status === 403) return alert("Access denied.");
+      alert(err?.response?.data?.message || "Failed to load branches.");
     } finally {
       setLoadingTable(false);
     }
-  };
+  }, [logout]);
 
   useEffect(() => {
+    const token = localStorage.getItem("token");
+    if (!user || !token) {
+      window.location.href = "/login";
+      return;
+    }
     fetchBranches();
-  }, []);
+  }, [user, fetchBranches]);
+
+  const resetForm = () => {
+    setCode("");
+    setName("");
+    setArea("");
+    setEditId(null);
+  };
+
+  const openAdd = () => {
+    if (!isAdmin) return;
+    resetForm();
+    setShowModal(true);
+  };
+
+  const openEdit = (b) => {
+    if (!isAdmin) return;
+    setEditId(b.id);
+    setCode(b.code || "");
+    setName(b.name || "");
+    setArea(b.area || "");
+    setShowModal(true);
+  };
+
+  const closeFormModal = () => {
+    setShowModal(false);
+    resetForm();
+  };
+
+  const closeViewModal = () => setViewData(null);
+
+  useEffect(() => {
+    const isAnyModalOpen = showModal || !!viewData;
+    if (!isAnyModalOpen) return;
+
+    const onKeyDown = (e) => e.key === "Escape" && (closeFormModal(), closeViewModal());
+    document.addEventListener("keydown", onKeyDown);
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      document.body.style.overflow = "";
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showModal, viewData]);
 
   const filteredBranches = useMemo(() => {
     const q = search.trim().toLowerCase();
     if (!q) return branches;
-
-    return branches.filter((b) => {
-      return (
-        String(b.code || "").toLowerCase().includes(q) ||
-        String(b.name || "").toLowerCase().includes(q) ||
-        String(b.area || "").toLowerCase().includes(q) ||
-        String(b.id || "").toLowerCase().includes(q)
-      );
-    });
+    return branches.filter((b) =>
+      String(b.code || "").toLowerCase().includes(q) ||
+      String(b.name || "").toLowerCase().includes(q) ||
+      String(b.area || "").toLowerCase().includes(q) ||
+      String(b.id || "").toLowerCase().includes(q)
+    );
   }, [branches, search]);
 
-  // ✅ reset page when filter/pageSize changes
-  useEffect(() => {
-    setPage(1);
-  }, [search, pageSize]);
+  useEffect(() => setPage(1), [search, pageSize]);
 
   const totalRows = filteredBranches.length;
   const totalPages = Math.max(1, Math.ceil(totalRows / pageSize));
@@ -81,80 +134,62 @@ const Branches = () => {
     return `${start}-${end} of ${totalRows}`;
   }, [page, pageSize, totalRows]);
 
-  const openAdd = () => {
-    setEditId(null);
-    setCode("");
-    setName("");
-    setArea("");
-    setShowModal(true);
-  };
-
-  const openEdit = (b) => {
-    setEditId(b.id);
-    setCode(b.code || "");
-    setName(b.name || "");
-    setArea(b.area || "");
-    setShowModal(true);
-  };
-
-  const closeModal = () => {
-    setShowModal(false);
-    setEditId(null);
-  };
+  const goPrev = () => setPage((p) => Math.max(1, p - 1));
+  const goNext = () => setPage((p) => Math.min(totalPages, p + 1));
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (!isAdmin) return;
+
     setSaving(true);
     try {
-      if (editId) {
-        await axios.put(`${API}/branches/${editId}`, { code, name, area });
-      } else {
-        await axios.post(`${API}/branches`, { code, name, area });
-      }
+      if (editId) await api.put(`/branches/${editId}`, { code, name, area });
+      else await api.post(`/branches`, { code, name, area });
 
       await fetchBranches();
-      closeModal();
+      closeFormModal();
     } catch (err) {
-      console.error("Save branch error:", err);
-      alert("Something went wrong saving the branch.");
+      const status = err?.response?.status;
+      if (status === 401) return logout();
+      if (status === 403) return alert("Access denied.");
+      alert(err?.response?.data?.message || "Failed to save branch.");
     } finally {
       setSaving(false);
     }
   };
 
   const deleteBranch = async (id) => {
-    const ok = window.confirm("Delete this branch?");
-    if (!ok) return;
+    if (!isAdmin) return;
+    if (!window.confirm("Delete this branch?")) return;
 
     try {
-      await axios.delete(`${API}/branches/${id}`);
+      await api.delete(`/branches/${id}`);
       await fetchBranches();
     } catch (err) {
-      console.error("Delete branch error:", err);
-      alert("Failed to delete branch.");
+      const status = err?.response?.status;
+      if (status === 401) return logout();
+      if (status === 403) return alert("Access denied.");
+      alert(err?.response?.data?.message || "Failed to delete branch.");
     }
   };
 
-  const goPrev = () => setPage((p) => Math.max(1, p - 1));
-  const goNext = () => setPage((p) => Math.min(totalPages, p + 1));
-
   return (
     <div className="saas-page">
-      {/* Top Bar */}
       <div className="saas-header">
         <div className="saas-title">
-          <h2>Branch Management</h2>
+          <h2>Branches</h2>
           <p>Manage branch codes, names, and areas.</p>
         </div>
 
-        <div className="saas-actions">
-          <button className="btn btn-primary" onClick={openAdd}>
-            + Add Branch
-          </button>
-        </div>
+        {isAdmin && (
+          <div className="saas-actions">
+            <button className="btn btn-primary" onClick={openAdd} type="button">
+              + Add Branch
+            </button>
+          </div>
+        )}
       </div>
 
-      {/* Controls Card */}
       <div className="card controls-card">
         <div className="controls-left">
           <div className="search-wrap">
@@ -166,16 +201,10 @@ const Branches = () => {
               onChange={(e) => setSearchInput(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && setSearch(searchInput)}
             />
-            <button className="btn btn-outline" onClick={() => setSearch(searchInput)}>
+            <button className="btn btn-outline" onClick={() => setSearch(searchInput)} type="button">
               Search
             </button>
-            <button
-              className="btn btn-ghost"
-              onClick={() => {
-                setSearch("");
-                setSearchInput("");
-              }}
-            >
+            <button className="btn btn-ghost" type="button" onClick={() => (setSearch(""), setSearchInput(""))}>
               Clear
             </button>
           </div>
@@ -186,13 +215,9 @@ const Branches = () => {
             Results: <strong>{totalRows}</strong>
           </div>
 
-          {/* ✅ page size selector */}
           <div className="page-size">
             <span>Rows</span>
-            <select
-              value={pageSize}
-              onChange={(e) => setPageSize(Number(e.target.value))}
-            >
+            <select value={pageSize} onChange={(e) => setPageSize(Number(e.target.value))}>
               <option value={5}>5</option>
               <option value={10}>10</option>
               <option value={25}>25</option>
@@ -202,7 +227,6 @@ const Branches = () => {
         </div>
       </div>
 
-      {/* Table Card */}
       <div className="card table-card">
         {loadingTable ? (
           <div className="table-loading">Loading branches…</div>
@@ -240,6 +264,7 @@ const Branches = () => {
                             <button
                               className="action-btn btn-payroll"
                               onClick={() => navigate(`/payroll/${Number(b.id)}`)}
+                              type="button"
                             >
                               Payroll
                             </button>
@@ -247,21 +272,25 @@ const Branches = () => {
                             <button
                               className="action-btn btn-transpo"
                               onClick={() => navigate(`/transportation/${Number(b.id)}`)}
+                              type="button"
                             >
                               Transpo
                             </button>
 
-                            <button className="action-btn btn-view" onClick={() => setViewData(b)}>
+                            <button className="action-btn btn-view" onClick={() => setViewData(b)} type="button">
                               View
                             </button>
 
-                            <button className="action-btn btn-edit" onClick={() => openEdit(b)}>
-                              Edit
-                            </button>
-
-                            <button className="action-btn btn-delete" onClick={() => deleteBranch(b.id)}>
-                              Delete
-                            </button>
+                            {isAdmin && (
+                              <>
+                                <button className="action-btn btn-edit" onClick={() => openEdit(b)} type="button">
+                                  Edit
+                                </button>
+                                <button className="action-btn btn-delete" onClick={() => deleteBranch(b.id)} type="button">
+                                  Delete
+                                </button>
+                              </>
+                            )}
                           </div>
                         </td>
                       </tr>
@@ -271,15 +300,14 @@ const Branches = () => {
               </table>
             </div>
 
-            {/* ✅ Pagination Footer */}
             <div className="pager">
               <div className="pager-left">{rangeText}</div>
 
               <div className="pager-right">
-                <button className="btn btn-outline btn-sm" onClick={() => setPage(1)} disabled={page === 1}>
+                <button className="btn btn-outline btn-sm" onClick={() => setPage(1)} disabled={page === 1} type="button">
                   ⏮ First
                 </button>
-                <button className="btn btn-outline btn-sm" onClick={goPrev} disabled={page === 1}>
+                <button className="btn btn-outline btn-sm" onClick={goPrev} disabled={page === 1} type="button">
                   ◀ Prev
                 </button>
 
@@ -287,10 +315,15 @@ const Branches = () => {
                   Page <strong>{page}</strong> / {totalPages}
                 </div>
 
-                <button className="btn btn-outline btn-sm" onClick={goNext} disabled={page === totalPages}>
+                <button className="btn btn-outline btn-sm" onClick={goNext} disabled={page === totalPages} type="button">
                   Next ▶
                 </button>
-                <button className="btn btn-outline btn-sm" onClick={() => setPage(totalPages)} disabled={page === totalPages}>
+                <button
+                  className="btn btn-outline btn-sm"
+                  onClick={() => setPage(totalPages)}
+                  disabled={page === totalPages}
+                  type="button"
+                >
                   Last ⏭
                 </button>
               </div>
@@ -299,13 +332,12 @@ const Branches = () => {
         )}
       </div>
 
-      {/* View Modal */}
       {viewData && (
-        <div className="modal-overlay" onMouseDown={() => setViewData(null)}>
+        <div className="modal-overlay" onMouseDown={closeViewModal}>
           <div className="modal" onMouseDown={(e) => e.stopPropagation()}>
             <div className="modal-head">
               <h3>Branch Details</h3>
-              <button className="icon-btn" onClick={() => setViewData(null)}>
+              <button className="icon-btn" onClick={closeViewModal} type="button">
                 ✕
               </button>
             </div>
@@ -330,7 +362,7 @@ const Branches = () => {
             </div>
 
             <div className="modal-foot">
-              <button className="btn btn-outline" onClick={() => setViewData(null)}>
+              <button className="btn btn-outline" onClick={closeViewModal} type="button">
                 Close
               </button>
             </div>
@@ -338,13 +370,12 @@ const Branches = () => {
         </div>
       )}
 
-      {/* Add/Edit Modal */}
-      {showModal && (
-        <div className="modal-overlay" onMouseDown={closeModal}>
+      {isAdmin && showModal && (
+        <div className="modal-overlay" onMouseDown={closeFormModal}>
           <div className="modal" onMouseDown={(e) => e.stopPropagation()}>
             <div className="modal-head">
               <h3>{editId ? "Update Branch" : "Add Branch"}</h3>
-              <button className="icon-btn" onClick={closeModal}>
+              <button className="icon-btn" onClick={closeFormModal} type="button">
                 ✕
               </button>
             </div>
@@ -353,35 +384,17 @@ const Branches = () => {
               <div className="modal-body grid-2">
                 <div className="field">
                   <label>Branch Code</label>
-                  <input
-                    className="input"
-                    type="text"
-                    value={code}
-                    onChange={(e) => setCode(e.target.value)}
-                    required
-                  />
+                  <input className="input" value={code} onChange={(e) => setCode(e.target.value)} required />
                 </div>
 
                 <div className="field">
                   <label>Area</label>
-                  <input
-                    className="input"
-                    type="text"
-                    value={area}
-                    onChange={(e) => setArea(e.target.value)}
-                    required
-                  />
+                  <input className="input" value={area} onChange={(e) => setArea(e.target.value)} required />
                 </div>
 
                 <div className="field full">
                   <label>Branch Name</label>
-                  <input
-                    className="input"
-                    type="text"
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    required
-                  />
+                  <input className="input" value={name} onChange={(e) => setName(e.target.value)} required />
                 </div>
               </div>
 
@@ -389,7 +402,7 @@ const Branches = () => {
                 <button className="btn btn-primary" type="submit" disabled={saving}>
                   {saving ? "Saving..." : editId ? "Update" : "Save"}
                 </button>
-                <button className="btn btn-ghost" type="button" onClick={closeModal}>
+                <button className="btn btn-ghost" type="button" onClick={closeFormModal}>
                   Cancel
                 </button>
               </div>

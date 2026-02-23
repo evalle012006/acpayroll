@@ -1,84 +1,90 @@
-import React, { useState } from "react"; // ✅ import useState
-import { Link } from "react-router-dom";
-import { FaUsers, FaMoneyBill } from "react-icons/fa";
+import { NavLink, useLocation } from "react-router-dom";
+import { useMemo } from "react";
+
 import { MdDashboard } from "react-icons/md";
-import { TbGitBranch } from "react-icons/tb";
-import { AiOutlineCheckCircle } from "react-icons/ai";
+import { FaUsers } from "react-icons/fa";
 import { BsCash } from "react-icons/bs";
-import { FiSettings } from "react-icons/fi";
 import { HiOutlineClipboardList } from "react-icons/hi";
+import { AiOutlineCheckCircle } from "react-icons/ai";
+import { TbGitBranch } from "react-icons/tb";
+import { FiSettings } from "react-icons/fi";
 import { FaUserGroup } from "react-icons/fa6";
 
 import amber from "../assets/amber.jpg";
 import "../styles/Sidebar.css";
 
+const readUser = () => {
+  try {
+    const raw = localStorage.getItem("user");
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+};
+
 const Sidebar = ({ collapsed }) => {
+  const { pathname } = useLocation();
+
+  const user = readUser();
+  const role = String(user?.role || "").trim().toLowerCase();
+
+  const navItems = useMemo(() => {
+    const items = [
+      { to: "/dashboard", label: "Dashboard", icon: MdDashboard, roles: ["admin", "branch manager"] },
+      { to: "/staff", label: "Staff", icon: FaUsers, roles: ["admin", "branch manager"] },
+      { to: "/salary", label: "Salary", icon: BsCash, roles: ["admin", "branch manager"] },
+      { to: "/schedule-balances", label: "Schedule of Balances", icon: HiOutlineClipboardList, roles: ["admin", "branch manager"] },
+      { to: "/approval", label: "Approval", icon: AiOutlineCheckCircle, roles: ["admin", "branch manager"] },
+      { to: "/branches", label: "Branches", icon: TbGitBranch, roles: ["admin", "branch manager"] },
+      { to: "/system-update", label: "System Update", icon: FiSettings, roles: ["admin"] },
+      { to: "/users", label: "Users", icon: FaUserGroup, roles: ["admin"] },
+    ];
+
+    return items.filter((x) => !x.roles || x.roles.includes(role));
+  }, [role]);
+
+  const isPathActive = (basePath) => pathname === basePath || pathname.startsWith(basePath + "/");
 
   return (
-    <div className={`sidebar ${collapsed ? "collapsed" : ""}`}>
-
-      {/* Logo Section */}
-      <div className="logo-container">
-        <img src={amber} alt="logo" className="logo-img"/>
-        {!collapsed && <span className="logo-text"></span>}
+    <aside className={`sidebar ${collapsed ? "collapsed" : ""}`}>
+      <div className="sidebar-brand">
+        <img src={amber} alt="logo" className="logo-img" />
+        {!collapsed && (
+          <div className="brand-text">
+            <div className="brand-title">AmberCash PH</div>
+            <div className="brand-subtitle">Payroll System</div>
+            {user?.role && <div className="brand-role">Role: {String(user.role)}</div>}
+          </div>
+        )}
       </div>
 
-      <ul>
-        <li>
-          <Link to="/">
-            <MdDashboard className="icon" />
-            {!collapsed && <span>Dashboard</span>}
-          </Link>
-        </li>
+      {!collapsed && <div className="sidebar-section-title">MAIN</div>}
 
-        <li>
-          <Link to="/staff">
-            <FaUsers className="icon" />
-            {!collapsed && <span>Staff</span>}
-          </Link>
-        </li>
+      <nav className="sidebar-nav">
+        {navItems.map((item) => {
+          const Icon = item.icon;
+          const forcedActive = isPathActive(item.to);
 
-        <li>
-          <Link to="/salary">
-            <BsCash className="icon" />
-            {!collapsed && <span>Salary</span>}
-          </Link>
-        </li>
+          return (
+            <NavLink
+              key={item.to}
+              to={item.to}
+              className={() => `sidebar-link ${forcedActive ? "active" : ""}`}
+              title={collapsed ? item.label : undefined}
+            >
+              <span className="sidebar-icon">
+                <Icon />
+              </span>
+              {!collapsed && <span className="sidebar-label">{item.label}</span>}
+            </NavLink>
+          );
+        })}
 
-        <li>
-          <Link to="/schedule-balances">
-            <HiOutlineClipboardList className="icon" />
-            {!collapsed && <span>Schedule of Balances</span>}
-          </Link>
-        </li>
-
-        <li>
-          <Link to="/approval">
-            <AiOutlineCheckCircle className="icon" />
-            {!collapsed && <span>Approval</span>}
-          </Link>
-        </li>
-
-        <li>
-          <Link to="/branches">
-            <TbGitBranch className="icon" />
-            {!collapsed && <span>Branches</span>}
-          </Link>
-        </li>
-        <li>
-          <Link to="/system-update">
-            <FiSettings className="icon" />
-            {!collapsed && <span>System Update</span>}
-          </Link>
-        </li>
-        <li>
-          <Link to="/Users">
-            <FaUserGroup className="icon" />
-            {!collapsed && <span>Users</span>}
-          </Link>
-        </li>
-      </ul>
-    </div>
+        {navItems.length === 0 && !collapsed && (
+          <div className="sidebar-empty">No menu items available for role: {role || "unknown"}</div>
+        )}
+      </nav>
+    </aside>
   );
 };
 

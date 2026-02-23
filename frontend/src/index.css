@@ -1,8 +1,3 @@
-/* =========================
-   LAYOUT (DARK MODE READY)
-========================= */
-
-/* Full App */
 .app-container {
   display: flex;
   height: 100vh;
@@ -65,16 +60,10 @@
   border: 1px solid var(--border);
 }
 
-/* Layout wrapper */
 .layout {
   display: flex;
 }
 
-/* =========================
-   THEME VARIABLES
-========================= */
-
-/* LIGHT */
 :root {
   --bg: #f3f4f6;
   --panel: #ffffff;
@@ -88,7 +77,6 @@
   --shadow-soft: 0px 4px 20px rgba(0, 0, 0, 0.08);
 }
 
-/* DARK */
 [data-theme="dark"] {
   --bg: #0b1220;
   --panel: #111a2e;

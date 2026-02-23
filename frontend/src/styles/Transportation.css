@@ -30,14 +30,13 @@
 }
 
 .print-btn:hover {
-  background-color: #1e8449;   /* darker green */
+  background-color: #1e8449;
   transform: translateY(-2px);
 }
 
-/* Animation when clicked */
 .print-btn.clicked {
-  transform: scale(0.95);   /* button “press” effect */
-  background-color: #2ecc71; /* lighter green flash */
+  transform: scale(0.95);
+  background-color: #2ecc71;
   box-shadow: 0 1px 3px rgba(0,0,0,0.2);
 }
 
@@ -70,17 +69,15 @@
 }
 
 .transportation-table th {
-  background-color: #c9d1fe;  /* Light gray like Excel headers */
+  background-color: #c9d1fe;
   font-weight: bold;
   text-align: center;
   vertical-align: middle;
 }
 
 .transportation-table tbody tr:nth-child(even) {
-  background-color: #f2f2f2;  /* Alternate row colors */
+  background-color: #f2f2f2;
 }
-
-/* Print */
 
 @media print {
   body {
@@ -89,7 +86,7 @@
 
   .back-btn,
   .print-btn {
-    display: none; /* hide buttons when printing */
+    display: none;
   }
 }
 
@@ -105,15 +102,293 @@
   color: #333;
 }
 
-/* Branch Info */
 .branch-info p {
   margin: 3px 0;
   font-weight: bold;
 }
 
 .totals-row {
-  background-color: #fff3cd; /* light yellow */
+  background-color: #fff3cd;
   font-weight: bold;
 }
 
 
+/* ===============================
+   TRANSPORTATION (SaaS + Dark Mode)
+================================= */
+
+.transpo-page {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* Header */
+.transpo-page-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.transpo-title {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 900;
+  color: var(--text);
+}
+
+.transpo-subtitle {
+  margin: 6px 0 0;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--muted);
+}
+
+.transpo-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+/* Buttons */
+.btn-primary {
+  background: var(--primary);
+  color: white;
+  border: none;
+  padding: 10px 16px;
+  border-radius: 12px;
+  font-weight: 900;
+  cursor: pointer;
+}
+.btn-primary:hover {
+  background: var(--primary-hover);
+}
+
+.btn-secondary {
+  background: var(--panel-2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  padding: 10px 16px;
+  border-radius: 12px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+/* Card */
+.transpo-card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  box-shadow: var(--shadow-soft);
+  overflow: hidden;
+  min-width: 0;
+}
+
+.transpo-card-head {
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.transpo-card-title {
+  font-size: 13px;
+  font-weight: 900;
+  color: var(--text-2);
+}
+
+/* Month input */
+.transpo-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.month-label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 900;
+  color: var(--muted);
+}
+
+.month-input {
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--text);
+  font-weight: 800;
+}
+
+.month-input:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--primary) 20%, transparent);
+}
+
+/* Make month picker icon readable in dark */
+[data-theme="dark"] .month-input {
+  color-scheme: dark;
+}
+
+/* Loading/Error */
+.transpo-loading,
+.transpo-error {
+  padding: 18px;
+  font-weight: 800;
+  color: var(--muted);
+}
+.transpo-error {
+  color: #ef4444;
+}
+
+/* Table wrapper */
+.transpo-table-wrap {
+  width: 100%;
+  overflow: auto;
+  max-height: 72vh;
+}
+
+/* Table */
+.transpo-table {
+  width: 100%;
+  min-width: 1250px;
+  border-collapse: collapse;
+  table-layout: auto;
+  color: var(--text);
+}
+
+.transpo-table th,
+.transpo-table td {
+  border-bottom: 1px solid var(--border);
+  padding: 10px 10px;
+  font-size: 12px;
+  white-space: nowrap;
+  text-align: center;
+}
+
+/* Sticky 2-row header */
+.transpo-table thead th {
+  position: sticky;
+  background: var(--table-header);
+  color: #fff;
+  z-index: 2;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.transpo-table thead tr:first-child th {
+  top: 0;
+  z-index: 3;
+}
+
+.transpo-table thead tr:nth-child(2) th {
+  top: 38px;
+  z-index: 2;
+}
+
+/* zebra + hover */
+.transpo-table tbody tr:nth-child(even) td {
+  background: color-mix(in srgb, var(--panel) 88%, var(--panel-2));
+}
+
+.transpo-table tbody tr:hover td {
+  background: var(--row-hover);
+}
+
+/* helpers */
+.mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+}
+
+.td-strong {
+  font-weight: 1000;
+}
+
+.td-left {
+  text-align: left !important;
+}
+
+.pos {
+  color: #10b981;
+}
+
+.neg {
+  color: #ef4444;
+}
+
+/* totals */
+.totals-row td {
+  background: color-mix(in srgb, var(--panel-2) 85%, transparent);
+  border-top: 2px solid color-mix(in srgb, var(--border) 70%, transparent);
+  font-weight: 1000;
+}
+
+.totals-label {
+  text-align: right !important;
+}
+
+/* empty */
+.empty-state {
+  padding: 22px;
+  text-align: center;
+  color: var(--muted);
+  font-weight: 900;
+}
+
+/* hint */
+.transpo-hint {
+  padding: 10px 14px;
+  border-top: 1px solid var(--border);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--muted);
+}
+
+/* Print */
+@media print {
+  body {
+    print-color-adjust: exact;
+  }
+
+  .transpo-actions,
+  .transpo-hint {
+    display: none !important;
+  }
+
+  @page {
+    size: landscape;
+    margin: 10mm;
+  }
+
+  .transpo-table-wrap {
+    overflow: visible !important;
+    max-height: none !important;
+  }
+
+  .transpo-table {
+    min-width: 100% !important;
+  }
+
+  .transpo-table th,
+  .transpo-table td {
+    padding: 4px 5px;
+    font-size: 10px;
+  }
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .transpo-page-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}

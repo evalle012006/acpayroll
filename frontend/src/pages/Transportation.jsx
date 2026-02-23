@@ -1,9 +1,12 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import axios from "axios";
 import "../styles/Transportation.css";
+import api from "../api/axiosClient";
 
-const API = "http://localhost:5000";
+const toNum = (v) => {
+  const n = Number(v ?? 0);
+  return Number.isFinite(n) ? n : 0;
+};
 
 function Transportation() {
   const { id } = useParams();
@@ -13,45 +16,44 @@ function Transportation() {
   const [staff, setStaff] = useState([]);
   const [loading, setLoading] = useState(true);
   const [month, setMonth] = useState("");
-  const [error, setError] = useState(null);
+  const [error, setError] = useState("");
 
-  const toNum = (v) => Number(v ?? 0);
   const money = (v) => toNum(v).toLocaleString();
 
   useEffect(() => {
-    const fetchData = async () => {
+    const run = async () => {
       if (!id) {
-        setError("No branch ID provided");
+        setError("No branch ID provided.");
         setLoading(false);
         return;
       }
 
       setLoading(true);
-      setError(null);
+      setError("");
 
       try {
-        const branchRes = await axios.get(`${API}/branches/${Number(id)}`);
-        if (!branchRes.data) throw new Error("Branch not found");
-        setBranch(branchRes.data);
+        const branchRes = await api.get(`/branches/${Number(id)}`);
+        const b = branchRes.data;
+        setBranch(b);
 
-        const staffRes = await axios.get(
-          `${API}/staff/area/${encodeURIComponent(branchRes.data.area)}`,
-          { params: { month } }
-        );
-        setStaff(staffRes.data || []);
+        const staffRes = await api.get(`/staff/area/${encodeURIComponent(b.area)}`, {
+          params: { month: month || undefined },
+        });
+
+        setStaff(Array.isArray(staffRes.data) ? staffRes.data : []);
       } catch (err) {
-        console.error("Error fetching data:", err);
-        if (err.response?.status === 404) setError("Branch not found");
-        else setError("Error fetching data from server");
+        const status = err?.response?.status;
+        if (status === 404) setError("Branch not found.");
+        else setError(err?.response?.data?.message || "Error fetching data from server.");
       } finally {
         setLoading(false);
       }
     };
 
-    fetchData();
+    run();
   }, [id, month]);
 
-  const payrollRows = useMemo(() => {
+  const rows = useMemo(() => {
     return (staff || []).map((s) => {
       const postage = toNum(s.postage);
       const transportation = toNum(s.transportation);
@@ -62,26 +64,27 @@ function Transportation() {
       const motorcycle = toNum(s.motorcycle_loan);
       const other = toNum(s.other_deduction);
 
-      const totalAllowance =
-        postage + transportation + additionalTarget + repairing + additionalMonitoring;
-
+      const totalAllowance = postage + transportation + additionalTarget + repairing + additionalMonitoring;
       const totalDeduction = motorcycle + other;
       const netPay = totalAllowance - totalDeduction;
 
       return {
         id: s.id,
-        name: s.fullname,
+        fullname: s.fullname,
         position: s.position,
         regularization_date: s.regularization_date,
+
         postage,
         transportation,
         additionalTarget,
         repairing,
         additionalMonitoring,
         totalAllowance,
+
         motorcycle,
         other,
         totalDeduction,
+
         netPay,
         netPay10: netPay / 2,
         netPay25: netPay / 2,
@@ -90,7 +93,7 @@ function Transportation() {
   }, [staff]);
 
   const totals = useMemo(() => {
-    return payrollRows.reduce(
+    return rows.reduce(
       (t, r) => {
         t.postage += r.postage;
         t.transportation += r.transportation;
@@ -121,120 +124,77 @@ function Transportation() {
         netPay25: 0,
       }
     );
-  }, [payrollRows]);
+  }, [rows]);
 
-  if (loading) return <p>Loading report...</p>;
-  if (error) return <p style={{ color: "red" }}>{error}</p>;
+  if (loading) {
+    return (
+      <div className="transpo-page">
+        <div className="transpo-card">
+          <div className="transpo-loading">Loading report…</div>
+        </div>
+      </div>
+    );
+  }
 
-  const exportToExcel = () => {
-  const data = filteredRows.map((r) => ({
-    ID: r.id,
-    "Full Name": r.fullname,
-    Position: r.position,
-    "Regularization Date": r.regularization_date
-      ? String(r.regularization_date).split("T")[0]
-      : "",
-    CBU: toNum(r.cbu),
-    Cashbond: toNum(r.cashbond),
-    "Salary Advance": toNum(r.salary_advance),
-    "Motorcycle Loan": toNum(r.motorcycle_loan),
-    "Special Advance": toNum(r.special_advance),
-    "Cash Advance": toNum(r.cash_advance),
-    "Other Receivable": toNum(r.other_receivable),
-    "Staff Accounts Payable": toNum(r.staff_accounts_payable),
-  }));
-
-  data.push({
-    ID: "",
-    "Full Name": "TOTAL",
-    Position: "",
-    "Regularization Date": "",
-    CBU: totals.cbu,
-    Cashbond: totals.cashbond,
-    "Salary Advance": totals.salary_advance,
-    "Motorcycle Loan": totals.motorcycle_loan,
-    "Special Advance": totals.special_advance,
-    "Cash Advance": totals.cash_advance,
-    "Other Receivable": totals.other_receivable,
-    "Staff Accounts Payable": totals.staff_accounts_payable,
-  });
-
-  const worksheet = XLSX.utils.json_to_sheet(data);
-  const workbook = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(workbook, worksheet, "ScheduleBalances");
-
-  const fileName = selectedBranch
-    ? `ScheduleBalances_Branch_${selectedBranch}.xlsx`
-    : "ScheduleBalances_AllBranches.xlsx";
-
-  XLSX.writeFile(workbook, fileName);
-};
+  if (error) {
+    return (
+      <div className="transpo-page">
+        <div className="transpo-card">
+          <div className="transpo-error">{error}</div>
+          <button className="btn-secondary" onClick={() => navigate(-1)} type="button">
+            Back
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="report-container">
-      <div className="top-actions">
-        <button onClick={() => navigate(-1)} className="back-btn">
-          ⬅ Back
-        </button>
-        <button className="print-btn" onClick={() => window.print()}>
-          🖨 Print
-        </button>
-      </div>
-
-      <h2 style={{ textAlign: "left" }}>
-        Transportation Report {branch ? `- ${branch.name}` : ""}
-      </h2>
-
-      {month && (
-        <p style={{ textAlign: "left", fontStyle: "italic" }}>
-          Payroll Month: {month}
-        </p>
-      )}
-
-      {/* Branch Info */}
-      {branch && (
-        <div className="branch-info">
-          <p>
-            <strong>Branch Code:</strong> {branch.code}
-          </p>
-          <p>
-            <strong>Branch Name:</strong> {branch.name}
-          </p>
-          <p>
-            <strong>Area:</strong> {branch.area}
+    <div className="transpo-page">
+      <div className="transpo-page-header">
+        <div>
+          <h2 className="transpo-title">Transportation Report</h2>
+          <p className="transpo-subtitle">
+            {branch ? `${branch.code} • ${branch.name} • ${branch.area}` : ""}
           </p>
         </div>
-      )}
 
-      {/* Month Picker */}
-      <div style={{ margin: "15px 0" }}>
-        <label>
-          <strong>Select Month: </strong>
-        </label>
-        <input type="month" value={month} onChange={(e) => setMonth(e.target.value)} />
+        <div className="transpo-actions">
+          <button className="btn-secondary" onClick={() => navigate(-1)} type="button">
+            ← Back
+          </button>
+          <button className="btn-primary" onClick={() => window.print()} type="button">
+            Print
+          </button>
+        </div>
       </div>
 
-      <h3 style={{ fontStyle: "italic" }}>Allowances, Deductions & Net Pay</h3>
+      <div className="transpo-card">
+        <div className="transpo-card-head">
+          <div className="transpo-card-title">Allowances, Deductions & Net Pay</div>
 
-      {payrollRows.length === 0 ? (
-        <p>No staff found for this branch area.</p>
-      ) : (
-        <div className="table-wrapper">
-          <table className="transportation-table">
+          <div className="transpo-controls">
+            <label className="month-label">
+              Payroll Month
+              <input className="month-input" type="month" value={month} onChange={(e) => setMonth(e.target.value)} />
+            </label>
+          </div>
+        </div>
+
+        <div className="transpo-table-wrap">
+          <table className="transpo-table">
             <thead>
-              {/* GROUP HEADER */}
               <tr>
                 <th rowSpan={2}>ID</th>
                 <th rowSpan={2}>Staff Name</th>
                 <th rowSpan={2}>Position</th>
                 <th rowSpan={2}>Date Regularized</th>
 
-                <th colSpan={6}>Transportations & Repairing Allowance + Incentives</th>
-                <th colSpan={3}>Staff Deductions</th>
-                <th colSpan={3}>Net Incentives & Allowances</th>
+                <th colSpan={6}>Allowances & Incentives</th>
+                <th colSpan={3}>Deductions</th>
+                <th colSpan={3}>Net Pay</th>
               </tr>
 
-              {/* SUB HEADER */}
               <tr>
                 <th>Postage</th>
                 <th>Transportation</th>
@@ -247,66 +207,71 @@ function Transportation() {
                 <th>Other</th>
                 <th>Total Deduction</th>
 
-                <th>Total Net Pay</th>  
+                <th>Total Net Pay</th>
                 <th>10th</th>
                 <th>25th</th>
               </tr>
             </thead>
 
             <tbody>
-              {payrollRows.map((r) => (
-                <tr key={r.id}>
-                  <td>{r.id}</td>
-                  <td style={{ textAlign: "left" }}>{r.name}</td>
-                  <td>{r.position}</td>
-                  <td>{r.regularization_date ? String(r.regularization_date).split("T")[0] : "-"}</td>
-
-                  <td>₱ {money(r.postage)}</td>
-                  <td>₱ {money(r.transportation)}</td>
-                  <td>₱ {money(r.additionalTarget)}</td>
-                  <td>₱ {money(r.repairing)}</td>
-                  <td>₱ {money(r.additionalMonitoring)}</td>
-                  <td style={{ fontWeight: "bold" }}>₱ {money(r.totalAllowance)}</td>
-
-                  <td>₱ {money(r.motorcycle)}</td>
-                  <td>₱ {money(r.other)}</td>
-                  <td style={{ fontWeight: "bold" }}>₱ {money(r.totalDeduction)}</td>
-
-                  <td style={{ fontWeight: "bold", color: r.netPay < 0 ? "red" : "green" }}>
-                    ₱ {money(r.netPay)}
-                  </td>
-                  <td style={{ color: r.netPay10 < 0 ? "red" : "green" }}>
-                    ₱ {money(r.netPay10)}
-                  </td>
-                  <td style={{ color: r.netPay25 < 0 ? "red" : "green" }}>
-                    ₱ {money(r.netPay25)}
+              {rows.length === 0 ? (
+                <tr>
+                  <td colSpan={16} className="empty-state">
+                    No staff found for this branch area.
                   </td>
                 </tr>
-              ))}
+              ) : (
+                rows.map((r) => (
+                  <tr key={r.id}>
+                    <td className="mono">{r.id}</td>
+                    <td className="td-strong td-left">{r.fullname}</td>
+                    <td>{r.position || "-"}</td>
+                    <td>{r.regularization_date ? String(r.regularization_date).split("T")[0] : "-"}</td>
 
-              {/* TOTALS */}
-              <tr className="totals-row">
-                <td colSpan={4} style={{ textAlign: "right", fontWeight: "bold" }}>Total</td>
+                    <td>₱ {money(r.postage)}</td>
+                    <td>₱ {money(r.transportation)}</td>
+                    <td>₱ {money(r.additionalTarget)}</td>
+                    <td>₱ {money(r.repairing)}</td>
+                    <td>₱ {money(r.additionalMonitoring)}</td>
+                    <td className="td-strong">₱ {money(r.totalAllowance)}</td>
 
-                <td>₱ {money(totals.postage)}</td>
-                <td>₱ {money(totals.transportation)}</td>
-                <td>₱ {money(totals.additionalTarget)}</td>
-                <td>₱ {money(totals.repairing)}</td>
-                <td>₱ {money(totals.additionalMonitoring)}</td>
-                <td style={{ fontWeight: "bold" }}>₱ {money(totals.totalAllowance)}</td>
+                    <td>₱ {money(r.motorcycle)}</td>
+                    <td>₱ {money(r.other)}</td>
+                    <td className="td-strong">₱ {money(r.totalDeduction)}</td>
 
-                <td>₱ {money(totals.motorcycle)}</td>
-                <td>₱ {money(totals.other)}</td>
-                <td style={{ fontWeight: "bold" }}>₱ {money(totals.totalDeduction)}</td>
+                    <td className={`td-strong ${r.netPay < 0 ? "neg" : "pos"}`}>₱ {money(r.netPay)}</td>
+                    <td className={`${r.netPay10 < 0 ? "neg" : "pos"}`}>₱ {money(r.netPay10)}</td>
+                    <td className={`${r.netPay25 < 0 ? "neg" : "pos"}`}>₱ {money(r.netPay25)}</td>
+                  </tr>
+                ))
+              )}
 
-                <td style={{ fontWeight: "bold" }}>₱ {money(totals.netPay)}</td>
-                <td style={{ fontWeight: "bold" }}>₱ {money(totals.netPay10)}</td>
-                <td style={{ fontWeight: "bold" }}>₱ {money(totals.netPay25)}</td>
-              </tr>
+              {rows.length > 0 && (
+                <tr className="totals-row">
+                  <td colSpan={4} className="totals-label">Total</td>
+
+                  <td>₱ {money(totals.postage)}</td>
+                  <td>₱ {money(totals.transportation)}</td>
+                  <td>₱ {money(totals.additionalTarget)}</td>
+                  <td>₱ {money(totals.repairing)}</td>
+                  <td>₱ {money(totals.additionalMonitoring)}</td>
+                  <td className="td-strong">₱ {money(totals.totalAllowance)}</td>
+
+                  <td>₱ {money(totals.motorcycle)}</td>
+                  <td>₱ {money(totals.other)}</td>
+                  <td className="td-strong">₱ {money(totals.totalDeduction)}</td>
+
+                  <td className="td-strong">₱ {money(totals.netPay)}</td>
+                  <td className="td-strong">₱ {money(totals.netPay10)}</td>
+                  <td className="td-strong">₱ {money(totals.netPay25)}</td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
-      )}
+
+        <div className="transpo-hint">Tip: scroll horizontally to view all columns.</div>
+      </div>
     </div>
   );
 }

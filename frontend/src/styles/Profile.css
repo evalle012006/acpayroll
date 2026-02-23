@@ -31,3 +31,142 @@
   justify-content: center;
   margin: 0 auto 15px auto;
 }
+
+.profile-page{
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.profile-header{
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+.profile-title{
+  margin: 0;
+  font-size: 22px;
+  font-weight: 900;
+  color: var(--text);
+}
+
+.profile-top{
+  display: flex;
+  gap: 16px;
+  align-items: center;
+}
+
+.profile-subtitle{
+  margin: 6px 0 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.avatar{
+  width: 92px;
+  height: 92px;
+  border-radius: 18px;
+  border: 1px solid var(--border);
+  background: var(--panel-2, color-mix(in srgb, var(--panel) 85%, black));
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+}
+
+.avatar-fallback{
+  width: 100%;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  font-size: 34px;
+  font-weight: 900;
+  color: white;
+  background: linear-gradient(135deg, #4f46e5, #2563eb);
+}
+
+.profile-meta{
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.profile-name{
+  font-size: 16px;
+  font-weight: 900;
+  color: var(--text);
+}
+
+.avatar img{
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.profile-hint{
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  margin-top: 6px;
+}
+
+.profile-hint{
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  margin-top: 6px;
+}
+
+.profile-actions{
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+.file-btn input{
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+/* Dark mode: make date/file controls consistent */
+[data-theme="dark"] .profile-card{
+  background: var(--panel);
+}
+
+.btn-primary,
+.btn-secondary{
+  border: none;
+  cursor: pointer;
+  border-radius: 12px;
+  padding: 10px 14px;
+  font-weight: 800;
+  font-size: 13px;
+  transition: 0.15s ease;
+}
+
+.file-btn{
+  position: relative;
+  overflow: hidden;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.file-btn input{
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+/* Dark mode: make date/file controls consistent */
+[data-theme="dark"] .profile-card{
+  background: var(--panel);
+}

@@ -1,19 +1,32 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { FaBars, FaUser, FaCog, FaSignOutAlt, FaMoon, FaSun } from "react-icons/fa";
 import "../styles/Header.css";
 
-const Header = ({ toggleSidebar }) => {
-  const [open, setOpen] = useState(false);
-  const [avatar, setAvatar] = useState(localStorage.getItem("profileImage"));
+const readUser = () => {
+  try {
+    return JSON.parse(localStorage.getItem("user") || "null");
+  } catch {
+    return null;
+  }
+};
 
-  // ✅ Theme state (light/dark)
+const readAvatar = () => localStorage.getItem("profileImage") || "";
+
+const emitAuthChanged = () => window.dispatchEvent(new Event("auth-changed"));
+
+const Header = ({ toggleSidebar }) => {
+  const navigate = useNavigate();
+  const dropdownRef = useRef(null);
+
+  const [open, setOpen] = useState(false);
+  const [user, setUser] = useState(() => readUser());
+  const [avatar, setAvatar] = useState(() => readAvatar());
   const [theme, setTheme] = useState(() => localStorage.getItem("theme") || "light");
 
-  const dropdownRef = useRef(null);
-  const navigate = useNavigate();
+  const displayName = user?.username || "User";
+  const displayRole = user?.role || "Unknown";
 
-  // ✅ Apply theme to <html data-theme="...">
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme);
     localStorage.setItem("theme", theme);
@@ -25,20 +38,36 @@ const Header = ({ toggleSidebar }) => {
         setOpen(false);
       }
     };
+
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  // Update avatar when changed
   useEffect(() => {
-    const image = localStorage.getItem("profileImage");
-    setAvatar(image);
+    const onAuthChanged = () => {
+      setUser(readUser());
+      setAvatar(readAvatar());
+    };
+
+    window.addEventListener("auth-changed", onAuthChanged);
+    window.addEventListener("storage", onAuthChanged);
+
+    return () => {
+      window.removeEventListener("auth-changed", onAuthChanged);
+      window.removeEventListener("storage", onAuthChanged);
+    };
   }, []);
 
-  const handleLogout = () => {
+  const handleLogout = useCallback(() => {
+    setOpen(false);
+
+    localStorage.removeItem("token");
     localStorage.removeItem("user");
-    navigate("/login");
-  };
+
+    emitAuthChanged();
+
+    navigate("/login", { replace: true });
+  }, [navigate]);
 
   const toggleTheme = () => {
     setTheme((prev) => (prev === "light" ? "dark" : "light"));
@@ -48,38 +77,35 @@ const Header = ({ toggleSidebar }) => {
     <div className="header">
       <FaBars className="menu-toggle" onClick={toggleSidebar} />
 
-      {/* ✅ Right side */}
       <div className="header-right">
-        {/* ✅ Dark mode button */}
-        <button className="theme-btn" onClick={toggleTheme} title="Toggle theme">
+        <button className="theme-btn" onClick={toggleTheme} type="button">
           {theme === "light" ? <FaMoon /> : <FaSun />}
-          <span className="theme-text">{theme === "light" ? "Dark" : "Light"}</span>
+          <span className="theme-text">
+            {theme === "light" ? "Dark" : "Light"}
+          </span>
         </button>
 
         <div className="admin-profile" ref={dropdownRef}>
-          <div className="admin-info" onClick={() => setOpen(!open)}>
-            <span>Admin</span>
+          <div className="admin-info" onClick={() => setOpen((v) => !v)} role="button" tabIndex={0}>
+            <div className="admin-label">
+              <div className="admin-name">{displayName}</div>
+              <div className="admin-role">{displayRole}</div>
+            </div>
 
             {avatar ? (
               <img src={avatar} alt="profile" className="avatar-img" />
             ) : (
-              <div className="avatar-placeholder">A</div>
+              <div className="avatar-placeholder">
+                {String(displayName).slice(0, 1).toUpperCase()}
+              </div>
             )}
           </div>
 
           {open && (
             <div className="dropdown">
-              <div className="dropdown-item" onClick={() => navigate("/profile")}>
-                <FaUser /> Profile
-              </div>
-
-              <div className="dropdown-item" onClick={() => navigate("/settings")}>
-                <FaCog /> Settings
-              </div>
-
-              <div className="dropdown-item logout" onClick={handleLogout}>
-                <FaSignOutAlt /> Logout
-              </div>
+              <div className="dropdown-item" onClick={() => {setOpen(false); navigate("/profile");}}><FaUser /> Profile</div>
+              <div className="dropdown-item" onClick={() => {setOpen(false); navigate("/settings");}}><FaCog /> Settings</div>
+              <div className="dropdown-item logout" onClick={handleLogout}><FaSignOutAlt /> Logout</div>
             </div>
           )}
         </div>

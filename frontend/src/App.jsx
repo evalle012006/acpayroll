@@ -1,5 +1,5 @@
-import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
-import { useState } from "react";
+import { BrowserRouter as Router, Routes, Route, Navigate, useNavigate } from "react-router-dom";
+import { useEffect, useState } from "react";
 
 import Sidebar from "./components/Sidebar";
 import Header from "./components/Header";
@@ -12,57 +12,106 @@ import Branches from "./pages/Branches";
 import Salary from "./pages/Salary";
 import ScheduleBalances from "./pages/ScheduleBalances";
 import SystemUpdate from "./pages/SystemUpdate";
-import LeaveApproval from "./pages/LeaveApproval";
-import LoanApproval from "./pages/LoanApproval";
+import Users from "./pages/Users";
 import Approval from "./pages/Approval";
 import Login from "./pages/Login";
 import Profile from "./pages/Profile";
 
 import "./styles/layout.css";
 
-function App() {
-  const [collapsed, setCollapsed] = useState(false);
+const readUser = () => {
+  try {
+    const raw = localStorage.getItem("user");
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+};
 
-  const user = JSON.parse(localStorage.getItem("user"));
+const hasAuth = () => {
+  const token = localStorage.getItem("token");
+  const user = localStorage.getItem("user");
+  return !!token && !!user;
+};
+
+const roleLower = (u) => String(u?.role || "").trim().toLowerCase();
+
+const ProtectedRoute = ({ allowedRoles, children }) => {
+  if (!hasAuth()) return <Navigate to="/login" replace />;
+
+  if (allowedRoles?.length) {
+    const u = readUser();
+    const uRole = roleLower(u);
+    const allowed = allowedRoles.map((r) => String(r).trim().toLowerCase());
+    if (!allowed.includes(uRole)) return <Navigate to="/dashboard" replace />;
+  }
+
+  return children;
+};
+
+function AppShell() {
+  const [collapsed, setCollapsed] = useState(false);
+  const [authTick, setAuthTick] = useState(0);
+  const navigate = useNavigate();
+
+  const isLoggedIn = hasAuth();
+
+  useEffect(() => {
+    const onAuthChanged = () => {
+      setAuthTick((t) => t + 1);
+
+      if (!hasAuth()) navigate("/login", { replace: true });
+    };
+
+    window.addEventListener("auth-changed", onAuthChanged);
+    window.addEventListener("storage", onAuthChanged);
+
+    return () => {
+      window.removeEventListener("auth-changed", onAuthChanged);
+      window.removeEventListener("storage", onAuthChanged);
+    };
+  }, [navigate]);
+
+  const _ = authTick;
 
   return (
-    <Router>
-      <div className={`layout ${collapsed ? "collapsed" : ""}`}>
-        {user && <Sidebar collapsed={collapsed} />}
-        <div className="main-content">
-          {user && <Header toggleSidebar={() => setCollapsed(!collapsed)} />}
+    <div className={`layout ${collapsed ? "collapsed" : ""}`}>
+      {isLoggedIn && <Sidebar collapsed={collapsed} />}
 
-          <div className="page-content">
-            <Routes>
-              {/* ✅ LOGIN (PUBLIC) */}
-              <Route
-                path="/login"
-                element={!user ? <Login /> : <Navigate to="/dashboard" />}
-              />
+      <div className="main-content">
+        {isLoggedIn && <Header toggleSidebar={() => setCollapsed((p) => !p)} />}
 
-              {/* ✅ PROTECTED */}
-              <Route path="/dashboard" element={user ? <Dashboard /> : <Navigate to="/login" />} />
-              <Route path="/staff" element={user ? <Staff /> : <Navigate to="/login" />} />
-              <Route path="/transportation/:id" element={user ? <Transportation /> : <Navigate to="/login" />} />
-              <Route path="/payroll" element={user ? <Payroll /> : <Navigate to="/login" />} />
-              <Route path="/payroll/:branchId" element={user ? <Payroll /> : <Navigate to="/login" />} />
-              <Route path="/salary" element={user ? <Salary /> : <Navigate to="/login" />} />
-              <Route path="/schedule-balances" element={user ? <ScheduleBalances /> : <Navigate to="/login" />} />
-              <Route path="/branches" element={user ? <Branches /> : <Navigate to="/login" />} />
-              <Route path="/leave-approval" element={user ? <LeaveApproval /> : <Navigate to="/login" />} />
-              <Route path="/loan-approval" element={user ? <LoanApproval /> : <Navigate to="/login" />} />
-              <Route path="/approval" element={user ? <Approval /> : <Navigate to="/login" />} />
-              <Route path="/system-update" element={user ? <SystemUpdate /> : <Navigate to="/login" />} />
-              <Route path="/profile" element={<Profile />} />
-              <Route path="/settings" element={<div>Settings Page</div>} />
-              {/* ✅ DEFAULT */}
-              <Route path="*" element={<Navigate to={user ? "/dashboard" : "/login"} />} />
-            </Routes>
-          </div>
+        <div className="page-content">
+          <Routes>
+            <Route path="/" element={<Navigate to={hasAuth() ? "/dashboard" : "/login"} replace />} />
+            <Route path="/login" element={hasAuth() ? <Navigate to="/dashboard" replace /> : <Login />} />
+            <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>}/>
+            <Route path="/staff" element={<ProtectedRoute><Staff /></ProtectedRoute>}/>
+            <Route path="/salary" element={<ProtectedRoute><Salary /></ProtectedRoute>}/>
+            <Route path="/schedule-balances" element={<ProtectedRoute><ScheduleBalances /></ProtectedRoute>}/>
+            <Route path="/approval" element={<ProtectedRoute><Approval /></ProtectedRoute>}/>
+            <Route path="/branches" element={<ProtectedRoute><Branches /></ProtectedRoute>}/>
+            <Route path="/system-update" element={<ProtectedRoute><SystemUpdate /></ProtectedRoute>}/>
+            <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>}/>
+            <Route path="/settings" element={<ProtectedRoute><div>Settings Page</div></ProtectedRoute>}/>
+            <Route path="/transportation/:id" element={<ProtectedRoute><Transportation /></ProtectedRoute>}/>
+            <Route path="/payroll" element={<ProtectedRoute><Payroll /></ProtectedRoute>}/>
+            <Route path="/payroll/:branchId" element={<ProtectedRoute><Payroll /></ProtectedRoute>}/>
+
+            <Route path="/users" element={<ProtectedRoute allowedRoles={["admin"]}><Users /></ProtectedRoute>}/>
+
+            <Route path="*" element={<Navigate to={hasAuth() ? "/dashboard" : "/login"} replace />} />
+          </Routes>
         </div>
       </div>
-    </Router>
+    </div>
   );
 }
 
-export default App;
+export default function App() {
+  return (
+    <Router>
+      <AppShell />
+    </Router>
+  );
+}
