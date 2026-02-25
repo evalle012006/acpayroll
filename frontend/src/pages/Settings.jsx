@@ -46,13 +46,11 @@ const Settings = () => {
     setMsg("");
     if (!file) return;
 
-    // basic type check
     if (!file.type.startsWith("image/")) {
       setMsg("Please select an image file.");
       return;
     }
 
-    // Read as base64 and store in localStorage
     const reader = new FileReader();
     reader.onload = () => {
       const dataUrl = String(reader.result || "");
@@ -86,7 +84,6 @@ const Settings = () => {
 
       {msg ? <div className="settings-msg">{msg}</div> : null}
 
-      {/* THEME */}
       <div className="card settings-card">
         <div className="settings-card-title">Appearance</div>
 
@@ -115,7 +112,6 @@ const Settings = () => {
         </div>
       </div>
 
-      {/* PROFILE */}
       <div className="card settings-card">
         <div className="settings-card-title">Profile</div>
 

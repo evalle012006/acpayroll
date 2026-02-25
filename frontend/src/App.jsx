@@ -26,7 +26,6 @@ import Departments from "./pages/Departments";
 import Bonus from "./pages/Bonus";
 import Settings from "./pages/Settings";
 
-
 import "./styles/layout.css";
 
 const readUser = () => {
@@ -105,7 +104,7 @@ function AppShell() {
             <Route path="/branches" element={<ProtectedRoute><Branches /></ProtectedRoute>}/>
             <Route path="/system-update" element={<ProtectedRoute><SystemUpdate /></ProtectedRoute>}/>
             <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>}/>
-            <Route path="/settings" element={<ProtectedRoute><div>Settings Page</div></ProtectedRoute>}/>
+            <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
             <Route path="/transportation/:id" element={<ProtectedRoute><Transportation /></ProtectedRoute>}/>
             <Route path="/payroll" element={<ProtectedRoute><Payroll /></ProtectedRoute>}/>
             <Route path="/payroll/:branchId" element={<ProtectedRoute><Payroll /></ProtectedRoute>}/>
