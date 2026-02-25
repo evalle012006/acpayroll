@@ -8,14 +8,16 @@ const toNum = (v) => {
   return Number.isFinite(n) ? n : 0;
 };
 
+const norm = (v) => String(v ?? "").trim().toLowerCase();
+
 function Transportation() {
-  const { id } = useParams();
+  const { id } = useParams(); // branch id from route: /transportation/:id
   const navigate = useNavigate();
 
   const [branch, setBranch] = useState(null);
   const [staff, setStaff] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [month, setMonth] = useState("");
+  const [month, setMonth] = useState(""); // UI only (backend not filtering yet)
   const [error, setError] = useState("");
 
   const money = (v) => toNum(v).toLocaleString();
@@ -32,18 +34,36 @@ function Transportation() {
       setError("");
 
       try {
-        const branchRes = await api.get(`/branches/${Number(id)}`);
-        const b = branchRes.data;
+        // 1) get branches list then pick the branch
+        const branchesRes = await api.get("/branches");
+        const branches = Array.isArray(branchesRes.data) ? branchesRes.data : [];
+        const b = branches.find((x) => Number(x.id) === Number(id));
+
+        if (!b) {
+          setError("Branch not found.");
+          setLoading(false);
+          return;
+        }
+
         setBranch(b);
 
-        const staffRes = await api.get(`/staff/area/${encodeURIComponent(b.area)}`, {
-          params: { month: month || undefined },
-        });
+        // 2) get staff list then filter by branch_id (preferred), fallback by area
+        const staffRes = await api.get("/staff");
+        const all = Array.isArray(staffRes.data) ? staffRes.data : [];
 
-        setStaff(Array.isArray(staffRes.data) ? staffRes.data : []);
+        const byBranchId = all.filter((s) => Number(s.branch_id) === Number(b.id));
+        const filtered =
+          byBranchId.length > 0
+            ? byBranchId
+            : all.filter((s) => norm(s.area) === norm(b.area));
+
+        // month currently not supported by backend; if you later support it, filter here too.
+        setStaff(filtered);
       } catch (err) {
         const status = err?.response?.status;
         if (status === 404) setError("Branch not found.");
+        else if (status === 401) setError("Session expired. Please login again.");
+        else if (status === 403) setError("Access denied.");
         else setError(err?.response?.data?.message || "Error fetching data from server.");
       } finally {
         setLoading(false);
@@ -198,7 +218,7 @@ function Transportation() {
               <tr>
                 <th>Postage</th>
                 <th>Transportation</th>
-                <th>Target</th>
+                <th>Target / 1200 / Less Excuses </th>
                 <th>Repairing</th>
                 <th>Monitoring</th>
                 <th>Total Allowance</th>
@@ -217,7 +237,7 @@ function Transportation() {
               {rows.length === 0 ? (
                 <tr>
                   <td colSpan={16} className="empty-state">
-                    No staff found for this branch area.
+                    No staff found for this branch.
                   </td>
                 </tr>
               ) : (

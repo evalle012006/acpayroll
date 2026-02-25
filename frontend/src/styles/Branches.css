@@ -453,3 +453,8 @@
     grid-template-columns: 1fr;
   }
 }
+
+.btn-bonus {
+  background: #8b5cf6; /* violet */
+  color: white;
+}

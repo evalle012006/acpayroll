@@ -24,8 +24,14 @@ const readUser = () => {
 
 const Approval = () => {
   const user = useMemo(() => readUser(), []);
+
   const [leaveRequests, setLeaveRequests] = useState([]);
   const [loanRequests, setLoanRequests] = useState([]);
+
+  // ✅ ADDED: transfer states
+  const [transferOrders, setTransferOrders] = useState([]);
+  const [loadingTransfer, setLoadingTransfer] = useState(false);
+  const [showTransferModal, setShowTransferModal] = useState(false);
 
   const [selectedLeaveType, setSelectedLeaveType] = useState("All");
   const [selectedLoanType, setSelectedLoanType] = useState("All");
@@ -42,6 +48,9 @@ const Approval = () => {
 
   const [loadingLeave, setLoadingLeave] = useState(false);
   const [loadingLoan, setLoadingLoan] = useState(false);
+
+  // ✅ ADDED: admin check for transfer approvals
+  const isAdmin = String(user?.role || "").trim().toLowerCase() === "admin";
 
   const logout = useCallback(() => {
     localStorage.removeItem("token");
@@ -76,6 +85,12 @@ const Approval = () => {
     setLoanRequests(data);
   }, [safeGet]);
 
+  // ✅ ADDED: fetch transfer orders
+  const fetchTransfer = useCallback(async () => {
+    const data = await safeGet("/transfer-staff-orders", setLoadingTransfer);
+    setTransferOrders(data);
+  }, [safeGet]);
+
   useEffect(() => {
     const token = localStorage.getItem("token");
     if (!user || !token) {
@@ -84,16 +99,23 @@ const Approval = () => {
     }
     fetchLeave();
     fetchLoan();
-  }, [user, fetchLeave, fetchLoan]);
+
+    // ✅ ADDED
+    fetchTransfer();
+  }, [user, fetchLeave, fetchLoan, fetchTransfer]);
 
   useEffect(() => {
-    const isOpen = showLeaveModal || showLoanModal || confirmModal.show;
+    const isOpen = showLeaveModal || showLoanModal || showTransferModal || confirmModal.show;
     if (!isOpen) return;
 
     const onKeyDown = (e) => {
       if (e.key === "Escape") {
         setShowLeaveModal(false);
         setShowLoanModal(false);
+
+        // ✅ ADDED
+        setShowTransferModal(false);
+
         setConfirmModal({ show: false, requestId: null, type: "", action: "" });
       }
     };
@@ -104,8 +126,11 @@ const Approval = () => {
       document.removeEventListener("keydown", onKeyDown);
       document.body.style.overflow = "";
     };
-  }, [showLeaveModal, showLoanModal, confirmModal.show]);
+  }, [showLeaveModal, showLoanModal, showTransferModal, confirmModal.show]);
 
+  // ==========================
+  // LEAVE (UNCHANGED)
+  // ==========================
   const updateLeaveStatus = async (id, status) => {
     try {
       await api.put(`/leave-requests/${id}`, { status });
@@ -118,6 +143,9 @@ const Approval = () => {
     }
   };
 
+  // ==========================
+  // LOAN (UNCHANGED)
+  // ==========================
   const updateLoanStatus = async (id, status) => {
     try {
       await api.put(`/loan-requests/${id}`, { status });
@@ -130,6 +158,39 @@ const Approval = () => {
     }
   };
 
+  // ==========================
+  // TRANSFER (ADDED)
+  // ==========================
+  const approveTransfer = async (id) => {
+    try {
+      await api.put(`/transfer-staff-orders/${id}/approve`);
+      await fetchTransfer();
+    } catch (err) {
+      const code = err?.response?.status;
+      if (code === 401) return logout();
+      if (code === 403) return alert("Access denied.");
+      alert(err?.response?.data?.message || "Failed to approve transfer order");
+    }
+  };
+
+  const rejectTransfer = async (id) => {
+    const reason = prompt("Enter rejection reason:");
+    if (!reason || !reason.trim()) return;
+
+    try {
+      await api.put(`/transfer-staff-orders/${id}/reject`, { reason: reason.trim() });
+      await fetchTransfer();
+    } catch (err) {
+      const code = err?.response?.status;
+      if (code === 401) return logout();
+      if (code === 403) return alert("Access denied.");
+      alert(err?.response?.data?.message || "Failed to reject transfer order");
+    }
+  };
+
+  // ==========================
+  // CONFIRM MODAL (UNCHANGED)
+  // ==========================
   const handleActionClick = (id, type, action) => {
     setConfirmModal({ show: true, requestId: id, type, action });
   };
@@ -155,6 +216,13 @@ const Approval = () => {
     );
   }, [loanRequests, selectedLoanType]);
 
+  // ✅ ADDED: only pending transfer
+  const pendingTransfer = useMemo(() => {
+    return (transferOrders || []).filter(
+      (o) => String(o.status || "").trim().toLowerCase() === "pending"
+    );
+  }, [transferOrders]);
+
   const badgeClass = (status) => {
     if (status === "Approved") return "badge badge-approved";
     if (status === "Rejected") return "badge badge-rejected";
@@ -171,6 +239,7 @@ const Approval = () => {
       </div>
 
       <div className="approval-grid">
+        {/* LEAVE CARD (UNCHANGED) */}
         <div className="approval-card">
           <div className="approval-card-head">
             <div>
@@ -193,6 +262,7 @@ const Approval = () => {
           </div>
         </div>
 
+        {/* LOAN CARD (UNCHANGED) */}
         <div className="approval-card">
           <div className="approval-card-head">
             <div>
@@ -214,8 +284,33 @@ const Approval = () => {
             </div>
           </div>
         </div>
+
+        {/* ✅ TRANSFER CARD (ADDED) */}
+        {isAdmin && (
+          <div className="approval-card">
+            <div className="approval-card-head">
+              <div>
+                <div className="approval-card-title">Transfer Orders</div>
+                <div className="approval-card-meta">
+                  Pending: <span className="pill">{pendingTransfer.length}</span>
+                </div>
+              </div>
+
+              <button className="btn-primary" onClick={() => setShowTransferModal(true)} type="button">
+                View
+              </button>
+            </div>
+
+            <div className="approval-card-body">
+              <div className="mini">
+                {loadingTransfer ? "Loading transfer orders…" : "Lists only pending transfer orders • Approve/Reject"}
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
+      {/* LEAVE MODAL (UNCHANGED) */}
       {showLeaveModal && (
         <div
           className="modal-overlay"
@@ -317,6 +412,7 @@ const Approval = () => {
         </div>
       )}
 
+      {/* LOAN MODAL (UNCHANGED) */}
       {showLoanModal && (
         <div
           className="modal-overlay"
@@ -424,6 +520,94 @@ const Approval = () => {
         </div>
       )}
 
+      {/* ✅ TRANSFER MODAL (ADDED) */}
+      {showTransferModal && (
+        <div
+          className="modal-overlay"
+          onMouseDown={(e) => e.target.classList.contains("modal-overlay") && setShowTransferModal(false)}
+        >
+          <div className="modal saas-modal">
+            <div className="modal-head">
+              <div>
+                <h3 className="modal-title">Transfer Orders</h3>
+                <p className="modal-subtitle">Pending transfer orders only</p>
+              </div>
+              <button className="modal-x" type="button" onClick={() => setShowTransferModal(false)}>
+                ✕
+              </button>
+            </div>
+
+            <div className="table-card">
+              <div className="table-wrap">
+                <table className="table">
+                  <thead>
+                    <tr>
+                      <th>Order No</th>
+                      <th>Employee</th>
+                      <th>From</th>
+                      <th>To</th>
+                      <th>Division</th>
+                      <th>Area</th>
+                      <th>Date Created</th>
+                      <th>Effective Date</th>
+                      <th>Status</th>
+                      <th>Action</th>
+                    </tr>
+                  </thead>
+
+                  <tbody>
+                    {pendingTransfer.length === 0 ? (
+                      <tr>
+                        <td colSpan={10} className="empty-state">
+                          No pending transfer orders.
+                        </td>
+                      </tr>
+                    ) : (
+                      pendingTransfer.map((o) => (
+                        <tr key={o.id}>
+                          <td className="td-strong">{o.order_no}</td>
+                          <td>{o.employee_name}</td>
+                          <td>
+                            {o.prev_branch_code} - {o.prev_branch_name}
+                          </td>
+                          <td>
+                            {o.to_branch_code} - {o.to_branch_name}
+                          </td>
+                          <td>{o.division}</td>
+                          <td>{o.area}</td>
+                          <td>{String(o.date_created).slice(0, 10)}</td>
+                          <td>{String(o.effective_date).slice(0, 10)}</td>
+                          <td>
+                            <span className={badgeClass(o.status)}>{o.status}</span>
+                          </td>
+                          <td>
+                            <div className="row-actions">
+                              <button className="btn-success" type="button" onClick={() => approveTransfer(o.id)}>
+                                Approve
+                              </button>
+                              <button className="btn-danger" type="button" onClick={() => rejectTransfer(o.id)}>
+                                Reject
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div className="modal-buttons">
+              <button className="btn-secondary" type="button" onClick={() => setShowTransferModal(false)}>
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* CONFIRM MODAL (UNCHANGED) */}
       {confirmModal.show && (
         <div
           className="modal-overlay"

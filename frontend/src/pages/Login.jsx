@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import api from "../api/axiosClient";
 import "../styles/Login2.css";
@@ -7,7 +7,7 @@ import { FaFacebookF, FaTiktok } from "react-icons/fa";
 
 const emitAuthChanged = () => window.dispatchEvent(new Event("auth-changed"));
 
-function Login() {
+export default function Login() {
   const navigate = useNavigate();
 
   const [username, setUsername] = useState("");
@@ -15,25 +15,35 @@ function Login() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
-  const handleLogin = async (e) => {
-    e.preventDefault();
-    setError("");
-    setLoading(true);
+  const handleLogin = useCallback(
+    async (e) => {
+      e.preventDefault();
+      if (loading) return;
 
-    try {
-      const res = await api.post("/auth/login", { username, password });
+      setError("");
+      setLoading(true);
 
-      localStorage.setItem("token", res.data.token);
-      localStorage.setItem("user", JSON.stringify(res.data.user));
-      emitAuthChanged();
+      try {
+        const res = await api.post("/auth/login", { username, password });
 
-      navigate("/dashboard", { replace: true });
-    } catch (err) {
-      setError(err?.response?.data?.message || "Server error. Try again.");
-    } finally {
-      setLoading(false);
-    }
-  };
+        localStorage.setItem("token", res.data?.token || "");
+        localStorage.setItem("user", JSON.stringify(res.data?.user || null));
+        emitAuthChanged();
+
+        navigate("/dashboard", { replace: true });
+      } catch (err) {
+        const msg =
+          err?.response?.data?.message ||
+          err?.response?.data?.error ||
+          err?.message ||
+          "Login failed.";
+        setError(msg);
+      } finally {
+        setLoading(false);
+      }
+    },
+    [username, password, navigate, loading]
+  );
 
   return (
     <div className="auth">
@@ -113,5 +123,3 @@ function Login() {
     </div>
   );
 }
-
-export default Login;

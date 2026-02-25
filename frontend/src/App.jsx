@@ -11,11 +11,21 @@ import Payroll from "./pages/Payroll";
 import Branches from "./pages/Branches";
 import Salary from "./pages/Salary";
 import ScheduleBalances from "./pages/ScheduleBalances";
+import Transactions from "./pages/Transactions";
 import SystemUpdate from "./pages/SystemUpdate";
 import Users from "./pages/Users";
 import Approval from "./pages/Approval";
 import Login from "./pages/Login";
 import Profile from "./pages/Profile";
+import TransferStaffOrder from "./pages/TransferStaffOrder";
+import PromotionOrder from "./pages/PromotionOrder";
+import DemotionOrder from "./pages/DemotionOrder";
+import SuspensionOrder from "./pages/SuspensionOrder";
+import StaffInformation from "./pages/StaffInformation";
+import Departments from "./pages/Departments";
+import Bonus from "./pages/Bonus";
+import Settings from "./pages/Settings";
+
 
 import "./styles/layout.css";
 
@@ -87,6 +97,8 @@ function AppShell() {
             <Route path="/login" element={hasAuth() ? <Navigate to="/dashboard" replace /> : <Login />} />
             <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>}/>
             <Route path="/staff" element={<ProtectedRoute><Staff /></ProtectedRoute>}/>
+            <Route path="/staff-information" element={<ProtectedRoute allowedRoles={["admin", "branch manager"]}><StaffInformation /></ProtectedRoute>}/>
+            <Route path="/departments" element={<ProtectedRoute allowedRoles={["admin", "branch manager"]}><Departments /></ProtectedRoute>}/>
             <Route path="/salary" element={<ProtectedRoute><Salary /></ProtectedRoute>}/>
             <Route path="/schedule-balances" element={<ProtectedRoute><ScheduleBalances /></ProtectedRoute>}/>
             <Route path="/approval" element={<ProtectedRoute><Approval /></ProtectedRoute>}/>
@@ -97,6 +109,12 @@ function AppShell() {
             <Route path="/transportation/:id" element={<ProtectedRoute><Transportation /></ProtectedRoute>}/>
             <Route path="/payroll" element={<ProtectedRoute><Payroll /></ProtectedRoute>}/>
             <Route path="/payroll/:branchId" element={<ProtectedRoute><Payroll /></ProtectedRoute>}/>
+            <Route path="/transactions" element={<ProtectedRoute allowedRoles={["admin", "branch manager"]}><Transactions /></ProtectedRoute>}/>
+            <Route path="/transactions/transfer" element={<ProtectedRoute allowedRoles={["admin", "branch manager"]}><TransferStaffOrder /></ProtectedRoute>}/>
+            <Route path="/transactions/promotion" element={<ProtectedRoute allowedRoles={["admin", "branch manager"]}><PromotionOrder /></ProtectedRoute>}/>
+            <Route path="/transactions/demotion" element={<ProtectedRoute allowedRoles={["admin", "branch manager"]}><DemotionOrder /></ProtectedRoute>}/>
+            <Route path="/transactions/suspension" element={<ProtectedRoute allowedRoles={["admin", "branch manager"]}><SuspensionOrder /></ProtectedRoute>}/>
+            <Route path="/bonus/:branchId" element={<Bonus />} />
 
             <Route path="/users" element={<ProtectedRoute allowedRoles={["admin"]}><Users /></ProtectedRoute>}/>
 

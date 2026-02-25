@@ -11,10 +11,14 @@ const readUser = () => {
   }
 };
 
+const norm = (v) => String(v ?? "").trim().toLowerCase();
+
 const Branches = () => {
   const navigate = useNavigate();
   const user = useMemo(() => readUser(), []);
-  const isAdmin = String(user?.role || "").toLowerCase() === "admin";
+  const token = useMemo(() => localStorage.getItem("token"), []);
+
+  const isAdmin = norm(user?.role) === "admin";
 
   const [branches, setBranches] = useState([]);
   const [loadingTable, setLoadingTable] = useState(false);
@@ -43,7 +47,7 @@ const Branches = () => {
     try {
       setLoadingTable(true);
       const res = await api.get("/branches");
-      setBranches(res.data || []);
+      setBranches(Array.isArray(res.data) ? res.data : []);
     } catch (err) {
       const status = err?.response?.status;
       if (status === 401) return logout();
@@ -55,13 +59,12 @@ const Branches = () => {
   }, [logout]);
 
   useEffect(() => {
-    const token = localStorage.getItem("token");
     if (!user || !token) {
       window.location.href = "/login";
       return;
     }
     fetchBranches();
-  }, [user, fetchBranches]);
+  }, [user, token, fetchBranches]);
 
   const resetForm = () => {
     setCode("");
@@ -143,8 +146,10 @@ const Branches = () => {
 
     setSaving(true);
     try {
-      if (editId) await api.put(`/branches/${editId}`, { code, name, area });
-      else await api.post(`/branches`, { code, name, area });
+      const payload = { code, name, area };
+
+      if (editId) await api.put(`/branches/${editId}`, payload);
+      else await api.post(`/branches`, payload);
 
       await fetchBranches();
       closeFormModal();
@@ -275,6 +280,14 @@ const Branches = () => {
                               type="button"
                             >
                               Transpo
+                            </button>
+
+                            <button
+                              className="action-btn btn-bonus"
+                              onClick={() => navigate(`/bonus/${Number(b.id)}`)}
+                              type="button"
+                            >
+                              Bonus
                             </button>
 
                             <button className="action-btn btn-view" onClick={() => setViewData(b)} type="button">

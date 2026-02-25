@@ -7,6 +7,7 @@ const authRoutes = require("./routes/authRoutes");
 const userRoutes = require("./routes/userRoutes");
 const staffRoutes = require("./routes/staffRoutes");
 const reportRoutes = require("./routes/reportRoutes");
+const bonusRoutes = require("./routes/bonusRoutes");
 
 const app = express();
 
@@ -24,6 +25,7 @@ app.use("/api/auth", authRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api", staffRoutes);
 app.use("/api", reportRoutes);
+app.use("/api", bonusRoutes);
 
 app.get("/test", (_req, res) => res.send("Backend is working!"));
 

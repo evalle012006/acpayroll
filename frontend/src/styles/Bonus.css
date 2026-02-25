@@ -1,0 +1,71 @@
+.bonus-page {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.bonus-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.bonus-header h2 {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 900;
+}
+
+.bonus-header p {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.btn-back {
+  padding: 8px 14px;
+  border-radius: 10px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.bonus-card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  overflow: hidden;
+}
+
+.bonus-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.bonus-table th {
+  background: var(--table-header);
+  color: #fff;
+  padding: 12px;
+  font-size: 12px;
+  text-transform: uppercase;
+}
+
+.bonus-table td {
+  padding: 10px;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+}
+
+.bonus-table tbody tr:hover td {
+  background: var(--row-hover);
+}
+
+.total-row td {
+  font-weight: 900;
+  background: var(--panel-2);
+}
+
+.strong {
+  font-weight: 900;
+}

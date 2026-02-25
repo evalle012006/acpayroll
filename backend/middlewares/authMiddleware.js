@@ -1,5 +1,6 @@
 const jwt = require("jsonwebtoken");
 
+
 const normalizeRole = (role) => String(role || "").trim().toLowerCase();
 
 const getBearerToken = (req) => {

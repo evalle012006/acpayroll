@@ -21,7 +21,7 @@ const loanTypeToBalanceColumn = (loanType) => {
 
 const getUserBranchId = (req) => req.user?.branch_id ?? null;
 const isAdmin = (req) => req.user?.role === "admin";
-const isBranchManager = (req) => req.user?.role === "branch Manager";
+const isBranchManager = (req) => req.user?.role === "branch manager";
 
 router.get("/branches", requireAuth, async (req, res) => {
   try {
@@ -609,6 +609,141 @@ router.post("/staff-accounts-payable", requireAuth, async (req, res) => {
   } catch (e) {
     console.error("POST /api/staff-accounts-payable ERROR:", e.message);
     res.status(500).json({ message: "Server error" });
+  }
+});
+
+// =======================================================
+// TRANSFER STAFF ORDERS (DB-backed + monthly sequence)
+// =======================================================
+
+async function generateTransferOrderNo(client) {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = now.getMonth() + 1;
+  const prefix = "TSO";
+
+  await client.query(
+    `
+    INSERT INTO public.order_sequences(prefix, year, month, next_value)
+    VALUES ($1,$2,$3,1)
+    ON CONFLICT (prefix, year, month) DO NOTHING
+    `,
+    [prefix, year, month]
+  );
+
+  const seq = await client.query(
+    `
+    SELECT next_value
+    FROM public.order_sequences
+    WHERE prefix=$1 AND year=$2 AND month=$3
+    FOR UPDATE
+    `,
+    [prefix, year, month]
+  );
+
+  const nextVal = Number(seq.rows[0].next_value);
+
+  await client.query(
+    `
+    UPDATE public.order_sequences
+    SET next_value = next_value + 1
+    WHERE prefix=$1 AND year=$2 AND month=$3
+    `,
+    [prefix, year, month]
+  );
+
+  const mm = String(month).padStart(2, "0");
+  const nnnn = String(nextVal).padStart(4, "0");
+  return `${prefix}-${year}-${mm}-${nnnn}`;
+}
+
+router.get("/transfer-staff-orders", requireAuth, async (req, res) => {
+  try {
+    const r = await pool.query(`
+      SELECT *
+      FROM public.transfer_staff_orders
+      ORDER BY created_at DESC
+    `);
+    res.json(r.rows);
+  } catch (e) {
+    console.error("GET /api/transfer-staff-orders ERROR:", e.message);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+router.post("/transfer-staff-orders", requireAuth, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    const {
+      employee_id,
+      employee_name,
+      prev_branch_id,
+      prev_branch_code,
+      prev_branch_name,
+      to_branch_id,
+      to_branch_code,
+      to_branch_name,
+      area,
+      division,
+      date_created,
+      effective_date,
+      details,
+    } = req.body;
+
+    if (!employee_id || !employee_name) return res.status(400).json({ message: "Employee required" });
+    if (!prev_branch_id || !to_branch_id) return res.status(400).json({ message: "Branches required" });
+    if (Number(prev_branch_id) === Number(to_branch_id)) return res.status(400).json({ message: "Branches must differ" });
+    if (!area || !division) return res.status(400).json({ message: "Area and Division required" });
+    if (!date_created || !effective_date) return res.status(400).json({ message: "Dates required" });
+    if (!details) return res.status(400).json({ message: "Details required" });
+
+    const orderNo = await generateTransferOrderNo(client);
+
+    const ins = await client.query(
+      `
+      INSERT INTO public.transfer_staff_orders
+        (order_no, employee_id, employee_name,
+         prev_branch_id, prev_branch_code, prev_branch_name,
+         to_branch_id, to_branch_code, to_branch_name,
+         area, division, date_created, effective_date, details,
+         status, created_by)
+      VALUES
+        ($1,$2,$3,
+         $4,$5,$6,
+         $7,$8,$9,
+         $10,$11,$12::date,$13::date,$14,
+         'Pending',$15)
+      RETURNING *;
+      `,
+      [
+        orderNo,
+        Number(employee_id),
+        String(employee_name),
+        Number(prev_branch_id),
+        String(prev_branch_code || ""),
+        String(prev_branch_name || ""),
+        Number(to_branch_id),
+        String(to_branch_code || ""),
+        String(to_branch_name || ""),
+        String(area),
+        String(division),
+        date_created,
+        effective_date,
+        String(details),
+        req.user?.id ?? null,
+      ]
+    );
+
+    await client.query("COMMIT");
+    res.json(ins.rows[0]);
+  } catch (e) {
+    await client.query("ROLLBACK");
+    console.error("POST /api/transfer-staff-orders ERROR:", e.message);
+    res.status(500).json({ message: "Server error" });
+  } finally {
+    client.release();
   }
 });
 

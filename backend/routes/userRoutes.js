@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 const pool = require("../db");
 const { requireAuth, requireRole } = require("../middlewares/authMiddleware");
+const bcrypt = require("bcryptjs");
 
 router.get("/", requireAuth, requireRole(["Admin"]), async (_req, res) => {
   try {
@@ -28,13 +29,15 @@ router.post("/", requireAuth, requireRole(["Admin"]), async (req, res) => {
     const exists = await pool.query("SELECT id FROM public.users WHERE username=$1", [username]);
     if (exists.rows.length > 0) return res.status(409).json({ message: "Username already exists" });
 
+    const hashed = await bcrypt.hash(String(password), 10);
+
     const result = await pool.query(
       `
       INSERT INTO public.users (username, password, role, branch_id, created_at)
       VALUES ($1,$2,$3,$4,NOW())
-      RETURNING id, username, password, role, created_at, branch_id
+      RETURNING id, username, role, created_at, branch_id
       `,
-      [username, password, role, branch_id ?? null]
+      [username, hashed, role, branch_id ?? null]
     );
 
     res.json(result.rows[0]);
@@ -51,11 +54,16 @@ router.put("/:id", requireAuth, requireRole(["Admin"]), async (req, res) => {
 
     if (!username || !role) return res.status(400).json({ message: "username and role are required" });
 
-    const existing = await pool.query("SELECT id FROM public.users WHERE username=$1 AND id <> $2", [
-      username,
-      id,
-    ]);
+    const existing = await pool.query(
+      "SELECT id FROM public.users WHERE username=$1 AND id <> $2",
+      [username, id]
+    );
     if (existing.rows.length > 0) return res.status(409).json({ message: "Username already exists" });
+
+    let hashed = null;
+    if (password && String(password).trim() !== "") {
+      hashed = await bcrypt.hash(String(password), 10);
+    }
 
     const result = await pool.query(
       `
@@ -64,15 +72,16 @@ router.put("/:id", requireAuth, requireRole(["Admin"]), async (req, res) => {
         username = $1,
         role = $2,
         branch_id = $3,
-        password = CASE WHEN $4 IS NULL OR $4 = '' THEN password ELSE $4 END,
+        password = COALESCE($4, password),
         updated_at = NOW()
       WHERE id = $5
-      RETURNING id, username, password, role, created_at, branch_id
+      RETURNING id, username, role, created_at, branch_id
       `,
-      [username, role, branch_id ?? null, password ?? null, id]
+      [username, role, branch_id ?? null, hashed, id]
     );
 
     if (result.rows.length === 0) return res.status(404).json({ message: "User not found" });
+
     res.json(result.rows[0]);
   } catch (e) {
     console.error("PUT /api/users/:id ERROR:", e.message);
