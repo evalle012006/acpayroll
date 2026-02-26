@@ -38,12 +38,11 @@ export default function TransferStaffOrder() {
   const [toBranchId, setToBranchId] = useState("");
   const [effectiveDate, setEffectiveDate] = useState("");
 
-  // ✅ Admin-only approve/reject
+  // Admin-only approve/reject
   const user = readUser();
   const role = String(user?.role || "").trim().toLowerCase();
   const canApprove = role === "admin";
 
-  // ==========================
   // Load Branches & Staff
   // ==========================
   useEffect(() => {
@@ -68,7 +67,6 @@ export default function TransferStaffOrder() {
     loadRefs();
   }, []);
 
-  // ==========================
   // Fetch Orders
   // ==========================
   const fetchOrders = async () => {
@@ -90,7 +88,6 @@ export default function TransferStaffOrder() {
     fetchOrders();
   }, []);
 
-  // ==========================
   // Derived refs
   // ==========================
   const selectedEmployee = useMemo(
@@ -122,7 +119,6 @@ export default function TransferStaffOrder() {
     }
   }, [showModal, selectedEmployee, fromBranchId, area, fromBranch]);
 
-  // ==========================
   // Approve / Reject
   // ==========================
   const approveOrder = async (id) => {
@@ -150,7 +146,6 @@ export default function TransferStaffOrder() {
     }
   };
 
-  // ==========================
   // Modal handlers
   // ==========================
   const resetForm = () => {
@@ -177,7 +172,6 @@ export default function TransferStaffOrder() {
     resetForm();
   };
 
-  // ==========================
   // Save Order to DB
   // ==========================
   const saveOrder = async () => {
@@ -222,10 +216,9 @@ export default function TransferStaffOrder() {
     }
   };
 
-  // ✅ Dynamic column count
+  // Dynamic column count
   const colCount = canApprove ? 10 : 9;
 
-  // ==========================
   // UI
   // ==========================
   return (

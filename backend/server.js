@@ -2,10 +2,12 @@ require("dotenv").config();
 
 const express = require("express");
 const cors = require("cors");
+const path = require("path");
 
 const authRoutes = require("./routes/authRoutes");
 const userRoutes = require("./routes/userRoutes");
-const staffRoutes = require("./routes/staffRoutes");
+const apiRoutes = require("./routes/apiRoutes");      // NEW (branches + staff moved here)
+const staffRoutes = require("./routes/staffRoutes");  // keep leave/loan/staff-balances here
 const reportRoutes = require("./routes/reportRoutes");
 const bonusRoutes = require("./routes/bonusRoutes");
 
@@ -21,11 +23,16 @@ app.use(
 
 app.use(express.json());
 
+app.use("/uploads", express.static(path.join(__dirname, "uploads")));
+
 app.use("/api/auth", authRoutes);
 app.use("/api/users", userRoutes);
-app.use("/api", staffRoutes);
+
+app.use("/api", apiRoutes);     // branches/staff + transfer/payable here / transfer-staff-orders
+app.use("/api", staffRoutes);   // leave/loan/staff-balances here
+
 app.use("/api", reportRoutes);
-app.use("/api", bonusRoutes);
+app.use("/api/bonus", bonusRoutes);
 
 app.get("/test", (_req, res) => res.send("Backend is working!"));
 

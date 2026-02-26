@@ -28,7 +28,6 @@ const Approval = () => {
   const [leaveRequests, setLeaveRequests] = useState([]);
   const [loanRequests, setLoanRequests] = useState([]);
 
-  // ✅ ADDED: transfer states
   const [transferOrders, setTransferOrders] = useState([]);
   const [loadingTransfer, setLoadingTransfer] = useState(false);
   const [showTransferModal, setShowTransferModal] = useState(false);
@@ -49,7 +48,6 @@ const Approval = () => {
   const [loadingLeave, setLoadingLeave] = useState(false);
   const [loadingLoan, setLoadingLoan] = useState(false);
 
-  // ✅ ADDED: admin check for transfer approvals
   const isAdmin = String(user?.role || "").trim().toLowerCase() === "admin";
 
   const logout = useCallback(() => {
@@ -85,7 +83,6 @@ const Approval = () => {
     setLoanRequests(data);
   }, [safeGet]);
 
-  // ✅ ADDED: fetch transfer orders
   const fetchTransfer = useCallback(async () => {
     const data = await safeGet("/transfer-staff-orders", setLoadingTransfer);
     setTransferOrders(data);
@@ -100,7 +97,6 @@ const Approval = () => {
     fetchLeave();
     fetchLoan();
 
-    // ✅ ADDED
     fetchTransfer();
   }, [user, fetchLeave, fetchLoan, fetchTransfer]);
 
@@ -113,7 +109,6 @@ const Approval = () => {
         setShowLeaveModal(false);
         setShowLoanModal(false);
 
-        // ✅ ADDED
         setShowTransferModal(false);
 
         setConfirmModal({ show: false, requestId: null, type: "", action: "" });
@@ -128,9 +123,6 @@ const Approval = () => {
     };
   }, [showLeaveModal, showLoanModal, showTransferModal, confirmModal.show]);
 
-  // ==========================
-  // LEAVE (UNCHANGED)
-  // ==========================
   const updateLeaveStatus = async (id, status) => {
     try {
       await api.put(`/leave-requests/${id}`, { status });
@@ -143,9 +135,6 @@ const Approval = () => {
     }
   };
 
-  // ==========================
-  // LOAN (UNCHANGED)
-  // ==========================
   const updateLoanStatus = async (id, status) => {
     try {
       await api.put(`/loan-requests/${id}`, { status });
@@ -158,9 +147,6 @@ const Approval = () => {
     }
   };
 
-  // ==========================
-  // TRANSFER (ADDED)
-  // ==========================
   const approveTransfer = async (id) => {
     try {
       await api.put(`/transfer-staff-orders/${id}/approve`);
@@ -188,9 +174,6 @@ const Approval = () => {
     }
   };
 
-  // ==========================
-  // CONFIRM MODAL (UNCHANGED)
-  // ==========================
   const handleActionClick = (id, type, action) => {
     setConfirmModal({ show: true, requestId: id, type, action });
   };
@@ -216,7 +199,6 @@ const Approval = () => {
     );
   }, [loanRequests, selectedLoanType]);
 
-  // ✅ ADDED: only pending transfer
   const pendingTransfer = useMemo(() => {
     return (transferOrders || []).filter(
       (o) => String(o.status || "").trim().toLowerCase() === "pending"
@@ -285,7 +267,6 @@ const Approval = () => {
           </div>
         </div>
 
-        {/* ✅ TRANSFER CARD (ADDED) */}
         {isAdmin && (
           <div className="approval-card">
             <div className="approval-card-head">
@@ -310,7 +291,6 @@ const Approval = () => {
         )}
       </div>
 
-      {/* LEAVE MODAL (UNCHANGED) */}
       {showLeaveModal && (
         <div
           className="modal-overlay"
@@ -412,7 +392,6 @@ const Approval = () => {
         </div>
       )}
 
-      {/* LOAN MODAL (UNCHANGED) */}
       {showLoanModal && (
         <div
           className="modal-overlay"
@@ -520,7 +499,6 @@ const Approval = () => {
         </div>
       )}
 
-      {/* ✅ TRANSFER MODAL (ADDED) */}
       {showTransferModal && (
         <div
           className="modal-overlay"
@@ -607,7 +585,6 @@ const Approval = () => {
         </div>
       )}
 
-      {/* CONFIRM MODAL (UNCHANGED) */}
       {confirmModal.show && (
         <div
           className="modal-overlay"

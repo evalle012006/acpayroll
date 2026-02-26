@@ -24,11 +24,17 @@ const readUser = () => {
 
 const emptyStats = {
   activeEmployees: 0,
+  inactiveEmployees: 0,
+  totalEmployees: 0,
+
   pendingLeaves: 0,
   approvedLeaves: 0,
+  rejectedLeaves: 0,
   totalLeaves: 0,
+
   pendingLoans: 0,
   approvedLoans: 0,
+  rejectedLoans: 0,
   totalLoans: 0,
 
   totalStaffAccountsPayable: 0,
@@ -41,6 +47,9 @@ const emptyStats = {
   totalOtherReceivable: 0,
 };
 
+// normalize staff status
+const getStaffStatus = (s) => String(s?.status || "Active").trim().toLowerCase(); // <- change here if needed
+
 export default function Dashboard() {
   const navigate = useNavigate();
 
@@ -49,9 +58,6 @@ export default function Dashboard() {
 
   const token = localStorage.getItem("token");
   const user = useMemo(() => readUser(), [token]);
-
-  // ✅ Dark mode reads from localStorage set by your header toggle:
-  // localStorage.setItem("theme", "dark") or "light"
   const theme = (localStorage.getItem("theme") || "light").toLowerCase();
   const isDark = theme === "dark";
 
@@ -101,6 +107,14 @@ export default function Dashboard() {
     );
   };
 
+  const countStatus = (rows, key = "status") => {
+    const norm = (v) => String(v || "").trim().toLowerCase();
+    const pending = rows.filter((x) => norm(x[key]) === "pending").length;
+    const approved = rows.filter((x) => norm(x[key]) === "approved").length;
+    const rejected = rows.filter((x) => norm(x[key]) === "rejected").length;
+    return { pending, approved, rejected, total: rows.length };
+  };
+
   const fetchDashboardData = useCallback(async () => {
     setLoading(true);
     try {
@@ -111,16 +125,30 @@ export default function Dashboard() {
         safeGet("/staff-balances"),
       ]);
 
+      const activeEmployees = (staffData || []).filter((s) => getStaffStatus(s) !== "inactive").length;
+      const inactiveEmployees = (staffData || []).filter((s) => getStaffStatus(s) === "inactive").length;
+      const totalEmployees = (staffData || []).length;
+
+      const leaveCounts = countStatus(leaveData || [], "status");
+      const loanCounts = countStatus(loanData || [], "status");
+
       const totals = computeTotals(balances);
 
       setStats({
-        activeEmployees: (staffData || []).length,
-        pendingLeaves: (leaveData || []).filter((l) => l.status === "Pending").length,
-        approvedLeaves: (leaveData || []).filter((l) => l.status === "Approved").length,
-        totalLeaves: (leaveData || []).length,
-        pendingLoans: (loanData || []).filter((l) => l.status === "Pending").length,
-        approvedLoans: (loanData || []).filter((l) => l.status === "Approved").length,
-        totalLoans: (loanData || []).length,
+        activeEmployees,
+        inactiveEmployees,
+        totalEmployees,
+
+        pendingLeaves: leaveCounts.pending,
+        approvedLeaves: leaveCounts.approved,
+        rejectedLeaves: leaveCounts.rejected,
+        totalLeaves: leaveCounts.total,
+
+        pendingLoans: loanCounts.pending,
+        approvedLoans: loanCounts.approved,
+        rejectedLoans: loanCounts.rejected,
+        totalLoans: loanCounts.total,
+
         ...totals,
       });
     } finally {
@@ -136,7 +164,6 @@ export default function Dashboard() {
     fetchDashboardData();
   }, [token, user, fetchDashboardData, navigate]);
 
-  // --- Derived % (for “targets” bars) ---
   const pct = (a, b) => {
     const denom = Math.max(1, toNum(b));
     return Math.max(0, Math.min(100, Math.round((toNum(a) / denom) * 100)));
@@ -145,7 +172,6 @@ export default function Dashboard() {
   const leaveApprovalPct = pct(stats.approvedLeaves, stats.totalLeaves);
   const loanApprovalPct = pct(stats.approvedLoans, stats.totalLoans);
 
-  // KPI-ish metrics
   const totalReceivable =
     toNum(stats.totalCBU) +
     toNum(stats.totalCashbond) +
@@ -155,55 +181,70 @@ export default function Dashboard() {
     toNum(stats.totalCashAdvance) +
     toNum(stats.totalOtherReceivable);
 
+  const payableRatio = Math.min(
+    99,
+    Math.max(
+      1,
+      Math.round(
+        (toNum(stats.totalStaffAccountsPayable) /
+          Math.max(1, totalReceivable + toNum(stats.totalStaffAccountsPayable))) *
+          100
+      )
+    )
+  );
+
   return (
     <div className="dash" data-theme={isDark ? "dark" : "light"}>
       <div className="dash__head">
         <div>
           <div className="dash__title">Dashboard Overview</div>
-          <div className="dash__sub">
-            Workforce, leaves, loans, and balances snapshot
-          </div>
+          <div className="dash__sub">Workforce, leaves, loans, and balances snapshot</div>
         </div>
         {loading && <div className="pill">Loading…</div>}
       </div>
 
-      {/* TOP KPI ROW (matches screenshot vibe) */}
       <div className="dash__kpis">
-        <KpiCard
+        {/* TOTAL EMPLOYEES (table inside) */}
+        <EmployeeKpiCard
           title="TOTAL EMPLOYEES"
-          value={`${stats.activeEmployees}`}
-          subtitle="Active employees"
+          active={stats.activeEmployees}
+          inactive={stats.inactiveEmployees}
+          total={stats.totalEmployees}
           badge={leaveApprovalPct}
-          trend="up"
           accent="blue"
         />
-        <KpiCard
-          title="PENDING LEAVES"
-          value={`${stats.pendingLeaves}`}
-          subtitle={`Total: ${stats.totalLeaves}`}
+
+        <LeaveKpiCard
+          title="LEAVE REQUESTS"
+          pending={stats.pendingLeaves}
+          approved={stats.approvedLeaves}
+          rejected={stats.rejectedLeaves}
+          total={stats.totalLeaves}
           badge={leaveApprovalPct}
-          trend={stats.pendingLeaves > 0 ? "down" : "up"}
           accent="red"
         />
-        <KpiCard
-          title="PENDING LOANS"
-          value={`${stats.pendingLoans}`}
-          subtitle={`Total: ${stats.totalLoans}`}
+
+        <LoanKpiCard
+          title="LOAN REQUESTS"
+          pending={stats.pendingLoans}
+          approved={stats.approvedLoans}
+          rejected={stats.rejectedLoans}
+          total={stats.totalLoans}
           badge={loanApprovalPct}
-          trend={stats.pendingLoans > 0 ? "down" : "up"}
           accent="orange"
         />
+
         <KpiCard
           title="TOTAL PAYABLE"
           value={money(stats.totalStaffAccountsPayable)}
           subtitle="Staff Accounts Payable"
-          badge={Math.min(99, Math.max(1, Math.round((toNum(stats.totalStaffAccountsPayable) / Math.max(1, totalReceivable + toNum(stats.totalStaffAccountsPayable))) * 100)))}
+          badge={payableRatio}
           trend="up"
           accent="green"
         />
       </div>
 
-      {/* 2 BIG PANELS */}
+      {/* keep the rest of your dashboard the same */}
       <div className="dash__panels">
         <div className="card card--panel">
           <div className="card__head">
@@ -216,11 +257,8 @@ export default function Dashboard() {
             </button>
           </div>
 
-          {/* Placeholder – replace with your chart later */}
           <div className="chart">
-            <div className="chart__placeholder">
-              Chart placeholder (CBU/Cashbond/Advances/Loans…)
-            </div>
+            <div className="chart__placeholder">Chart placeholder (CBU/Cashbond/Advances/Loans…)</div>
           </div>
 
           <div className="legend">
@@ -256,7 +294,6 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* 4 MINI CARDS */}
       <div className="dash__mini">
         <MiniStat label="Total CBU" value={money(stats.totalCBU)} />
         <MiniStat label="Total Cashbond" value={money(stats.totalCashbond)} />
@@ -264,7 +301,6 @@ export default function Dashboard() {
         <MiniStat label="Motorcycle Loan" value={money(stats.totalMotorcycleLoan)} />
       </div>
 
-      {/* TARGET SECTION */}
       <div className="dash__targetHead">
         <div className="dash__targetTitle">Target Section</div>
         <a className="link" href="#details">
@@ -275,11 +311,14 @@ export default function Dashboard() {
       <div className="dash__targets" id="details">
         <TargetBar label="Income Target (CBU)" percent={pct(stats.totalCBU, totalReceivable)} accent="blue" />
         <TargetBar label="Expenses Target (Cashbond)" percent={pct(stats.totalCashbond, totalReceivable)} accent="green" />
-        <TargetBar label="Spendings Target (Advances)" percent={pct(stats.totalSalaryAdvance + stats.totalCashAdvance + stats.totalSpecialAdvance, totalReceivable)} accent="orange" />
+        <TargetBar
+          label="Spendings Target (Advances)"
+          percent={pct(stats.totalSalaryAdvance + stats.totalCashAdvance + stats.totalSpecialAdvance, totalReceivable)}
+          accent="orange"
+        />
         <TargetBar label="Totals Target (Other)" percent={pct(stats.totalOtherReceivable, totalReceivable)} accent="red" />
       </div>
 
-      {/* EXTRA BALANCE CARDS (your full list) */}
       <div className="dash__grid">
         <InfoCard title="Total Special Advance" value={money(stats.totalSpecialAdvance)} />
         <InfoCard title="Total Cash Advance" value={money(stats.totalCashAdvance)} />
@@ -290,7 +329,119 @@ export default function Dashboard() {
   );
 }
 
-/* ---------- UI pieces ---------- */
+function EmployeeKpiCard({ title, active, inactive, total, badge, accent }) {
+  return (
+    <div className={`kpi kpi--${accent}`}>
+      <div className="kpi__top">
+        <div className="kpi__title">{title}</div>
+        <div className="kpi__badge">{badge}</div>
+      </div>
+
+      {/* mini table */}
+      <div style={{ marginTop: 10 }}>
+        <table style={{ width: "100%", borderCollapse: "collapse" }}>
+          <tbody>
+            <tr>
+              <td style={{ opacity: 0.9 }}>Active</td>
+              <td style={{ textAlign: "right", fontWeight: 700 }}>{active}</td>
+            </tr>
+            <tr>
+              <td style={{ opacity: 0.9 }}>Inactive</td>
+              <td style={{ textAlign: "right", fontWeight: 700 }}>{inactive}</td>
+            </tr>
+            <tr>
+              <td style={{ opacity: 0.9 }}>Total</td>
+              <td style={{ textAlign: "right", fontWeight: 800 }}>{total}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div className="kpi__subtitle" style={{ marginTop: 8 }}>
+        Employee status summary
+      </div>
+      <div className="kpi__bar" />
+    </div>
+  );
+}
+
+function LeaveKpiCard({ title, pending, approved, rejected, total, badge, accent }) {
+  return (
+    <div className={`kpi kpi--${accent}`}>
+      <div className="kpi__top">
+        <div className="kpi__title">{title}</div>
+        <div className="kpi__badge">{badge}</div>
+      </div>
+
+      <div style={{ marginTop: 10 }}>
+        <table style={{ width: "100%", borderCollapse: "collapse" }}>
+          <tbody>
+            <tr>
+              <td style={{ opacity: 0.9 }}>Pending</td>
+              <td style={{ textAlign: "right", fontWeight: 700 }}>{pending}</td>
+            </tr>
+            <tr>
+              <td style={{ opacity: 0.9 }}>Approved</td>
+              <td style={{ textAlign: "right", fontWeight: 700 }}>{approved}</td>
+            </tr>
+            <tr>
+              <td style={{ opacity: 0.9 }}>Rejected</td>
+              <td style={{ textAlign: "right", fontWeight: 700 }}>{rejected}</td>
+            </tr>
+            <tr>
+              <td style={{ opacity: 0.9 }}>Total</td>
+              <td style={{ textAlign: "right", fontWeight: 800 }}>{total}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div className="kpi__subtitle" style={{ marginTop: 8 }}>
+        Leave status summary
+      </div>
+      <div className="kpi__bar" />
+    </div>
+  );
+}
+
+function LoanKpiCard({ title, pending, approved, rejected, total, badge, accent }) {
+  return (
+    <div className={`kpi kpi--${accent}`}>
+      <div className="kpi__top">
+        <div className="kpi__title">{title}</div>
+        <div className="kpi__badge">{badge}</div>
+      </div>
+
+      <div style={{ marginTop: 10 }}>
+        <table style={{ width: "100%", borderCollapse: "collapse" }}>
+          <tbody>
+            <tr>
+              <td style={{ opacity: 0.9 }}>Pending</td>
+              <td style={{ textAlign: "right", fontWeight: 700 }}>{pending}</td>
+            </tr>
+            <tr>
+              <td style={{ opacity: 0.9 }}>Approved</td>
+              <td style={{ textAlign: "right", fontWeight: 700 }}>{approved}</td>
+            </tr>
+            <tr>
+              <td style={{ opacity: 0.9 }}>Rejected</td>
+              <td style={{ textAlign: "right", fontWeight: 700 }}>{rejected}</td>
+            </tr>
+            <tr>
+              <td style={{ opacity: 0.9 }}>Total</td>
+              <td style={{ textAlign: "right", fontWeight: 800 }}>{total}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div className="kpi__subtitle" style={{ marginTop: 8 }}>
+        Loan status summary
+      </div>
+      <div className="kpi__bar" />
+    </div>
+  );
+}
 
 function KpiCard({ title, value, subtitle, trend, badge, accent }) {
   return (
@@ -346,7 +497,6 @@ function InfoCard({ title, value, strong }) {
   );
 }
 
-/** CSS-only donut */
 function Donut({ percent = 75, label = "Percent" }) {
   const p = Math.max(0, Math.min(100, toNum(percent)));
   const deg = (p / 100) * 360;

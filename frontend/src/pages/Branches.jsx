@@ -106,7 +106,6 @@ const Branches = () => {
       document.removeEventListener("keydown", onKeyDown);
       document.body.style.overflow = "";
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showModal, viewData]);
 
   const filteredBranches = useMemo(() => {
@@ -266,11 +265,7 @@ const Branches = () => {
 
                         <td>
                           <div className="actions">
-                            <button
-                              className="action-btn btn-payroll"
-                              onClick={() => navigate(`/payroll/${Number(b.id)}`)}
-                              type="button"
-                            >
+                            <button className="action-btn btn-payroll" onClick={() => navigate(`/payroll/${Number(b.id)}`)} type="button">
                               Payroll
                             </button>
 

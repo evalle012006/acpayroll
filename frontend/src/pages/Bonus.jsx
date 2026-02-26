@@ -57,15 +57,11 @@ const Bonus = () => {
     load();
   }, [branchId]);
 
-  // 👇 Example Bonus Logic (you can change this)
     const computed = useMemo(() => {
         return staff.map((s) => {
     const salary = toNum(s.salary);
 
-    // Standard 13th month formula (basic salary / 12)
     const thirteenth = salary / 12;
-
-    // Optional extra months (you can adjust logic)
     const fourteenth = salary / 12;
     const fifteenth = salary / 12;
 

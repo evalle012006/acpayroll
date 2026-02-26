@@ -11,13 +11,13 @@ const toNum = (v) => {
 const norm = (v) => String(v ?? "").trim().toLowerCase();
 
 function Transportation() {
-  const { id } = useParams(); // branch id from route: /transportation/:id
+  const { id } = useParams();
   const navigate = useNavigate();
 
   const [branch, setBranch] = useState(null);
   const [staff, setStaff] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [month, setMonth] = useState(""); // UI only (backend not filtering yet)
+  const [month, setMonth] = useState("");
   const [error, setError] = useState("");
 
   const money = (v) => toNum(v).toLocaleString();
@@ -34,7 +34,6 @@ function Transportation() {
       setError("");
 
       try {
-        // 1) get branches list then pick the branch
         const branchesRes = await api.get("/branches");
         const branches = Array.isArray(branchesRes.data) ? branchesRes.data : [];
         const b = branches.find((x) => Number(x.id) === Number(id));
@@ -46,8 +45,6 @@ function Transportation() {
         }
 
         setBranch(b);
-
-        // 2) get staff list then filter by branch_id (preferred), fallback by area
         const staffRes = await api.get("/staff");
         const all = Array.isArray(staffRes.data) ? staffRes.data : [];
 
@@ -57,7 +54,6 @@ function Transportation() {
             ? byBranchId
             : all.filter((s) => norm(s.area) === norm(b.area));
 
-        // month currently not supported by backend; if you later support it, filter here too.
         setStaff(filtered);
       } catch (err) {
         const status = err?.response?.status;

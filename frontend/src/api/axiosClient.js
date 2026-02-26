@@ -1,11 +1,11 @@
 import axios from "axios";
 
-const emitAuthChanged = () => window.dispatchEvent(new Event("auth-changed"));
-
 const api = axios.create({
   baseURL: "http://localhost:5000/api",
   withCredentials: false,
 });
+
+const emitAuthChanged = () => window.dispatchEvent(new Event("auth-changed"));
 
 api.interceptors.request.use(
   (config) => {
@@ -17,16 +17,14 @@ api.interceptors.request.use(
 );
 
 api.interceptors.response.use(
-  (response) => response,
+  (res) => res,
   (error) => {
     const status = error?.response?.status;
-
     if (status === 401) {
       localStorage.removeItem("token");
       localStorage.removeItem("user");
       emitAuthChanged();
     }
-
     return Promise.reject(error);
   }
 );

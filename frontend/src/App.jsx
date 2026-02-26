@@ -1,5 +1,5 @@
 import { BrowserRouter as Router, Routes, Route, Navigate, useNavigate } from "react-router-dom";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import Sidebar from "./components/Sidebar";
 import Header from "./components/Header";
@@ -63,12 +63,11 @@ function AppShell() {
   const [authTick, setAuthTick] = useState(0);
   const navigate = useNavigate();
 
-  const isLoggedIn = hasAuth();
+  const isLoggedIn = useMemo(() => hasAuth(), [authTick]);
 
   useEffect(() => {
     const onAuthChanged = () => {
       setAuthTick((t) => t + 1);
-
       if (!hasAuth()) navigate("/login", { replace: true });
     };
 
@@ -81,8 +80,6 @@ function AppShell() {
     };
   }, [navigate]);
 
-  const _ = authTick;
-
   return (
     <div className={`layout ${collapsed ? "collapsed" : ""}`}>
       {isLoggedIn && <Sidebar collapsed={collapsed} />}
@@ -94,28 +91,98 @@ function AppShell() {
           <Routes>
             <Route path="/" element={<Navigate to={hasAuth() ? "/dashboard" : "/login"} replace />} />
             <Route path="/login" element={hasAuth() ? <Navigate to="/dashboard" replace /> : <Login />} />
-            <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>}/>
-            <Route path="/staff" element={<ProtectedRoute><Staff /></ProtectedRoute>}/>
-            <Route path="/staff-information" element={<ProtectedRoute allowedRoles={["admin", "branch manager"]}><StaffInformation /></ProtectedRoute>}/>
-            <Route path="/departments" element={<ProtectedRoute allowedRoles={["admin", "branch manager"]}><Departments /></ProtectedRoute>}/>
-            <Route path="/salary" element={<ProtectedRoute><Salary /></ProtectedRoute>}/>
-            <Route path="/schedule-balances" element={<ProtectedRoute><ScheduleBalances /></ProtectedRoute>}/>
-            <Route path="/approval" element={<ProtectedRoute><Approval /></ProtectedRoute>}/>
-            <Route path="/branches" element={<ProtectedRoute><Branches /></ProtectedRoute>}/>
-            <Route path="/system-update" element={<ProtectedRoute><SystemUpdate /></ProtectedRoute>}/>
-            <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>}/>
-            <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
-            <Route path="/transportation/:id" element={<ProtectedRoute><Transportation /></ProtectedRoute>}/>
-            <Route path="/payroll" element={<ProtectedRoute><Payroll /></ProtectedRoute>}/>
-            <Route path="/payroll/:branchId" element={<ProtectedRoute><Payroll /></ProtectedRoute>}/>
-            <Route path="/transactions" element={<ProtectedRoute allowedRoles={["admin", "branch manager"]}><Transactions /></ProtectedRoute>}/>
-            <Route path="/transactions/transfer" element={<ProtectedRoute allowedRoles={["admin", "branch manager"]}><TransferStaffOrder /></ProtectedRoute>}/>
-            <Route path="/transactions/promotion" element={<ProtectedRoute allowedRoles={["admin", "branch manager"]}><PromotionOrder /></ProtectedRoute>}/>
-            <Route path="/transactions/demotion" element={<ProtectedRoute allowedRoles={["admin", "branch manager"]}><DemotionOrder /></ProtectedRoute>}/>
-            <Route path="/transactions/suspension" element={<ProtectedRoute allowedRoles={["admin", "branch manager"]}><SuspensionOrder /></ProtectedRoute>}/>
-            <Route path="/bonus/:branchId" element={<Bonus />} />
 
-            <Route path="/users" element={<ProtectedRoute allowedRoles={["admin"]}><Users /></ProtectedRoute>}/>
+            <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+            <Route path="/staff" element={<ProtectedRoute><Staff /></ProtectedRoute>} />
+
+            <Route
+              path="/staff-information"
+              element={
+                <ProtectedRoute allowedRoles={["admin", "branch manager"]}>
+                  <StaffInformation />
+                </ProtectedRoute>
+              }
+            />
+
+            <Route
+              path="/departments"
+              element={
+                <ProtectedRoute allowedRoles={["admin", "branch manager"]}>
+                  <Departments />
+                </ProtectedRoute>
+              }
+            />
+
+            <Route path="/salary" element={<ProtectedRoute><Salary /></ProtectedRoute>} />
+            <Route path="/schedule-balances" element={<ProtectedRoute><ScheduleBalances /></ProtectedRoute>} />
+            <Route path="/approval" element={<ProtectedRoute><Approval /></ProtectedRoute>} />
+            <Route path="/branches" element={<ProtectedRoute><Branches /></ProtectedRoute>} />
+            <Route path="/system-update" element={<ProtectedRoute><SystemUpdate /></ProtectedRoute>} />
+            <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
+            <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
+
+            <Route path="/transportation/:id" element={<ProtectedRoute><Transportation /></ProtectedRoute>} />
+            <Route path="/payroll" element={<ProtectedRoute><Payroll /></ProtectedRoute>} />
+            <Route path="/payroll/:branchId" element={<ProtectedRoute><Payroll /></ProtectedRoute>} />
+
+            <Route
+              path="/transactions"
+              element={
+                <ProtectedRoute allowedRoles={["admin", "branch manager"]}>
+                  <Transactions />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/transactions/transfer"
+              element={
+                <ProtectedRoute allowedRoles={["admin", "branch manager"]}>
+                  <TransferStaffOrder />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/transactions/promotion"
+              element={
+                <ProtectedRoute allowedRoles={["admin", "branch manager"]}>
+                  <PromotionOrder />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/transactions/demotion"
+              element={
+                <ProtectedRoute allowedRoles={["admin", "branch manager"]}>
+                  <DemotionOrder />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/transactions/suspension"
+              element={
+                <ProtectedRoute allowedRoles={["admin", "branch manager"]}>
+                  <SuspensionOrder />
+                </ProtectedRoute>
+              }
+            />
+
+            <Route
+              path="/bonus/:branchId"
+              element={
+                <ProtectedRoute allowedRoles={["admin", "branch manager"]}>
+                  <Bonus />
+                </ProtectedRoute>
+              }
+            />
+
+            <Route
+              path="/users"
+              element={
+                <ProtectedRoute allowedRoles={["admin"]}>
+                  <Users />
+                </ProtectedRoute>
+              }
+            />
 
             <Route path="*" element={<Navigate to={hasAuth() ? "/dashboard" : "/login"} replace />} />
           </Routes>

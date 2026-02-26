@@ -3,208 +3,313 @@ const router = express.Router();
 const pool = require("../db");
 const { requireAuth, requireRole } = require("../middlewares/authMiddleware");
 
+const multer = require("multer");
+const path = require("path");
+const fs = require("fs");
+
+// Helpers
+// ===============================
 const toNum = (v) => {
-  const n = Number(v);
+  const n = Number(v ?? 0);
   return Number.isFinite(n) ? n : 0;
 };
+
 const toInt = (v) => {
   const n = Number(v);
   return Number.isFinite(n) ? Math.trunc(n) : null;
 };
-const loanTypeToBalanceColumn = (loanType) => {
-  if (loanType === "Motorcycle Loan") return "motorcycle_loan";
-  if (loanType === "Advance Loan") return "salary_advance";
-  if (loanType === "Cash Loan") return "cash_advance";
-  if (loanType === "Special Loan") return "special_advance";
-  return null;
+
+const toDateOrNull = (v) => {
+  const s = String(v ?? "").trim();
+  if (!s) return null;
+  const d = s.slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(d) ? d : null;
 };
 
-const getUserBranchId = (req) => req.user?.branch_id ?? null;
-const isAdmin = (req) => req.user?.role === "admin";
-const isBranchManager = (req) => req.user?.role === "branch manager";
+const normalizeStatus = (v) => {
+  const s = String(v ?? "").trim().toLowerCase();
+  return s === "inactive" ? "Inactive" : "Active";
+};
 
+const roleLower = (req) => String(req.user?.role || "").trim().toLowerCase();
+const isAdmin = (req) => roleLower(req) === "admin";
+const isBranchManager = (req) => roleLower(req) === "branch manager";
+const getUserBranchId = (req) => req.user?.branch_id ?? null;
+
+// branch-manager guard for staff ownership
+async function assertStaffInManagersBranch(req, staffId) {
+  if (!isBranchManager(req)) return true;
+  const bid = getUserBranchId(req);
+  if (!bid) return false;
+
+  const check = await pool.query(
+    `SELECT id FROM public.staff WHERE id=$1 AND branch_id=$2`,
+    [staffId, bid]
+  );
+  return check.rowCount > 0;
+}
+
+// Upload staff photo (multer)
+// ===============================
+const staffUploadDir = path.join(__dirname, "..", "uploads", "staff");
+fs.mkdirSync(staffUploadDir, { recursive: true });
+
+const photoStorage = multer.diskStorage({
+  destination: (_req, _file, cb) => cb(null, staffUploadDir),
+  filename: (_req, file, cb) => {
+    const ext = path.extname(file.originalname || "").toLowerCase();
+    const safeExt = [".png", ".jpg", ".jpeg", ".webp"].includes(ext) ? ext : ".jpg";
+    cb(null, `staff_${Date.now()}_${Math.random().toString(16).slice(2)}${safeExt}`);
+  },
+});
+
+const uploadPhoto = multer({
+  storage: photoStorage,
+  limits: { fileSize: 2 * 1024 * 1024 }, // 2MB
+});
+
+// Upload staff attachments (multer)
+// ===============================
+const attachUploadDir = path.join(__dirname, "..", "uploads", "staff_attachments");
+fs.mkdirSync(attachUploadDir, { recursive: true });
+
+const attachStorage = multer.diskStorage({
+  destination: (_req, _file, cb) => cb(null, attachUploadDir),
+  filename: (_req, file, cb) => {
+    const ext = path.extname(file.originalname || "").toLowerCase() || ".bin";
+    cb(null, `attach_${Date.now()}_${Math.random().toString(16).slice(2)}${ext}`);
+  },
+});
+
+const uploadAttachment = multer({
+  storage: attachStorage,
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
+});
+
+// BRANCHES
+// ===============================
 router.get("/branches", requireAuth, async (req, res) => {
   try {
     if (isAdmin(req)) {
-      const result = await pool.query("SELECT id, code, name, area FROM public.branches ORDER BY id ASC");
-      return res.json(result.rows);
+      const r = await pool.query(
+        `SELECT id, code, name, area FROM public.branches ORDER BY id ASC`
+      );
+      return res.json(r.rows);
     }
 
     if (isBranchManager(req)) {
       const bid = getUserBranchId(req);
       if (!bid) return res.json([]);
-      const result = await pool.query("SELECT id, code, name, area FROM public.branches WHERE id=$1", [bid]);
-      return res.json(result.rows);
+      const r = await pool.query(
+        `SELECT id, code, name, area FROM public.branches WHERE id=$1`,
+        [bid]
+      );
+      return res.json(r.rows);
     }
 
     return res.status(403).json({ message: "Access denied" });
   } catch (e) {
     console.error("GET /api/branches ERROR:", e.message);
-    res.status(500).json({ message: "Server error" });
+    return res.status(500).json({ message: "Server error" });
   }
 });
 
-router.post("/branches", requireAuth, requireRole(["Admin"]), async (req, res) => {
+router.post("/branches", requireAuth, requireRole(["admin"]), async (req, res) => {
   try {
-    const { code, name, area } = req.body;
+    const code = String(req.body?.code || "").trim();
+    const name = String(req.body?.name || "").trim();
+    const area = String(req.body?.area || "").trim();
     if (!code || !name || !area) return res.status(400).json({ message: "code, name, area required" });
 
-    const result = await pool.query(
+    const r = await pool.query(
       `INSERT INTO public.branches (code, name, area)
        VALUES ($1,$2,$3)
        RETURNING id, code, name, area`,
       [code, name, area]
     );
 
-    res.json({ message: "Branch created", branch: result.rows[0] });
+    return res.json({ message: "Branch created", branch: r.rows[0] });
   } catch (e) {
     console.error("POST /api/branches ERROR:", e.message);
-    res.status(500).json({ message: "Server error" });
+    return res.status(500).json({ message: "Server error" });
   }
 });
 
-router.put("/branches/:id", requireAuth, requireRole(["Admin"]), async (req, res) => {
+router.put("/branches/:id", requireAuth, requireRole(["admin"]), async (req, res) => {
   try {
-    const { id } = req.params;
-    const { code, name, area } = req.body;
+    const id = toInt(req.params.id);
+    if (!id) return res.status(400).json({ message: "Invalid branch id" });
+
+    const code = String(req.body?.code || "").trim();
+    const name = String(req.body?.name || "").trim();
+    const area = String(req.body?.area || "").trim();
     if (!code || !name || !area) return res.status(400).json({ message: "code, name, area required" });
 
-    const result = await pool.query(
-      `UPDATE public.branches SET code=$1, name=$2, area=$3
+    const r = await pool.query(
+      `UPDATE public.branches
+       SET code=$1, name=$2, area=$3
        WHERE id=$4
        RETURNING id, code, name, area`,
       [code, name, area, id]
     );
 
-    if (result.rows.length === 0) return res.status(404).json({ message: "Branch not found" });
-    res.json({ message: "Branch updated", branch: result.rows[0] });
+    if (r.rowCount === 0) return res.status(404).json({ message: "Branch not found" });
+    return res.json({ message: "Branch updated", branch: r.rows[0] });
   } catch (e) {
     console.error("PUT /api/branches/:id ERROR:", e.message);
-    res.status(500).json({ message: "Server error" });
+    return res.status(500).json({ message: "Server error" });
   }
 });
 
-router.delete("/branches/:id", requireAuth, requireRole(["Admin"]), async (req, res) => {
+router.delete("/branches/:id", requireAuth, requireRole(["admin"]), async (req, res) => {
   try {
-    const { id } = req.params;
-    const result = await pool.query("DELETE FROM public.branches WHERE id=$1 RETURNING id", [id]);
-    if (result.rows.length === 0) return res.status(404).json({ message: "Branch not found" });
-    res.json({ message: "Branch deleted" });
+    const id = toInt(req.params.id);
+    if (!id) return res.status(400).json({ message: "Invalid branch id" });
+
+    const r = await pool.query(`DELETE FROM public.branches WHERE id=$1 RETURNING id`, [id]);
+    if (r.rowCount === 0) return res.status(404).json({ message: "Branch not found" });
+
+    return res.json({ message: "Branch deleted" });
   } catch (e) {
     console.error("DELETE /api/branches/:id ERROR:", e.message);
-    res.status(500).json({ message: "Server error" });
+    return res.status(500).json({ message: "Server error" });
   }
 });
 
+// STAFF
+// ===============================
 router.get("/staff", requireAuth, async (req, res) => {
   try {
     if (isAdmin(req)) {
-      const result = await pool.query("SELECT * FROM public.staff ORDER BY id DESC");
-      return res.json(result.rows);
+      const r = await pool.query(`SELECT * FROM public.staff ORDER BY id DESC`);
+      return res.json(r.rows);
     }
 
     if (isBranchManager(req)) {
       const bid = getUserBranchId(req);
       if (!bid) return res.json([]);
-      const result = await pool.query("SELECT * FROM public.staff WHERE branch_id=$1 ORDER BY id DESC", [bid]);
-      return res.json(result.rows);
+      const r = await pool.query(`SELECT * FROM public.staff WHERE branch_id=$1 ORDER BY id DESC`, [bid]);
+      return res.json(r.rows);
     }
 
     return res.status(403).json({ message: "Access denied" });
   } catch (e) {
     console.error("GET /api/staff ERROR:", e.message);
-    res.status(500).json({ message: "Server error" });
+    return res.status(500).json({ message: "Server error" });
   }
 });
 
-router.post("/staff", requireAuth, requireRole(["Admin"]), async (req, res) => {
+router.post("/staff", requireAuth, requireRole(["admin"]), async (req, res) => {
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
 
-    const {
-      employee_no, fullname, position, department, area,
-      salary, ecola, branch_id, regularization_date,
-      motorcycle_loan, postage, transportation,
-      additional_target, repairing, additional_monitoring,
-      motorcycle, other_deduction,
-    } = req.body;
+    const b = req.body || {};
+    const fullname = String(b.fullname || "").trim();
+    const position = String(b.position || "").trim();
 
-    const staffInsert = await client.query(
+    if (!fullname || !position) {
+      await client.query("ROLLBACK");
+      return res.status(400).json({ message: "fullname and position are required" });
+    }
+
+    const ins = await client.query(
       `
-      INSERT INTO public.staff
-        (employee_no, fullname, "position", department, area, salary, ecola, branch_id, regularization_date, motorcycle_loan,
-         postage, transportation, additional_target, repairing, additional_monitoring, motorcycle, other_deduction)
-      VALUES
-        ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
-      RETURNING id, fullname, "position";
+      INSERT INTO public.staff (
+        employee_no, fullname, "position", department, area, branch_id,
+        salary, ecola, transportation, postage, motorcycle_loan,
+        additional_target, repairing, additional_monitoring,
+        motorcycle, other_deduction,
+        regularization_date,
+        status
+      )
+      VALUES (
+        $1,$2,$3,$4,$5,$6,
+        $7,$8,$9,$10,$11,
+        $12,$13,$14,
+        $15,$16,
+        $17,
+        $18
+      )
+      RETURNING id;
       `,
       [
-        employee_no || null,
+        b.employee_no || null,
         fullname,
         position,
-        department,
-        area,
-        toNum(salary),
-        toNum(ecola),
-        toInt(branch_id),
-        regularization_date || null,
-        toNum(motorcycle_loan),
-        toNum(postage),
-        toNum(transportation),
-        toNum(additional_target),
-        toNum(repairing),
-        toNum(additional_monitoring),
-        toNum(motorcycle),
-        toNum(other_deduction),
+        b.department || null,
+        b.area || null,
+        toInt(b.branch_id),
+
+        toNum(b.salary),
+        toNum(b.ecola),
+        toNum(b.transportation),
+        toNum(b.postage),
+        toNum(b.motorcycle_loan),
+
+        toNum(b.additional_target),
+        toNum(b.repairing),
+        toNum(b.additional_monitoring),
+
+        toNum(b.motorcycle),
+        toNum(b.other_deduction),
+
+        toDateOrNull(b.regularization_date),
+        normalizeStatus(b.status),
       ]
     );
 
-    const s = staffInsert.rows[0];
+    const newId = ins.rows[0].id;
 
     await client.query(
       `
       INSERT INTO public.staff_balances
         (employee_id, fullname, "position",
-         cbu, cashbond, salary_advance, motorcycle_loan, special_advance, cash_advance, other_receivable, staff_accounts_payable)
+         cbu, cashbond, salary_advance, motorcycle_loan,
+         special_advance, cash_advance, other_receivable, staff_accounts_payable)
       VALUES
-        ($1, $2, $3,
-         0,0,0,0,0,0,0,0)
+        ($1,$2,$3,0,0,0,0,0,0,0,0)
       ON CONFLICT (employee_id)
       DO UPDATE SET
-        fullname = EXCLUDED.fullname,
-        "position" = EXCLUDED."position",
-        updated_at = NOW();
+        fullname=EXCLUDED.fullname,
+        "position"=EXCLUDED."position",
+        updated_at=NOW()
       `,
-      [s.id, s.fullname, s.position]
+      [newId, fullname, position]
     );
 
     await client.query("COMMIT");
-    res.json({ message: "Staff added", id: s.id });
+    return res.json({ message: "Staff added", id: newId });
   } catch (e) {
     await client.query("ROLLBACK");
     console.error("POST /api/staff ERROR:", e.message);
-    res.status(500).json({ message: "Server error" });
+    return res.status(500).json({ message: e?.message || "Server error" });
   } finally {
     client.release();
   }
 });
 
-router.put("/staff/:id", requireAuth, requireRole(["Admin"]), async (req, res) => {
+router.put("/staff/:id", requireAuth, requireRole(["admin"]), async (req, res) => {
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
-    const { id } = req.params;
 
-    const {
-      employee_no, fullname, position, department, area,
-      salary, ecola, branch_id, regularization_date,
-      motorcycle_loan, postage, transportation,
-      additional_target, repairing, additional_monitoring,
-      motorcycle, other_deduction,
-    } = req.body;
+    const id = toInt(req.params.id);
+    if (!id) {
+      await client.query("ROLLBACK");
+      return res.status(400).json({ message: "Invalid staff id" });
+    }
 
-    const updated = await client.query(
+    const b = req.body || {};
+    const fullname = String(b.fullname || "").trim();
+    const position = String(b.position || "").trim();
+
+    if (!fullname || !position) {
+      await client.query("ROLLBACK");
+      return res.status(400).json({ message: "fullname and position are required" });
+    }
+
+    const upd = await client.query(
       `
       UPDATE public.staff
       SET
@@ -213,409 +318,154 @@ router.put("/staff/:id", requireAuth, requireRole(["Admin"]), async (req, res) =
         "position"=$3,
         department=$4,
         area=$5,
-        salary=$6,
-        ecola=$7,
-        branch_id=$8,
-        regularization_date=$9,
-        motorcycle_loan=$10,
-        postage=$11,
-        transportation=$12,
-        additional_target=$13,
-        repairing=$14,
-        additional_monitoring=$15,
-        motorcycle=$16,
-        other_deduction=$17
-      WHERE id=$18
-      RETURNING id, fullname, "position";
+        branch_id=$6,
+
+        salary=$7,
+        ecola=$8,
+        transportation=$9,
+        postage=$10,
+        motorcycle_loan=$11,
+
+        additional_target=$12,
+        repairing=$13,
+        additional_monitoring=$14,
+
+        motorcycle=$15,
+        other_deduction=$16,
+
+        regularization_date=$17,
+        status=$18
+      WHERE id=$19
+      RETURNING id;
       `,
       [
-        employee_no || null,
+        b.employee_no || null,
         fullname,
         position,
-        department,
-        area,
-        toNum(salary),
-        toNum(ecola),
-        toInt(branch_id),
-        regularization_date || null,
-        toNum(motorcycle_loan),
-        toNum(postage),
-        toNum(transportation),
-        toNum(additional_target),
-        toNum(repairing),
-        toNum(additional_monitoring),
-        toNum(motorcycle),
-        toNum(other_deduction),
-        toInt(id),
+        b.department || null,
+        b.area || null,
+        toInt(b.branch_id),
+
+        toNum(b.salary),
+        toNum(b.ecola),
+        toNum(b.transportation),
+        toNum(b.postage),
+        toNum(b.motorcycle_loan),
+
+        toNum(b.additional_target),
+        toNum(b.repairing),
+        toNum(b.additional_monitoring),
+
+        toNum(b.motorcycle),
+        toNum(b.other_deduction),
+
+        toDateOrNull(b.regularization_date),
+        normalizeStatus(b.status),
+        id,
       ]
     );
 
-    if (updated.rows.length === 0) {
+    if (upd.rowCount === 0) {
       await client.query("ROLLBACK");
       return res.status(404).json({ message: "Staff not found" });
     }
 
-    const s = updated.rows[0];
-
     await client.query(
-      `UPDATE public.staff_balances SET fullname=$1, "position"=$2, updated_at=NOW() WHERE employee_id=$3`,
-      [s.fullname, s.position, s.id]
+      `UPDATE public.staff_balances
+       SET fullname=$1, "position"=$2, updated_at=NOW()
+       WHERE employee_id=$3`,
+      [fullname, position, id]
     );
 
     await client.query("COMMIT");
-    res.json({ message: "Staff updated" });
+    return res.json({ message: "Staff updated" });
   } catch (e) {
     await client.query("ROLLBACK");
     console.error("PUT /api/staff/:id ERROR:", e.message);
-    res.status(500).json({ message: "Server error" });
+    return res.status(500).json({ message: e?.message || "Server error" });
   } finally {
     client.release();
   }
 });
 
-router.delete("/staff/:id", requireAuth, requireRole(["Admin"]), async (req, res) => {
+router.delete("/staff/:id", requireAuth, requireRole(["admin"]), async (req, res) => {
   try {
-    const { id } = req.params;
-    await pool.query("DELETE FROM public.staff WHERE id=$1", [id]);
-    res.json({ message: "Staff deleted" });
+    const id = toInt(req.params.id);
+    if (!id) return res.status(400).json({ message: "Invalid staff id" });
+
+    await pool.query(`DELETE FROM public.staff WHERE id=$1`, [id]);
+    return res.json({ message: "Staff deleted" });
   } catch (e) {
     console.error("DELETE /api/staff/:id ERROR:", e.message);
-    res.status(500).json({ message: "Server error" });
+    return res.status(500).json({ message: "Server error" });
   }
 });
 
-router.get("/leave-requests", requireAuth, async (req, res) => {
+// STAFF PHOTO UPLOAD
+// ===============================
+router.post(
+  "/staff/:id/photo",
+  requireAuth,
+  requireRole(["admin", "branch manager"]),
+  uploadPhoto.single("photo"),
+  async (req, res) => {
+    try {
+      const staffId = toInt(req.params.id);
+      if (!staffId) return res.status(400).json({ message: "Invalid staff id" });
+      if (!req.file) return res.status(400).json({ message: "No file uploaded" });
+
+      const ok = await assertStaffInManagersBranch(req, staffId);
+      if (!ok) return res.status(403).json({ message: "Access denied" });
+
+      const photoUrl = `/uploads/staff/${req.file.filename}`;
+      await pool.query(`UPDATE public.staff SET photo_url=$1 WHERE id=$2`, [photoUrl, staffId]);
+
+      return res.json({ photo_url: photoUrl });
+    } catch (e) {
+      console.error("POST /api/staff/:id/photo ERROR:", e.message);
+      return res.status(500).json({ message: "Server error" });
+    }
+  }
+);
+
+// LEAVE REQUESTS
+// ===============================
+router.get("/leave-requests", requireAuth, async (_req, res) => {
   try {
-    if (isAdmin(req)) {
-      const result = await pool.query("SELECT * FROM public.leave_requests ORDER BY id DESC");
-      return res.json(result.rows);
-    }
-
-    if (isBranchManager(req)) {
-      const bid = getUserBranchId(req);
-      if (!bid) return res.json([]);
-
-      const result = await pool.query(
-        `
-        SELECT lr.*
-        FROM public.leave_requests lr
-        JOIN public.staff s ON s.id = lr.employee_id
-        WHERE s.branch_id = $1
-        ORDER BY lr.id DESC
-        `,
-        [bid]
-      );
-      return res.json(result.rows);
-    }
-
-    return res.status(403).json({ message: "Access denied" });
+    const r = await pool.query(`SELECT * FROM public.leave_requests ORDER BY id DESC`);
+    return res.json(r.rows);
   } catch (e) {
     console.error("GET /api/leave-requests ERROR:", e.message);
-    res.status(500).json({ message: "Server error" });
+    return res.status(500).json({ message: "Server error" });
   }
 });
 
-router.post("/leave-requests", requireAuth, async (req, res) => {
+// LOAN REQUESTS
+// ===============================
+router.get("/loan-requests", requireAuth, async (_req, res) => {
   try {
-    const { employee_id, staff_name, leave_type, start_date, end_date, status } = req.body;
-
-    if (!employee_id || !staff_name || !leave_type || !start_date || !end_date) {
-      return res.status(400).json({ message: "employee_id, staff_name, leave_type, start_date, end_date are required" });
-    }
-
-    if (isBranchManager(req)) {
-      const bid = getUserBranchId(req);
-      const check = await pool.query("SELECT id FROM public.staff WHERE id=$1 AND branch_id=$2", [employee_id, bid]);
-      if (check.rows.length === 0) return res.status(403).json({ message: "Access denied" });
-    }
-
-    const result = await pool.query(
-      `
-      INSERT INTO public.leave_requests (employee_id, staff_name, leave_type, start_date, end_date, status, entry_date)
-      VALUES ($1,$2,$3,$4,$5,$6, NOW())
-      RETURNING *;
-      `,
-      [toInt(employee_id), staff_name, leave_type, start_date, end_date, status || "Pending"]
-    );
-
-    res.json(result.rows[0]);
-  } catch (e) {
-    console.error("POST /api/leave-requests ERROR:", e.message);
-    res.status(500).json({ message: "Server error" });
-  }
-});
-
-router.put("/leave-requests/:id", requireAuth, async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { status } = req.body;
-
-    if (isBranchManager(req)) {
-      const bid = getUserBranchId(req);
-      const check = await pool.query(
-        `
-        SELECT lr.id
-        FROM public.leave_requests lr
-        JOIN public.staff s ON s.id = lr.employee_id
-        WHERE lr.id=$1 AND s.branch_id=$2
-        `,
-        [id, bid]
-      );
-      if (check.rows.length === 0) return res.status(403).json({ message: "Access denied" });
-    }
-
-    await pool.query("UPDATE public.leave_requests SET status=$1 WHERE id=$2", [status, id]);
-    res.json({ message: "Leave request updated" });
-  } catch (e) {
-    console.error("PUT /api/leave-requests/:id ERROR:", e.message);
-    res.status(500).json({ message: "Server error" });
-  }
-});
-
-router.get("/loan-requests", requireAuth, async (req, res) => {
-  try {
-    if (isAdmin(req)) {
-      const result = await pool.query("SELECT * FROM public.loan_requests ORDER BY id DESC");
-      return res.json(result.rows);
-    }
-
-    if (isBranchManager(req)) {
-      const bid = getUserBranchId(req);
-      if (!bid) return res.json([]);
-
-      const result = await pool.query(
-        `
-        SELECT lr.*
-        FROM public.loan_requests lr
-        JOIN public.staff s ON s.id = lr.employee_id
-        WHERE s.branch_id = $1
-        ORDER BY lr.id DESC
-        `,
-        [bid]
-      );
-      return res.json(result.rows);
-    }
-
-    return res.status(403).json({ message: "Access denied" });
+    const r = await pool.query(`SELECT * FROM public.loan_requests ORDER BY id DESC`);
+    return res.json(r.rows);
   } catch (e) {
     console.error("GET /api/loan-requests ERROR:", e.message);
-    res.status(500).json({ message: "Server error" });
+    return res.status(500).json({ message: "Server error" });
   }
 });
 
-router.put("/loan-requests/:id", requireAuth, async (req, res) => {
+// STAFF BALANCES
+// ===============================
+router.get("/staff-balances", requireAuth, async (_req, res) => {
   try {
-    const { id } = req.params;
-    const { status, disbursement_date } = req.body;
-
-    if (isBranchManager(req)) {
-      const bid = getUserBranchId(req);
-      const check = await pool.query(
-        `
-        SELECT lr.id
-        FROM public.loan_requests lr
-        JOIN public.staff s ON s.id = lr.employee_id
-        WHERE lr.id=$1 AND s.branch_id=$2
-        `,
-        [id, bid]
-      );
-      if (check.rows.length === 0) return res.status(403).json({ message: "Access denied" });
-    }
-
-    const q = `
-      UPDATE public.loan_requests
-      SET
-        status = $1,
-        approved_at = CASE
-          WHEN $1 = 'Approved' AND approved_at IS NULL THEN NOW()
-          ELSE approved_at
-        END,
-        disbursement_date = COALESCE($2::date, disbursement_date)
-      WHERE id = $3
-      RETURNING *;
-    `;
-
-    const result = await pool.query(q, [status, disbursement_date || null, id]);
-    if (result.rows.length === 0) return res.status(404).json({ message: "Loan request not found" });
-
-    res.json(result.rows[0]);
-  } catch (e) {
-    console.error("PUT /api/loan-requests/:id ERROR:", e.message);
-    res.status(500).json({ message: "Server error" });
-  }
-});
-
-router.post("/loan-requests", requireAuth, async (req, res) => {
-  try {
-    const { employee_id, staff_name, loan_type, amount, term, interest, reason, status, disbursement_date } = req.body;
-
-    const empId = toInt(employee_id);
-    if (!empId || !staff_name || !loan_type) {
-      return res.status(400).json({ message: "employee_id, staff_name, loan_type are required" });
-    }
-
-    if (isBranchManager(req)) {
-      const bid = getUserBranchId(req);
-      const check = await pool.query("SELECT id FROM public.staff WHERE id=$1 AND branch_id=$2", [empId, bid]);
-      if (check.rows.length === 0) return res.status(403).json({ message: "Access denied" });
-    }
-
-    const amt = toNum(amount);
-    const intr = toNum(interest);
-    const trm = Math.max(1, toNum(term));
-    const total = amt + (amt * intr) / 100;
-    const per_month = total / trm;
-
-    const insertQ = `
-      INSERT INTO public.loan_requests
-        (employee_id, staff_name, loan_type, amount, term, interest, reason, total, per_month, status, disbursement_date, entry_date)
-      VALUES
-        ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11, NOW())
-      RETURNING *;
-    `;
-
-    const result = await pool.query(insertQ, [
-      empId,
-      staff_name,
-      loan_type,
-      amt,
-      trm,
-      intr,
-      reason || "",
-      total,
-      per_month,
-      status || "Pending",
-      disbursement_date || null,
-    ]);
-
-    const col = loanTypeToBalanceColumn(loan_type);
-
-    const staffRes = await pool.query(`SELECT "position" FROM public.staff WHERE id=$1`, [empId]);
-    const staffPos = staffRes.rows?.[0]?.position ?? null;
-
-    await pool.query(
-      `
-      INSERT INTO public.staff_balances (employee_id, fullname, "position")
-      VALUES ($1, $2, $3)
-      ON CONFLICT (employee_id)
-      DO UPDATE SET
-        fullname = EXCLUDED.fullname,
-        "position" = COALESCE(public.staff_balances."position", EXCLUDED."position"),
-        updated_at = NOW()
-      `,
-      [empId, staff_name, staffPos]
-    );
-
-    if (col) {
-      await pool.query(
-        `
-        UPDATE public.staff_balances
-        SET ${col} = COALESCE(${col}, 0) + $1,
-            updated_at = NOW()
-        WHERE employee_id = $2
-        `,
-        [total, empId]
-      );
-    }
-
-    res.json(result.rows[0]);
-  } catch (e) {
-    console.error("POST /api/loan-requests ERROR:", e.message);
-    res.status(500).json({ message: "Server error" });
-  }
-});
-
-router.get("/staff-balances", requireAuth, async (req, res) => {
-  try {
-    const requestedBranchId = req.query.branchId;
-    const branchId = isAdmin(req) ? (requestedBranchId || null) : getUserBranchId(req);
-
-    const params = [];
-    let where = "";
-
-    if (branchId) {
-      params.push(branchId);
-      where = `WHERE s.branch_id = $1`;
-    }
-
-    const q = `
-      SELECT
-        sb.id,
-        sb.employee_id,
-        sb.fullname,
-        COALESCE(sb."position", s."position") AS position,
-        s.regularization_date,
-        sb.cbu,
-        sb.cashbond,
-        sb.salary_advance,
-        sb.motorcycle_loan,
-        sb.special_advance,
-        sb.cash_advance,
-        sb.other_receivable,
-        COALESCE((
-          SELECT SUM(COALESCE(sap.balance, 0))
-          FROM public.staff_accounts_payable sap
-          WHERE sap.employee_id = sb.employee_id
-            AND COALESCE(sap.balance, 0) > 0
-        ), 0) AS staff_accounts_payable,
-        sb.created_at,
-        sb.updated_at
-      FROM public.staff_balances sb
-      LEFT JOIN public.staff s ON s.id = sb.employee_id
-      ${where}
-      ORDER BY sb.fullname ASC
-    `;
-
-    const result = await pool.query(q, params);
-    res.json(result.rows);
+    const r = await pool.query(`SELECT * FROM public.staff_balances ORDER BY id DESC`);
+    return res.json(r.rows);
   } catch (e) {
     console.error("GET /api/staff-balances ERROR:", e.message);
-    res.status(500).json({ message: "Server error" });
+    return res.status(500).json({ message: "Server error" });
   }
 });
 
-router.post("/staff-accounts-payable", requireAuth, async (req, res) => {
-  try {
-    const { employee_id, staff_name, description, amount, term, per_month, balance } = req.body;
-
-    const empId = Number(employee_id);
-    const amt = Number(amount);
-    const trm = Math.max(1, Number(term));
-    const per = Number(per_month) || (amt / trm);
-    const bal = Number(balance) || amt;
-
-    if (!empId || !staff_name || !description) {
-      return res.status(400).json({ message: "employee_id, staff_name, description are required" });
-    }
-
-    const isBM = req.user?.role === "Branch Manager";
-    if (isBM) {
-      const bid = req.user?.branch_id;
-      const check = await pool.query("SELECT id FROM public.staff WHERE id=$1 AND branch_id=$2", [empId, bid]);
-      if (check.rows.length === 0) return res.status(403).json({ message: "Access denied" });
-    }
-
-    const q = `
-      INSERT INTO public.staff_accounts_payable
-        (employee_id, staff_name, description, amount, term, per_month, entry_date, balance)
-      VALUES
-        ($1,$2,$3,$4,$5,$6, NOW(), $7)
-      RETURNING *;
-    `;
-
-    const result = await pool.query(q, [empId, staff_name, description, amt, trm, per, bal]);
-
-    res.json({ message: "Staff Accounts Payable created", row: result.rows[0] });
-  } catch (e) {
-    console.error("POST /api/staff-accounts-payable ERROR:", e.message);
-    res.status(500).json({ message: "Server error" });
-  }
-});
-
-// =======================================================
-// TRANSFER STAFF ORDERS (DB-backed + monthly sequence)
-// =======================================================
-
+// TRANSFER STAFF ORDERS
+// ===============================
 async function generateTransferOrderNo(client) {
   const now = new Date();
   const year = now.getFullYear();
@@ -659,15 +509,31 @@ async function generateTransferOrderNo(client) {
 
 router.get("/transfer-staff-orders", requireAuth, async (req, res) => {
   try {
-    const r = await pool.query(`
-      SELECT *
-      FROM public.transfer_staff_orders
-      ORDER BY created_at DESC
-    `);
-    res.json(r.rows);
+    const role = roleLower(req);
+    const branchId = getUserBranchId(req);
+
+    if (role === "admin") {
+      const r = await pool.query(`SELECT * FROM public.transfer_staff_orders ORDER BY created_at DESC`);
+      return res.json(r.rows);
+    }
+
+    if (role === "branch manager") {
+      const r = await pool.query(
+        `
+        SELECT *
+        FROM public.transfer_staff_orders
+        WHERE prev_branch_id = $1
+        ORDER BY created_at DESC
+        `,
+        [branchId]
+      );
+      return res.json(r.rows);
+    }
+
+    return res.status(403).json({ message: "Access denied" });
   } catch (e) {
     console.error("GET /api/transfer-staff-orders ERROR:", e.message);
-    res.status(500).json({ message: "Server error" });
+    return res.status(500).json({ message: "Server error" });
   }
 });
 
@@ -676,6 +542,7 @@ router.post("/transfer-staff-orders", requireAuth, async (req, res) => {
   try {
     await client.query("BEGIN");
 
+    const b = req.body || {};
     const {
       employee_id,
       employee_name,
@@ -690,7 +557,7 @@ router.post("/transfer-staff-orders", requireAuth, async (req, res) => {
       date_created,
       effective_date,
       details,
-    } = req.body;
+    } = b;
 
     if (!employee_id || !employee_name) return res.status(400).json({ message: "Employee required" });
     if (!prev_branch_id || !to_branch_id) return res.status(400).json({ message: "Branches required" });
@@ -698,6 +565,14 @@ router.post("/transfer-staff-orders", requireAuth, async (req, res) => {
     if (!area || !division) return res.status(400).json({ message: "Area and Division required" });
     if (!date_created || !effective_date) return res.status(400).json({ message: "Dates required" });
     if (!details) return res.status(400).json({ message: "Details required" });
+
+    if (isBranchManager(req)) {
+      const bid = getUserBranchId(req);
+      if (!bid || Number(bid) !== Number(prev_branch_id)) {
+        await client.query("ROLLBACK");
+        return res.status(403).json({ message: "Access denied" });
+      }
+    }
 
     const orderNo = await generateTransferOrderNo(client);
 
@@ -729,22 +604,204 @@ router.post("/transfer-staff-orders", requireAuth, async (req, res) => {
         String(to_branch_name || ""),
         String(area),
         String(division),
-        date_created,
-        effective_date,
+        String(date_created).slice(0, 10),
+        String(effective_date).slice(0, 10),
         String(details),
         req.user?.id ?? null,
       ]
     );
 
     await client.query("COMMIT");
-    res.json(ins.rows[0]);
+    return res.json(ins.rows[0]);
   } catch (e) {
     await client.query("ROLLBACK");
     console.error("POST /api/transfer-staff-orders ERROR:", e.message);
-    res.status(500).json({ message: "Server error" });
+    return res.status(500).json({ message: "Server error" });
   } finally {
     client.release();
   }
 });
+
+router.put("/transfer-staff-orders/:id/approve", requireAuth, requireRole(["admin"]), async (req, res) => {
+  try {
+    const id = toInt(req.params.id);
+    if (!id) return res.status(400).json({ message: "Invalid id" });
+
+    const r = await pool.query(
+      `
+      UPDATE public.transfer_staff_orders
+      SET
+        status='Approved',
+        approved_by=$2,
+        approved_at=COALESCE(approved_at, NOW()),
+        rejected_by=NULL,
+        rejected_at=NULL,
+        rejection_reason=NULL
+      WHERE id=$1 AND status='Pending'
+      RETURNING *;
+      `,
+      [id, req.user?.id ?? null]
+    );
+
+    if (r.rowCount === 0) return res.status(400).json({ message: "Order not found or not Pending" });
+    return res.json(r.rows[0]);
+  } catch (e) {
+    console.error("PUT /api/transfer-staff-orders/:id/approve ERROR:", e.message);
+    return res.status(500).json({ message: "Server error" });
+  }
+});
+
+router.put("/transfer-staff-orders/:id/reject", requireAuth, requireRole(["admin"]), async (req, res) => {
+  try {
+    const id = toInt(req.params.id);
+    if (!id) return res.status(400).json({ message: "Invalid id" });
+
+    const reason = String(req.body?.reason || "").trim();
+    if (!reason) return res.status(400).json({ message: "Rejection reason is required" });
+
+    const r = await pool.query(
+      `
+      UPDATE public.transfer_staff_orders
+      SET
+        status='Rejected',
+        rejected_by=$2,
+        rejected_at=COALESCE(rejected_at, NOW()),
+        rejection_reason=$3,
+        approved_by=NULL,
+        approved_at=NULL
+      WHERE id=$1 AND status='Pending'
+      RETURNING *;
+      `,
+      [id, req.user?.id ?? null, reason]
+    );
+
+    if (r.rowCount === 0) return res.status(400).json({ message: "Order not found or not Pending" });
+    return res.json(r.rows[0]);
+  } catch (e) {
+    console.error("PUT /api/transfer-staff-orders/:id/reject ERROR:", e.message);
+    return res.status(500).json({ message: "Server error" });
+  }
+});
+
+// STAFF ATTACHMENTS
+// ===============================
+
+// GET /api/staff/:id/attachments
+router.get("/staff/:id/attachments", requireAuth, async (req, res) => {
+  try {
+    const staffId = toInt(req.params.id);
+    if (!staffId) return res.status(400).json({ message: "Invalid staff id" });
+
+    const ok = await assertStaffInManagersBranch(req, staffId);
+    if (!ok) return res.status(403).json({ message: "Access denied" });
+
+    const r = await pool.query(
+      `
+      SELECT id, staff_id, file_name, original_name, file_url, uploaded_at
+      FROM public.staff_attachments
+      WHERE staff_id=$1
+      ORDER BY uploaded_at DESC
+      `,
+      [staffId]
+    );
+
+    return res.json(r.rows);
+  } catch (e) {
+    console.error("GET /api/staff/:id/attachments ERROR:", e.message);
+    return res.status(500).json({ message: "Server error" });
+  }
+});
+
+// POST /api/staff/:id/attachments  (multipart/form-data: file_name, file)
+router.post(
+  "/staff/:id/attachments",
+  requireAuth,
+  requireRole(["admin", "branch manager"]),
+  uploadAttachment.single("file"),
+  async (req, res) => {
+    try {
+      const staffId = toInt(req.params.id);
+      if (!staffId) return res.status(400).json({ message: "Invalid staff id" });
+      if (!req.file) return res.status(400).json({ message: "No file uploaded" });
+
+      const ok = await assertStaffInManagersBranch(req, staffId);
+      if (!ok) return res.status(403).json({ message: "Access denied" });
+
+      const fileName = String(req.body?.file_name || "").trim();
+      if (!fileName) return res.status(400).json({ message: "File name required" });
+
+      const fileUrl = `/uploads/staff_attachments/${req.file.filename}`;
+      const originalName = req.file.originalname || req.file.filename;
+
+      const r = await pool.query(
+        `
+        INSERT INTO public.staff_attachments
+          (staff_id, file_name, original_name, file_url, uploaded_by)
+        VALUES ($1,$2,$3,$4,$5)
+        RETURNING id, staff_id, file_name, original_name, file_url, uploaded_at
+        `,
+        [staffId, fileName, originalName, fileUrl, req.user?.id ?? null]
+      );
+
+      return res.json(r.rows[0]);
+    } catch (e) {
+      console.error("POST /api/staff/:id/attachments ERROR:", e.message);
+      return res.status(500).json({ message: "Server error" });
+    }
+  }
+);
+
+// DELETE /api/staff/attachments/:id
+router.delete(
+  "/staff/attachments/:id",
+  requireAuth,
+  requireRole(["admin", "branch manager"]),
+  async (req, res) => {
+    const client = await pool.connect();
+    try {
+      const id = toInt(req.params.id);
+      if (!id) return res.status(400).json({ message: "Invalid attachment id" });
+
+      await client.query("BEGIN");
+
+      const found = await client.query(
+        `SELECT id, staff_id, file_url FROM public.staff_attachments WHERE id=$1`,
+        [id]
+      );
+
+      if (found.rowCount === 0) {
+        await client.query("ROLLBACK");
+        return res.status(404).json({ message: "Not found" });
+      }
+
+      const att = found.rows[0];
+
+      const ok = await assertStaffInManagersBranch(req, att.staff_id);
+      if (!ok) {
+        await client.query("ROLLBACK");
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      await client.query(`DELETE FROM public.staff_attachments WHERE id=$1`, [id]);
+      await client.query("COMMIT");
+
+      // delete physical file best effort
+      try {
+        const absolute = path.join(__dirname, "..", att.file_url.replace("/uploads/", "uploads/"));
+        fs.unlinkSync(absolute);
+      } catch {
+        // ignore
+      }
+
+      return res.json({ message: "Deleted" });
+    } catch (e) {
+      await client.query("ROLLBACK");
+      console.error("DELETE /api/staff/attachments/:id ERROR:", e.message);
+      return res.status(500).json({ message: "Server error" });
+    } finally {
+      client.release();
+    }
+  }
+);
 
 module.exports = router;
