@@ -269,19 +269,11 @@ const Branches = () => {
                               Payroll
                             </button>
 
-                            <button
-                              className="action-btn btn-transpo"
-                              onClick={() => navigate(`/transportation/${Number(b.id)}`)}
-                              type="button"
-                            >
+                            <button className="action-btn btn-transpo" onClick={() => navigate(`/transportation/${Number(b.id)}`)} type="button">
                               Transpo
                             </button>
 
-                            <button
-                              className="action-btn btn-bonus"
-                              onClick={() => navigate(`/bonus/${Number(b.id)}`)}
-                              type="button"
-                            >
+                            <button className="action-btn btn-bonus" onClick={() => navigate(`/bonus/${Number(b.id)}`)} type="button">
                               Bonus
                             </button>
 

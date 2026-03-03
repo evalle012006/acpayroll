@@ -1,59 +1,81 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import "../styles/Salary.css";
 import logo from "../assets/amber.jpg";
 import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
 import api from "../api/axiosClient";
 
+/* ------------------------- Helpers ------------------------- */
+const toStr = (v) => String(v ?? "").trim();
+const toNum = (v) => {
+  const n = Number(v ?? 0);
+  return Number.isFinite(n) ? n : 0;
+};
+const money = (v) =>
+  `₱ ${toNum(v).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+const displayName = (s) => {
+  const ln = toStr(s?.last_name);
+  const fn = toStr(s?.first_name);
+  const mn = toStr(s?.middle_name);
+  const built = `${ln}${ln && fn ? ", " : ""}${fn}${mn ? ` ${mn}` : ""}`.replace(/\s+/g, " ").trim();
+  return built || toStr(s?.fullname) || "-";
+};
+
+const fmtBranch = (b) => `${toStr(b?.code)}${b?.name ? ` • ${b.name}` : ""}`.trim();
+
 function Salary() {
   const [staff, setStaff] = useState([]);
   const [balances, setBalances] = useState([]);
+  const [branches, setBranches] = useState([]);
+
   const [selectedStaff, setSelectedStaff] = useState(null);
 
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
 
+  const [branchFilter, setBranchFilter] = useState("All");
   const [logoBase64, setLogoBase64] = useState("");
 
-  const toNum = (v) => {
-    const n = Number(v ?? 0);
-    return Number.isFinite(n) ? n : 0;
-  };
-  const money = (v) => `₱ ${toNum(v).toLocaleString()}`;
-
+  /* ------------------------- Logo to base64 ------------------------- */
   useEffect(() => {
     const img = new Image();
     img.src = logo;
     img.crossOrigin = "anonymous";
     img.onload = () => {
-      const canvas = document.createElement("canvas");
-      canvas.width = img.width;
-      canvas.height = img.height;
-      const ctx = canvas.getContext("2d");
+      const c = document.createElement("canvas");
+      c.width = img.width;
+      c.height = img.height;
+      const ctx = c.getContext("2d");
       ctx.drawImage(img, 0, 0);
-      setLogoBase64(canvas.toDataURL("image/jpeg"));
+      setLogoBase64(c.toDataURL("image/jpeg"));
     };
   }, []);
 
+  /* ------------------------- Load staff + balances + branches ------------------------- */
   useEffect(() => {
     const run = async () => {
       try {
-        const [sRes, bRes] = await Promise.all([
+        const [sRes, bRes, brRes] = await Promise.all([
           api.get("/staff"),
-          api.get("/staff-balances"),
+          api.get("/staff-balances"), // ✅ NOW EXISTS (after backend fix)
+          api.get("/branches"),
         ]);
 
         setStaff(Array.isArray(sRes.data) ? sRes.data : []);
         setBalances(Array.isArray(bRes.data) ? bRes.data : []);
+        setBranches(Array.isArray(brRes.data) ? brRes.data : []);
       } catch (err) {
         console.error("Salary fetch error:", err);
         setStaff([]);
         setBalances([]);
+        setBranches([]);
       }
     };
     run();
   }, []);
 
+  /* ------------------------- ESC closes modal + lock scroll ------------------------- */
   useEffect(() => {
     if (!selectedStaff) return;
 
@@ -63,7 +85,6 @@ function Salary() {
 
     document.addEventListener("keydown", onKeyDown);
     document.body.style.overflow = "hidden";
-
     return () => {
       document.removeEventListener("keydown", onKeyDown);
       document.body.style.overflow = "";
@@ -74,24 +95,31 @@ function Salary() {
   const handleClear = () => {
     setSearchInput("");
     setSearch("");
+    setBranchFilter("All");
   };
+
+  const branchMap = useMemo(() => {
+    const m = new Map();
+    (branches || []).forEach((b) => m.set(String(b.id), b));
+    return m;
+  }, [branches]);
 
   const balancesByEmp = useMemo(() => {
     const m = new Map();
-    for (const b of balances) {
-      m.set(String(b.employee_id), b);
-    }
+    for (const b of balances || []) m.set(String(b.employee_id), b);
     return m;
   }, [balances]);
 
+  /* ------------------------- Compute payroll breakdown ------------------------- */
   const staffWithComputed = useMemo(() => {
-    return staff.map((s) => {
-      const b = balancesByEmp.get(String(s.id)) || {};
+    return (staff || []).map((s) => {
+      const bal = balancesByEmp.get(String(s.id)) || {};
 
       const salary = toNum(s.salary);
       const ecola = toNum(s.ecola);
       const transportation = toNum(s.transportation);
 
+      // placeholders
       const hdmf_er = 0, sss_er = 0, ph_er = 0;
       const hdmf_ee = 0, sss_ee = 0, ph_ee = 0;
       const total_er = hdmf_er + sss_er + ph_er;
@@ -100,17 +128,17 @@ function Salary() {
       const tax = 0;
       const utility_charge = 0;
 
-      const cbu = toNum(b.cbu);
-      const cashbond = toNum(b.cashbond);
-      const salary_advance = toNum(b.salary_advance);
-      const motorcycle_loan = toNum(b.motorcycle_loan);
-      const special_advance = toNum(b.special_advance);
-      const cash_advance = toNum(b.cash_advance);
-      const other_receivable = toNum(b.other_receivable);
+      // balances
+      const cbu = toNum(bal.cbu);
+      const cashbond = toNum(bal.cashbond);
+      const salary_advance = toNum(bal.salary_advance);
+      const motorcycle_loan = toNum(bal.motorcycle_loan);
+      const special_advance = toNum(bal.special_advance);
+      const cash_advance = toNum(bal.cash_advance);
+      const other_receivable = toNum(bal.other_receivable);
       const pagibig_mpl = 0;
       const sss_loan = 0;
-
-      const staff_accounts_payable = toNum(b.staff_accounts_payable);
+      const staff_accounts_payable = toNum(bal.staff_accounts_payable);
 
       const totalCompensation = salary + ecola;
       const grossPay = totalCompensation + transportation;
@@ -132,34 +160,76 @@ function Salary() {
 
       const net_pay = totalCompensation - total_deduction;
 
+      const br = branchMap.get(String(s.branch_id ?? "")) || null;
+
+      // ✅ prefer staff name fields; fallback to balances name fields if needed
+      const mergedNameObj = {
+        ...s,
+        last_name: s.last_name ?? bal.last_name,
+        first_name: s.first_name ?? bal.first_name,
+        middle_name: s.middle_name ?? bal.middle_name,
+        fullname: s.fullname ?? bal.fullname,
+      };
+
       return {
         ...s,
+        display_name: displayName(mergedNameObj),
+
+        branch_code: br?.code || "",
+        branch_name: br?.name || "",
+
         hdmf_er, sss_er, ph_er, total_er,
         hdmf_ee, sss_ee, ph_ee, total_ee,
-        tax, utility_charge,
-        cbu, cashbond, salary_advance, motorcycle_loan, special_advance, cash_advance, other_receivable,
-        pagibig_mpl, sss_loan,
+
+        tax,
+        utility_charge,
+
+        cbu,
+        cashbond,
+        salary_advance,
+        motorcycle_loan,
+        special_advance,
+        cash_advance,
+        other_receivable,
+        pagibig_mpl,
+        sss_loan,
         staff_accounts_payable,
+
         total_deduction,
         net_pay,
         payroll_date: new Date().toISOString(),
         grossPay,
       };
     });
-  }, [staff, balancesByEmp]);
+  }, [staff, balancesByEmp, branchMap]);
 
   const filteredStaff = useMemo(() => {
-    const q = search.toLowerCase();
-    return staffWithComputed.filter((emp) => {
-      return (
-        String(emp.fullname || "").toLowerCase().includes(q) ||
-        String(emp.position || "").toLowerCase().includes(q) ||
-        String(emp.area || "").toLowerCase().includes(q)
-      );
-    });
-  }, [staffWithComputed, search]);
+    const q = toStr(search).toLowerCase();
+    const bid = String(branchFilter || "All");
 
-  const buildPayslipHTML = (s) => {
+    return staffWithComputed.filter((emp) => {
+      if (bid !== "All" && String(emp.branch_id ?? "") !== bid) return false;
+      if (!q) return true;
+
+      const hay = [
+        emp.display_name,
+        emp.fullname,
+        emp.last_name,
+        emp.first_name,
+        emp.middle_name,
+        emp.position,
+        emp.area,
+        emp.branch_code,
+        emp.branch_name,
+      ]
+        .map((x) => toStr(x).toLowerCase())
+        .join(" ");
+
+      return hay.includes(q);
+    });
+  }, [staffWithComputed, search, branchFilter]);
+
+  const buildPayslipHTML = (s, { autoPrint = false } = {}) => {
     const salary = toNum(s.salary);
     const ecola = toNum(s.ecola);
     const transportation = toNum(s.transportation);
@@ -177,16 +247,20 @@ function Salary() {
 
     const today = new Date().toLocaleDateString();
     const payrollDate = s.payroll_date ? String(s.payroll_date).split("T")[0] : "-";
+    const branchLabel =
+      s.branch_code || s.branch_name ? `${s.branch_code || ""} • ${s.branch_name || ""}`.trim() : "-";
+
+    const empName = s.display_name || displayName(s);
 
     return `
       <html>
         <head>
-          <title>Payslip - ${s.fullname}</title>
+          <title>Payslip - ${empName}</title>
           <style>
             @page { margin: 14mm; }
             * { box-sizing: border-box; }
-            body { font-family: Arial, sans-serif; color: #111; margin: 0; }
-            .sheet { max-width: 820px; margin: 0 auto; }
+            body { font-family: Arial, sans-serif; color: #111; margin: 0; background: #fff; }
+            .sheet { max-width: 820px; margin: 0 auto; padding: 0; }
             .header { display:flex; justify-content:space-between; align-items:flex-start; border-bottom:2px solid #111; padding-bottom:10px; margin-bottom:14px; gap:10px; }
             .logo { height: 60px; }
             .company { flex: 1; }
@@ -210,7 +284,6 @@ function Salary() {
             .sign { margin-top:16px; display:grid; grid-template-columns:1fr 1fr; gap:16px; }
             .line { border-top:1px solid #111; padding-top:6px; font-size:11px; color:#333; text-align:center; }
             .foot { margin-top:14px; font-size:11px; color:#333; display:flex; justify-content:space-between; }
-            @media print { button, a { display:none !important; } }
           </style>
         </head>
         <body>
@@ -224,12 +297,13 @@ function Salary() {
               <div class="meta">
                 <div><strong>Date:</strong> ${today}</div>
                 <div><strong>Employee ID:</strong> ${s.id}</div>
+                <div><strong>Branch:</strong> ${branchLabel}</div>
                 <div><strong>Area:</strong> ${s.area ?? "-"}</div>
               </div>
             </div>
 
             <div class="employee">
-              <div class="row"><div class="label">Employee Name:</div><div class="value">${s.fullname}</div></div>
+              <div class="row"><div class="label">Employee Name:</div><div class="value">${empName}</div></div>
               <div class="row"><div class="label">Position:</div><div class="value">${s.position ?? "-"}</div></div>
               <div class="row"><div class="label">Department:</div><div class="value">${s.department ?? "-"}</div></div>
               <div class="row"><div class="label">Payroll Month:</div><div class="value">${payrollDate}</div></div>
@@ -301,7 +375,7 @@ function Salary() {
               <table>
                 <tr><td>1st Half</td><td>10th</td><td>${money(pay10th)}</td></tr>
                 <tr><td>2nd Half</td><td>25th</td><td>${money(pay25th)}</td></tr>
-                <tr class="total-row"><td>Total Net Pay</td><td>${money(netPay)}</td></tr>
+                <tr class="total-row"><td>Total Net Pay</td><td></td><td>${money(netPay)}</td></tr>
               </table>
             </div>
 
@@ -316,13 +390,19 @@ function Salary() {
             </div>
           </div>
 
-          <script>
-            window.onload = () => {
-              window.focus();
-              window.print();
-              window.close();
-            };
-          </script>
+          ${
+            autoPrint
+              ? `
+                <script>
+                  window.onload = () => {
+                    window.focus();
+                    window.print();
+                    window.close();
+                  };
+                </script>
+              `
+              : ""
+          }
         </body>
       </html>
     `;
@@ -330,8 +410,9 @@ function Salary() {
 
   const printSalary = () => {
     if (!selectedStaff) return;
-    const html = buildPayslipHTML(selectedStaff);
+    const html = buildPayslipHTML(selectedStaff, { autoPrint: true });
     const w = window.open("", "_blank", "width=900,height=650");
+    if (!w) return alert("Popup blocked. Allow popups then try again.");
     w.document.open();
     w.document.write(html);
     w.document.close();
@@ -340,26 +421,42 @@ function Salary() {
   const downloadPayslip = async () => {
     if (!selectedStaff) return;
 
-    const html = buildPayslipHTML(selectedStaff);
+    const html = buildPayslipHTML(selectedStaff, { autoPrint: false });
     const w = window.open("", "_blank", "width=900,height=650");
+    if (!w) return alert("Popup blocked. Allow popups then try again.");
+
     w.document.open();
     w.document.write(html);
     w.document.close();
 
-    setTimeout(async () => {
-      const element = w.document.body;
-      const canvas = await html2canvas(element, { scale: 2, useCORS: true });
-      const imgData = canvas.toDataURL("image/png");
+    w.onload = async () => {
+      try {
+        const element = w.document.querySelector(".sheet") || w.document.body;
 
-      const pdf = new jsPDF("p", "mm", "a4");
-      const pageWidth = pdf.internal.pageSize.getWidth();
-      const imgWidth = pageWidth - 20;
-      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+        const canvas = await html2canvas(element, {
+          scale: 2,
+          useCORS: true,
+          backgroundColor: "#ffffff",
+        });
 
-      pdf.addImage(imgData, "PNG", 10, 10, imgWidth, imgHeight);
-      pdf.save(`Payslip-${selectedStaff.fullname}.pdf`);
-      w.close();
-    }, 600);
+        const imgData = canvas.toDataURL("image/png");
+        const pdf = new jsPDF("p", "mm", "a4");
+
+        const pageWidth = pdf.internal.pageSize.getWidth();
+        const imgWidth = pageWidth - 20;
+        const imgHeight = (canvas.height * imgWidth) / canvas.width;
+
+        pdf.addImage(imgData, "PNG", 10, 10, imgWidth, imgHeight);
+
+        const safeFile = (selectedStaff.display_name || "Payslip").replace(/[\\/:*?"<>|]/g, "").trim();
+        pdf.save(`Payslip-${safeFile}.pdf`);
+      } catch (err) {
+        console.error("PDF generation error:", err);
+        alert("Failed to generate PDF.");
+      } finally {
+        w.close();
+      }
+    };
   };
 
   return (
@@ -371,25 +468,55 @@ function Salary() {
         </div>
 
         <div className="salary-actions">
+          <select
+            className="search-input"
+            style={{ maxWidth: 280 }}
+            value={branchFilter}
+            onChange={(e) => setBranchFilter(e.target.value)}
+          >
+            <option value="All">All Branches</option>
+            {branches.map((b) => (
+              <option key={b.id} value={String(b.id)}>
+                {fmtBranch(b)}
+              </option>
+            ))}
+          </select>
+
           <input
             type="text"
-            placeholder="Search name, position, or area..."
+            placeholder="Search name, position, area, branch..."
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && handleSearch()}
             className="search-input"
           />
 
-          <button className="btn-secondary" onClick={handleClear} type="button">Clear</button>
-          <button className="btn-primary" onClick={handleSearch} type="button">Search</button>
+          <button className="btn-secondary" onClick={handleClear} type="button">
+            Clear
+          </button>
+          <button className="btn-primary" onClick={handleSearch} type="button">
+            Search
+          </button>
+        </div>
+      </div>
+
+      <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 12 }}>
+        <div className="pill">
+          Branch:{" "}
+          <strong>
+            {branchFilter === "All"
+              ? "All"
+              : fmtBranch(branchMap.get(String(branchFilter)) || { code: "-", name: "" })}
+          </strong>
+        </div>
+        <div className="pill">
+          Results: <strong>{filteredStaff.length}</strong>
         </div>
       </div>
 
       <div className="salary-card">
         <div className="salary-card-header">
-          <div className="salary-card-title">
-            Staff List <span className="salary-count">{filteredStaff.length}</span>
-          </div>
+          <div className="salary-card-title">Staff List</div>
         </div>
 
         <div className="salary-table-wrapper">
@@ -397,19 +524,22 @@ function Salary() {
             <thead>
               <tr>
                 <th>ID</th>
-                <th>Full Name</th>
+                <th>Name</th>
                 <th>Position</th>
+                <th>Branch</th>
                 <th>Area</th>
                 <th>Actions</th>
               </tr>
             </thead>
+
             <tbody>
               {filteredStaff.map((emp) => (
                 <tr key={emp.id}>
                   <td>{emp.id}</td>
-                  <td className="td-strong">{emp.fullname}</td>
-                  <td>{emp.position}</td>
-                  <td>{emp.area}</td>
+                  <td className="td-strong">{emp.display_name}</td>
+                  <td>{emp.position || "-"}</td>
+                  <td>{emp.branch_code || emp.branch_name ? `${emp.branch_code} • ${emp.branch_name}` : "-"}</td>
+                  <td>{emp.area || "-"}</td>
                   <td>
                     <button className="view-btn" onClick={() => setSelectedStaff(emp)} type="button">
                       View
@@ -420,7 +550,9 @@ function Salary() {
 
               {filteredStaff.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="empty-state">No staff found.</td>
+                  <td colSpan={6} className="empty-state">
+                    No staff found.
+                  </td>
                 </tr>
               )}
             </tbody>
@@ -429,27 +561,52 @@ function Salary() {
       </div>
 
       {selectedStaff && (
-        <div className="modal-overlay" onMouseDown={(e) => e.target.classList.contains("modal-overlay") && setSelectedStaff(null)}>
-          <div className="modal salary-modal">
+        <div
+          className="modal-overlay"
+          onMouseDown={(e) => e.target.classList.contains("modal-overlay") && setSelectedStaff(null)}
+        >
+          <div className="modal salary-modal" onMouseDown={(e) => e.stopPropagation()}>
             <div className="modal-head">
               <div>
                 <h3 className="modal-title">Salary Details</h3>
-                <p className="modal-subtitle">{selectedStaff.fullname}</p>
+                <p className="modal-subtitle">
+                  {selectedStaff.display_name}{" "}
+                  <span style={{ opacity: 0.8 }}>
+                    •{" "}
+                    {selectedStaff.branch_code || selectedStaff.branch_name
+                      ? `${selectedStaff.branch_code} • ${selectedStaff.branch_name}`
+                      : "-"}
+                  </span>
+                </p>
               </div>
-              <button className="modal-x" onClick={() => setSelectedStaff(null)} type="button">✕</button>
+              <button className="modal-x" onClick={() => setSelectedStaff(null)} type="button">
+                ✕
+              </button>
             </div>
 
             <div className="salary-modal-grid">
               <div className="salary-box">
                 <div className="box-title">Basic Pay</div>
-                <div className="box-row"><span>Salary</span><strong>{money(selectedStaff.salary)}</strong></div>
-                <div className="box-row"><span>Ecola</span><strong>{money(selectedStaff.ecola)}</strong></div>
-                <div className="box-row total"><span>Total Compensation</span><strong>{money(toNum(selectedStaff.salary) + toNum(selectedStaff.ecola))}</strong></div>
+                <div className="box-row">
+                  <span>Salary</span>
+                  <strong>{money(selectedStaff.salary)}</strong>
+                </div>
+                <div className="box-row">
+                  <span>Ecola</span>
+                  <strong>{money(selectedStaff.ecola)}</strong>
+                </div>
+                <div className="box-row total">
+                  <span>Total Compensation</span>
+                  <strong>{money(toNum(selectedStaff.salary) + toNum(selectedStaff.ecola))}</strong>
+                </div>
               </div>
 
               <div className="salary-box">
                 <div className="box-title">Allowances</div>
-                <div className="box-row"><span>Transportation</span><strong>{money(selectedStaff.transportation)}</strong></div>
+                <div className="box-row">
+                  <span>Transportation</span>
+                  <strong>{money(selectedStaff.transportation)}</strong>
+                </div>
               </div>
 
               <div className="salary-box full">
@@ -472,9 +629,15 @@ function Salary() {
             </div>
 
             <div className="modal-buttons">
-              <button className="btn-secondary" onClick={() => setSelectedStaff(null)} type="button">Close</button>
-              <button className="btn-secondary" onClick={downloadPayslip} type="button">Download PDF</button>
-              <button className="btn-primary" onClick={printSalary} type="button">Print Payslip</button>
+              <button className="btn-secondary" onClick={() => setSelectedStaff(null)} type="button">
+                Close
+              </button>
+              <button className="btn-secondary" onClick={downloadPayslip} type="button">
+                Download PDF
+              </button>
+              <button className="btn-primary" onClick={printSalary} type="button">
+                Print Payslip
+              </button>
             </div>
           </div>
         </div>

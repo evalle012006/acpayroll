@@ -2,8 +2,11 @@ const jwt = require("jsonwebtoken");
 const bcrypt = require("bcryptjs");
 const pool = require("../db");
 
+const clean = (v) => String(v ?? "").trim();
+
 const login = async (req, res) => {
-  const { username, password } = req.body;
+  const username = clean(req.body?.username);
+  const password = String(req.body?.password ?? ""); // don't trim passwords
 
   if (!username || !password) {
     return res.status(400).json({ message: "username and password are required" });
@@ -14,10 +17,14 @@ const login = async (req, res) => {
   }
 
   try {
+    // safer match: ignore case + spaces for username
     const result = await pool.query(
-      `SELECT id, username, password, role, branch_id
-       FROM public.users
-       WHERE username = $1`,
+      `
+      SELECT id, username, password, role, branch_id
+      FROM public.users
+      WHERE lower(trim(username)) = lower(trim($1))
+      LIMIT 1
+      `,
       [username]
     );
 
@@ -35,7 +42,7 @@ const login = async (req, res) => {
     const payload = {
       id: user.id,
       username: user.username,
-      role: String(user.role || "").trim(),
+      role: String(user.role || "").trim(), // keep exact from DB; middleware will normalize anyway
       branch_id: user.branch_id ?? null,
     };
 

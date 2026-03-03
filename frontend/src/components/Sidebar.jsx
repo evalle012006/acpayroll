@@ -32,13 +32,13 @@ const Sidebar = ({ collapsed }) => {
   const navItems = useMemo(() => {
     const items = [
       { to: "/dashboard", label: "Dashboard", icon: MdDashboard, roles: ["admin", "branch manager"] },
-      { to: "/staff", label: "Staff", icon: FaUsers, roles: ["admin", "branch manager"] },
+      // { to: "/staff", label: "Staff", icon: FaUsers, roles: ["admin", "branch manager"] },    - Notice:  I disable for the meantime due to Boss Far Request
       { to: "/staff-information", label: "Staff Information", icon: FaIdBadge, roles: ["admin", "branch manager"] },
       { to: "/departments", label: "Department", icon: FaBuilding, roles: ["admin", "branch manager"] },
-      { to: "/salary", label: "Salary", icon: BsCash, roles: ["admin", "branch manager"] },
+      { to: "/salary", label: "Payslip", icon: BsCash, roles: ["admin", "branch manager"] },
       { to: "/schedule-balances", label: "Schedule of Balances", icon: HiOutlineClipboardList, roles: ["admin", "branch manager"] },
       { to: "/transactions", label: "HRIS Transactions", icon: FaExchangeAlt, roles: ["admin", "branch manager"] },
-      { to: "/approval", label: "Approval", icon: AiOutlineCheckCircle, roles: ["admin", "branch manager"] },
+      { to: "/approval", label: "Finance Approval", icon: AiOutlineCheckCircle, roles: ["admin", "branch manager"] },
       { to: "/branches", label: "Branch Payroll", icon: TbGitBranch, roles: ["admin", "branch manager"] },
       { to: "/system-update", label: "System Update", icon: FiSettings, roles: ["admin"] },
       { to: "/users", label: "Users", icon: FaUserGroup, roles: ["admin"] },

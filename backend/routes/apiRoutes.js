@@ -1,3 +1,4 @@
+// routes/apiRoutes.js
 const express = require("express");
 const router = express.Router();
 const pool = require("../db");
@@ -7,8 +8,9 @@ const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
 
-// Helpers
-// ===============================
+/* ------------------------- Helpers ------------------------- */
+const toStr = (v) => String(v ?? "").trim();
+
 const toNum = (v) => {
   const n = Number(v ?? 0);
   return Number.isFinite(n) ? n : 0;
@@ -31,12 +33,25 @@ const normalizeStatus = (v) => {
   return s === "inactive" ? "Inactive" : "Active";
 };
 
+const buildFullname = (b) => {
+  const ln = toStr(b?.last_name);
+  const fn = toStr(b?.first_name);
+  const mn = toStr(b?.middle_name);
+
+  const built = `${ln}${ln && fn ? ", " : ""}${fn}${mn ? ` ${mn}` : ""}`
+    .replace(/\s+/g, " ")
+    .trim();
+
+  // fallback to legacy fullname if present
+  return built || toStr(b?.fullname);
+};
+
 const roleLower = (req) => String(req.user?.role || "").trim().toLowerCase();
 const isAdmin = (req) => roleLower(req) === "admin";
 const isBranchManager = (req) => roleLower(req) === "branch manager";
 const getUserBranchId = (req) => req.user?.branch_id ?? null;
 
-// branch-manager guard for staff ownership
+/* ------------------------- Branch-manager staff guard ------------------------- */
 async function assertStaffInManagersBranch(req, staffId) {
   if (!isBranchManager(req)) return true;
   const bid = getUserBranchId(req);
@@ -49,8 +64,7 @@ async function assertStaffInManagersBranch(req, staffId) {
   return check.rowCount > 0;
 }
 
-// Upload staff photo (multer)
-// ===============================
+/* ------------------------- Upload dirs (multer) ------------------------- */
 const staffUploadDir = path.join(__dirname, "..", "uploads", "staff");
 fs.mkdirSync(staffUploadDir, { recursive: true });
 
@@ -68,8 +82,6 @@ const uploadPhoto = multer({
   limits: { fileSize: 2 * 1024 * 1024 }, // 2MB
 });
 
-// Upload staff attachments (multer)
-// ===============================
 const attachUploadDir = path.join(__dirname, "..", "uploads", "staff_attachments");
 fs.mkdirSync(attachUploadDir, { recursive: true });
 
@@ -86,8 +98,9 @@ const uploadAttachment = multer({
   limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
 });
 
-// BRANCHES
-// ===============================
+/* ===========================================================
+   BRANCHES
+   =========================================================== */
 router.get("/branches", requireAuth, async (req, res) => {
   try {
     if (isAdmin(req)) {
@@ -116,9 +129,9 @@ router.get("/branches", requireAuth, async (req, res) => {
 
 router.post("/branches", requireAuth, requireRole(["admin"]), async (req, res) => {
   try {
-    const code = String(req.body?.code || "").trim();
-    const name = String(req.body?.name || "").trim();
-    const area = String(req.body?.area || "").trim();
+    const code = toStr(req.body?.code);
+    const name = toStr(req.body?.name);
+    const area = toStr(req.body?.area);
     if (!code || !name || !area) return res.status(400).json({ message: "code, name, area required" });
 
     const r = await pool.query(
@@ -140,9 +153,9 @@ router.put("/branches/:id", requireAuth, requireRole(["admin"]), async (req, res
     const id = toInt(req.params.id);
     if (!id) return res.status(400).json({ message: "Invalid branch id" });
 
-    const code = String(req.body?.code || "").trim();
-    const name = String(req.body?.name || "").trim();
-    const area = String(req.body?.area || "").trim();
+    const code = toStr(req.body?.code);
+    const name = toStr(req.body?.name);
+    const area = toStr(req.body?.area);
     if (!code || !name || !area) return res.status(400).json({ message: "code, name, area required" });
 
     const r = await pool.query(
@@ -176,8 +189,11 @@ router.delete("/branches/:id", requireAuth, requireRole(["admin"]), async (req, 
   }
 });
 
-// STAFF
-// ===============================
+/* ===========================================================
+   STAFF
+   - UPDATED for last_name / first_name / middle_name
+   - Server computes fullname automatically
+   =========================================================== */
 router.get("/staff", requireAuth, async (req, res) => {
   try {
     if (isAdmin(req)) {
@@ -188,7 +204,10 @@ router.get("/staff", requireAuth, async (req, res) => {
     if (isBranchManager(req)) {
       const bid = getUserBranchId(req);
       if (!bid) return res.json([]);
-      const r = await pool.query(`SELECT * FROM public.staff WHERE branch_id=$1 ORDER BY id DESC`, [bid]);
+      const r = await pool.query(
+        `SELECT * FROM public.staff WHERE branch_id=$1 ORDER BY id DESC`,
+        [bid]
+      );
       return res.json(r.rows);
     }
 
@@ -205,40 +224,84 @@ router.post("/staff", requireAuth, requireRole(["admin"]), async (req, res) => {
     await client.query("BEGIN");
 
     const b = req.body || {};
-    const fullname = String(b.fullname || "").trim();
-    const position = String(b.position || "").trim();
 
-    if (!fullname || !position) {
+    const last_name = toStr(b.last_name);
+    const first_name = toStr(b.first_name);
+    const middle_name = toStr(b.middle_name);
+
+    const position = toStr(b.position);
+    const fullname = buildFullname(b);
+
+    if (!last_name || !first_name || !position) {
       await client.query("ROLLBACK");
-      return res.status(400).json({ message: "fullname and position are required" });
+      return res.status(400).json({ message: "last_name, first_name, and position are required" });
     }
 
     const ins = await client.query(
       `
       INSERT INTO public.staff (
-        employee_no, fullname, "position", department, area, branch_id,
+        employee_no,
+        last_name, first_name, middle_name,
+        fullname,
+        address, municipality, province, contact, email,
+        date_of_birth, place_of_birth, gender, civil_status, citizenship,
+        height, weight, religion, blood_type,
+
+        "position", department, area, branch_id,
         salary, ecola, transportation, postage, motorcycle_loan,
         additional_target, repairing, additional_monitoring,
         motorcycle, other_deduction,
+
+        start_date,
         regularization_date,
         status
       )
       VALUES (
-        $1,$2,$3,$4,$5,$6,
-        $7,$8,$9,$10,$11,
-        $12,$13,$14,
-        $15,$16,
-        $17,
-        $18
+        $1,
+        $2,$3,$4,
+        $5,
+        $6,$7,$8,$9,$10,
+        $11,$12,$13,$14,$15,
+        $16,$17,$18,$19,
+
+        $20,$21,$22,$23,
+        $24,$25,$26,$27,$28,
+        $29,$30,$31,
+        $32,$33,
+
+        $34,
+        $35,
+        $36
       )
       RETURNING id;
       `,
       [
         b.employee_no || null,
+        last_name,
+        first_name,
+        middle_name || null,
         fullname,
+
+        toStr(b.address) || null,
+        toStr(b.municipality) || null,
+        toStr(b.province) || null,
+        toStr(b.contact) || null,
+        toStr(b.email) || null,
+
+        toDateOrNull(b.date_of_birth),
+        toStr(b.place_of_birth) || null,
+        toStr(b.gender) || null,
+        toStr(b.civil_status) || null,
+        toStr(b.citizenship) || null,
+
+        b.height === "" || b.height === null || b.height === undefined ? null : toNum(b.height),
+        b.weight === "" || b.weight === null || b.weight === undefined ? null : toNum(b.weight),
+        toStr(b.religion) || null,
+        toStr(b.blood_type) || null,
+
         position,
-        b.department || null,
-        b.area || null,
+        toStr(b.department) || null,
+        toStr(b.area) || null,
         toInt(b.branch_id),
 
         toNum(b.salary),
@@ -254,6 +317,7 @@ router.post("/staff", requireAuth, requireRole(["admin"]), async (req, res) => {
         toNum(b.motorcycle),
         toNum(b.other_deduction),
 
+        toDateOrNull(b.start_date),
         toDateOrNull(b.regularization_date),
         normalizeStatus(b.status),
       ]
@@ -261,6 +325,7 @@ router.post("/staff", requireAuth, requireRole(["admin"]), async (req, res) => {
 
     const newId = ins.rows[0].id;
 
+    // Keep balances table synced to employee_id + fullname + position
     await client.query(
       `
       INSERT INTO public.staff_balances
@@ -301,12 +366,17 @@ router.put("/staff/:id", requireAuth, requireRole(["admin"]), async (req, res) =
     }
 
     const b = req.body || {};
-    const fullname = String(b.fullname || "").trim();
-    const position = String(b.position || "").trim();
 
-    if (!fullname || !position) {
+    const last_name = toStr(b.last_name);
+    const first_name = toStr(b.first_name);
+    const middle_name = toStr(b.middle_name);
+
+    const position = toStr(b.position);
+    const fullname = buildFullname(b);
+
+    if (!last_name || !first_name || !position) {
       await client.query("ROLLBACK");
-      return res.status(400).json({ message: "fullname and position are required" });
+      return res.status(400).json({ message: "last_name, first_name, and position are required" });
     }
 
     const upd = await client.query(
@@ -314,36 +384,80 @@ router.put("/staff/:id", requireAuth, requireRole(["admin"]), async (req, res) =
       UPDATE public.staff
       SET
         employee_no=$1,
-        fullname=$2,
-        "position"=$3,
-        department=$4,
-        area=$5,
-        branch_id=$6,
 
-        salary=$7,
-        ecola=$8,
-        transportation=$9,
-        postage=$10,
-        motorcycle_loan=$11,
+        last_name=$2,
+        first_name=$3,
+        middle_name=$4,
+        fullname=$5,
 
-        additional_target=$12,
-        repairing=$13,
-        additional_monitoring=$14,
+        address=$6,
+        municipality=$7,
+        province=$8,
+        contact=$9,
+        email=$10,
 
-        motorcycle=$15,
-        other_deduction=$16,
+        date_of_birth=$11,
+        place_of_birth=$12,
+        gender=$13,
+        civil_status=$14,
+        citizenship=$15,
+        height=$16,
+        weight=$17,
+        religion=$18,
+        blood_type=$19,
 
-        regularization_date=$17,
-        status=$18
-      WHERE id=$19
+        "position"=$20,
+        department=$21,
+        area=$22,
+        branch_id=$23,
+
+        salary=$24,
+        ecola=$25,
+        transportation=$26,
+        postage=$27,
+        motorcycle_loan=$28,
+
+        additional_target=$29,
+        repairing=$30,
+        additional_monitoring=$31,
+
+        motorcycle=$32,
+        other_deduction=$33,
+
+        start_date=$34,
+        regularization_date=$35,
+        status=$36
+      WHERE id=$37
       RETURNING id;
       `,
       [
         b.employee_no || null,
+
+        last_name,
+        first_name,
+        middle_name || null,
         fullname,
+
+        toStr(b.address) || null,
+        toStr(b.municipality) || null,
+        toStr(b.province) || null,
+        toStr(b.contact) || null,
+        toStr(b.email) || null,
+
+        toDateOrNull(b.date_of_birth),
+        toStr(b.place_of_birth) || null,
+        toStr(b.gender) || null,
+        toStr(b.civil_status) || null,
+        toStr(b.citizenship) || null,
+
+        b.height === "" || b.height === null || b.height === undefined ? null : toNum(b.height),
+        b.weight === "" || b.weight === null || b.weight === undefined ? null : toNum(b.weight),
+        toStr(b.religion) || null,
+        toStr(b.blood_type) || null,
+
         position,
-        b.department || null,
-        b.area || null,
+        toStr(b.department) || null,
+        toStr(b.area) || null,
         toInt(b.branch_id),
 
         toNum(b.salary),
@@ -359,6 +473,7 @@ router.put("/staff/:id", requireAuth, requireRole(["admin"]), async (req, res) =
         toNum(b.motorcycle),
         toNum(b.other_deduction),
 
+        toDateOrNull(b.start_date),
         toDateOrNull(b.regularization_date),
         normalizeStatus(b.status),
         id,
@@ -370,6 +485,7 @@ router.put("/staff/:id", requireAuth, requireRole(["admin"]), async (req, res) =
       return res.status(404).json({ message: "Staff not found" });
     }
 
+    // keep balances synced
     await client.query(
       `UPDATE public.staff_balances
        SET fullname=$1, "position"=$2, updated_at=NOW()
@@ -401,8 +517,7 @@ router.delete("/staff/:id", requireAuth, requireRole(["admin"]), async (req, res
   }
 });
 
-// STAFF PHOTO UPLOAD
-// ===============================
+/* ------------------------- STAFF PHOTO UPLOAD ------------------------- */
 router.post(
   "/staff/:id/photo",
   requireAuth,
@@ -428,20 +543,41 @@ router.post(
   }
 );
 
-// LEAVE REQUESTS
-// ===============================
+/* ===========================================================
+   LEAVE / LOAN / BALANCES (used by Dashboard + Salary)
+   =========================================================== */
 router.get("/leave-requests", requireAuth, async (_req, res) => {
   try {
     const r = await pool.query(`SELECT * FROM public.leave_requests ORDER BY id DESC`);
     return res.json(r.rows);
   } catch (e) {
     console.error("GET /api/leave-requests ERROR:", e.message);
+    return res.status(500).json({ message: e?.message || "Server error" });
+  }
+});
+
+router.get("/leave-requests/staff/:id", requireAuth, async (req, res) => {
+  try {
+    const staffId = Number(req.params.id);
+    if (!Number.isFinite(staffId) || staffId <= 0) {
+      return res.status(400).json({ message: "Invalid staff id" });
+    }
+
+    const r = await pool.query(
+      `SELECT *
+       FROM public.leave_requests
+       WHERE employee_id = $1
+       ORDER BY id DESC`,
+      [staffId]
+    );
+
+    return res.json(r.rows);
+  } catch (e) {
+    console.error("GET /api/leave-requests/staff/:id ERROR:", e.message);
     return res.status(500).json({ message: "Server error" });
   }
 });
 
-// LOAN REQUESTS
-// ===============================
 router.get("/loan-requests", requireAuth, async (_req, res) => {
   try {
     const r = await pool.query(`SELECT * FROM public.loan_requests ORDER BY id DESC`);
@@ -452,8 +588,6 @@ router.get("/loan-requests", requireAuth, async (_req, res) => {
   }
 });
 
-// STAFF BALANCES
-// ===============================
 router.get("/staff-balances", requireAuth, async (_req, res) => {
   try {
     const r = await pool.query(`SELECT * FROM public.staff_balances ORDER BY id DESC`);
@@ -464,13 +598,13 @@ router.get("/staff-balances", requireAuth, async (_req, res) => {
   }
 });
 
-// TRANSFER STAFF ORDERS
-// ===============================
-async function generateTransferOrderNo(client) {
+/* ===========================================================
+   ORDER NUMBER GENERATOR
+   =========================================================== */
+async function generateOrderNo(client, prefix) {
   const now = new Date();
   const year = now.getFullYear();
   const month = now.getMonth() + 1;
-  const prefix = "TSO";
 
   await client.query(
     `
@@ -507,6 +641,646 @@ async function generateTransferOrderNo(client) {
   return `${prefix}-${year}-${mm}-${nnnn}`;
 }
 
+/* ===========================================================
+   PROMOTION / DEMOTION / SUSPENSION / EXIT / TRANSFER
+   (same behavior as your file)
+   =========================================================== */
+
+/* -------- PROMOTION ORDERS -------- */
+router.get("/promotion-orders", requireAuth, async (req, res) => {
+  try {
+    const role = roleLower(req);
+    const branchId = getUserBranchId(req);
+
+    if (role === "admin") {
+      const r = await pool.query(`SELECT * FROM public.promotion_orders ORDER BY created_at DESC`);
+      return res.json(r.rows);
+    }
+
+    if (role === "branch manager") {
+      const r = await pool.query(
+        `
+        SELECT po.*
+        FROM public.promotion_orders po
+        JOIN public.staff s ON s.id = po.employee_id
+        WHERE s.branch_id = $1
+        ORDER BY po.created_at DESC
+        `,
+        [branchId]
+      );
+      return res.json(r.rows);
+    }
+
+    return res.status(403).json({ message: "Access denied" });
+  } catch (e) {
+    console.error("GET /api/promotion-orders ERROR:", e.message);
+    return res.status(500).json({ message: "Server error" });
+  }
+});
+
+router.post("/promotion-orders", requireAuth, requireRole(["admin", "branch manager"]), async (req, res) => {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    const { employee_id, employee_name, new_position, new_salary, effective_date, remarks } = req.body || {};
+
+    const empId = toInt(employee_id);
+    if (!empId) return res.status(400).json({ message: "Employee required" });
+
+    const eff = toDateOrNull(effective_date);
+    if (!eff) return res.status(400).json({ message: "Effective date required" });
+
+    const np = toStr(new_position);
+    if (!np) return res.status(400).json({ message: "New position required" });
+
+    const s = await client.query(
+      `SELECT id, fullname, "position", salary, branch_id FROM public.staff WHERE id=$1`,
+      [empId]
+    );
+    if (s.rowCount === 0) return res.status(404).json({ message: "Staff not found" });
+
+    const staffRow = s.rows[0];
+
+    if (isBranchManager(req)) {
+      const bid = getUserBranchId(req);
+      if (!bid || Number(staffRow.branch_id) !== Number(bid)) {
+        await client.query("ROLLBACK");
+        return res.status(403).json({ message: "Access denied" });
+      }
+    }
+
+    const orderNo = await generateOrderNo(client, "PRO");
+
+    const ins = await client.query(
+      `
+      INSERT INTO public.promotion_orders
+        (order_no, employee_id, employee_name,
+         prev_position, new_position,
+         prev_salary, new_salary,
+         effective_date, date_created, remarks,
+         status, created_by)
+      VALUES
+        ($1,$2,$3,
+         $4,$5,
+         $6,$7,
+         $8::date, CURRENT_DATE, $9,
+         'Pending', $10)
+      RETURNING *;
+      `,
+      [
+        orderNo,
+        empId,
+        toStr(employee_name) || toStr(staffRow.fullname),
+        toStr(staffRow.position || ""),
+        np,
+        toNum(staffRow.salary),
+        toNum(new_salary),
+        eff,
+        toStr(remarks) || "",
+        req.user?.id ?? null,
+      ]
+    );
+
+    await client.query("COMMIT");
+    return res.json(ins.rows[0]);
+  } catch (e) {
+    await client.query("ROLLBACK");
+    console.error("POST /api/promotion-orders ERROR:", e.message);
+    return res.status(500).json({ message: "Server error" });
+  } finally {
+    client.release();
+  }
+});
+
+router.put("/promotion-orders/:id/approve", requireAuth, requireRole(["admin"]), async (req, res) => {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    const id = toInt(req.params.id);
+    if (!id) return res.status(400).json({ message: "Invalid id" });
+
+    const r = await client.query(
+      `
+      UPDATE public.promotion_orders
+      SET
+        status='Approved',
+        approved_by=$2,
+        approved_at=COALESCE(approved_at, NOW()),
+        rejected_by=NULL,
+        rejected_at=NULL,
+        rejection_reason=NULL
+      WHERE id=$1 AND status='Pending'
+      RETURNING *;
+      `,
+      [id, req.user?.id ?? null]
+    );
+
+    if (r.rowCount === 0) {
+      await client.query("ROLLBACK");
+      return res.status(400).json({ message: "Order not found or not Pending" });
+    }
+
+    const order = r.rows[0];
+
+    await client.query(
+      `
+      UPDATE public.staff
+      SET "position"=$1,
+          salary=$2
+      WHERE id=$3
+      `,
+      [order.new_position, toNum(order.new_salary), order.employee_id]
+    );
+
+    // also keep staff_balances position synced
+    await client.query(
+      `UPDATE public.staff_balances SET "position"=$1, updated_at=NOW() WHERE employee_id=$2`,
+      [order.new_position, order.employee_id]
+    );
+
+    await client.query("COMMIT");
+    return res.json(order);
+  } catch (e) {
+    await client.query("ROLLBACK");
+    console.error("PUT /api/promotion-orders/:id/approve ERROR:", e.message);
+    return res.status(500).json({ message: "Server error" });
+  } finally {
+    client.release();
+  }
+});
+
+router.put("/promotion-orders/:id/reject", requireAuth, requireRole(["admin"]), async (req, res) => {
+  try {
+    const id = toInt(req.params.id);
+    if (!id) return res.status(400).json({ message: "Invalid id" });
+
+    const reason = toStr(req.body?.reason);
+    if (!reason) return res.status(400).json({ message: "Rejection reason is required" });
+
+    const r = await pool.query(
+      `
+      UPDATE public.promotion_orders
+      SET
+        status='Rejected',
+        rejected_by=$2,
+        rejected_at=COALESCE(rejected_at, NOW()),
+        rejection_reason=$3,
+        approved_by=NULL,
+        approved_at=NULL
+      WHERE id=$1 AND status='Pending'
+      RETURNING *;
+      `,
+      [id, req.user?.id ?? null, reason]
+    );
+
+    if (r.rowCount === 0) return res.status(400).json({ message: "Order not found or not Pending" });
+    return res.json(r.rows[0]);
+  } catch (e) {
+    console.error("PUT /api/promotion-orders/:id/reject ERROR:", e.message);
+    return res.status(500).json({ message: "Server error" });
+  }
+});
+
+/* -------- DEMOTION ORDERS -------- */
+router.get("/demotion-orders", requireAuth, async (req, res) => {
+  try {
+    const role = roleLower(req);
+    if (role !== "admin" && role !== "branch manager") {
+      return res.status(403).json({ message: "Access denied" });
+    }
+
+    const r = await pool.query(`SELECT * FROM public.demotion_orders ORDER BY created_at DESC`);
+    return res.json(r.rows);
+  } catch (e) {
+    console.error("GET /api/demotion-orders ERROR:", e.message);
+    return res.status(500).json({ message: "Server error" });
+  }
+});
+
+router.post("/demotion-orders", requireAuth, requireRole(["admin", "branch manager"]), async (req, res) => {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    const { employee_id, employee_name, old_position, new_position, effective_date, details } = req.body || {};
+
+    if (!employee_id || !employee_name) return res.status(400).json({ message: "Employee required" });
+    if (!new_position) return res.status(400).json({ message: "New position required" });
+    if (!effective_date) return res.status(400).json({ message: "Effective date required" });
+
+    const orderNo = await generateOrderNo(client, "DMO");
+
+    const r = await client.query(
+      `
+      INSERT INTO public.demotion_orders
+        (order_no, employee_id, employee_name, old_position, new_position, effective_date, details, status, created_by)
+      VALUES
+        ($1,$2,$3,$4,$5,$6::date,$7,'Pending',$8)
+      RETURNING *;
+      `,
+      [
+        orderNo,
+        Number(employee_id),
+        String(employee_name),
+        old_position ? String(old_position) : null,
+        String(new_position),
+        String(effective_date).slice(0, 10),
+        details ? String(details) : null,
+        req.user?.id ?? null,
+      ]
+    );
+
+    await client.query("COMMIT");
+    return res.json(r.rows[0]);
+  } catch (e) {
+    await client.query("ROLLBACK");
+    console.error("POST /api/demotion-orders ERROR:", e.message);
+    return res.status(500).json({ message: "Server error" });
+  } finally {
+    client.release();
+  }
+});
+
+router.put("/demotion-orders/:id/approve", requireAuth, requireRole(["admin"]), async (req, res) => {
+  try {
+    const id = toInt(req.params.id);
+    if (!id) return res.status(400).json({ message: "Invalid id" });
+
+    const r = await pool.query(
+      `
+      UPDATE public.demotion_orders
+      SET
+        status='Approved',
+        approved_by=$2,
+        approved_at=COALESCE(approved_at, NOW()),
+        rejected_by=NULL,
+        rejected_at=NULL,
+        rejection_reason=NULL
+      WHERE id=$1 AND status='Pending'
+      RETURNING *;
+      `,
+      [id, req.user?.id ?? null]
+    );
+
+    if (r.rowCount === 0) return res.status(400).json({ message: "Order not found or not Pending" });
+    return res.json(r.rows[0]);
+  } catch (e) {
+    console.error("PUT /api/demotion-orders/:id/approve ERROR:", e.message);
+    return res.status(500).json({ message: "Server error" });
+  }
+});
+
+router.put("/demotion-orders/:id/reject", requireAuth, requireRole(["admin"]), async (req, res) => {
+  try {
+    const id = toInt(req.params.id);
+    if (!id) return res.status(400).json({ message: "Invalid id" });
+
+    const reason = toStr(req.body?.reason);
+    if (!reason) return res.status(400).json({ message: "Rejection reason is required" });
+
+    const r = await pool.query(
+      `
+      UPDATE public.demotion_orders
+      SET
+        status='Rejected',
+        rejected_by=$2,
+        rejected_at=COALESCE(rejected_at, NOW()),
+        rejection_reason=$3,
+        approved_by=NULL,
+        approved_at=NULL
+      WHERE id=$1 AND status='Pending'
+      RETURNING *;
+      `,
+      [id, req.user?.id ?? null, reason]
+    );
+
+    if (r.rowCount === 0) return res.status(400).json({ message: "Order not found or not Pending" });
+    return res.json(r.rows[0]);
+  } catch (e) {
+    console.error("PUT /api/demotion-orders/:id/reject ERROR:", e.message);
+    return res.status(500).json({ message: "Server error" });
+  }
+});
+
+/* -------- SUSPENSION ORDERS -------- */
+router.get("/suspension-orders", requireAuth, async (req, res) => {
+  try {
+    const role = roleLower(req);
+    if (role !== "admin" && role !== "branch manager") {
+      return res.status(403).json({ message: "Access denied" });
+    }
+
+    const r = await pool.query(`SELECT * FROM public.suspension_orders ORDER BY created_at DESC`);
+    return res.json(r.rows);
+  } catch (e) {
+    console.error("GET /api/suspension-orders ERROR:", e.message);
+    return res.status(500).json({ message: "Server error" });
+  }
+});
+
+router.post("/suspension-orders", requireAuth, requireRole(["admin", "branch manager"]), async (req, res) => {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    const { employee_id, employee_name, reason, start_date, end_date, details } = req.body || {};
+
+    if (!employee_id || !employee_name) return res.status(400).json({ message: "Employee required" });
+    if (!reason) return res.status(400).json({ message: "Reason required" });
+    if (!start_date || !end_date) return res.status(400).json({ message: "Start/End date required" });
+
+    const orderNo = await generateOrderNo(client, "SUS");
+
+    const r = await client.query(
+      `
+      INSERT INTO public.suspension_orders
+        (order_no, employee_id, employee_name, reason, start_date, end_date, details, status, created_by)
+      VALUES
+        ($1,$2,$3,$4,$5::date,$6::date,$7,'Pending',$8)
+      RETURNING *;
+      `,
+      [
+        orderNo,
+        Number(employee_id),
+        String(employee_name),
+        String(reason),
+        String(start_date).slice(0, 10),
+        String(end_date).slice(0, 10),
+        details ? String(details) : null,
+        req.user?.id ?? null,
+      ]
+    );
+
+    await client.query("COMMIT");
+    return res.json(r.rows[0]);
+  } catch (e) {
+    await client.query("ROLLBACK");
+    console.error("POST /api/suspension-orders ERROR:", e.message);
+    return res.status(500).json({ message: "Server error" });
+  } finally {
+    client.release();
+  }
+});
+
+router.put("/suspension-orders/:id/approve", requireAuth, requireRole(["admin"]), async (req, res) => {
+  try {
+    const id = toInt(req.params.id);
+    if (!id) return res.status(400).json({ message: "Invalid id" });
+
+    const r = await pool.query(
+      `
+      UPDATE public.suspension_orders
+      SET
+        status='Approved',
+        approved_by=$2,
+        approved_at=COALESCE(approved_at, NOW()),
+        rejected_by=NULL,
+        rejected_at=NULL,
+        rejection_reason=NULL
+      WHERE id=$1 AND status='Pending'
+      RETURNING *;
+      `,
+      [id, req.user?.id ?? null]
+    );
+
+    if (r.rowCount === 0) return res.status(400).json({ message: "Order not found or not Pending" });
+    return res.json(r.rows[0]);
+  } catch (e) {
+    console.error("PUT /api/suspension-orders/:id/approve ERROR:", e.message);
+    return res.status(500).json({ message: "Server error" });
+  }
+});
+
+router.put("/suspension-orders/:id/reject", requireAuth, requireRole(["admin"]), async (req, res) => {
+  try {
+    const id = toInt(req.params.id);
+    if (!id) return res.status(400).json({ message: "Invalid id" });
+
+    const reason = toStr(req.body?.reason);
+    if (!reason) return res.status(400).json({ message: "Rejection reason is required" });
+
+    const r = await pool.query(
+      `
+      UPDATE public.suspension_orders
+      SET
+        status='Rejected',
+        rejected_by=$2,
+        rejected_at=COALESCE(rejected_at, NOW()),
+        rejection_reason=$3,
+        approved_by=NULL,
+        approved_at=NULL
+      WHERE id=$1 AND status='Pending'
+      RETURNING *;
+      `,
+      [id, req.user?.id ?? null, reason]
+    );
+
+    if (r.rowCount === 0) return res.status(400).json({ message: "Order not found or not Pending" });
+    return res.json(r.rows[0]);
+  } catch (e) {
+    console.error("PUT /api/suspension-orders/:id/reject ERROR:", e.message);
+    return res.status(500).json({ message: "Server error" });
+  }
+});
+
+/* -------- EXIT STAFF ORDERS -------- */
+router.get("/exit-staff-orders", requireAuth, async (req, res) => {
+  try {
+    const role = roleLower(req);
+    const branchId = getUserBranchId(req);
+
+    if (role === "admin") {
+      const r = await pool.query(`SELECT * FROM public.exit_staff_orders ORDER BY created_at DESC`);
+      return res.json(r.rows);
+    }
+
+    if (role === "branch manager") {
+      const r = await pool.query(
+        `
+        SELECT *
+        FROM public.exit_staff_orders
+        WHERE branch_id = $1
+        ORDER BY created_at DESC
+        `,
+        [branchId]
+      );
+      return res.json(r.rows);
+    }
+
+    return res.status(403).json({ message: "Access denied" });
+  } catch (e) {
+    console.error("GET /api/exit-staff-orders ERROR:", e.message);
+    return res.status(500).json({ message: "Server error" });
+  }
+});
+
+router.post("/exit-staff-orders", requireAuth, requireRole(["admin", "branch manager"]), async (req, res) => {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    const b = req.body || {};
+    const employee_id = toInt(b.employee_id);
+    const exit_type = toStr(b.exit_type);
+    const effective_date = toDateOrNull(b.effective_date);
+    const remarks = toStr(b.remarks);
+
+    if (!employee_id) return res.status(400).json({ message: "Employee required" });
+    if (!["Resign", "AWOL", "Termination"].includes(exit_type)) {
+      return res.status(400).json({ message: "Exit type must be Resign, AWOL, or Termination" });
+    }
+    if (!effective_date) return res.status(400).json({ message: "Effective date required" });
+
+    const s = await client.query(
+      `
+      SELECT
+        s.id,
+        s.fullname,
+        s.branch_id,
+        br.code AS branch_code,
+        br.name AS branch_name
+      FROM public.staff s
+      LEFT JOIN public.branches br ON br.id = s.branch_id
+      WHERE s.id = $1
+      `,
+      [employee_id]
+    );
+
+    if (s.rowCount === 0) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ message: "Staff not found" });
+    }
+
+    const staffRow = s.rows[0];
+
+    if (isBranchManager(req)) {
+      const bid = getUserBranchId(req);
+      if (!bid || Number(staffRow.branch_id) !== Number(bid)) {
+        await client.query("ROLLBACK");
+        return res.status(403).json({ message: "Access denied" });
+      }
+    }
+
+    const orderNo = await generateOrderNo(client, "EXIT");
+
+    const ins = await client.query(
+      `
+      INSERT INTO public.exit_staff_orders
+        (order_no, employee_id, employee_name,
+         branch_id, branch_code, branch_name,
+         exit_type, effective_date, remarks,
+         status, created_by)
+      VALUES
+        ($1,$2,$3,
+         $4,$5,$6,
+         $7,$8::date,$9,
+         'Pending',$10)
+      RETURNING *;
+      `,
+      [
+        orderNo,
+        employee_id,
+        String(staffRow.fullname || ""),
+        staffRow.branch_id ? Number(staffRow.branch_id) : null,
+        String(staffRow.branch_code || ""),
+        String(staffRow.branch_name || ""),
+        exit_type,
+        effective_date,
+        remarks || null,
+        req.user?.id ?? null,
+      ]
+    );
+
+    await client.query("COMMIT");
+    return res.json(ins.rows[0]);
+  } catch (e) {
+    await client.query("ROLLBACK");
+    console.error("POST /api/exit-staff-orders ERROR:", e.message);
+    return res.status(500).json({ message: "Server error" });
+  } finally {
+    client.release();
+  }
+});
+
+router.put("/exit-staff-orders/:id/approve", requireAuth, requireRole(["admin"]), async (req, res) => {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    const id = toInt(req.params.id);
+    if (!id) return res.status(400).json({ message: "Invalid id" });
+
+    const r = await client.query(
+      `
+      UPDATE public.exit_staff_orders
+      SET
+        status='Approved',
+        approved_by=$2,
+        approved_at=COALESCE(approved_at, NOW()),
+        rejected_by=NULL,
+        rejected_at=NULL,
+        rejection_reason=NULL
+      WHERE id=$1 AND status='Pending'
+      RETURNING *;
+      `,
+      [id, req.user?.id ?? null]
+    );
+
+    if (r.rowCount === 0) {
+      await client.query("ROLLBACK");
+      return res.status(400).json({ message: "Order not found or not Pending" });
+    }
+
+    const order = r.rows[0];
+
+    await client.query(`UPDATE public.staff SET status='Inactive' WHERE id=$1`, [order.employee_id]);
+
+    await client.query("COMMIT");
+    return res.json(order);
+  } catch (e) {
+    await client.query("ROLLBACK");
+    console.error("PUT /api/exit-staff-orders/:id/approve ERROR:", e.message);
+    return res.status(500).json({ message: "Server error" });
+  } finally {
+    client.release();
+  }
+});
+
+router.put("/exit-staff-orders/:id/reject", requireAuth, requireRole(["admin"]), async (req, res) => {
+  try {
+    const id = toInt(req.params.id);
+    if (!id) return res.status(400).json({ message: "Invalid id" });
+
+    const reason = toStr(req.body?.reason);
+    if (!reason) return res.status(400).json({ message: "Rejection reason is required" });
+
+    const r = await pool.query(
+      `
+      UPDATE public.exit_staff_orders
+      SET
+        status='Rejected',
+        rejected_by=$2,
+        rejected_at=COALESCE(rejected_at, NOW()),
+        rejection_reason=$3,
+        approved_by=NULL,
+        approved_at=NULL
+      WHERE id=$1 AND status='Pending'
+      RETURNING *;
+      `,
+      [id, req.user?.id ?? null, reason]
+    );
+
+    if (r.rowCount === 0) return res.status(400).json({ message: "Order not found or not Pending" });
+    return res.json(r.rows[0]);
+  } catch (e) {
+    console.error("PUT /api/exit-staff-orders/:id/reject ERROR:", e.message);
+    return res.status(500).json({ message: "Server error" });
+  }
+});
+
+/* -------- TRANSFER STAFF ORDERS -------- */
 router.get("/transfer-staff-orders", requireAuth, async (req, res) => {
   try {
     const role = roleLower(req);
@@ -574,7 +1348,7 @@ router.post("/transfer-staff-orders", requireAuth, async (req, res) => {
       }
     }
 
-    const orderNo = await generateTransferOrderNo(client);
+    const orderNo = await generateOrderNo(client, "TSO");
 
     const ins = await client.query(
       `
@@ -656,7 +1430,7 @@ router.put("/transfer-staff-orders/:id/reject", requireAuth, requireRole(["admin
     const id = toInt(req.params.id);
     if (!id) return res.status(400).json({ message: "Invalid id" });
 
-    const reason = String(req.body?.reason || "").trim();
+    const reason = toStr(req.body?.reason);
     if (!reason) return res.status(400).json({ message: "Rejection reason is required" });
 
     const r = await pool.query(
@@ -683,10 +1457,9 @@ router.put("/transfer-staff-orders/:id/reject", requireAuth, requireRole(["admin
   }
 });
 
-// STAFF ATTACHMENTS
-// ===============================
-
-// GET /api/staff/:id/attachments
+/* ===========================================================
+   STAFF ATTACHMENTS
+   =========================================================== */
 router.get("/staff/:id/attachments", requireAuth, async (req, res) => {
   try {
     const staffId = toInt(req.params.id);
@@ -712,7 +1485,6 @@ router.get("/staff/:id/attachments", requireAuth, async (req, res) => {
   }
 });
 
-// POST /api/staff/:id/attachments  (multipart/form-data: file_name, file)
 router.post(
   "/staff/:id/attachments",
   requireAuth,
@@ -727,7 +1499,7 @@ router.post(
       const ok = await assertStaffInManagersBranch(req, staffId);
       if (!ok) return res.status(403).json({ message: "Access denied" });
 
-      const fileName = String(req.body?.file_name || "").trim();
+      const fileName = toStr(req.body?.file_name);
       if (!fileName) return res.status(400).json({ message: "File name required" });
 
       const fileUrl = `/uploads/staff_attachments/${req.file.filename}`;
@@ -751,7 +1523,6 @@ router.post(
   }
 );
 
-// DELETE /api/staff/attachments/:id
 router.delete(
   "/staff/attachments/:id",
   requireAuth,
@@ -785,7 +1556,6 @@ router.delete(
       await client.query(`DELETE FROM public.staff_attachments WHERE id=$1`, [id]);
       await client.query("COMMIT");
 
-      // delete physical file best effort
       try {
         const absolute = path.join(__dirname, "..", att.file_url.replace("/uploads/", "uploads/"));
         fs.unlinkSync(absolute);

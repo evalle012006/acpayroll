@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from "react";
+import React, { useCallback, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import api from "../api/axiosClient";
 import "../styles/Login2.css";
@@ -12,6 +12,7 @@ export default function Login() {
 
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -24,12 +25,28 @@ export default function Login() {
       setLoading(true);
 
       try {
-        const res = await api.post("/auth/login", { username, password });
+        const body = {
+          username: String(username || "").trim(),
+          password: String(password || ""),
+        };
 
-        localStorage.setItem("token", res.data?.token || "");
-        localStorage.setItem("user", JSON.stringify(res.data?.user || null));
+        const res = await api.post("/auth/login", body);
+
+        const token = res.data?.token;
+        const user = res.data?.user;
+
+        if (!token || !user) {
+          throw new Error("Login response missing token/user.");
+        }
+
+        // clear old session first
+        localStorage.removeItem("token");
+        localStorage.removeItem("user");
+
+        localStorage.setItem("token", token);
+        localStorage.setItem("user", JSON.stringify(user));
+
         emitAuthChanged();
-
         navigate("/dashboard", { replace: true });
       } catch (err) {
         const msg =

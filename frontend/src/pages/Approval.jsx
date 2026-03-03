@@ -2,16 +2,6 @@ import React, { useEffect, useMemo, useState, useCallback } from "react";
 import "../styles/Approval.css";
 import api from "../api/axiosClient";
 
-const leaveTypes = [
-  "All",
-  "Annual Leave",
-  "Sick Leave",
-  "Maternity Leave",
-  "Paternity Leave",
-  "Emergency Leave",
-  "Indefinite Leave",
-];
-
 const loanTypes = ["All", "Salary Advance", "Special Loan", "Cash Loan", "Motorcycle Loan"];
 
 const readUser = () => {
@@ -22,21 +12,49 @@ const readUser = () => {
   }
 };
 
+const toNum = (v) => {
+  const n = Number(v ?? 0);
+  return Number.isFinite(n) ? n : 0;
+};
+
 const Approval = () => {
   const user = useMemo(() => readUser(), []);
-
-  const [leaveRequests, setLeaveRequests] = useState([]);
+  const isAdmin = String(user?.role || "").trim().toLowerCase() === "admin";
   const [loanRequests, setLoanRequests] = useState([]);
-
-  const [transferOrders, setTransferOrders] = useState([]);
-  const [loadingTransfer, setLoadingTransfer] = useState(false);
-  const [showTransferModal, setShowTransferModal] = useState(false);
-
-  const [selectedLeaveType, setSelectedLeaveType] = useState("All");
   const [selectedLoanType, setSelectedLoanType] = useState("All");
-
-  const [showLeaveModal, setShowLeaveModal] = useState(false);
   const [showLoanModal, setShowLoanModal] = useState(false);
+  const [showSapModal, setShowSapModal] = useState(false);
+  const [showCreateLoan, setShowCreateLoan] = useState(false);
+  const [showCreateSAP, setShowCreateSAP] = useState(false);
+  const [staffList, setStaffList] = useState([]);
+  const [branches, setBranches] = useState([]);
+  const [sapRows, setSapRows] = useState([]);
+  const [creating, setCreating] = useState(false);
+  const [loadingLoan, setLoadingLoan] = useState(false);
+  const [loadingSap, setLoadingSap] = useState(false);
+  const [loanForm, setLoanForm] = useState({
+    employee_id: "",
+    staff_name: "",
+    branch_id: "",
+    branch_code: "",
+    branch_name: "",
+    loan_type: "",
+    amount: "",
+    term: "",
+    interest: "",
+    reason: "",
+    approved_at: "",
+    disbursement_date: "",
+  });
+
+  const [sapForm, setSapForm] = useState({
+    employee_id: "",
+    staff_name: "",
+    description: "",
+    amount: "",
+    term: "",
+    balance: "",
+  });
 
   const [confirmModal, setConfirmModal] = useState({
     show: false,
@@ -44,11 +62,6 @@ const Approval = () => {
     type: "",
     action: "",
   });
-
-  const [loadingLeave, setLoadingLeave] = useState(false);
-  const [loadingLoan, setLoadingLoan] = useState(false);
-
-  const isAdmin = String(user?.role || "").trim().toLowerCase() === "admin";
 
   const logout = useCallback(() => {
     localStorage.removeItem("token");
@@ -73,19 +86,40 @@ const Approval = () => {
     [logout]
   );
 
-  const fetchLeave = useCallback(async () => {
-    const data = await safeGet("/leave-requests", setLoadingLeave);
-    setLeaveRequests(data);
-  }, [safeGet]);
+  const fetchStaff = useCallback(async () => {
+    try {
+      const res = await api.get("/staff");
+      setStaffList(Array.isArray(res.data) ? res.data : []);
+    } catch (err) {
+      if (err?.response?.status === 401) logout();
+      setStaffList([]);
+    }
+  }, [logout]);
+
+  const fetchBranches = useCallback(async () => {
+    try {
+      const res = await api.get("/branches");
+      setBranches(Array.isArray(res.data) ? res.data : []);
+    } catch (err) {
+      if (err?.response?.status === 401) logout();
+      setBranches([]);
+    }
+  }, [logout]);
+
+  const branchMap = useMemo(() => {
+    const m = new Map();
+    (branches || []).forEach((b) => m.set(Number(b.id), b));
+    return m;
+  }, [branches]);
 
   const fetchLoan = useCallback(async () => {
     const data = await safeGet("/loan-requests", setLoadingLoan);
-    setLoanRequests(data);
+    setLoanRequests(Array.isArray(data) ? data : []);
   }, [safeGet]);
 
-  const fetchTransfer = useCallback(async () => {
-    const data = await safeGet("/transfer-staff-orders", setLoadingTransfer);
-    setTransferOrders(data);
+  const fetchSap = useCallback(async () => {
+    const data = await safeGet("/staff-accounts-payable", setLoadingSap);
+    setSapRows(Array.isArray(data) ? data : []);
   }, [safeGet]);
 
   useEffect(() => {
@@ -94,23 +128,22 @@ const Approval = () => {
       window.location.href = "/login";
       return;
     }
-    fetchLeave();
+    fetchStaff();
+    fetchBranches();
     fetchLoan();
-
-    fetchTransfer();
-  }, [user, fetchLeave, fetchLoan, fetchTransfer]);
+    fetchSap();
+  }, [user, fetchStaff, fetchBranches, fetchLoan, fetchSap]);
 
   useEffect(() => {
-    const isOpen = showLeaveModal || showLoanModal || showTransferModal || confirmModal.show;
+    const isOpen = showLoanModal || showSapModal || showCreateLoan || showCreateSAP || confirmModal.show;
     if (!isOpen) return;
 
     const onKeyDown = (e) => {
       if (e.key === "Escape") {
-        setShowLeaveModal(false);
         setShowLoanModal(false);
-
-        setShowTransferModal(false);
-
+        setShowSapModal(false);
+        setShowCreateLoan(false);
+        setShowCreateSAP(false);
         setConfirmModal({ show: false, requestId: null, type: "", action: "" });
       }
     };
@@ -121,17 +154,163 @@ const Approval = () => {
       document.removeEventListener("keydown", onKeyDown);
       document.body.style.overflow = "";
     };
-  }, [showLeaveModal, showLoanModal, showTransferModal, confirmModal.show]);
+  }, [showLoanModal, showSapModal, showCreateLoan, showCreateSAP, confirmModal.show]);
 
-  const updateLeaveStatus = async (id, status) => {
+  const badgeClass = (status) => {
+    if (status === "Approved") return "badge badge-approved";
+    if (status === "Rejected") return "badge badge-rejected";
+    return "badge badge-pending";
+  };
+
+  const renderEmployeeOptions = () =>
+    staffList.map((s) => (
+      <option key={s.id} value={s.id}>
+        {(s.employee_no ? `${s.employee_no} - ` : "") + s.fullname}
+      </option>
+    ));
+
+  const filteredLoan = useMemo(() => {
+    return loanRequests.filter((item) => (selectedLoanType === "All" ? true : item.loan_type === selectedLoanType));
+  }, [loanRequests, selectedLoanType]);
+
+  const loanPreview = useMemo(() => {
+    const amount = toNum(loanForm.amount);
+    const interest = toNum(loanForm.interest);
+    const term = Math.max(1, toNum(loanForm.term));
+    const total = amount + (amount * interest) / 100;
+    const per_month = total / term;
+    return { total, per_month };
+  }, [loanForm.amount, loanForm.interest, loanForm.term]);
+
+  const sapPreview = useMemo(() => {
+    const amount = toNum(sapForm.amount);
+    const term = Math.max(1, toNum(sapForm.term));
+    const per_month = term > 0 ? amount / term : 0;
+    return { per_month };
+  }, [sapForm.amount, sapForm.term]);
+
+  const handleLoanEmployeeSelect = (employeeId) => {
+    const emp = staffList.find((s) => String(s.id) === String(employeeId));
+    const bid = emp?.branch_id ? Number(emp.branch_id) : null;
+    const b = bid ? branchMap.get(bid) : null;
+
+    setLoanForm((prev) => ({
+      ...prev,
+      employee_id: employeeId,
+      staff_name: emp?.fullname || "",
+      branch_id: bid ? String(bid) : "",
+      branch_code: b?.code || "",
+      branch_name: b?.name || "",
+    }));
+  };
+
+  const handleSapEmployeeSelect = (employeeId) => {
+    const emp = staffList.find((s) => String(s.id) === String(employeeId));
+    setSapForm((prev) => ({
+      ...prev,
+      employee_id: employeeId,
+      staff_name: emp?.fullname || "",
+    }));
+  };
+
+  const handleCreateLoan = async (e) => {
+    e.preventDefault();
+
+    const amount = toNum(loanForm.amount);
+    const interest = toNum(loanForm.interest);
+    const term = Math.max(1, toNum(loanForm.term));
+    const total = amount + (amount * interest) / 100;
+    const per_month = total / term;
+
     try {
-      await api.put(`/leave-requests/${id}`, { status });
-      await fetchLeave();
+      setCreating(true);
+
+      await api.post("/loan-requests", {
+        employee_id: loanForm.employee_id,
+        staff_name: loanForm.staff_name,
+
+        branch_id: loanForm.branch_id ? Number(loanForm.branch_id) : null,
+        branch_code: loanForm.branch_code,
+        branch_name: loanForm.branch_name,
+
+        loan_type: loanForm.loan_type,
+        reason: loanForm.reason,
+        amount,
+        interest,
+        term,
+        total,
+        per_month,
+        status: "Pending",
+        approved_at: loanForm.approved_at || null,
+        disbursement_date: loanForm.disbursement_date || null,
+      });
+
+      alert("Loan request submitted!");
+      setLoanForm({
+        employee_id: "",
+        staff_name: "",
+        branch_id: "",
+        branch_code: "",
+        branch_name: "",
+        loan_type: "",
+        amount: "",
+        term: "",
+        interest: "",
+        reason: "",
+        approved_at: "",
+        disbursement_date: "",
+      });
+
+      setShowCreateLoan(false);
+      await fetchLoan();
     } catch (err) {
-      const code = err?.response?.status;
-      if (code === 401) return logout();
-      if (code === 403) return alert("Access denied.");
-      alert(err?.response?.data?.message || "Failed to update leave request");
+      const status = err?.response?.status;
+      if (status === 401) return logout();
+      alert(err?.response?.data?.message || "Failed to submit loan request.");
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const handleCreateSAP = async (e) => {
+    e.preventDefault();
+
+    const amount = toNum(sapForm.amount);
+    const term = Math.max(1, toNum(sapForm.term));
+    const per_month = term > 0 ? amount / term : 0;
+    const balance = toNum(sapForm.balance) || amount;
+
+    try {
+      setCreating(true);
+
+      await api.post("/staff-accounts-payable", {
+        employee_id: sapForm.employee_id,
+        staff_name: sapForm.staff_name,
+        description: sapForm.description,
+        amount,
+        term,
+        per_month,
+        balance,
+      });
+
+      alert("Staff Accounts Payable added!");
+      setSapForm({
+        employee_id: "",
+        staff_name: "",
+        description: "",
+        amount: "",
+        term: "",
+        balance: "",
+      });
+
+      setShowCreateSAP(false);
+      await fetchSap();
+    } catch (err) {
+      const status = err?.response?.status;
+      if (status === 401) return logout();
+      alert(err?.response?.data?.message || "Failed to add Staff Accounts Payable.");
+    } finally {
+      setCreating(false);
     }
   };
 
@@ -147,30 +326,15 @@ const Approval = () => {
     }
   };
 
-  const approveTransfer = async (id) => {
+  const updateSapStatus = async (id, status, reason = "") => {
     try {
-      await api.put(`/transfer-staff-orders/${id}/approve`);
-      await fetchTransfer();
+      await api.put(`/staff-accounts-payable/${id}`, { status, reason });
+      await fetchSap();
     } catch (err) {
       const code = err?.response?.status;
       if (code === 401) return logout();
       if (code === 403) return alert("Access denied.");
-      alert(err?.response?.data?.message || "Failed to approve transfer order");
-    }
-  };
-
-  const rejectTransfer = async (id) => {
-    const reason = prompt("Enter rejection reason:");
-    if (!reason || !reason.trim()) return;
-
-    try {
-      await api.put(`/transfer-staff-orders/${id}/reject`, { reason: reason.trim() });
-      await fetchTransfer();
-    } catch (err) {
-      const code = err?.response?.status;
-      if (code === 401) return logout();
-      if (code === 403) return alert("Access denied.");
-      alert(err?.response?.data?.message || "Failed to reject transfer order");
+      alert(err?.response?.data?.message || "Failed to update SAP.");
     }
   };
 
@@ -179,79 +343,56 @@ const Approval = () => {
   };
 
   const confirmAction = async () => {
-    const { requestId, type, action } = confirmModal;
+    const { requestId, action, type } = confirmModal;
     setConfirmModal({ show: false, requestId: null, type: "", action: "" });
     if (!requestId) return;
 
-    if (type === "leave") await updateLeaveStatus(requestId, action);
-    else await updateLoanStatus(requestId, action);
+    if (type === "loan") {
+      await updateLoanStatus(requestId, action);
+      return;
+    }
+
+    if (type === "sap") {
+      if (action === "Approved") {
+        await updateSapStatus(requestId, "Approved");
+        return;
+      }
+      const reason = window.prompt("Reason for rejection?");
+      if (!reason) return;
+      await updateSapStatus(requestId, "Rejected", reason);
+    }
   };
 
-  const filteredLeave = useMemo(() => {
-    return leaveRequests.filter((item) =>
-      selectedLeaveType === "All" ? true : item.leave_type === selectedLeaveType
-    );
-  }, [leaveRequests, selectedLeaveType]);
-
-  const filteredLoan = useMemo(() => {
-    return loanRequests.filter((item) =>
-      selectedLoanType === "All" ? true : item.loan_type === selectedLoanType
-    );
-  }, [loanRequests, selectedLoanType]);
-
-  const pendingTransfer = useMemo(() => {
-    return (transferOrders || []).filter(
-      (o) => String(o.status || "").trim().toLowerCase() === "pending"
-    );
-  }, [transferOrders]);
-
-  const badgeClass = (status) => {
-    if (status === "Approved") return "badge badge-approved";
-    if (status === "Rejected") return "badge badge-rejected";
-    return "badge badge-pending";
-  };
+  const loanPendingCount = useMemo(() => loanRequests.filter((x) => x.status === "Pending").length, [loanRequests]);
+  const sapPendingCount = useMemo(() => sapRows.filter((x) => x.status === "Pending").length, [sapRows]);
 
   return (
     <div className="approval-page">
       <div className="approval-page-header">
         <div>
           <h2 className="approval-title">Approvals</h2>
-          <p className="approval-subtitle">Review and approve leave and loan requests</p>
+          <p className="approval-subtitle">Loan approvals + create loan / staff payable</p>
+        </div>
+
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+          <button className="btn-primary" onClick={() => setShowCreateLoan(true)} type="button">
+            + Add Loan
+          </button>
+          <button className="btn-secondary" onClick={() => setShowCreateSAP(true)} type="button">
+            + Staff Accounts Payable
+          </button>
         </div>
       </div>
 
       <div className="approval-grid">
-        {/* LEAVE CARD (UNCHANGED) */}
-        <div className="approval-card">
-          <div className="approval-card-head">
-            <div>
-              <div className="approval-card-title">Leave Requests</div>
-              <div className="approval-card-meta">
-                Pending:{" "}
-                <span className="pill">{leaveRequests.filter((x) => x.status === "Pending").length}</span>
-              </div>
-            </div>
 
-            <button className="btn-primary" onClick={() => setShowLeaveModal(true)} type="button">
-              View
-            </button>
-          </div>
-
-          <div className="approval-card-body">
-            <div className="mini">
-              {loadingLeave ? "Loading leave requests…" : "Filter in modal • Approve/Reject with confirmation"}
-            </div>
-          </div>
-        </div>
-
-        {/* LOAN CARD (UNCHANGED) */}
+        {/* LOANS CARD */}
         <div className="approval-card">
           <div className="approval-card-head">
             <div>
               <div className="approval-card-title">Loan Requests</div>
               <div className="approval-card-meta">
-                Pending:{" "}
-                <span className="pill">{loanRequests.filter((x) => x.status === "Pending").length}</span>
+                Pending: <span className="pill">{loanPendingCount}</span>
               </div>
             </div>
 
@@ -261,142 +402,209 @@ const Approval = () => {
           </div>
 
           <div className="approval-card-body">
-            <div className="mini">
-              {loadingLoan ? "Loading loan requests…" : "Filter by loan type • View amounts, terms, totals"}
-            </div>
+            <div className="mini">{loadingLoan ? "Loading loan requests…" : "Filter by loan type • Approve/Reject with confirmation"}</div>
           </div>
         </div>
 
-        {isAdmin && (
-          <div className="approval-card">
-            <div className="approval-card-head">
-              <div>
-                <div className="approval-card-title">Transfer Orders</div>
-                <div className="approval-card-meta">
-                  Pending: <span className="pill">{pendingTransfer.length}</span>
-                </div>
-              </div>
-
-              <button className="btn-primary" onClick={() => setShowTransferModal(true)} type="button">
-                View
-              </button>
-            </div>
-
-            <div className="approval-card-body">
-              <div className="mini">
-                {loadingTransfer ? "Loading transfer orders…" : "Lists only pending transfer orders • Approve/Reject"}
+        {/* SAP CARD */}
+        <div className="approval-card">
+          <div className="approval-card-head">
+            <div>
+              <div className="approval-card-title">Staff Accounts Payable</div>
+              <div className="approval-card-meta">
+                Pending: <span className="pill">{sapPendingCount}</span>
               </div>
             </div>
+
+            <button className="btn-primary" onClick={() => setShowSapModal(true)} type="button">
+              View
+            </button>
           </div>
-        )}
+
+          <div className="approval-card-body">
+            <div className="mini">{loadingSap ? "Loading SAP…" : "Create payable record • Approve/Reject is Admin only"}</div>
+          </div>
+        </div>
       </div>
 
-      {showLeaveModal && (
-        <div
-          className="modal-overlay"
-          onMouseDown={(e) => e.target.classList.contains("modal-overlay") && setShowLeaveModal(false)}
-        >
-          <div className="modal saas-modal">
+      {/* CREATE LOAN MODAL */}
+      {showCreateLoan && (
+        <div className="modal-overlay" onMouseDown={(e) => e.target.classList.contains("modal-overlay") && setShowCreateLoan(false)}>
+          <div className="modal saas-modal" onMouseDown={(e) => e.stopPropagation()}>
             <div className="modal-head">
               <div>
-                <h3 className="modal-title">Leave Requests</h3>
-                <p className="modal-subtitle">Filter by type, then approve or reject</p>
+                <h3 className="modal-title">Add Loan Request</h3>
+                <p className="modal-subtitle">This will be submitted with status: Pending</p>
               </div>
-              <button className="modal-x" type="button" onClick={() => setShowLeaveModal(false)}>
+              <button className="modal-x" type="button" onClick={() => setShowCreateLoan(false)}>
                 ✕
               </button>
             </div>
 
-            <div className="filters">
-              {leaveTypes.map((t) => (
-                <button
-                  key={t}
-                  className={`chip ${selectedLeaveType === t ? "active" : ""}`}
-                  onClick={() => setSelectedLeaveType(t)}
-                  type="button"
-                >
-                  {t}
-                </button>
-              ))}
-            </div>
+            <form onSubmit={handleCreateLoan} className="modal-form">
+              <div className="modal-grid">
+                <div className="form-group">
+                  <label>Employee</label>
+                  <select value={loanForm.employee_id} onChange={(e) => handleLoanEmployeeSelect(e.target.value)} required>
+                    <option value="">Select Employee</option>
+                    {renderEmployeeOptions()}
+                  </select>
+                </div>
 
-            <div className="table-card">
-              <div className="table-wrap">
-                <table className="table">
-                  <thead>
-                    <tr>
-                      <th>ID</th>
-                      <th>Name</th>
-                      <th>Type</th>
-                      <th>Start</th>
-                      <th>End</th>
-                      <th>Status</th>
-                      <th>Action</th>
-                    </tr>
-                  </thead>
+                <div className="form-group">
+                  <label>Branch</label>
+                  <input
+                    value={loanForm.branch_code || loanForm.branch_name ? `${loanForm.branch_code} - ${loanForm.branch_name}` : ""}
+                    readOnly
+                    placeholder="Auto-filled"
+                  />
+                </div>
 
-                  <tbody>
-                    {filteredLeave.length === 0 ? (
-                      <tr>
-                        <td colSpan={7} className="empty-state">
-                          No requests found.
-                        </td>
-                      </tr>
-                    ) : (
-                      filteredLeave.map((item) => (
-                        <tr key={item.id}>
-                          <td>{item.id}</td>
-                          <td className="td-strong">{item.staff_name}</td>
-                          <td>{item.leave_type}</td>
-                          <td>{String(item.start_date || "").split("T")[0]}</td>
-                          <td>{String(item.end_date || "").split("T")[0]}</td>
-                          <td>
-                            <span className={badgeClass(item.status)}>{item.status}</span>
-                          </td>
-                          <td>
-                            {item.status === "Pending" ? (
-                              <div className="row-actions">
-                                <button
-                                  className="btn-success"
-                                  onClick={() => handleActionClick(item.id, "leave", "Approved")}
-                                  type="button"
-                                >
-                                  Approve
-                                </button>
-                                <button
-                                  className="btn-danger"
-                                  onClick={() => handleActionClick(item.id, "leave", "Rejected")}
-                                  type="button"
-                                >
-                                  Reject
-                                </button>
-                              </div>
-                            ) : (
-                              "-"
-                            )}
-                          </td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
+                <div className="form-group">
+                  <label>Loan Type</label>
+                  <select value={loanForm.loan_type} onChange={(e) => setLoanForm((p) => ({ ...p, loan_type: e.target.value }))} required>
+                    <option value="">Select Loan Type</option>
+                    <option value="Motorcycle Loan">Motorcycle Loan</option>
+                    <option value="Salary Advance">Salary Advance</option>
+                    <option value="Cash Loan">Cash Loan</option>
+                    <option value="Special Loan">Special Loan</option>
+                  </select>
+                </div>
+
+                <div className="form-group">
+                  <label>Amount</label>
+                  <input type="number" value={loanForm.amount} onChange={(e) => setLoanForm((p) => ({ ...p, amount: e.target.value }))} required />
+                </div>
+
+                <div className="form-group">
+                  <label>Term (Months)</label>
+                  <input type="number" value={loanForm.term} onChange={(e) => setLoanForm((p) => ({ ...p, term: e.target.value }))} required />
+                </div>
+
+                <div className="form-group">
+                  <label>Interest (%)</label>
+                  <input type="number" value={loanForm.interest} onChange={(e) => setLoanForm((p) => ({ ...p, interest: e.target.value }))} required />
+                </div>
+
+                <div className="form-group">
+                  <label>Approved Date (Optional)</label>
+                  <input type="date" value={loanForm.approved_at} onChange={(e) => setLoanForm((p) => ({ ...p, approved_at: e.target.value }))} />
+                </div>
+
+                <div className="form-group">
+                  <label>Disbursement Date (Optional)</label>
+                  <input type="date" value={loanForm.disbursement_date} onChange={(e) => setLoanForm((p) => ({ ...p, disbursement_date: e.target.value }))} />
+                </div>
+
+                <div className="form-group full">
+                  <label>Reason</label>
+                  <textarea value={loanForm.reason} onChange={(e) => setLoanForm((p) => ({ ...p, reason: e.target.value }))} required />
+                </div>
               </div>
-            </div>
 
-            <div className="modal-buttons">
-              <button className="btn-secondary" type="button" onClick={() => setShowLeaveModal(false)}>
-                Close
-              </button>
-            </div>
+              <div className="preview-box">
+                <div>
+                  <span>Total with Interest</span>
+                  <strong>₱ {loanPreview.total.toFixed(2)}</strong>
+                </div>
+                <div>
+                  <span>Per Month</span>
+                  <strong>₱ {loanPreview.per_month.toFixed(2)}</strong>
+                </div>
+              </div>
+
+              <div className="modal-buttons">
+                <button className="btn-secondary" type="button" onClick={() => setShowCreateLoan(false)}>
+                  Cancel
+                </button>
+                <button className="btn-primary" type="submit" disabled={creating}>
+                  {creating ? "Submitting..." : "Submit"}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
 
+      {/* CREATE SAP MODAL */}
+      {showCreateSAP && (
+        <div className="modal-overlay" onMouseDown={(e) => e.target.classList.contains("modal-overlay") && setShowCreateSAP(false)}>
+          <div className="modal saas-modal" onMouseDown={(e) => e.stopPropagation()}>
+            <div className="modal-head">
+              <div>
+                <h3 className="modal-title">Add Staff Accounts Payable</h3>
+                <p className="modal-subtitle">Creates a payable record for the employee</p>
+              </div>
+              <button className="modal-x" type="button" onClick={() => setShowCreateSAP(false)}>
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateSAP} className="modal-form">
+              <div className="modal-grid">
+                <div className="form-group full">
+                  <label>Employee</label>
+                  <select value={sapForm.employee_id} onChange={(e) => handleSapEmployeeSelect(e.target.value)} required>
+                    <option value="">Select Employee</option>
+                    {renderEmployeeOptions()}
+                  </select>
+                </div>
+
+                <div className="form-group full">
+                  <label>Description</label>
+                  <textarea value={sapForm.description} onChange={(e) => setSapForm((p) => ({ ...p, description: e.target.value }))} required />
+                </div>
+
+                <div className="form-group">
+                  <label>Total Amount</label>
+                  <input
+                    type="number"
+                    value={sapForm.amount}
+                    onChange={(e) =>
+                      setSapForm((p) => ({
+                        ...p,
+                        amount: e.target.value,
+                        balance: p.balance === "" || String(p.balance) === String(p.amount) ? e.target.value : p.balance,
+                      }))
+                    }
+                    required
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label>Term (Months)</label>
+                  <input type="number" value={sapForm.term} onChange={(e) => setSapForm((p) => ({ ...p, term: e.target.value }))} required />
+                </div>
+
+                <div className="form-group">
+                  <label>Balance</label>
+                  <input type="number" value={sapForm.balance} onChange={(e) => setSapForm((p) => ({ ...p, balance: e.target.value }))} required />
+                </div>
+              </div>
+
+              <div className="preview-box">
+                <div>
+                  <span>Per Month</span>
+                  <strong>₱ {sapPreview.per_month.toFixed(2)}</strong>
+                </div>
+              </div>
+
+              <div className="modal-buttons">
+                <button className="btn-secondary" type="button" onClick={() => setShowCreateSAP(false)}>
+                  Cancel
+                </button>
+                <button className="btn-primary" type="submit" disabled={creating}>
+                  {creating ? "Saving..." : "Save"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* LOAN VIEW MODAL */}
       {showLoanModal && (
-        <div
-          className="modal-overlay"
-          onMouseDown={(e) => e.target.classList.contains("modal-overlay") && setShowLoanModal(false)}
-        >
+        <div className="modal-overlay" onMouseDown={(e) => e.target.classList.contains("modal-overlay") && setShowLoanModal(false)}>
           <div className="modal saas-modal">
             <div className="modal-head">
               <div>
@@ -410,12 +618,7 @@ const Approval = () => {
 
             <div className="filters">
               {loanTypes.map((t) => (
-                <button
-                  key={t}
-                  className={`chip ${selectedLoanType === t ? "active" : ""}`}
-                  onClick={() => setSelectedLoanType(t)}
-                  type="button"
-                >
+                <button key={t} className={`chip ${selectedLoanType === t ? "active" : ""}`} onClick={() => setSelectedLoanType(t)} type="button">
                   {t}
                 </button>
               ))}
@@ -463,18 +666,10 @@ const Approval = () => {
                           <td>
                             {item.status === "Pending" ? (
                               <div className="row-actions">
-                                <button
-                                  className="btn-success"
-                                  onClick={() => handleActionClick(item.id, "loan", "Approved")}
-                                  type="button"
-                                >
+                                <button className="btn-success" onClick={() => handleActionClick(item.id, "loan", "Approved")} type="button">
                                   Approve
                                 </button>
-                                <button
-                                  className="btn-danger"
-                                  onClick={() => handleActionClick(item.id, "loan", "Rejected")}
-                                  type="button"
-                                >
+                                <button className="btn-danger" onClick={() => handleActionClick(item.id, "loan", "Rejected")} type="button">
                                   Reject
                                 </button>
                               </div>
@@ -499,18 +694,16 @@ const Approval = () => {
         </div>
       )}
 
-      {showTransferModal && (
-        <div
-          className="modal-overlay"
-          onMouseDown={(e) => e.target.classList.contains("modal-overlay") && setShowTransferModal(false)}
-        >
+      {/* SAP VIEW MODAL */}
+      {showSapModal && (
+        <div className="modal-overlay" onMouseDown={(e) => e.target.classList.contains("modal-overlay") && setShowSapModal(false)}>
           <div className="modal saas-modal">
             <div className="modal-head">
               <div>
-                <h3 className="modal-title">Transfer Orders</h3>
-                <p className="modal-subtitle">Pending transfer orders only</p>
+                <h3 className="modal-title">Staff Accounts Payable</h3>
+                <p className="modal-subtitle">Approve/Reject is Admin only</p>
               </div>
-              <button className="modal-x" type="button" onClick={() => setShowTransferModal(false)}>
+              <button className="modal-x" type="button" onClick={() => setShowSapModal(false)}>
                 ✕
               </button>
             </div>
@@ -520,53 +713,58 @@ const Approval = () => {
                 <table className="table">
                   <thead>
                     <tr>
-                      <th>Order No</th>
+                      <th>ID</th>
                       <th>Employee</th>
-                      <th>From</th>
-                      <th>To</th>
-                      <th>Division</th>
-                      <th>Area</th>
-                      <th>Date Created</th>
-                      <th>Effective Date</th>
+                      <th>Description</th>
+                      <th>Amount</th>
+                      <th>Term</th>
+                      <th>Per Month</th>
+                      <th>Balance</th>
                       <th>Status</th>
                       <th>Action</th>
                     </tr>
                   </thead>
 
                   <tbody>
-                    {pendingTransfer.length === 0 ? (
+                    {sapRows.length === 0 ? (
                       <tr>
-                        <td colSpan={10} className="empty-state">
-                          No pending transfer orders.
+                        <td colSpan={9} className="empty-state">
+                          No SAP records found.
                         </td>
                       </tr>
                     ) : (
-                      pendingTransfer.map((o) => (
-                        <tr key={o.id}>
-                          <td className="td-strong">{o.order_no}</td>
-                          <td>{o.employee_name}</td>
+                      sapRows.map((x) => (
+                        <tr key={x.id}>
+                          <td>{x.id}</td>
+                          <td className="td-strong">
+                            {x.staff_name || "-"}
+                            <div style={{ fontSize: 12, opacity: 0.8 }}>Employee ID: {x.employee_id || "-"}</div>
+                          </td>
+                          <td title={x.description || ""}>{x.description || "-"}</td>
+                          <td>₱ {Number(x.amount || 0).toLocaleString()}</td>
+                          <td>{x.term}</td>
+                          <td>₱ {Number(x.per_month || 0).toLocaleString()}</td>
+                          <td>₱ {Number(x.balance || 0).toLocaleString()}</td>
                           <td>
-                            {o.prev_branch_code} - {o.prev_branch_name}
+                            <span className={badgeClass(x.status)}>{x.status}</span>
                           </td>
                           <td>
-                            {o.to_branch_code} - {o.to_branch_name}
-                          </td>
-                          <td>{o.division}</td>
-                          <td>{o.area}</td>
-                          <td>{String(o.date_created).slice(0, 10)}</td>
-                          <td>{String(o.effective_date).slice(0, 10)}</td>
-                          <td>
-                            <span className={badgeClass(o.status)}>{o.status}</span>
-                          </td>
-                          <td>
-                            <div className="row-actions">
-                              <button className="btn-success" type="button" onClick={() => approveTransfer(o.id)}>
-                                Approve
-                              </button>
-                              <button className="btn-danger" type="button" onClick={() => rejectTransfer(o.id)}>
-                                Reject
-                              </button>
-                            </div>
+                            {x.status === "Pending" ? (
+                              isAdmin ? (
+                                <div className="row-actions">
+                                  <button className="btn-success" onClick={() => handleActionClick(x.id, "sap", "Approved")} type="button">
+                                    Approve
+                                  </button>
+                                  <button className="btn-danger" onClick={() => handleActionClick(x.id, "sap", "Rejected")} type="button">
+                                    Reject
+                                  </button>
+                                </div>
+                              ) : (
+                                "-"
+                              )
+                            ) : (
+                              "-"
+                            )}
                           </td>
                         </tr>
                       ))
@@ -577,7 +775,7 @@ const Approval = () => {
             </div>
 
             <div className="modal-buttons">
-              <button className="btn-secondary" type="button" onClick={() => setShowTransferModal(false)}>
+              <button className="btn-secondary" type="button" onClick={() => setShowSapModal(false)}>
                 Close
               </button>
             </div>
@@ -585,38 +783,27 @@ const Approval = () => {
         </div>
       )}
 
+      {/* CONFIRM MODAL (Loan + SAP) */}
       {confirmModal.show && (
         <div
           className="modal-overlay"
-          onMouseDown={(e) =>
-            e.target.classList.contains("modal-overlay") &&
-            setConfirmModal({ show: false, requestId: null, type: "", action: "" })
-          }
+          onMouseDown={(e) => e.target.classList.contains("modal-overlay") && setConfirmModal({ show: false, requestId: null, type: "", action: "" })}
         >
-          <div className="modal confirm-modal">
+          <div className="modal confirm-modal" onMouseDown={(e) => e.stopPropagation()}>
             <div className="modal-head">
               <div>
                 <h3 className="modal-title">Confirm {confirmModal.action}</h3>
                 <p className="modal-subtitle">
-                  Are you sure you want to {String(confirmModal.action).toLowerCase()} this{" "}
-                  {confirmModal.type} request?
+                  Are you sure you want to {String(confirmModal.action).toLowerCase()} this {confirmModal.type === "sap" ? "SAP" : "loan"} request?
                 </p>
               </div>
-              <button
-                className="modal-x"
-                type="button"
-                onClick={() => setConfirmModal({ show: false, requestId: null, type: "", action: "" })}
-              >
+              <button className="modal-x" type="button" onClick={() => setConfirmModal({ show: false, requestId: null, type: "", action: "" })}>
                 ✕
               </button>
             </div>
 
             <div className="modal-buttons">
-              <button
-                className="btn-secondary"
-                type="button"
-                onClick={() => setConfirmModal({ show: false, requestId: null, type: "", action: "" })}
-              >
+              <button className="btn-secondary" type="button" onClick={() => setConfirmModal({ show: false, requestId: null, type: "", action: "" })}>
                 Cancel
               </button>
               <button className="btn-primary" type="button" onClick={confirmAction}>

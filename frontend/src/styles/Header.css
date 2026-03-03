@@ -182,3 +182,136 @@
   font-weight: 600;
   color: var(--muted);
 }
+
+/* --- Notifications --- */
+.notif-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.notif-btn {
+  position: relative;
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--text);
+  border-radius: 12px;
+  padding: 10px 12px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.notif-btn:hover {
+  filter: brightness(1.03);
+}
+
+.notif-badge {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  background: #ef4444;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 800;
+  border-radius: 999px;
+  padding: 2px 6px;
+  border: 2px solid var(--card);
+  line-height: 1;
+}
+
+/* dropdown */
+.notif-dropdown {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 10px);
+  width: 360px;
+  max-width: 90vw;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.25);
+  overflow: hidden;
+  z-index: 50;
+}
+
+.notif-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.notif-title {
+  font-weight: 900;
+}
+
+.notif-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.notif-action {
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text);
+  border-radius: 10px;
+  padding: 8px 10px;
+  cursor: pointer;
+}
+
+.notif-action:hover {
+  filter: brightness(1.05);
+}
+
+.notif-list {
+  max-height: 360px;
+  overflow: auto;
+}
+
+.notif-empty {
+  padding: 18px 12px;
+  opacity: 0.85;
+}
+
+.notif-item {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+}
+
+.notif-item:hover {
+  filter: brightness(1.03);
+}
+
+.notif-item.unread {
+  background: rgba(59, 130, 246, 0.10);
+}
+
+.notif-item-top {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.notif-item-title {
+  font-weight: 800;
+}
+
+.notif-item-time {
+  font-size: 11px;
+  opacity: 0.75;
+  white-space: nowrap;
+}
+
+.notif-item-msg {
+  margin-top: 4px;
+  font-size: 12px;
+  opacity: 0.9;
+}
+
+.notif-foot {
+  padding: 10px 12px;
+}

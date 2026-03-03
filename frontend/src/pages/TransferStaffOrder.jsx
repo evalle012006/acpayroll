@@ -1,8 +1,9 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import api from "../api/axiosClient";
 import "../styles/TransferStaffOrder.css";
 
+/* ------------------------- Helpers ------------------------- */
 const readUser = () => {
   try {
     return JSON.parse(localStorage.getItem("user") || "null");
@@ -11,8 +12,29 @@ const readUser = () => {
   }
 };
 
+const toStr = (v) => String(v ?? "").trim();
+const norm = (v) => toStr(v).toLowerCase();
+const fmtDate = (d) => (d ? String(d).slice(0, 10) : "-");
+
+const displayName = (s) => {
+  const ln = toStr(s?.last_name);
+  const fn = toStr(s?.first_name);
+  const mn = toStr(s?.middle_name);
+  const built = `${ln}${ln && fn ? ", " : ""}${fn}${mn ? ` ${mn}` : ""}`
+    .replace(/\s+/g, " ")
+    .trim();
+  return built || toStr(s?.fullname) || "-";
+};
+
+const branchLabel = (b) => (b ? `${toStr(b.code)} - ${toStr(b.name)}`.trim() : "-");
+
+/* ------------------------- Component ------------------------- */
 export default function TransferStaffOrder() {
   const navigate = useNavigate();
+
+  const user = useMemo(() => readUser(), []);
+  const role = norm(user?.role);
+  const canApprove = role === "admin";
 
   const [showModal, setShowModal] = useState(false);
 
@@ -26,9 +48,8 @@ export default function TransferStaffOrder() {
 
   const [error, setError] = useState("");
 
-  const [dateCreated, setDateCreated] = useState(() =>
-    new Date().toISOString().slice(0, 10)
-  );
+  // form
+  const [dateCreated, setDateCreated] = useState(() => new Date().toISOString().slice(0, 10));
   const [division, setDivision] = useState("");
   const [area, setArea] = useState("");
   const [details, setDetails] = useState("");
@@ -38,66 +59,61 @@ export default function TransferStaffOrder() {
   const [toBranchId, setToBranchId] = useState("");
   const [effectiveDate, setEffectiveDate] = useState("");
 
-  // Admin-only approve/reject
-  const user = readUser();
-  const role = String(user?.role || "").trim().toLowerCase();
-  const canApprove = role === "admin";
+  const logout = useCallback(() => {
+    localStorage.removeItem("token");
+    localStorage.removeItem("user");
+    window.location.href = "/login";
+  }, []);
 
-  // Load Branches & Staff
-  // ==========================
+  /* ------------------------- Load Branches & Staff ------------------------- */
   useEffect(() => {
     const loadRefs = async () => {
       setLoadingRefs(true);
       setError("");
       try {
-        const [bRes, sRes] = await Promise.all([
-          api.get("/branches"),
-          api.get("/staff"),
-        ]);
+        const [bRes, sRes] = await Promise.all([api.get("/branches"), api.get("/staff")]);
         setBranches(Array.isArray(bRes.data) ? bRes.data : []);
         setStaff(Array.isArray(sRes.data) ? sRes.data : []);
       } catch (err) {
-        setError(
-          err?.response?.data?.message || "Failed to load branches and staff."
-        );
+        const status = err?.response?.status;
+        if (status === 401) return logout();
+        setError(err?.response?.data?.message || "Failed to load branches and staff.");
       } finally {
         setLoadingRefs(false);
       }
     };
     loadRefs();
-  }, []);
+  }, [logout]);
 
-  // Fetch Orders
-  // ==========================
-  const fetchOrders = async () => {
+  /* ------------------------- Fetch Orders ------------------------- */
+  const fetchOrders = useCallback(async () => {
     setLoadingOrders(true);
     setError("");
     try {
       const res = await api.get("/transfer-staff-orders");
       setOrders(Array.isArray(res.data) ? res.data : []);
     } catch (err) {
-      setError(
-        err?.response?.data?.message || "Failed to load transfer orders."
-      );
+      const status = err?.response?.status;
+      if (status === 401) return logout();
+      setError(err?.response?.data?.message || "Failed to load transfer orders.");
+      setOrders([]);
     } finally {
       setLoadingOrders(false);
     }
-  };
+  }, [logout]);
 
   useEffect(() => {
     fetchOrders();
-  }, []);
+  }, [fetchOrders]);
 
-  // Derived refs
-  // ==========================
+  /* ------------------------- Derived refs ------------------------- */
   const selectedEmployee = useMemo(
     () => staff.find((s) => Number(s.id) === Number(employeeId)) || null,
     [staff, employeeId]
   );
 
   const fromBranch = useMemo(
-    () =>
-      branches.find((b) => Number(b.id) === Number(fromBranchId)) || null,
+    () => branches.find((b) => Number(b.id) === Number(fromBranchId)) || null,
     [branches, fromBranchId]
   );
 
@@ -106,48 +122,53 @@ export default function TransferStaffOrder() {
     [branches, toBranchId]
   );
 
-  // Auto-fill from branch/area
+  /* ------------------------- Autofill from selected employee ------------------------- */
   useEffect(() => {
     if (!showModal || !selectedEmployee) return;
 
+    // default prev branch from employee branch
     if (selectedEmployee.branch_id && !fromBranchId) {
       setFromBranchId(String(selectedEmployee.branch_id));
     }
 
-    if (!area) {
-      setArea(String(selectedEmployee.area || fromBranch?.area || ""));
+    // default area from employee area, otherwise from branch.area
+    if (!toStr(area)) {
+      setArea(toStr(selectedEmployee.area) || toStr(fromBranch?.area) || "");
     }
   }, [showModal, selectedEmployee, fromBranchId, area, fromBranch]);
 
-  // Approve / Reject
-  // ==========================
+  /* ------------------------- Approve / Reject (Admin) ------------------------- */
   const approveOrder = async (id) => {
+    if (!canApprove) return;
     setError("");
     try {
       const res = await api.put(`/transfer-staff-orders/${id}/approve`);
       setOrders((prev) => prev.map((o) => (o.id === id ? res.data : o)));
     } catch (err) {
+      const status = err?.response?.status;
+      if (status === 401) return logout();
       setError(err?.response?.data?.message || "Failed to approve order.");
     }
   };
 
   const rejectOrder = async (id) => {
+    if (!canApprove) return;
+
     const reason = prompt("Enter rejection reason:");
     if (!reason || !reason.trim()) return;
 
     setError("");
     try {
-      const res = await api.put(`/transfer-staff-orders/${id}/reject`, {
-        reason: reason.trim(),
-      });
+      const res = await api.put(`/transfer-staff-orders/${id}/reject`, { reason: reason.trim() });
       setOrders((prev) => prev.map((o) => (o.id === id ? res.data : o)));
     } catch (err) {
+      const status = err?.response?.status;
+      if (status === 401) return logout();
       setError(err?.response?.data?.message || "Failed to reject order.");
     }
   };
 
-  // Modal handlers
-  // ==========================
+  /* ------------------------- Modal handlers ------------------------- */
   const resetForm = () => {
     setDateCreated(new Date().toISOString().slice(0, 10));
     setDivision("");
@@ -172,36 +193,48 @@ export default function TransferStaffOrder() {
     resetForm();
   };
 
-  // Save Order to DB
-  // ==========================
+  useEffect(() => {
+    if (!showModal) return;
+    const onKeyDown = (e) => e.key === "Escape" && closeModal();
+    document.addEventListener("keydown", onKeyDown);
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      document.body.style.overflow = "";
+    };
+  }, [showModal]);
+
+  /* ------------------------- Save Order ------------------------- */
   const saveOrder = async () => {
     setError("");
 
     if (!employeeId) return setError("Select employee.");
     if (!fromBranchId) return setError("Select previous branch.");
     if (!toBranchId) return setError("Select transfer branch.");
-    if (String(fromBranchId) === String(toBranchId))
-      return setError("Previous and transfer branch must differ.");
-    if (!division.trim()) return setError("Division required.");
-    if (!area.trim()) return setError("Area required.");
+    if (String(fromBranchId) === String(toBranchId)) return setError("Previous and transfer branch must differ.");
+    if (!toStr(division)) return setError("Division required.");
+    if (!toStr(area)) return setError("Area required.");
     if (!dateCreated) return setError("Date Created required.");
     if (!effectiveDate) return setError("Effective date required.");
-    if (!details.trim()) return setError("Details required.");
+    if (!toStr(details)) return setError("Details required.");
 
     const payload = {
       employee_id: Number(employeeId),
-      employee_name: selectedEmployee?.fullname || "",
+      employee_name: displayName(selectedEmployee),
+
       prev_branch_id: Number(fromBranchId),
-      prev_branch_code: fromBranch?.code || "",
-      prev_branch_name: fromBranch?.name || "",
+      prev_branch_code: toStr(fromBranch?.code),
+      prev_branch_name: toStr(fromBranch?.name),
+
       to_branch_id: Number(toBranchId),
-      to_branch_code: toBranch?.code || "",
-      to_branch_name: toBranch?.name || "",
-      area: area.trim(),
-      division: division.trim(),
+      to_branch_code: toStr(toBranch?.code),
+      to_branch_name: toStr(toBranch?.name),
+
+      area: toStr(area),
+      division: toStr(division),
       date_created: dateCreated,
       effective_date: effectiveDate,
-      details: details.trim(),
+      details: toStr(details),
     };
 
     setSaving(true);
@@ -210,33 +243,26 @@ export default function TransferStaffOrder() {
       setOrders((prev) => [res.data, ...prev]);
       closeModal();
     } catch (err) {
+      const status = err?.response?.status;
+      if (status === 401) return logout();
       setError(err?.response?.data?.message || "Failed to save transfer order.");
     } finally {
       setSaving(false);
     }
   };
 
-  // Dynamic column count
   const colCount = canApprove ? 10 : 9;
 
-  // UI
-  // ==========================
   return (
     <div className="order-page">
       <div className="order-page-header">
         <div>
-          <h2 className="order-title">Transfer Staff Order</h2>
-          <p className="order-subtitle">
-            Manage staff transfers between branches.
-          </p>
+          <h2 className="order-title">Transfer Staff Orders</h2>
+          <p className="order-subtitle">Manage staff transfers between branches.</p>
         </div>
 
         <div style={{ display: "flex", gap: 10 }}>
-          <button
-            className="btn-secondary"
-            onClick={() => navigate("/transactions")}
-            type="button"
-          >
+          <button className="btn-secondary" onClick={() => navigate("/transactions")} type="button">
             ← Back
           </button>
           <button className="btn-primary" onClick={openModal} type="button">
@@ -246,10 +272,7 @@ export default function TransferStaffOrder() {
       </div>
 
       {error && (
-        <div
-          className="card"
-          style={{ padding: 12, border: "1px solid var(--border)" }}
-        >
+        <div className="card" style={{ padding: 12, border: "1px solid var(--border)" }}>
           <strong style={{ color: "#ef4444" }}>{error}</strong>
         </div>
       )}
@@ -295,50 +318,37 @@ export default function TransferStaffOrder() {
                   <tr key={o.id}>
                     <td className="td-strong">{o.order_no}</td>
                     <td>{o.employee_name}</td>
+
                     <td>
-                      {o.prev_branch_code} - {o.prev_branch_name}
+                      {toStr(o.prev_branch_code)} - {toStr(o.prev_branch_name)}
                     </td>
                     <td>
-                      {o.to_branch_code} - {o.to_branch_name}
+                      {toStr(o.to_branch_code)} - {toStr(o.to_branch_name)}
                     </td>
+
                     <td>{o.division}</td>
                     <td>{o.area}</td>
-                    <td>{String(o.date_created).slice(0, 10)}</td>
-                    <td>{String(o.effective_date).slice(0, 10)}</td>
 
-                    {/* Status + show rejection reason */}
+                    <td>{fmtDate(o.date_created)}</td>
+                    <td>{fmtDate(o.effective_date)}</td>
+
                     <td>
                       {o.status}
                       {o.status === "Rejected" && o.rejection_reason ? (
-                        <div
-                          style={{
-                            fontSize: 12,
-                            color: "var(--muted)",
-                            marginTop: 4,
-                          }}
-                        >
+                        <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 4 }}>
                           Reason: {o.rejection_reason}
                         </div>
                       ) : null}
                     </td>
 
-                    {/* Admin-only Actions */}
                     {canApprove && (
                       <td>
                         {o.status === "Pending" ? (
                           <div style={{ display: "flex", gap: 8 }}>
-                            <button
-                              className="btn-primary"
-                              type="button"
-                              onClick={() => approveOrder(o.id)}
-                            >
+                            <button className="btn-primary" type="button" onClick={() => approveOrder(o.id)}>
                               Approve
                             </button>
-                            <button
-                              className="btn-secondary"
-                              type="button"
-                              onClick={() => rejectOrder(o.id)}
-                            >
+                            <button className="btn-secondary" type="button" onClick={() => rejectOrder(o.id)}>
                               Reject
                             </button>
                           </div>
@@ -355,8 +365,8 @@ export default function TransferStaffOrder() {
         </div>
 
         <div style={{ padding: 12, display: "flex", justifyContent: "flex-end" }}>
-          <button className="btn-secondary" onClick={fetchOrders} type="button">
-            Refresh
+          <button className="btn-secondary" onClick={fetchOrders} type="button" disabled={loadingOrders}>
+            {loadingOrders ? "Refreshing..." : "Refresh"}
           </button>
         </div>
       </div>
@@ -364,16 +374,11 @@ export default function TransferStaffOrder() {
       {/* MODAL */}
       {showModal && (
         <div className="modal-overlay" onMouseDown={closeModal}>
-          <div
-            className="modal saas-modal"
-            onMouseDown={(e) => e.stopPropagation()}
-          >
+          <div className="modal saas-modal" onMouseDown={(e) => e.stopPropagation()}>
             <div className="modal-head">
               <div>
                 <h3 className="modal-title">Create Transfer Order</h3>
-                <p className="modal-subtitle">
-                  Order No. will be auto-generated on save.
-                </p>
+                <p className="modal-subtitle">Order No. will be auto-generated on save.</p>
               </div>
 
               <button className="modal-x" onClick={closeModal} type="button">
@@ -388,32 +393,21 @@ export default function TransferStaffOrder() {
                 <div className="form-grid">
                   <div className="field">
                     <label>Date Created</label>
-                    <input
-                      type="date"
-                      value={dateCreated}
-                      onChange={(e) => setDateCreated(e.target.value)}
-                    />
+                    <input type="date" value={dateCreated} onChange={(e) => setDateCreated(e.target.value)} />
                   </div>
 
                   <div className="field">
                     <label>Effective Date</label>
-                    <input
-                      type="date"
-                      value={effectiveDate}
-                      onChange={(e) => setEffectiveDate(e.target.value)}
-                    />
+                    <input type="date" value={effectiveDate} onChange={(e) => setEffectiveDate(e.target.value)} />
                   </div>
 
                   <div className="field full">
                     <label>Employee</label>
-                    <select
-                      value={employeeId}
-                      onChange={(e) => setEmployeeId(e.target.value)}
-                    >
+                    <select value={employeeId} onChange={(e) => setEmployeeId(e.target.value)}>
                       <option value="">Select employee…</option>
                       {staff.map((s) => (
                         <option key={s.id} value={s.id}>
-                          {s.fullname} {s.employee_no ? `(${s.employee_no})` : ""}
+                          {displayName(s)} {s.employee_no ? `(${s.employee_no})` : ""}
                         </option>
                       ))}
                     </select>
@@ -421,14 +415,11 @@ export default function TransferStaffOrder() {
 
                   <div className="field">
                     <label>Previous Branch</label>
-                    <select
-                      value={fromBranchId}
-                      onChange={(e) => setFromBranchId(e.target.value)}
-                    >
+                    <select value={fromBranchId} onChange={(e) => setFromBranchId(e.target.value)}>
                       <option value="">Select branch…</option>
                       {branches.map((b) => (
                         <option key={b.id} value={b.id}>
-                          {b.code} - {b.name}
+                          {branchLabel(b)}
                         </option>
                       ))}
                     </select>
@@ -436,16 +427,13 @@ export default function TransferStaffOrder() {
 
                   <div className="field">
                     <label>Transfer To</label>
-                    <select
-                      value={toBranchId}
-                      onChange={(e) => setToBranchId(e.target.value)}
-                    >
+                    <select value={toBranchId} onChange={(e) => setToBranchId(e.target.value)}>
                       <option value="">Select branch…</option>
                       {branches
                         .filter((b) => String(b.id) !== String(fromBranchId))
                         .map((b) => (
                           <option key={b.id} value={b.id}>
-                            {b.code} - {b.name}
+                            {branchLabel(b)}
                           </option>
                         ))}
                     </select>
@@ -453,10 +441,7 @@ export default function TransferStaffOrder() {
 
                   <div className="field">
                     <label>Division</label>
-                    <input
-                      value={division}
-                      onChange={(e) => setDivision(e.target.value)}
-                    />
+                    <input value={division} onChange={(e) => setDivision(e.target.value)} />
                   </div>
 
                   <div className="field">
@@ -475,27 +460,13 @@ export default function TransferStaffOrder() {
                   </div>
                 </div>
 
-                {error && (
-                  <div style={{ marginTop: 10, color: "#ef4444", fontWeight: 800 }}>
-                    {error}
-                  </div>
-                )}
+                {error && <div style={{ marginTop: 10, color: "#ef4444", fontWeight: 800 }}>{error}</div>}
 
                 <div className="modal-buttons">
-                  <button
-                    className="btn-secondary"
-                    onClick={closeModal}
-                    type="button"
-                    disabled={saving}
-                  >
+                  <button className="btn-secondary" onClick={closeModal} type="button" disabled={saving}>
                     Cancel
                   </button>
-                  <button
-                    className="btn-primary"
-                    onClick={saveOrder}
-                    type="button"
-                    disabled={saving}
-                  >
+                  <button className="btn-primary" onClick={saveOrder} type="button" disabled={saving}>
                     {saving ? "Saving..." : "Save Order"}
                   </button>
                 </div>

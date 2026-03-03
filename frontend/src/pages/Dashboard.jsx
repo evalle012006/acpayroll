@@ -47,8 +47,7 @@ const emptyStats = {
   totalOtherReceivable: 0,
 };
 
-// normalize staff status
-const getStaffStatus = (s) => String(s?.status || "Active").trim().toLowerCase(); // <- change here if needed
+const getStaffStatus = (s) => String(s?.status || "Active").trim().toLowerCase();
 
 export default function Dashboard() {
   const navigate = useNavigate();
@@ -244,7 +243,6 @@ export default function Dashboard() {
         />
       </div>
 
-      {/* keep the rest of your dashboard the same */}
       <div className="dash__panels">
         <div className="card card--panel">
           <div className="card__head">

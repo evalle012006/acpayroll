@@ -1,16 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
 import "../styles/Users.css";
-import { FiEye, FiEyeOff } from "react-icons/fi";
 import api from "../api/axiosClient";
 
 const roleOptions = [
-  "Admin",
-  "Branch Manager",
-  "Area Manager",
-  "Regional Manager",
-  "Assistant Vice President",
-  "Vice President",
-  "Senior Vice President",
+  { label: "Admin", value: "admin" },
+  { label: "Branch Manager", value: "branch manager" },
+  { label: "Area Manager", value: "area manager" },
+  { label: "Regional Manager", value: "regional manager" },
+  { label: "Assistant Vice President", value: "assistant vice president" },
+  { label: "Vice President", value: "vice president" },
+  { label: "Senior Vice President", value: "senior vice president" },
 ];
 
 const Users = () => {
@@ -22,9 +21,18 @@ const Users = () => {
   const [saving, setSaving] = useState(false);
 
   const [editId, setEditId] = useState(null);
-  const [form, setForm] = useState({ username: "", password: "", role: "Admin", branch_id: null });
+  const [form, setForm] = useState({
+    username: "",
+    password: "",
+    role: "admin",
+    branch_id: null,
+  });
 
-  const [showPwMap, setShowPwMap] = useState({});
+  // reset password modal
+  const [resetId, setResetId] = useState(null);
+  const [resetUser, setResetUser] = useState(null);
+  const [resetPw, setResetPw] = useState("");
+  const [resetSaving, setResetSaving] = useState(false);
 
   const handle401 = () => {
     localStorage.removeItem("token");
@@ -36,7 +44,8 @@ const Users = () => {
     try {
       setLoading(true);
       const res = await api.get("/users");
-      setRows(res.data || []);
+      // backend returns: {id, username, role, created_at, branch_id}
+      setRows(Array.isArray(res.data) ? res.data : []);
     } catch (err) {
       const status = err?.response?.status;
       if (status === 401) return handle401();
@@ -51,16 +60,25 @@ const Users = () => {
     fetchUsers();
   }, []);
 
+  // escape key closes any modal
   useEffect(() => {
-    if (!showModal) return;
-    const onKeyDown = (e) => e.key === "Escape" && closeModal();
+    if (!showModal && !resetId) return;
+
+    const onKeyDown = (e) => {
+      if (e.key === "Escape") {
+        if (resetId) closeReset();
+        else closeModal();
+      }
+    };
+
     document.addEventListener("keydown", onKeyDown);
     document.body.style.overflow = "hidden";
+
     return () => {
       document.removeEventListener("keydown", onKeyDown);
       document.body.style.overflow = "";
     };
-  }, [showModal]);
+  }, [showModal, resetId]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -75,7 +93,7 @@ const Users = () => {
 
   const openAdd = () => {
     setEditId(null);
-    setForm({ username: "", password: "", role: "Admin", branch_id: null });
+    setForm({ username: "", password: "", role: "admin", branch_id: null });
     setShowModal(true);
   };
 
@@ -84,7 +102,7 @@ const Users = () => {
     setForm({
       username: u.username || "",
       password: "",
-      role: u.role || "Admin",
+      role: String(u.role || "admin").toLowerCase(),
       branch_id: u.branch_id ?? null,
     });
     setShowModal(true);
@@ -102,10 +120,25 @@ const Users = () => {
 
   const onSubmit = async (e) => {
     e.preventDefault();
+    if (saving) return;
+
     setSaving(true);
     try {
-      if (editId) await api.put(`/users/${editId}`, form);
-      else await api.post("/users", form);
+      const payload = {
+        username: String(form.username || "").trim(),
+        role: String(form.role || "").trim().toLowerCase(),
+        branch_id: form.branch_id === "" ? null : form.branch_id ?? null,
+      };
+
+      // password optional on edit
+      if (!editId) {
+        payload.password = String(form.password || "");
+      } else if (String(form.password || "").trim() !== "") {
+        payload.password = String(form.password || "");
+      }
+
+      if (editId) await api.put(`/users/${editId}`, payload);
+      else await api.post("/users", payload);
 
       await fetchUsers();
       closeModal();
@@ -132,12 +165,44 @@ const Users = () => {
     }
   };
 
-  const toggleRowPw = (id) => setShowPwMap((p) => ({ ...p, [id]: !p[id] }));
+  // ---------------- RESET PASSWORD ----------------
+  const openReset = (u) => {
+    setResetId(u.id);
+    setResetUser(u);
+    setResetPw("");
+  };
 
-  const mask = (pw) => {
-    const s = String(pw ?? "");
-    if (!s) return "-";
-    return "•".repeat(Math.min(10, s.length));
+  const closeReset = () => {
+    setResetId(null);
+    setResetUser(null);
+    setResetPw("");
+  };
+
+  const submitReset = async (e) => {
+    e.preventDefault();
+    if (resetSaving) return;
+
+    const pw = String(resetPw || "").trim();
+    if (pw.length < 6) return alert("Password must be at least 6 characters.");
+
+    setResetSaving(true);
+    try {
+      await api.put(`/users/${resetId}/reset-password`, { new_password: pw });
+      closeReset();
+      alert("Password reset successfully.");
+    } catch (err) {
+      const status = err?.response?.status;
+      if (status === 401) return handle401();
+      if (status === 403) return alert("Access denied.");
+      alert(err?.response?.data?.message || "Failed to reset password");
+    } finally {
+      setResetSaving(false);
+    }
+  };
+
+  const roleLabel = (value) => {
+    const found = roleOptions.find((r) => r.value === String(value || "").toLowerCase());
+    return found ? found.label : String(value || "");
   };
 
   return (
@@ -147,9 +212,14 @@ const Users = () => {
           <h2 className="users-title">Users</h2>
           <p className="users-subtitle">Add, edit, and manage user accounts</p>
         </div>
-        <button className="btn-primary" onClick={openAdd} type="button">
-          + Add User
-        </button>
+        <div style={{ display: "flex", gap: 10 }}>
+          <button className="btn-secondary" onClick={fetchUsers} type="button">
+            Refresh
+          </button>
+          <button className="btn-primary" onClick={openAdd} type="button">
+            + Add User
+          </button>
+        </div>
       </div>
 
       <div className="users-card">
@@ -174,55 +244,46 @@ const Users = () => {
                 <tr>
                   <th style={{ width: 90 }}>ID</th>
                   <th>Username</th>
-                  <th style={{ width: 260 }}>Password</th>
                   <th style={{ width: 220 }}>Role</th>
                   <th style={{ width: 120 }}>Branch ID</th>
                   <th style={{ width: 140 }}>Created</th>
-                  <th style={{ width: 220 }}>Actions</th>
+                  <th style={{ width: 320 }}>Actions</th>
                 </tr>
               </thead>
 
               <tbody>
                 {filtered.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="empty">
+                    <td colSpan={6} className="empty">
                       No users found.
                     </td>
                   </tr>
                 ) : (
-                  filtered.map((u) => {
-                    const visible = !!showPwMap[u.id];
-                    return (
-                      <tr key={u.id}>
-                        <td className="mono">{u.id}</td>
-                        <td className="strong">{u.username}</td>
+                  filtered.map((u) => (
+                    <tr key={u.id}>
+                      <td className="mono">{u.id}</td>
+                      <td className="strong">{u.username}</td>
+                      <td>{roleLabel(u.role)}</td>
+                      <td className="mono">{u.branch_id ?? "-"}</td>
+                      <td>{u.created_at ? String(u.created_at).split("T")[0] : "-"}</td>
 
-                        <td>
-                          <div className="pw-cell">
-                            <span className="mono">{visible ? String(u.password ?? "-") : mask(u.password)}</span>
-                            <button type="button" className="pw-icon-btn" onClick={() => toggleRowPw(u.id)}>
-                              {visible ? <FiEyeOff /> : <FiEye />}
-                            </button>
-                          </div>
-                        </td>
+                      <td>
+                        <div className="row-actions">
+                          <button className="btn-secondary" type="button" onClick={() => openEdit(u)}>
+                            Edit
+                          </button>
 
-                        <td>{u.role}</td>
-                        <td className="mono">{u.branch_id ?? "-"}</td>
-                        <td>{u.created_at ? String(u.created_at).split("T")[0] : "-"}</td>
+                          <button className="btn-secondary" type="button" onClick={() => openReset(u)}>
+                            Reset Password
+                          </button>
 
-                        <td>
-                          <div className="row-actions">
-                            <button className="btn-secondary" type="button" onClick={() => openEdit(u)}>
-                              Edit
-                            </button>
-                            <button className="btn-danger" type="button" onClick={() => onDelete(u.id)}>
-                              Delete
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })
+                          <button className="btn-danger" type="button" onClick={() => onDelete(u.id)}>
+                            Delete
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))
                 )}
               </tbody>
             </table>
@@ -230,6 +291,7 @@ const Users = () => {
         </div>
       </div>
 
+      {/* ADD/EDIT MODAL */}
       {showModal && (
         <div
           className="modal-overlay"
@@ -259,8 +321,8 @@ const Users = () => {
                   <label>Role</label>
                   <select className="input" name="role" value={form.role} onChange={onChange} required>
                     {roleOptions.map((r) => (
-                      <option key={r} value={r}>
-                        {r}
+                      <option key={r.value} value={r.value}>
+                        {r.label}
                       </option>
                     ))}
                   </select>
@@ -302,6 +364,53 @@ const Users = () => {
                 </button>
                 <button className="btn-primary" type="submit" disabled={saving}>
                   {saving ? "Saving..." : editId ? "Update" : "Create"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* RESET PASSWORD MODAL */}
+      {resetId && (
+        <div
+          className="modal-overlay"
+          onMouseDown={(e) => e.target.classList.contains("modal-overlay") && closeReset()}
+        >
+          <div className="modal confirm-modal" onMouseDown={(e) => e.stopPropagation()}>
+            <div className="modal-head">
+              <div>
+                <h3 className="modal-title">Reset Password</h3>
+                <p className="modal-subtitle">
+                  Set a new password for <b>{resetUser?.username}</b>
+                </p>
+              </div>
+              <button className="modal-x" type="button" onClick={closeReset}>
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={submitReset} className="modal-form">
+              <div className="grid">
+                <div className="field full">
+                  <label>New Password</label>
+                  <input
+                    className="input"
+                    type="password"
+                    value={resetPw}
+                    onChange={(e) => setResetPw(e.target.value)}
+                    placeholder="Minimum 6 characters"
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="modal-actions">
+                <button className="btn-secondary" type="button" onClick={closeReset} disabled={resetSaving}>
+                  Cancel
+                </button>
+                <button className="btn-primary" type="submit" disabled={resetSaving}>
+                  {resetSaving ? "Resetting..." : "Reset Password"}
                 </button>
               </div>
             </form>

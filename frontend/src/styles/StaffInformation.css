@@ -168,23 +168,30 @@
 }
 
 .tab-btn{
-  padding:8px 12px;
-  border-radius:10px;
-  border:1px solid rgba(255,255,255,.12);
-  background: rgba(255,255,255,.04);
-  color:#fff;
-  cursor:pointer;
+  padding: 8px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--panel-2);
+  color: var(--text);
+  cursor: pointer;
   font-size: 13px;
+  font-weight: 700;
+  transition: 0.15s ease;
+}
+
+.tab-btn:hover{
+  background: var(--hover);
 }
 
 .tab-btn.active{
-  background: rgba(99,102,241,.25);
+  background: rgba(99,102,241,.18);
   border-color: rgba(99,102,241,.55);
+  color: var(--text);
 }
 
 .section-card{
-  border:1px solid rgba(255,255,255,.12);
-  background: rgba(255,255,255,.03);
+  border: 1px solid var(--border);
+  background: var(--panel-2);
   border-radius: 14px;
   padding: 12px;
   margin-bottom: 12px;
@@ -202,13 +209,14 @@
 }
 
 .profile-table{
-  width:100%;
+  width: 100%;
   border-collapse: collapse;
 }
 
 .profile-table td{
   padding: 10px 8px;
-  border-top: 1px solid rgba(255,255,255,.08);
+  border-top: 1px solid var(--border);
+  color: var(--text);
 }
 
 .profile-key{
@@ -218,4 +226,61 @@
 
 .profile-val{
   font-weight: 600;
+}
+
+.saas-table td[title] {
+  max-width: 260px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.staff-profile-modal {
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.staff-profile-scroll {
+  flex: 1;
+  overflow-y: auto;
+  padding-right: 6px;
+}
+
+.table-scroll {
+  overflow-x: auto;
+}
+
+.step-tabs {
+  display: flex;
+  gap: 10px;
+  padding: 6px 2px;
+  margin: 6px 0 0;
+}
+
+.step-tab {
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(255,255,255,0.06);
+  color: rgba(255,255,255,0.88);
+  padding: 8px 14px;
+  border-radius: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: 0.15s ease;
+}
+
+.step-tab:hover {
+  transform: translateY(-1px);
+}
+
+.step-tab.active {
+  background: rgba(99, 102, 241, 0.22); /* indigo-ish */
+  border-color: rgba(99, 102, 241, 0.45);
+  color: #fff;
+}
+
+.step-tab:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  transform: none;
 }

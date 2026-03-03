@@ -4,32 +4,45 @@ const pool = require("../db");
 const { requireAuth, requireRole } = require("../middlewares/authMiddleware");
 const bcrypt = require("bcryptjs");
 
-router.get("/", requireAuth, requireRole(["Admin"]), async (_req, res) => {
+// Helpers
+const clean = (v) => String(v ?? "").trim();
+
+// ✅ ADMIN ONLY: list users (DO NOT expose password hash)
+router.get("/", requireAuth, requireRole(["admin"]), async (_req, res) => {
   try {
     const result = await pool.query(
-      `SELECT id, username, password, role, created_at, branch_id
+      `SELECT id, username, role, created_at, branch_id
        FROM public.users
        ORDER BY id DESC`
     );
-    res.json(result.rows);
+    return res.json(result.rows);
   } catch (e) {
     console.error("GET /api/users ERROR:", e.message);
-    res.status(500).json({ message: "Server error" });
+    return res.status(500).json({ message: "Server error" });
   }
 });
 
-router.post("/", requireAuth, requireRole(["Admin"]), async (req, res) => {
+// ✅ ADMIN ONLY: create user (hash password)
+router.post("/", requireAuth, requireRole(["admin"]), async (req, res) => {
   try {
-    const { username, password, role, branch_id } = req.body;
+    const username = clean(req.body?.username);
+    const password = clean(req.body?.password);
+    const role = clean(req.body?.role); // expect: "admin" or "branch manager"
+    const branch_id = req.body?.branch_id ?? null;
 
     if (!username || !password || !role) {
       return res.status(400).json({ message: "username, password, role are required" });
     }
 
-    const exists = await pool.query("SELECT id FROM public.users WHERE username=$1", [username]);
-    if (exists.rows.length > 0) return res.status(409).json({ message: "Username already exists" });
+    const exists = await pool.query(
+      "SELECT id FROM public.users WHERE lower(trim(username)) = lower(trim($1))",
+      [username]
+    );
+    if (exists.rows.length > 0) {
+      return res.status(409).json({ message: "Username already exists" });
+    }
 
-    const hashed = await bcrypt.hash(String(password), 10);
+    const hashed = await bcrypt.hash(password, 10);
 
     const result = await pool.query(
       `
@@ -37,32 +50,46 @@ router.post("/", requireAuth, requireRole(["Admin"]), async (req, res) => {
       VALUES ($1,$2,$3,$4,NOW())
       RETURNING id, username, role, created_at, branch_id
       `,
-      [username, hashed, role, branch_id ?? null]
+      [username, hashed, role, branch_id]
     );
 
-    res.json(result.rows[0]);
+    return res.json({ message: "User created", user: result.rows[0] });
   } catch (e) {
     console.error("POST /api/users ERROR:", e.message);
-    res.status(500).json({ message: "Server error" });
+    return res.status(500).json({ message: "Server error" });
   }
 });
 
-router.put("/:id", requireAuth, requireRole(["Admin"]), async (req, res) => {
+// ✅ ADMIN ONLY: update user (optional password)
+router.put("/:id", requireAuth, requireRole(["admin"]), async (req, res) => {
   try {
-    const { id } = req.params;
-    const { username, password, role, branch_id } = req.body;
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id) || id <= 0) {
+      return res.status(400).json({ message: "Invalid user id" });
+    }
 
-    if (!username || !role) return res.status(400).json({ message: "username and role are required" });
+    const username = clean(req.body?.username);
+    const role = clean(req.body?.role);
+    const branch_id = req.body?.branch_id ?? null;
 
+    if (!username || !role) {
+      return res.status(400).json({ message: "username and role are required" });
+    }
+
+    // Prevent duplicate username
     const existing = await pool.query(
-      "SELECT id FROM public.users WHERE username=$1 AND id <> $2",
+      "SELECT id FROM public.users WHERE lower(trim(username)) = lower(trim($1)) AND id <> $2",
       [username, id]
     );
-    if (existing.rows.length > 0) return res.status(409).json({ message: "Username already exists" });
+    if (existing.rows.length > 0) {
+      return res.status(409).json({ message: "Username already exists" });
+    }
 
+    // Password optional
     let hashed = null;
-    if (password && String(password).trim() !== "") {
-      hashed = await bcrypt.hash(String(password), 10);
+    const password = clean(req.body?.password);
+    if (password) {
+      hashed = await bcrypt.hash(password, 10);
     }
 
     const result = await pool.query(
@@ -77,27 +104,68 @@ router.put("/:id", requireAuth, requireRole(["Admin"]), async (req, res) => {
       WHERE id = $5
       RETURNING id, username, role, created_at, branch_id
       `,
-      [username, role, branch_id ?? null, hashed, id]
+      [username, role, branch_id, hashed, id]
     );
 
     if (result.rows.length === 0) return res.status(404).json({ message: "User not found" });
 
-    res.json(result.rows[0]);
+    return res.json({ message: "User updated", user: result.rows[0] });
   } catch (e) {
     console.error("PUT /api/users/:id ERROR:", e.message);
-    res.status(500).json({ message: "Server error" });
+    return res.status(500).json({ message: "Server error" });
   }
 });
 
-router.delete("/:id", requireAuth, requireRole(["Admin"]), async (req, res) => {
+// ✅ ADMIN ONLY: reset password (dedicated endpoint)
+router.put("/:id/reset-password", requireAuth, requireRole(["admin"]), async (req, res) => {
   try {
-    const { id } = req.params;
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id) || id <= 0) {
+      return res.status(400).json({ message: "Invalid user id" });
+    }
+
+    const new_password = clean(req.body?.new_password);
+    if (!new_password || new_password.length < 6) {
+      return res.status(400).json({ message: "new_password is required (min 6 chars)" });
+    }
+
+    const hashed = await bcrypt.hash(new_password, 10);
+
+    const result = await pool.query(
+      `
+      UPDATE public.users
+      SET password = $1,
+          updated_at = NOW()
+      WHERE id = $2
+      RETURNING id, username, role, created_at, branch_id
+      `,
+      [hashed, id]
+    );
+
+    if (result.rows.length === 0) return res.status(404).json({ message: "User not found" });
+
+    return res.json({ message: "Password reset", user: result.rows[0] });
+  } catch (e) {
+    console.error("PUT /api/users/:id/reset-password ERROR:", e.message);
+    return res.status(500).json({ message: "Server error" });
+  }
+});
+
+// ✅ ADMIN ONLY: delete user
+router.delete("/:id", requireAuth, requireRole(["admin"]), async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id) || id <= 0) {
+      return res.status(400).json({ message: "Invalid user id" });
+    }
+
     const result = await pool.query("DELETE FROM public.users WHERE id=$1 RETURNING id", [id]);
     if (result.rows.length === 0) return res.status(404).json({ message: "User not found" });
-    res.json({ message: "User deleted" });
+
+    return res.json({ message: "User deleted" });
   } catch (e) {
     console.error("DELETE /api/users/:id ERROR:", e.message);
-    res.status(500).json({ message: "Server error" });
+    return res.status(500).json({ message: "Server error" });
   }
 });
 

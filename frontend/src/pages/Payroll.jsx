@@ -79,7 +79,7 @@ function Payroll() {
         toNum(s.cash_advance) +
         toNum(s.other_receivable) +
         toNum(s.pagibig_mpl) +
-        toNum(s.sss_loan) +
+        // ✅ removed sss_loan
         toNum(s.staff_accounts_payable);
 
       const netPay = totalComp - total_deduction;
@@ -144,7 +144,7 @@ function Payroll() {
         </div>
       </div>
 
-      {/* SCREEN TABLE (unchanged) */}
+      {/* SCREEN TABLE */}
       <div className="payroll-card no-print">
         <div className="payroll-card-head">
           <div className="payroll-card-title">Salary and Wages</div>
@@ -165,7 +165,9 @@ function Payroll() {
                 <th colSpan={3}>EARNINGS</th>
                 <th colSpan={4}>EMPLOYER (ER)</th>
                 <th colSpan={4}>EMPLOYEE (EE)</th>
-                <th colSpan={12}>DEDUCTIONS</th>
+
+                {/* ✅ was 12, now 11 */}
+                <th colSpan={11}>DEDUCTIONS</th>
 
                 <th rowSpan={2}>Total Deduction</th>
                 <th rowSpan={2}>Net Pay</th>
@@ -198,7 +200,7 @@ function Payroll() {
                 <th>Cash Adv</th>
                 <th>Other Rec</th>
                 <th>Pag-IBIG</th>
-                <th>SSS Loan</th>
+                {/* ✅ removed SSS Loan */}
                 <th>Staff A/P</th>
               </tr>
             </thead>
@@ -235,7 +237,7 @@ function Payroll() {
                   <td className="num">{fmt(s.cash_advance)}</td>
                   <td className="num">{fmt(s.other_receivable)}</td>
                   <td className="num">{fmt(s.pagibig_mpl)}</td>
-                  <td className="num">{fmt(s.sss_loan)}</td>
+                  {/* ✅ removed sss_loan td */}
                   <td className="num">{fmt(s.staff_accounts_payable)}</td>
 
                   <td className="num td-strong">{fmt(s.total_deduction)}</td>
@@ -250,9 +252,7 @@ function Payroll() {
                 <td colSpan={4} className="totals-label">Totals</td>
                 <td className="num">{sumColumn("salary").toLocaleString()}</td>
                 <td className="num">{sumColumn("ecola").toLocaleString()}</td>
-                <td className="num td-strong">
-                  {(sumColumn("salary") + sumColumn("ecola")).toLocaleString()}
-                </td>
+                <td className="num td-strong">{(sumColumn("salary") + sumColumn("ecola")).toLocaleString()}</td>
 
                 <td className="num">{sumColumn("hdmf_er").toLocaleString()}</td>
                 <td className="num">{sumColumn("sss_er").toLocaleString()}</td>
@@ -274,7 +274,7 @@ function Payroll() {
                 <td className="num">{sumColumn("cash_advance").toLocaleString()}</td>
                 <td className="num">{sumColumn("other_receivable").toLocaleString()}</td>
                 <td className="num">{sumColumn("pagibig_mpl").toLocaleString()}</td>
-                <td className="num">{sumColumn("sss_loan").toLocaleString()}</td>
+                {/* ✅ removed sumColumn("sss_loan") */}
                 <td className="num">{sumColumn("staff_accounts_payable").toLocaleString()}</td>
 
                 <td className="num td-strong">{sumColumn("total_deduction").toLocaleString()}</td>
@@ -289,7 +289,7 @@ function Payroll() {
         <div className="payroll-hint">Tip: scroll horizontally to view all columns.</div>
       </div>
 
-      {/* PRINT: MULTIPLE PAYSLIPS (1 staff = 1 page) */}
+      {/* PRINT: MULTIPLE PAYSLIPS */}
       <div className="print-only">
         <div className="payslip-batch">
           {computedRows.map((s) => {
@@ -308,7 +308,7 @@ function Payroll() {
               ["Cash Advance", s.cash_advance],
               ["Other Receivable", s.other_receivable],
               ["Pag-IBIG MPL", s.pagibig_mpl],
-              ["SSS Loan", s.sss_loan],
+              // ✅ removed ["SSS Loan", s.sss_loan]
               ["Staff Accounts Payable", s.staff_accounts_payable],
             ].filter(([, v]) => toNum(v) !== 0);
 
