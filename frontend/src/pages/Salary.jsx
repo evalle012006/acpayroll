@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState, useCallback } from "react";
 import "../styles/Salary.css";
 import logo from "../assets/amber.jpg";
 import jsPDF from "jspdf";
@@ -7,10 +7,14 @@ import api from "../api/axiosClient";
 
 /* ------------------------- Helpers ------------------------- */
 const toStr = (v) => String(v ?? "").trim();
+
 const toNum = (v) => {
-  const n = Number(v ?? 0);
+  const s = String(v ?? "").trim();
+  if (!s) return 0;
+  const n = Number(s);
   return Number.isFinite(n) ? n : 0;
 };
+
 const money = (v) =>
   `₱ ${toNum(v).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
@@ -23,11 +27,14 @@ const displayName = (s) => {
 };
 
 const fmtBranch = (b) => `${toStr(b?.code)}${b?.name ? ` • ${b.name}` : ""}`.trim();
+const norm = (v) => toStr(v).toLowerCase();
 
-function Salary() {
+export default function Salary() {
   const [staff, setStaff] = useState([]);
   const [balances, setBalances] = useState([]);
   const [branches, setBranches] = useState([]);
+  const [loanRequests, setLoanRequests] = useState([]);
+  const [sapRows, setSapRows] = useState([]);
 
   const [selectedStaff, setSelectedStaff] = useState(null);
 
@@ -52,24 +59,36 @@ function Salary() {
     };
   }, []);
 
-  /* ------------------------- Load staff + balances + branches ------------------------- */
+  /* ------------------------- Load all ------------------------- */
   useEffect(() => {
     const run = async () => {
       try {
-        const [sRes, bRes, brRes] = await Promise.all([
+        const [sRes, brRes, lrRes, sapRes] = await Promise.all([
           api.get("/staff"),
-          api.get("/staff-balances"), // ✅ NOW EXISTS (after backend fix)
           api.get("/branches"),
+          api.get("/loan-requests").catch(() => ({ data: [] })),
+          api.get("/staff-accounts-payable").catch(() => ({ data: [] })),
         ]);
 
         setStaff(Array.isArray(sRes.data) ? sRes.data : []);
-        setBalances(Array.isArray(bRes.data) ? bRes.data : []);
         setBranches(Array.isArray(brRes.data) ? brRes.data : []);
+        setLoanRequests(Array.isArray(lrRes.data) ? lrRes.data : []);
+        setSapRows(Array.isArray(sapRes.data) ? sapRes.data : []);
+
+        try {
+          const bRes = await api.get("/staff-balances");
+          setBalances(Array.isArray(bRes.data) ? bRes.data : []);
+        } catch (e) {
+          console.warn("Balances list not available, will lazy-fetch per staff:", e?.response?.status);
+          setBalances([]);
+        }
       } catch (err) {
         console.error("Salary fetch error:", err);
         setStaff([]);
         setBalances([]);
         setBranches([]);
+        setLoanRequests([]);
+        setSapRows([]);
       }
     };
     run();
@@ -91,12 +110,13 @@ function Salary() {
     };
   }, [selectedStaff]);
 
-  const handleSearch = () => setSearch(searchInput);
-  const handleClear = () => {
+  const handleSearch = useCallback(() => setSearch(searchInput), [searchInput]);
+
+  const handleClear = useCallback(() => {
     setSearchInput("");
     setSearch("");
     setBranchFilter("All");
-  };
+  }, []);
 
   const branchMap = useMemo(() => {
     const m = new Map();
@@ -110,43 +130,143 @@ function Salary() {
     return m;
   }, [balances]);
 
+  const approvedLoansByEmp = useMemo(() => {
+    const map = new Map();
+
+    for (const row of loanRequests || []) {
+      if (norm(row.status) !== "approved") continue;
+
+      const empId = String(row.staff_id ?? row.employee_id ?? "");
+      if (!empId) continue;
+
+      const existing = map.get(empId) || {
+        salary_advance: 0,
+        motorcycle_loan: 0,
+        special_advance: 0,
+        cash_advance: 0,
+        other_receivable: 0,
+      };
+
+      const perMonth = toNum(row.per_month);
+      const loanType = norm(row.loan_type);
+
+      if (loanType === "salary advance") existing.salary_advance += perMonth;
+      else if (loanType === "motorcycle loan") existing.motorcycle_loan += perMonth;
+      else if (loanType === "special loan" || loanType === "special advance") existing.special_advance += perMonth;
+      else if (loanType === "cash loan" || loanType === "cash advance") existing.cash_advance += perMonth;
+      else existing.other_receivable += perMonth;
+
+      map.set(empId, existing);
+    }
+
+    return map;
+  }, [loanRequests]);
+
+  const approvedSapByEmp = useMemo(() => {
+    const map = new Map();
+
+    for (const row of sapRows || []) {
+      if (norm(row.status) !== "approved") continue;
+
+      const empId = String(row.employee_id ?? "");
+      if (!empId) continue;
+
+      map.set(empId, (map.get(empId) || 0) + toNum(row.per_month));
+    }
+
+    return map;
+  }, [sapRows]);
+
+  /* ------------------------- Lazy fetch per employee balance if missing ------------------------- */
+  const fetchBalanceForEmp = useCallback(
+    async (employeeId) => {
+      const key = String(employeeId);
+      if (!employeeId) return null;
+      if (balancesByEmp.has(key)) return balancesByEmp.get(key);
+
+      try {
+        const res = await api.get(`/staff-balances/${employeeId}`);
+        const row = res.data || null;
+        if (row) {
+          setBalances((prev) => {
+            const next = Array.isArray(prev) ? [...prev] : [];
+            const idx = next.findIndex((x) => String(x.employee_id) === key);
+            if (idx >= 0) next[idx] = row;
+            else next.push(row);
+            return next;
+          });
+        }
+        return row;
+      } catch (e) {
+        console.error("Fetch staff balance failed:", e);
+        return null;
+      }
+    },
+    [balancesByEmp]
+  );
+
   /* ------------------------- Compute payroll breakdown ------------------------- */
   const staffWithComputed = useMemo(() => {
     return (staff || []).map((s) => {
       const bal = balancesByEmp.get(String(s.id)) || {};
+      const monthlyLoans = approvedLoansByEmp.get(String(s.id)) || {
+        salary_advance: 0,
+        motorcycle_loan: 0,
+        special_advance: 0,
+        cash_advance: 0,
+        other_receivable: 0,
+      };
+      const monthlySap = approvedSapByEmp.get(String(s.id)) || 0;
 
+      // Basic pay
       const salary = toNum(s.salary);
       const ecola = toNum(s.ecola);
-      const transportation = toNum(s.transportation);
+      const totalCompensation = salary + ecola;
 
-      // placeholders
-      const hdmf_er = 0, sss_er = 0, ph_er = 0;
-      const hdmf_ee = 0, sss_ee = 0, ph_ee = 0;
+      // Transportation & Allowances
+      const transportation = toNum(s.transportation);
+      const repairing = toNum(s.repairing);
+      const postage = toNum(s.postage);
+      const additional_target = toNum(s.additional_target);
+      const additional_monitoring = toNum(s.additional_monitoring);
+      const others_allowance = toNum(s.other_deduction);
+
+      const total_allowances =
+        transportation + repairing + postage + additional_target + additional_monitoring + others_allowance;
+
+      const grossPay = totalCompensation + total_allowances;
+
+      // Contributions
+      const hdmf_er = toNum(s.hdmf_er);
+      const sss_er = toNum(s.sss_er);
+      const ph_er = toNum(s.ph_er);
       const total_er = hdmf_er + sss_er + ph_er;
+
+      const hdmf_ee = toNum(s.hdmf_ee);
+      const sss_ee = toNum(s.sss_ee);
+      const ph_ee = toNum(s.ph_ee);
       const total_ee = hdmf_ee + sss_ee + ph_ee;
 
-      const tax = 0;
-      const utility_charge = 0;
+      // Deductions from staff / balances
+      const tax = toNum(s.tax);
+      const utility_charge = toNum(s.utility_charge ?? bal.utility ?? s.utility);
 
-      // balances
+      // Savings from balances
       const cbu = toNum(bal.cbu);
       const cashbond = toNum(bal.cashbond);
-      const salary_advance = toNum(bal.salary_advance);
-      const motorcycle_loan = toNum(bal.motorcycle_loan);
-      const special_advance = toNum(bal.special_advance);
-      const cash_advance = toNum(bal.cash_advance);
-      const other_receivable = toNum(bal.other_receivable);
-      const pagibig_mpl = 0;
-      const sss_loan = 0;
-      const staff_accounts_payable = toNum(bal.staff_accounts_payable);
 
-      const totalCompensation = salary + ecola;
-      const grossPay = totalCompensation + transportation;
+      // ✅ monthly deductions only
+      const salary_advance = toNum(monthlyLoans.salary_advance);
+      const motorcycle_loan = toNum(monthlyLoans.motorcycle_loan);
+      const special_advance = toNum(monthlyLoans.special_advance);
+      const cash_advance = toNum(monthlyLoans.cash_advance);
+      const other_receivable = toNum(monthlyLoans.other_receivable);
+      const staff_accounts_payable = toNum(monthlySap);
 
       const total_deduction =
-        total_ee +
         tax +
         utility_charge +
+        total_ee +
         cbu +
         cashbond +
         salary_advance +
@@ -154,15 +274,12 @@ function Salary() {
         special_advance +
         cash_advance +
         other_receivable +
-        pagibig_mpl +
-        sss_loan +
         staff_accounts_payable;
 
-      const net_pay = totalCompensation - total_deduction;
+      const net_pay = grossPay - total_deduction;
 
       const br = branchMap.get(String(s.branch_id ?? "")) || null;
 
-      // ✅ prefer staff name fields; fallback to balances name fields if needed
       const mergedNameObj = {
         ...s,
         last_name: s.last_name ?? bal.last_name,
@@ -178,30 +295,49 @@ function Salary() {
         branch_code: br?.code || "",
         branch_name: br?.name || "",
 
-        hdmf_er, sss_er, ph_er, total_er,
-        hdmf_ee, sss_ee, ph_ee, total_ee,
+        salary,
+        ecola,
+        totalCompensation,
+
+        transportation,
+        repairing,
+        postage,
+        additional_target,
+        additional_monitoring,
+        others_allowance,
+        total_allowances,
+
+        grossPay,
+
+        hdmf_er,
+        sss_er,
+        ph_er,
+        total_er,
+        hdmf_ee,
+        sss_ee,
+        ph_ee,
+        total_ee,
 
         tax,
         utility_charge,
 
         cbu,
         cashbond,
+
         salary_advance,
         motorcycle_loan,
         special_advance,
         cash_advance,
         other_receivable,
-        pagibig_mpl,
-        sss_loan,
         staff_accounts_payable,
 
         total_deduction,
         net_pay,
+
         payroll_date: new Date().toISOString(),
-        grossPay,
       };
     });
-  }, [staff, balancesByEmp, branchMap]);
+  }, [staff, balancesByEmp, approvedLoansByEmp, approvedSapByEmp, branchMap]);
 
   const filteredStaff = useMemo(() => {
     const q = toStr(search).toLowerCase();
@@ -229,19 +365,30 @@ function Salary() {
     });
   }, [staffWithComputed, search, branchFilter]);
 
+  /* ------------------------- Payslip HTML ------------------------- */
   const buildPayslipHTML = (s, { autoPrint = false } = {}) => {
     const salary = toNum(s.salary);
     const ecola = toNum(s.ecola);
+
     const transportation = toNum(s.transportation);
+    const repairing = toNum(s.repairing);
+    const postage = toNum(s.postage);
+    const additional_target = toNum(s.additional_target);
+    const additional_monitoring = toNum(s.additional_monitoring);
+    const others_allowance = toNum(s.others_allowance ?? s.other_deduction);
+
+    const total_allowances =
+      transportation + repairing + postage + additional_target + additional_monitoring + others_allowance;
 
     const totalCompensation = salary + ecola;
-    const grossPay = totalCompensation + transportation;
+    const grossPay = totalCompensation + total_allowances;
 
-    const totalER = toNum(s.hdmf_er) + toNum(s.sss_er) + toNum(s.ph_er);
-    const totalEE = toNum(s.hdmf_ee) + toNum(s.sss_ee) + toNum(s.ph_ee);
+    const totalER = toNum(s.total_er);
+    const totalEE = toNum(s.total_ee);
 
     const totalDeduction = toNum(s.total_deduction);
     const netPay = toNum(s.net_pay);
+
     const pay10th = netPay / 2;
     const pay25th = netPay / 2;
 
@@ -306,7 +453,7 @@ function Salary() {
               <div class="row"><div class="label">Employee Name:</div><div class="value">${empName}</div></div>
               <div class="row"><div class="label">Position:</div><div class="value">${s.position ?? "-"}</div></div>
               <div class="row"><div class="label">Department:</div><div class="value">${s.department ?? "-"}</div></div>
-              <div class="row"><div class="label">Payroll Month:</div><div class="value">${payrollDate}</div></div>
+              <div class="row"><div class="label">Payroll Date:</div><div class="value">${payrollDate}</div></div>
             </div>
 
             <div class="grid">
@@ -315,16 +462,27 @@ function Salary() {
                 <table>
                   <tr><td>Salary</td><td>${money(salary)}</td></tr>
                   <tr><td>Ecola</td><td>${money(ecola)}</td></tr>
+
                   <tr><td>Transportation</td><td>${money(transportation)}</td></tr>
+                  <tr><td>Repairing</td><td>${money(repairing)}</td></tr>
+                  <tr><td>Postage</td><td>${money(postage)}</td></tr>
+                  <tr><td>Additional Target</td><td>${money(additional_target)}</td></tr>
+                  <tr><td>Additional Monitoring</td><td>${money(additional_monitoring)}</td></tr>
+                  <tr><td>Others</td><td>${money(others_allowance)}</td></tr>
+                  <tr class="total-row"><td>Total Allowances</td><td>${money(total_allowances)}</td></tr>
+
                   <tr class="total-row"><td>Gross Pay</td><td>${money(grossPay)}</td></tr>
                 </table>
               </div>
 
               <div class="card">
-                <h3>Deductions</h3>
+                <h3>Deductions (Monthly)</h3>
                 <table>
-                  <tr><td>Tax</td><td>${money(s.tax)}</td></tr>
-                  <tr><td>Utility Charge</td><td>${money(s.utility_charge)}</td></tr>
+                  <tr><td>Withheld Tax</td><td>${money(s.tax)}</td></tr>
+                  <tr><td>Utility</td><td>${money(s.utility_charge)}</td></tr>
+                  <tr><td>SSS (EE)</td><td>${money(s.sss_ee)}</td></tr>
+                  <tr><td>PhilHealth (EE)</td><td>${money(s.ph_ee)}</td></tr>
+                  <tr><td>HDMF (EE)</td><td>${money(s.hdmf_ee)}</td></tr>
                   <tr><td>CBU</td><td>${money(s.cbu)}</td></tr>
                   <tr><td>Cashbond</td><td>${money(s.cashbond)}</td></tr>
                   <tr><td>Salary Advance</td><td>${money(s.salary_advance)}</td></tr>
@@ -332,8 +490,6 @@ function Salary() {
                   <tr><td>Special Advance</td><td>${money(s.special_advance)}</td></tr>
                   <tr><td>Cash Advance</td><td>${money(s.cash_advance)}</td></tr>
                   <tr><td>Other Receivable</td><td>${money(s.other_receivable)}</td></tr>
-                  <tr><td>Pag-IBIG MPL</td><td>${money(s.pagibig_mpl)}</td></tr>
-                  <tr><td>SSS Loan</td><td>${money(s.sss_loan)}</td></tr>
                   <tr><td>Staff Accounts Payable</td><td>${money(s.staff_accounts_payable)}</td></tr>
                   <tr class="total-row"><td>Total Deduction</td><td>${money(totalDeduction)}</td></tr>
                 </table>
@@ -459,6 +615,21 @@ function Salary() {
     };
   };
 
+  const openStaff = async (emp) => {
+    const hasBal = balancesByEmp.has(String(emp.id));
+    if (!hasBal) await fetchBalanceForEmp(emp.id);
+
+    const latest = staffWithComputed.find((x) => String(x.id) === String(emp.id)) || emp;
+    setSelectedStaff(latest);
+  };
+
+  useEffect(() => {
+    if (!selectedStaff) return;
+    const latest = staffWithComputed.find((x) => String(x.id) === String(selectedStaff.id));
+    if (!latest) return;
+    setSelectedStaff(latest);
+  }, [staffWithComputed, selectedStaff?.id]);
+
   return (
     <div className="salary-page">
       <div className="salary-page-header">
@@ -541,7 +712,7 @@ function Salary() {
                   <td>{emp.branch_code || emp.branch_name ? `${emp.branch_code} • ${emp.branch_name}` : "-"}</td>
                   <td>{emp.area || "-"}</td>
                   <td>
-                    <button className="view-btn" onClick={() => setSelectedStaff(emp)} type="button">
+                    <button className="view-btn" onClick={() => openStaff(emp)} type="button">
                       View
                     </button>
                   </td>
@@ -597,29 +768,112 @@ function Salary() {
                 </div>
                 <div className="box-row total">
                   <span>Total Compensation</span>
-                  <strong>{money(toNum(selectedStaff.salary) + toNum(selectedStaff.ecola))}</strong>
+                  <strong>{money(selectedStaff.totalCompensation)}</strong>
                 </div>
               </div>
 
               <div className="salary-box">
-                <div className="box-title">Allowances</div>
+                <div className="box-title">Transportation & Allowances</div>
+
                 <div className="box-row">
                   <span>Transportation</span>
                   <strong>{money(selectedStaff.transportation)}</strong>
                 </div>
+                <div className="box-row">
+                  <span>Repairing</span>
+                  <strong>{money(selectedStaff.repairing)}</strong>
+                </div>
+                <div className="box-row">
+                  <span>Postage</span>
+                  <strong>{money(selectedStaff.postage)}</strong>
+                </div>
+                <div className="box-row">
+                  <span>Additional Target</span>
+                  <strong>{money(selectedStaff.additional_target)}</strong>
+                </div>
+                <div className="box-row">
+                  <span>Additional Monitoring</span>
+                  <strong>{money(selectedStaff.additional_monitoring)}</strong>
+                </div>
+                <div className="box-row">
+                  <span>Others</span>
+                  <strong>{money(selectedStaff.others_allowance)}</strong>
+                </div>
+
+                <div className="box-row total">
+                  <span>Total</span>
+                  <strong>{money(selectedStaff.total_allowances)}</strong>
+                </div>
+
+                <div className="box-row total">
+                  <span>Gross Pay</span>
+                  <strong>{money(selectedStaff.grossPay)}</strong>
+                </div>
               </div>
 
               <div className="salary-box full">
-                <div className="box-title">Deductions</div>
-                <div className="box-row"><span>CBU</span><strong>{money(selectedStaff.cbu)}</strong></div>
-                <div className="box-row"><span>Cashbond</span><strong>{money(selectedStaff.cashbond)}</strong></div>
-                <div className="box-row"><span>Salary Advance</span><strong>{money(selectedStaff.salary_advance)}</strong></div>
-                <div className="box-row"><span>Motorcycle Loan</span><strong>{money(selectedStaff.motorcycle_loan)}</strong></div>
-                <div className="box-row"><span>Special Advance</span><strong>{money(selectedStaff.special_advance)}</strong></div>
-                <div className="box-row"><span>Cash Advance</span><strong>{money(selectedStaff.cash_advance)}</strong></div>
-                <div className="box-row"><span>Other Receivable</span><strong>{money(selectedStaff.other_receivable)}</strong></div>
-                <div className="box-row"><span>Staff Accounts Payable</span><strong>{money(selectedStaff.staff_accounts_payable)}</strong></div>
-                <div className="box-row total"><span>Total Deduction</span><strong>{money(selectedStaff.total_deduction)}</strong></div>
+                <div className="box-title">Deductions (Monthly)</div>
+
+                <div className="box-row">
+                  <span>Withheld Tax</span>
+                  <strong>{money(selectedStaff.tax)}</strong>
+                </div>
+                <div className="box-row">
+                  <span>Utility</span>
+                  <strong>{money(selectedStaff.utility_charge)}</strong>
+                </div>
+
+                <div className="box-row">
+                  <span>SSS (EE)</span>
+                  <strong>{money(selectedStaff.sss_ee)}</strong>
+                </div>
+                <div className="box-row">
+                  <span>PhilHealth (EE)</span>
+                  <strong>{money(selectedStaff.ph_ee)}</strong>
+                </div>
+                <div className="box-row">
+                  <span>HDMF (EE)</span>
+                  <strong>{money(selectedStaff.hdmf_ee)}</strong>
+                </div>
+
+                <div className="box-row">
+                  <span>CBU</span>
+                  <strong>{money(selectedStaff.cbu)}</strong>
+                </div>
+                <div className="box-row">
+                  <span>Cashbond</span>
+                  <strong>{money(selectedStaff.cashbond)}</strong>
+                </div>
+
+                <div className="box-row">
+                  <span>Salary Advance</span>
+                  <strong>{money(selectedStaff.salary_advance)}</strong>
+                </div>
+                <div className="box-row">
+                  <span>Motorcycle Loan</span>
+                  <strong>{money(selectedStaff.motorcycle_loan)}</strong>
+                </div>
+                <div className="box-row">
+                  <span>Special Advance</span>
+                  <strong>{money(selectedStaff.special_advance)}</strong>
+                </div>
+                <div className="box-row">
+                  <span>Cash Advance</span>
+                  <strong>{money(selectedStaff.cash_advance)}</strong>
+                </div>
+                <div className="box-row">
+                  <span>Other Receivable</span>
+                  <strong>{money(selectedStaff.other_receivable)}</strong>
+                </div>
+                <div className="box-row">
+                  <span>Staff Accounts Payable</span>
+                  <strong>{money(selectedStaff.staff_accounts_payable)}</strong>
+                </div>
+
+                <div className="box-row total">
+                  <span>Total Deduction</span>
+                  <strong>{money(selectedStaff.total_deduction)}</strong>
+                </div>
               </div>
 
               <div className="salary-box full">
@@ -645,5 +899,3 @@ function Salary() {
     </div>
   );
 }
-
-export default Salary;

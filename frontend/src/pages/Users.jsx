@@ -28,7 +28,6 @@ const Users = () => {
     branch_id: null,
   });
 
-  // reset password modal
   const [resetId, setResetId] = useState(null);
   const [resetUser, setResetUser] = useState(null);
   const [resetPw, setResetPw] = useState("");
@@ -44,7 +43,6 @@ const Users = () => {
     try {
       setLoading(true);
       const res = await api.get("/users");
-      // backend returns: {id, username, role, created_at, branch_id}
       setRows(Array.isArray(res.data) ? res.data : []);
     } catch (err) {
       const status = err?.response?.status;
@@ -60,7 +58,6 @@ const Users = () => {
     fetchUsers();
   }, []);
 
-  // escape key closes any modal
   useEffect(() => {
     if (!showModal && !resetId) return;
 
@@ -130,7 +127,6 @@ const Users = () => {
         branch_id: form.branch_id === "" ? null : form.branch_id ?? null,
       };
 
-      // password optional on edit
       if (!editId) {
         payload.password = String(form.password || "");
       } else if (String(form.password || "").trim() !== "") {
@@ -165,7 +161,6 @@ const Users = () => {
     }
   };
 
-  // ---------------- RESET PASSWORD ----------------
   const openReset = (u) => {
     setResetId(u.id);
     setResetUser(u);
@@ -291,7 +286,6 @@ const Users = () => {
         </div>
       </div>
 
-      {/* ADD/EDIT MODAL */}
       {showModal && (
         <div
           className="modal-overlay"
@@ -371,7 +365,6 @@ const Users = () => {
         </div>
       )}
 
-      {/* RESET PASSWORD MODAL */}
       {resetId && (
         <div
           className="modal-overlay"

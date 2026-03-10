@@ -44,7 +44,6 @@ router.get(
       const role = String(req.user?.role || "").trim().toLowerCase();
       const bid = req.user?.branch_id ?? null;
 
-      // ADMIN: show all staff in this department
       if (role === "admin") {
         const r = await pool.query(
           `
@@ -62,7 +61,6 @@ router.get(
         return res.json(r.rows);
       }
 
-      // BRANCH MANAGER: only staff in their branch
       if (role === "branch manager") {
         if (!bid) return res.json([]);
         const r = await pool.query(

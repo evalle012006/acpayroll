@@ -19,6 +19,11 @@ const hasAuth = () => {
   return !!token && !!user;
 };
 
+const isPublicPath = () => {
+  const p = window.location.pathname;
+  return p === "/login" || p === "/" || p === "/forgot-password";
+};
+
 const CompRatesContext = createContext(null);
 
 export const CompRatesProvider = ({ children }) => {
@@ -27,8 +32,7 @@ export const CompRatesProvider = ({ children }) => {
   const [error, setError] = useState("");
 
   const refresh = useCallback(async () => {
-    // ✅ don't fetch if not logged in
-    if (!hasAuth()) {
+    if (!hasAuth() || isPublicPath()) {
       setRates([]);
       setLoading(false);
       setError("");
@@ -37,31 +41,33 @@ export const CompRatesProvider = ({ children }) => {
 
     setLoading(true);
     setError("");
+
     try {
       const res = await api.get("/comp-rates");
       setRates(Array.isArray(res.data) ? res.data : []);
     } catch (e) {
       const status = e?.response?.status;
 
-      // ✅ if token missing/expired, don't show error spam
       if (status === 401) {
         setRates([]);
         setError("");
-      } else {
-        setRates([]);
-        setError(e?.response?.data?.message || "Failed to load compensation rates");
+        return;
       }
+
+      setRates([]);
+      setError(e?.response?.data?.message || "Failed to load compensation rates");
     } finally {
       setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    // initial load (only if logged in)
     refresh();
 
-    // ✅ re-fetch after login/logout changes
-    const onAuthChanged = () => refresh();
+    const onAuthChanged = () => {
+      refresh();
+    };
+
     window.addEventListener("auth-changed", onAuthChanged);
     window.addEventListener("storage", onAuthChanged);
 

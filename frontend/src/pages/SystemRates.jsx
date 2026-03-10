@@ -9,10 +9,12 @@ const toNum = (v) => {
   return Number.isFinite(n) ? n : 0;
 };
 
+const toStr = (v) => String(v ?? "").trim();
+
 export default function SystemRates() {
   const navigate = useNavigate();
-
   const { rates, loading, error, refresh } = useCompRates();
+
   const [errLocal, setErrLocal] = useState("");
 
   const user = useMemo(() => {
@@ -26,91 +28,111 @@ export default function SystemRates() {
   const role = String(user?.role || "").trim().toLowerCase();
   const isAdmin = role === "admin";
 
-  const [newRow, setNewRow] = useState({
+  const [showModal, setShowModal] = useState(false);
+  const [modalMode, setModalMode] = useState("view"); // view | edit | create
+  const [saving, setSaving] = useState(false);
+  const [selectedId, setSelectedId] = useState(null);
+
+  const emptyForm = {
     position: "",
     salary: "",
     ecola: "",
     transportation: "",
-  });
-
-  const [drafts, setDrafts] = useState({});
-
-  const mergedRates = useMemo(() => {
-    return rates.map((r) => ({ ...r, ...(drafts[r.id] || {}) }));
-  }, [rates, drafts]);
-
-  const setDraft = (id, patch) => {
-    setDrafts((prev) => ({
-      ...prev,
-      [id]: { ...(prev[id] || {}), ...patch },
-    }));
+    cbu: "",
+    cashbond: "",
+    utility: "",
   };
 
-  const saveRate = async (row) => {
-    setErrLocal("");
-    try {
-      await api.put(`/comp-rates/${row.id}`, {
-        position: String(row.position || "").trim(),
-        salary: toNum(row.salary),
-        ecola: toNum(row.ecola),
-        transportation: toNum(row.transportation),
-      });
+  const [form, setForm] = useState(emptyForm);
 
-      setDrafts((prev) => {
-        const copy = { ...prev };
-        delete copy[row.id];
-        return copy;
-      });
+  const err = errLocal || error;
+
+  const openCreateModal = () => {
+    setErrLocal("");
+    setSelectedId(null);
+    setModalMode("create");
+    setForm(emptyForm);
+    setShowModal(true);
+  };
+
+  const openViewModal = (row) => {
+    setErrLocal("");
+    setSelectedId(row.id);
+    setModalMode(isAdmin ? "edit" : "view");
+    setForm({
+      position: row.position ?? "",
+      salary: row.salary ?? 0,
+      ecola: row.ecola ?? 0,
+      transportation: row.transportation ?? 0,
+      cbu: row.cbu ?? 0,
+      cashbond: row.cashbond ?? 0,
+      utility: row.utility ?? 0,
+    });
+    setShowModal(true);
+  };
+
+  const closeModal = () => {
+    if (saving) return;
+    setShowModal(false);
+    setSelectedId(null);
+    setForm(emptyForm);
+    setModalMode("view");
+    setErrLocal("");
+  };
+
+  const handleSave = async () => {
+    setErrLocal("");
+
+    try {
+      setSaving(true);
+
+      const payload = {
+        position: toStr(form.position),
+        salary: toNum(form.salary),
+        ecola: toNum(form.ecola),
+        transportation: toNum(form.transportation),
+        cbu: toNum(form.cbu),
+        cashbond: toNum(form.cashbond),
+        utility: toNum(form.utility),
+      };
+
+      if (!payload.position) {
+        setErrLocal("Position is required.");
+        return;
+      }
+
+      if (modalMode === "create") {
+        await api.post("/comp-rates", payload);
+      } else {
+        await api.put(`/comp-rates/${selectedId}`, payload);
+      }
 
       await refresh();
+      closeModal();
     } catch (e) {
-      setErrLocal(e?.response?.data?.message || "Failed to update");
+      setErrLocal(e?.response?.data?.message || "Failed to save");
+    } finally {
+      setSaving(false);
     }
   };
 
-  const deleteRate = async (id) => {
+  const handleDelete = async (id) => {
+    if (!isAdmin) return;
     if (!window.confirm("Delete this position rate?")) return;
+
     setErrLocal("");
 
     try {
       await api.delete(`/comp-rates/${id}`);
-
-      setDrafts((prev) => {
-        const copy = { ...prev };
-        delete copy[id];
-        return copy;
-      });
-
       await refresh();
+
+      if (showModal && selectedId === id) {
+        closeModal();
+      }
     } catch (e) {
       setErrLocal(e?.response?.data?.message || "Failed to delete");
     }
   };
-
-  const createRate = async () => {
-    setErrLocal("");
-    try {
-      await api.post("/comp-rates", {
-        position: String(newRow.position || "").trim(),
-        salary: toNum(newRow.salary),
-        ecola: toNum(newRow.ecola),
-        transportation: toNum(newRow.transportation),
-      });
-
-      setNewRow({
-        position: "",
-        salary: "",
-        ecola: "",
-        transportation: "",
-      });
-
-      await refresh();
-    } catch (e) {
-      setErrLocal(e?.response?.data?.message || "Failed to create");
-    }
-  };
-
-  const err = errLocal || error;
 
   return (
     <div className="sys-page">
@@ -118,26 +140,24 @@ export default function SystemRates() {
         <div>
           <h2 className="sys-title">Salary & Allowance Rates</h2>
           <p className="sys-subtitle">
-            Manage default <b>Salary</b>, <b>ECOLA</b>, and{" "}
-            <b>Transportation</b> per position.
+            Manage default <b>Salary</b>, <b>ECOLA</b>, <b>Transportation</b>, <b>CBU</b>, <b>Cash Bond</b>, and <b>Utility</b> per position.
           </p>
         </div>
 
-        <div style={{ display: "flex", gap: 10 }}>
-          <button
-            className="btn-secondary"
-            onClick={() => navigate("/system-update")}
-          >
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+          <button className="btn-secondary" onClick={() => navigate("/system-update")}>
             ← Back
           </button>
 
-          <button
-            className="btn-primary"
-            onClick={refresh}
-            disabled={loading}
-          >
-            Refresh
+          <button className="btn-primary" onClick={refresh} disabled={loading}>
+            {loading ? "Refreshing..." : "Refresh"}
           </button>
+
+          {isAdmin && (
+            <button className="btn-primary" onClick={openCreateModal}>
+              + Add Rate
+            </button>
+          )}
         </div>
       </div>
 
@@ -159,78 +179,39 @@ export default function SystemRates() {
             <div>Salary</div>
             <div>ECOLA</div>
             <div>Transportation</div>
+            <div>CBU</div>
+            <div>Cash Bond</div>
+            <div>Utility</div>
             <div>Actions</div>
           </div>
 
-          {mergedRates.map((r) => (
+          {rates.map((r) => (
             <div className="sys-row" key={r.id}>
-                <input value={r.position ?? ""} onChange={(e) => setDraft(r.id, { position: e.target.value })} disabled={!isAdmin}/>
-                <input value={r.salary ?? 0} onChange={(e) => setDraft(r.id, { salary: e.target.value })} disabled={!isAdmin}/>
-                <input value={r.ecola ?? 0} onChange={(e) => setDraft(r.id, { ecola: e.target.value })} disabled={!isAdmin}/>
-                <input value={r.transportation ?? 0} onChange={(e) => setDraft(r.id, { transportation: e.target.value })} disabled={!isAdmin}/>
+              <div>{r.position || "-"}</div>
+              <div>{r.salary ?? 0}</div>
+              <div>{r.ecola ?? 0}</div>
+              <div>{r.transportation ?? 0}</div>
+              <div>{r.cbu ?? 0}</div>
+              <div>{r.cashbond ?? 0}</div>
+              <div>{r.utility ?? 0}</div>
 
-            <div className="sys-actions">
-                <button className="sys-btn" onClick={() => saveRate(r)} disabled={!isAdmin}>
-                  Save
+              <div className="sys-actions">
+                <button className="sys-btn" onClick={() => openViewModal(r)}>
+                  {isAdmin ? "View / Edit" : "View"}
                 </button>
 
-                <button className="sys-btn danger" onClick={() => deleteRate(r.id)} disabled={!isAdmin}>
-                  Delete
-                </button>
+                {isAdmin && (
+                  <button className="sys-btn danger" onClick={() => handleDelete(r.id)}>
+                    Delete
+                  </button>
+                )}
               </div>
             </div>
           ))}
 
-          <div className="sys-row sys-row-new">
-            <input
-              placeholder="New position..."
-              value={newRow.position}
-              onChange={(e) =>
-                setNewRow((p) => ({ ...p, position: e.target.value }))
-              }
-              disabled={!isAdmin}
-            />
-
-            <input
-              placeholder="0"
-              value={newRow.salary}
-              onChange={(e) =>
-                setNewRow((p) => ({ ...p, salary: e.target.value }))
-              }
-              disabled={!isAdmin}
-            />
-
-            <input
-              placeholder="0"
-              value={newRow.ecola}
-              onChange={(e) =>
-                setNewRow((p) => ({ ...p, ecola: e.target.value }))
-              }
-              disabled={!isAdmin}
-            />
-
-            <input
-              placeholder="0"
-              value={newRow.transportation}
-              onChange={(e) =>
-                setNewRow((p) => ({
-                  ...p,
-                  transportation: e.target.value,
-                }))
-              }
-              disabled={!isAdmin}
-            />
-
-            <div className="sys-actions">
-              <button
-                className="sys-btn"
-                onClick={createRate}
-                disabled={!isAdmin}
-              >
-                Add
-              </button>
-            </div>
-          </div>
+          {!loading && rates.length === 0 && (
+            <div className="sys-note">No position rates found.</div>
+          )}
 
           {!isAdmin && (
             <div className="sys-note">
@@ -239,6 +220,127 @@ export default function SystemRates() {
           )}
         </div>
       </div>
+
+      {showModal && (
+        <div className="sys-modal-overlay" onMouseDown={(e) => e.target === e.currentTarget && closeModal()}>
+          <div className="sys-modal" onMouseDown={(e) => e.stopPropagation()}>
+            <div className="sys-modal-head">
+              <div>
+                <h3 className="sys-modal-title">
+                  {modalMode === "create"
+                    ? "Add Position Rate"
+                    : isAdmin
+                    ? "View / Edit Position Rate"
+                    : "View Position Rate"}
+                </h3>
+                <p className="sys-modal-sub">
+                  {modalMode === "create"
+                    ? "Create a new default compensation rate."
+                    : "Review the position compensation details."}
+                </p>
+              </div>
+
+              <button className="sys-modal-close" type="button" onClick={closeModal}>
+                ✕
+              </button>
+            </div>
+
+            <div className="sys-modal-body">
+              <div className="sys-form-grid">
+                <div className="sys-field full">
+                  <label>Position</label>
+                  <input
+                    type="text"
+                    value={form.position}
+                    onChange={(e) => setForm((p) => ({ ...p, position: e.target.value }))}
+                    disabled={!isAdmin && modalMode !== "create"}
+                  />
+                </div>
+
+                <div className="sys-field">
+                  <label>Salary</label>
+                  <input
+                    type="number"
+                    value={form.salary}
+                    onChange={(e) => setForm((p) => ({ ...p, salary: e.target.value }))}
+                    disabled={!isAdmin && modalMode !== "create"}
+                  />
+                </div>
+
+                <div className="sys-field">
+                  <label>ECOLA</label>
+                  <input
+                    type="number"
+                    value={form.ecola}
+                    onChange={(e) => setForm((p) => ({ ...p, ecola: e.target.value }))}
+                    disabled={!isAdmin && modalMode !== "create"}
+                  />
+                </div>
+
+                <div className="sys-field">
+                  <label>Transportation</label>
+                  <input
+                    type="number"
+                    value={form.transportation}
+                    onChange={(e) => setForm((p) => ({ ...p, transportation: e.target.value }))}
+                    disabled={!isAdmin && modalMode !== "create"}
+                  />
+                </div>
+
+                <div className="sys-field">
+                  <label>CBU</label>
+                  <input
+                    type="number"
+                    value={form.cbu}
+                    onChange={(e) => setForm((p) => ({ ...p, cbu: e.target.value }))}
+                    disabled={!isAdmin && modalMode !== "create"}
+                  />
+                </div>
+
+                <div className="sys-field">
+                  <label>Cash Bond</label>
+                  <input
+                    type="number"
+                    value={form.cashbond}
+                    onChange={(e) => setForm((p) => ({ ...p, cashbond: e.target.value }))}
+                    disabled={!isAdmin && modalMode !== "create"}
+                  />
+                </div>
+
+                <div className="sys-field">
+                  <label>Utility</label>
+                  <input
+                    type="number"
+                    value={form.utility}
+                    onChange={(e) => setForm((p) => ({ ...p, utility: e.target.value }))}
+                    disabled={!isAdmin && modalMode !== "create"}
+                  />
+                </div>
+              </div>
+
+              {err && <div className="sys-error" style={{ marginTop: 14 }}>{err}</div>}
+            </div>
+
+            <div className="sys-modal-actions">
+              <button className="btn-secondary" type="button" onClick={closeModal} disabled={saving}>
+                Close
+              </button>
+
+              {isAdmin && (
+                <button className="btn-primary" type="button" onClick={handleSave} disabled={saving}>
+                  {saving
+                    ? modalMode === "create"
+                      ? "Creating..."
+                      : "Saving..."
+                    : modalMode === "create"
+                    ? "Create"
+                    : "Save Changes"}
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

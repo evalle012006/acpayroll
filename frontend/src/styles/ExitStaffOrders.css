@@ -88,7 +88,7 @@
 .exit-card {
   background: var(--panel);
   border: 1px solid var(--border);
-  border-radius: 16px;
+  border-radius: 5px;
   box-shadow: var(--shadow-soft);
   overflow: hidden;
 }
@@ -313,4 +313,50 @@
 [data-theme="dark"] .exit-modal {
   background: #0f1f3d;
   border-color: rgba(255, 255, 255, 0.1);
+}
+
+/* ===== stats cards ===== */
+
+.exit-stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 14px;
+}
+
+.exit-stat-card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 14px 18px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.exit-stat-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--muted);
+}
+
+.exit-stat-value {
+  font-size: 26px;
+  font-weight: 900;
+  margin-top: 4px;
+}
+
+.exit-filters {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+}
+
+.exit-search {
+  flex: 1;
+  min-width: 260px;
+}
+
+.exit-filter-select {
+  width: 200px;
 }

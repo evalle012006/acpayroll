@@ -8,17 +8,15 @@ const toNum = (v) => {
   return Number.isFinite(n) ? n : 0;
 };
 
-// month "YYYY-MM" -> "YYYY-MM-01"
 const monthToDate = (monthStr) => {
   const m = String(monthStr || "").trim();
   if (!/^\d{4}-\d{2}$/.test(m)) return null;
   return `${m}-01`;
 };
 
-/**
- * ✅ GET snapshots for a month
- * GET /api/schedule-balances?month=YYYY-MM&branchId=1
- */
+const monthEndExpr = (paramRef) =>
+  `((DATE_TRUNC('month', ${paramRef}::date) + INTERVAL '1 month - 1 day')::date)`;
+
 router.get("/", requireAuth, async (req, res) => {
   try {
     const snapshotMonth = monthToDate(req.query.month);
@@ -40,6 +38,8 @@ router.get("/", requireAuth, async (req, res) => {
         branch_id,
         cbu,
         cashbond,
+        utility,
+        salary_loan,
         salary_advance,
         motorcycle_loan,
         special_advance,
@@ -49,12 +49,12 @@ router.get("/", requireAuth, async (req, res) => {
         created_at,
         updated_at
       FROM public.schedule_balance_snapshots
-      WHERE snapshot_month = $1
+      WHERE snapshot_month = $1::date
     `;
 
     if (branchId) {
       params.push(branchId);
-      sql += ` AND branch_id = $2`;
+      sql += ` AND branch_id = $2::int`;
     }
 
     sql += ` ORDER BY fullname ASC`;
@@ -67,133 +67,545 @@ router.get("/", requireAuth, async (req, res) => {
   }
 });
 
-/**
- * ✅ POST: create monthly snapshot FROM CURRENT staff_balances
- * POST /api/schedule-balances/snapshot/from-current
- * body: { month: "YYYY-MM" }
- *
- * Admin only
- */
-router.post("/snapshot/from-current", requireAuth, requireRole(["Admin"]), async (req, res) => {
-  const snapshotMonth = monthToDate(req.body?.month);
-
-  if (!snapshotMonth) {
-    return res.status(400).json({ message: "month is required in YYYY-MM format" });
-  }
-
-  const client = await pool.connect();
+router.get("/live", requireAuth, async (req, res) => {
   try {
-    await client.query("BEGIN");
+    const snapshotMonth = monthToDate(req.query.month);
+    const branchId = req.query.branchId ? Number(req.query.branchId) : null;
 
-    /**
-     * ✅ IMPORTANT:
-     * staff_balances has NO branch_id, so we LEFT JOIN staff to get branch_id
-     *
-     * Assumption: public.staff.id matches staff_balances.id
-     * If yours is different, tell me and I’ll adjust.
-     */
-    const current = await client.query(`
+    if (!snapshotMonth) {
+      return res.status(400).json({ message: "month is required in YYYY-MM format" });
+    }
+
+    const params = [snapshotMonth];
+    let whereSql = "";
+
+    if (branchId) {
+      params.push(branchId);
+      whereSql = ` WHERE s.branch_id = $2::int `;
+    }
+
+    const sql = `
+      WITH cutoff AS (
+        SELECT
+          $1::date AS month_start,
+          ${monthEndExpr("$1")} AS month_end
+      ),
+
+      loan_remaining AS (
+        SELECT
+          lr.staff_id,
+
+          SUM(
+            CASE
+              WHEN LOWER(COALESCE(lr.loan_type, '')) = 'salary loan'
+              THEN GREATEST(
+                COALESCE(lr.total, lr.amount, 0) -
+                (
+                  GREATEST(
+                    (
+                      DATE_PART(
+                        'year',
+                        AGE((SELECT month_end FROM cutoff), COALESCE(lr.disbursement_date, lr.approved_at))
+                      )::int * 12
+                    ) +
+                    DATE_PART(
+                      'month',
+                      AGE((SELECT month_end FROM cutoff), COALESCE(lr.disbursement_date, lr.approved_at))
+                    )::int,
+                    0
+                  ) * COALESCE(lr.per_month, 0)
+                ),
+                0
+              )
+              ELSE 0
+            END
+          )::numeric(12,2) AS salary_loan,
+
+          SUM(
+            CASE
+              WHEN LOWER(COALESCE(lr.loan_type, '')) = 'salary advance'
+              THEN GREATEST(
+                COALESCE(lr.total, lr.amount, 0) -
+                (
+                  GREATEST(
+                    (
+                      DATE_PART(
+                        'year',
+                        AGE((SELECT month_end FROM cutoff), COALESCE(lr.disbursement_date, lr.approved_at))
+                      )::int * 12
+                    ) +
+                    DATE_PART(
+                      'month',
+                      AGE((SELECT month_end FROM cutoff), COALESCE(lr.disbursement_date, lr.approved_at))
+                    )::int,
+                    0
+                  ) * COALESCE(lr.per_month, 0)
+                ),
+                0
+              )
+              ELSE 0
+            END
+          )::numeric(12,2) AS salary_advance,
+
+          SUM(
+            CASE
+              WHEN LOWER(COALESCE(lr.loan_type, '')) = 'motorcycle loan'
+              THEN GREATEST(
+                COALESCE(lr.total, lr.amount, 0) -
+                (
+                  GREATEST(
+                    (
+                      DATE_PART(
+                        'year',
+                        AGE((SELECT month_end FROM cutoff), COALESCE(lr.disbursement_date, lr.approved_at))
+                      )::int * 12
+                    ) +
+                    DATE_PART(
+                      'month',
+                      AGE((SELECT month_end FROM cutoff), COALESCE(lr.disbursement_date, lr.approved_at))
+                    )::int,
+                    0
+                  ) * COALESCE(lr.per_month, 0)
+                ),
+                0
+              )
+              ELSE 0
+            END
+          )::numeric(12,2) AS motorcycle_loan,
+
+          SUM(
+            CASE
+              WHEN LOWER(COALESCE(lr.loan_type, '')) IN ('special loan', 'special advance')
+              THEN GREATEST(
+                COALESCE(lr.total, lr.amount, 0) -
+                (
+                  GREATEST(
+                    (
+                      DATE_PART(
+                        'year',
+                        AGE((SELECT month_end FROM cutoff), COALESCE(lr.disbursement_date, lr.approved_at))
+                      )::int * 12
+                    ) +
+                    DATE_PART(
+                      'month',
+                      AGE((SELECT month_end FROM cutoff), COALESCE(lr.disbursement_date, lr.approved_at))
+                    )::int,
+                    0
+                  ) * COALESCE(lr.per_month, 0)
+                ),
+                0
+              )
+              ELSE 0
+            END
+          )::numeric(12,2) AS special_advance,
+
+          SUM(
+            CASE
+              WHEN LOWER(COALESCE(lr.loan_type, '')) IN ('cash loan', 'cash advance')
+              THEN GREATEST(
+                COALESCE(lr.total, lr.amount, 0) -
+                (
+                  GREATEST(
+                    (
+                      DATE_PART(
+                        'year',
+                        AGE((SELECT month_end FROM cutoff), COALESCE(lr.disbursement_date, lr.approved_at))
+                      )::int * 12
+                    ) +
+                    DATE_PART(
+                      'month',
+                      AGE((SELECT month_end FROM cutoff), COALESCE(lr.disbursement_date, lr.approved_at))
+                    )::int,
+                    0
+                  ) * COALESCE(lr.per_month, 0)
+                ),
+                0
+              )
+              ELSE 0
+            END
+          )::numeric(12,2) AS cash_advance
+
+        FROM public.loan_requests lr
+        CROSS JOIN cutoff c
+        WHERE
+          lr.staff_id IS NOT NULL
+          AND LOWER(COALESCE(lr.status, '')) = 'approved'
+          AND COALESCE(lr.disbursement_date, lr.approved_at) IS NOT NULL
+          AND COALESCE(lr.disbursement_date, lr.approved_at) <= c.month_end
+        GROUP BY lr.staff_id
+      ),
+
+      sap_remaining AS (
+        SELECT
+          sap.employee_id,
+          SUM(COALESCE(sap.balance, sap.amount, 0))::numeric(12,2) AS staff_accounts_payable
+        FROM public.staff_accounts_payable sap
+        CROSS JOIN cutoff c
+        WHERE
+          sap.employee_id IS NOT NULL
+          AND LOWER(COALESCE(sap.status, '')) = 'approved'
+          AND COALESCE(sap.approved_at, sap.created_at) <= c.month_end
+        GROUP BY sap.employee_id
+      )
+
       SELECT
-        sb.id AS staff_id,
+        sb.id,
+        sb.employee_id AS staff_id,
         sb.employee_id,
-        sb.fullname,
-        sb.position,
+        COALESCE(sb.fullname, s.fullname) AS fullname,
+        COALESCE(sb."position", s."position") AS position,
         s.branch_id,
+
         COALESCE(sb.cbu, 0) AS cbu,
         COALESCE(sb.cashbond, 0) AS cashbond,
-        COALESCE(sb.salary_advance, 0) AS salary_advance,
-        COALESCE(sb.motorcycle_loan, 0) AS motorcycle_loan,
-        COALESCE(sb.special_advance, 0) AS special_advance,
-        COALESCE(sb.cash_advance, 0) AS cash_advance,
+        COALESCE(sb.utility, 0) AS utility,
+
+        COALESCE(lr.salary_loan, 0) AS salary_loan,
+        COALESCE(lr.salary_advance, 0) AS salary_advance,
+        COALESCE(lr.motorcycle_loan, 0) AS motorcycle_loan,
+        COALESCE(lr.special_advance, 0) AS special_advance,
+        COALESCE(lr.cash_advance, 0) AS cash_advance,
+
         COALESCE(sb.other_receivable, 0) AS other_receivable,
-        COALESCE(sb.staff_accounts_payable, 0) AS staff_accounts_payable
+        COALESCE(sap.staff_accounts_payable, 0) AS staff_accounts_payable,
+
+        (SELECT month_end FROM cutoff) AS as_of_date,
+        NOW() AS created_at,
+        NOW() AS updated_at
       FROM public.staff_balances sb
-      LEFT JOIN public.staff s ON s.id = sb.id
-      ORDER BY sb.fullname ASC
-    `);
+      LEFT JOIN public.staff s
+        ON s.id = sb.employee_id
+      LEFT JOIN loan_remaining lr
+        ON lr.staff_id = sb.employee_id
+      LEFT JOIN sap_remaining sap
+        ON sap.employee_id = sb.employee_id
+      ${whereSql}
+      ORDER BY COALESCE(sb.fullname, s.fullname) ASC
+    `;
 
-    const rows = current.rows || [];
-
-    // nothing to snapshot
-    if (rows.length === 0) {
-      await client.query("COMMIT");
-      return res.json({ message: "No rows found in staff_balances", month: snapshotMonth, count: 0 });
-    }
-
-    // upsert each row into snapshots
-    for (const r of rows) {
-      const staff_id = Number(r.staff_id);
-      if (!staff_id) continue;
-
-      await client.query(
-        `
-        INSERT INTO public.schedule_balance_snapshots (
-          snapshot_month,
-          staff_id,
-          employee_id,
-          fullname,
-          position,
-          branch_id,
-          cbu,
-          cashbond,
-          salary_advance,
-          motorcycle_loan,
-          special_advance,
-          cash_advance,
-          other_receivable,
-          staff_accounts_payable,
-          created_at,
-          updated_at
-        )
-        VALUES (
-          $1,$2,$3,$4,$5,$6,
-          $7,$8,$9,$10,$11,$12,$13,$14,
-          NOW(), NOW()
-        )
-        ON CONFLICT (snapshot_month, staff_id)
-        DO UPDATE SET
-          employee_id = EXCLUDED.employee_id,
-          fullname = EXCLUDED.fullname,
-          position = EXCLUDED.position,
-          branch_id = EXCLUDED.branch_id,
-          cbu = EXCLUDED.cbu,
-          cashbond = EXCLUDED.cashbond,
-          salary_advance = EXCLUDED.salary_advance,
-          motorcycle_loan = EXCLUDED.motorcycle_loan,
-          special_advance = EXCLUDED.special_advance,
-          cash_advance = EXCLUDED.cash_advance,
-          other_receivable = EXCLUDED.other_receivable,
-          staff_accounts_payable = EXCLUDED.staff_accounts_payable,
-          updated_at = NOW()
-        `,
-        [
-          snapshotMonth,
-          staff_id,
-          r.employee_id ? Number(r.employee_id) : null,
-          String(r.fullname || ""),
-          String(r.position || ""),
-          r.branch_id ? Number(r.branch_id) : null,
-          toNum(r.cbu),
-          toNum(r.cashbond),
-          toNum(r.salary_advance),
-          toNum(r.motorcycle_loan),
-          toNum(r.special_advance),
-          toNum(r.cash_advance),
-          toNum(r.other_receivable),
-          toNum(r.staff_accounts_payable),
-        ]
-      );
-    }
-
-    await client.query("COMMIT");
-    return res.json({ message: "Snapshot saved from current balances", month: snapshotMonth, count: rows.length });
+    const result = await pool.query(sql, params);
+    return res.json(result.rows);
   } catch (e) {
-    await client.query("ROLLBACK");
-    console.error("POST /api/schedule-balances/snapshot/from-current ERROR:", e.message);
-    return res.status(500).json({ message: "Server error" });
-  } finally {
-    client.release();
+    console.error("GET /api/schedule-balances/live ERROR:", e.message);
+    return res.status(500).json({ message: e.message || "Server error" });
   }
 });
+
+router.post(
+  "/snapshot/from-current",
+  requireAuth,
+  requireRole(["admin"]),
+  async (req, res) => {
+    const snapshotMonth = monthToDate(req.body?.month);
+
+    if (!snapshotMonth) {
+      return res.status(400).json({ message: "month is required in YYYY-MM format" });
+    }
+
+    const client = await pool.connect();
+
+    try {
+      await client.query("BEGIN");
+
+      const current = await client.query(
+        `
+        WITH cutoff AS (
+          SELECT
+            $1::date AS month_start,
+            ${monthEndExpr("$1")} AS month_end
+        ),
+
+        loan_remaining AS (
+          SELECT
+            lr.staff_id,
+
+            SUM(
+              CASE
+                WHEN LOWER(COALESCE(lr.loan_type, '')) = 'salary loan'
+                THEN GREATEST(
+                  COALESCE(lr.total, lr.amount, 0) -
+                  (
+                    GREATEST(
+                      (
+                        DATE_PART(
+                          'year',
+                          AGE((SELECT month_end FROM cutoff), COALESCE(lr.disbursement_date, lr.approved_at))
+                        )::int * 12
+                      ) +
+                      DATE_PART(
+                        'month',
+                        AGE((SELECT month_end FROM cutoff), COALESCE(lr.disbursement_date, lr.approved_at))
+                      )::int,
+                      0
+                    ) * COALESCE(lr.per_month, 0)
+                  ),
+                  0
+                )
+                ELSE 0
+              END
+            )::numeric(12,2) AS salary_loan,
+
+            SUM(
+              CASE
+                WHEN LOWER(COALESCE(lr.loan_type, '')) = 'salary advance'
+                THEN GREATEST(
+                  COALESCE(lr.total, lr.amount, 0) -
+                  (
+                    GREATEST(
+                      (
+                        DATE_PART(
+                          'year',
+                          AGE((SELECT month_end FROM cutoff), COALESCE(lr.disbursement_date, lr.approved_at))
+                        )::int * 12
+                      ) +
+                      DATE_PART(
+                        'month',
+                        AGE((SELECT month_end FROM cutoff), COALESCE(lr.disbursement_date, lr.approved_at))
+                      )::int,
+                      0
+                    ) * COALESCE(lr.per_month, 0)
+                  ),
+                  0
+                )
+                ELSE 0
+              END
+            )::numeric(12,2) AS salary_advance,
+
+            SUM(
+              CASE
+                WHEN LOWER(COALESCE(lr.loan_type, '')) = 'motorcycle loan'
+                THEN GREATEST(
+                  COALESCE(lr.total, lr.amount, 0) -
+                  (
+                    GREATEST(
+                      (
+                        DATE_PART(
+                          'year',
+                          AGE((SELECT month_end FROM cutoff), COALESCE(lr.disbursement_date, lr.approved_at))
+                        )::int * 12
+                      ) +
+                      DATE_PART(
+                        'month',
+                        AGE((SELECT month_end FROM cutoff), COALESCE(lr.disbursement_date, lr.approved_at))
+                      )::int,
+                      0
+                    ) * COALESCE(lr.per_month, 0)
+                  ),
+                  0
+                )
+                ELSE 0
+              END
+            )::numeric(12,2) AS motorcycle_loan,
+
+            SUM(
+              CASE
+                WHEN LOWER(COALESCE(lr.loan_type, '')) IN ('special loan', 'special advance')
+                THEN GREATEST(
+                  COALESCE(lr.total, lr.amount, 0) -
+                  (
+                    GREATEST(
+                      (
+                        DATE_PART(
+                          'year',
+                          AGE((SELECT month_end FROM cutoff), COALESCE(lr.disbursement_date, lr.approved_at))
+                        )::int * 12
+                      ) +
+                      DATE_PART(
+                        'month',
+                        AGE((SELECT month_end FROM cutoff), COALESCE(lr.disbursement_date, lr.approved_at))
+                      )::int,
+                      0
+                    ) * COALESCE(lr.per_month, 0)
+                  ),
+                  0
+                )
+                ELSE 0
+              END
+            )::numeric(12,2) AS special_advance,
+
+            SUM(
+              CASE
+                WHEN LOWER(COALESCE(lr.loan_type, '')) IN ('cash loan', 'cash advance')
+                THEN GREATEST(
+                  COALESCE(lr.total, lr.amount, 0) -
+                  (
+                    GREATEST(
+                      (
+                        DATE_PART(
+                          'year',
+                          AGE((SELECT month_end FROM cutoff), COALESCE(lr.disbursement_date, lr.approved_at))
+                        )::int * 12
+                      ) +
+                      DATE_PART(
+                        'month',
+                        AGE((SELECT month_end FROM cutoff), COALESCE(lr.disbursement_date, lr.approved_at))
+                      )::int,
+                      0
+                    ) * COALESCE(lr.per_month, 0)
+                  ),
+                  0
+                )
+                ELSE 0
+              END
+            )::numeric(12,2) AS cash_advance
+
+          FROM public.loan_requests lr
+          CROSS JOIN cutoff c
+          WHERE
+            lr.staff_id IS NOT NULL
+            AND LOWER(COALESCE(lr.status, '')) = 'approved'
+            AND COALESCE(lr.disbursement_date, lr.approved_at) IS NOT NULL
+            AND COALESCE(lr.disbursement_date, lr.approved_at) <= c.month_end
+          GROUP BY lr.staff_id
+        ),
+
+        sap_remaining AS (
+          SELECT
+            sap.employee_id,
+            SUM(COALESCE(sap.balance, sap.amount, 0))::numeric(12,2) AS staff_accounts_payable
+          FROM public.staff_accounts_payable sap
+          CROSS JOIN cutoff c
+          WHERE
+            sap.employee_id IS NOT NULL
+            AND LOWER(COALESCE(sap.status, '')) = 'approved'
+            AND COALESCE(sap.approved_at, sap.created_at) <= c.month_end
+          GROUP BY sap.employee_id
+        )
+
+        SELECT
+          sb.employee_id AS staff_id,
+          sb.employee_id,
+          COALESCE(sb.fullname, s.fullname) AS fullname,
+          COALESCE(sb."position", s."position") AS position,
+          s.branch_id,
+
+          COALESCE(sb.cbu, 0) AS cbu,
+          COALESCE(sb.cashbond, 0) AS cashbond,
+          COALESCE(sb.utility, 0) AS utility,
+
+          COALESCE(lr.salary_loan, 0) AS salary_loan,
+          COALESCE(lr.salary_advance, 0) AS salary_advance,
+          COALESCE(lr.motorcycle_loan, 0) AS motorcycle_loan,
+          COALESCE(lr.special_advance, 0) AS special_advance,
+          COALESCE(lr.cash_advance, 0) AS cash_advance,
+
+          COALESCE(sb.other_receivable, 0) AS other_receivable,
+          COALESCE(sap.staff_accounts_payable, 0) AS staff_accounts_payable
+        FROM public.staff_balances sb
+        LEFT JOIN public.staff s
+          ON s.id = sb.employee_id
+        LEFT JOIN loan_remaining lr
+          ON lr.staff_id = sb.employee_id
+        LEFT JOIN sap_remaining sap
+          ON sap.employee_id = sb.employee_id
+        ORDER BY COALESCE(sb.fullname, s.fullname) ASC
+        `,
+        [snapshotMonth]
+      );
+
+      const rows = current.rows || [];
+
+      for (const r of rows) {
+        const staff_id = Number(r.staff_id);
+        if (!staff_id) continue;
+
+        await client.query(
+          `
+          INSERT INTO public.schedule_balance_snapshots (
+            snapshot_month,
+            staff_id,
+            employee_id,
+            fullname,
+            position,
+            branch_id,
+            cbu,
+            cashbond,
+            utility,
+            salary_loan,
+            salary_advance,
+            motorcycle_loan,
+            special_advance,
+            cash_advance,
+            other_receivable,
+            staff_accounts_payable,
+            created_at,
+            updated_at
+          )
+          VALUES (
+            $1::date,
+            $2::int,
+            $3::int,
+            $4::varchar,
+            $5::varchar,
+            $6::int,
+            $7::numeric,
+            $8::numeric,
+            $9::numeric,
+            $10::numeric,
+            $11::numeric,
+            $12::numeric,
+            $13::numeric,
+            $14::numeric,
+            $15::numeric,
+            $16::numeric,
+            NOW(),
+            NOW()
+          )
+          ON CONFLICT (snapshot_month, staff_id)
+          DO UPDATE SET
+            employee_id = EXCLUDED.employee_id,
+            fullname = EXCLUDED.fullname,
+            position = EXCLUDED.position,
+            branch_id = EXCLUDED.branch_id,
+            cbu = EXCLUDED.cbu,
+            cashbond = EXCLUDED.cashbond,
+            utility = EXCLUDED.utility,
+            salary_loan = EXCLUDED.salary_loan,
+            salary_advance = EXCLUDED.salary_advance,
+            motorcycle_loan = EXCLUDED.motorcycle_loan,
+            special_advance = EXCLUDED.special_advance,
+            cash_advance = EXCLUDED.cash_advance,
+            other_receivable = EXCLUDED.other_receivable,
+            staff_accounts_payable = EXCLUDED.staff_accounts_payable,
+            updated_at = NOW()
+          `,
+          [
+            snapshotMonth,
+            staff_id,
+            r.employee_id ? Number(r.employee_id) : null,
+            String(r.fullname || ""),
+            String(r.position || ""),
+            r.branch_id ? Number(r.branch_id) : null,
+            toNum(r.cbu),
+            toNum(r.cashbond),
+            toNum(r.utility),
+            toNum(r.salary_loan),
+            toNum(r.salary_advance),
+            toNum(r.motorcycle_loan),
+            toNum(r.special_advance),
+            toNum(r.cash_advance),
+            toNum(r.other_receivable),
+            toNum(r.staff_accounts_payable),
+          ]
+        );
+      }
+
+      await client.query("COMMIT");
+      return res.json({
+        message: "Snapshot saved from month-end live balances",
+        month: snapshotMonth,
+        count: rows.length,
+      });
+    } catch (e) {
+      try {
+        await client.query("ROLLBACK");
+      } catch {}
+      console.error("POST /api/schedule-balances/snapshot/from-current ERROR:", e.message);
+      return res.status(500).json({ message: e.message || "Server error" });
+    } finally {
+      client.release();
+    }
+  }
+);
 
 module.exports = router;

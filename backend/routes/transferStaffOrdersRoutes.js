@@ -3,7 +3,6 @@ const router = express.Router();
 const pool = require("../db");
 const { requireAuth, requireRole } = require("../middlewares/authMiddleware");
 
-/* ------------------------- Helpers ------------------------- */
 const toInt = (v) => {
   const n = Number(v);
   return Number.isFinite(n) ? Math.trunc(n) : null;
@@ -33,7 +32,6 @@ const displayName = (row) => {
   return built || toStr(row?.fullname) || "-";
 };
 
-/* ------------------------- Order number generator ------------------------- */
 async function generateTransferOrderNo(client) {
   const now = new Date();
   const year = now.getFullYear();
@@ -75,13 +73,11 @@ async function generateTransferOrderNo(client) {
   return `${prefix}-${year}-${mm}-${nnnn}`;
 }
 
-/* ------------------------- GET /api/transfer-staff-orders ------------------------- */
 router.get("/transfer-staff-orders", requireAuth, async (req, res) => {
   try {
     const role = roleLower(req);
     const branchId = getUserBranchId(req);
 
-    // Admin: all
     if (role === "admin") {
       const r = await pool.query(
         `SELECT * FROM public.transfer_staff_orders ORDER BY created_at DESC`
@@ -89,7 +85,6 @@ router.get("/transfer-staff-orders", requireAuth, async (req, res) => {
       return res.json(r.rows);
     }
 
-    // Branch manager: only orders where prev_branch_id is their branch
     if (role === "branch manager") {
       if (!branchId) return res.json([]);
       const r = await pool.query(
@@ -111,7 +106,6 @@ router.get("/transfer-staff-orders", requireAuth, async (req, res) => {
   }
 });
 
-/* ------------------------- POST /api/transfer-staff-orders ------------------------- */
 router.post(
   "/transfer-staff-orders",
   requireAuth,
@@ -142,7 +136,6 @@ router.post(
       if (!effective_date) return res.status(400).json({ message: "Effective date required" });
       if (!details) return res.status(400).json({ message: "Details required" });
 
-      // Branch manager can only create orders FROM their own branch
       if (isBranchManager(req)) {
         const myBranch = getUserBranchId(req);
         if (!myBranch || Number(myBranch) !== Number(prev_branch_id)) {
@@ -151,7 +144,6 @@ router.post(
         }
       }
 
-      // Get staff snapshot for name (and verify staff exists)
       const s = await client.query(
         `
         SELECT id, fullname, last_name, first_name, middle_name
@@ -168,7 +160,6 @@ router.post(
       const staffRow = s.rows[0];
       const employee_name = displayName(staffRow);
 
-      // Build order number
       const orderNo = await generateTransferOrderNo(client);
 
       const ins = await client.query(
@@ -228,7 +219,6 @@ router.post(
   }
 );
 
-/* ------------------------- PUT /api/transfer-staff-orders/:id/approve (ADMIN) ------------------------- */
 router.put(
   "/transfer-staff-orders/:id/approve",
   requireAuth,
@@ -256,7 +246,6 @@ router.put(
 
       if (r.rowCount === 0) return res.status(400).json({ message: "Order not found or not Pending" });
 
-      // OPTIONAL (recommended): apply transfer to staff.branch_id once approved
       const order = r.rows[0];
       await pool.query(
         `UPDATE public.staff SET branch_id=$1 WHERE id=$2`,
@@ -271,7 +260,6 @@ router.put(
   }
 );
 
-/* ------------------------- PUT /api/transfer-staff-orders/:id/reject (ADMIN) ------------------------- */
 router.put(
   "/transfer-staff-orders/:id/reject",
   requireAuth,

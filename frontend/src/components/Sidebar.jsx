@@ -8,8 +8,8 @@ import { HiOutlineClipboardList } from "react-icons/hi";
 import { AiOutlineCheckCircle } from "react-icons/ai";
 import { TbGitBranch } from "react-icons/tb";
 import { FiSettings } from "react-icons/fi";
-import { FaUserGroup } from "react-icons/fa6";
-import { FaUsers, FaIdBadge } from "react-icons/fa";
+import { FaUserGroup, FaIdBadge } from "react-icons/fa6";
+import { RxExit } from "react-icons/rx";
 
 import amber from "../assets/amber.jpg";
 import "../styles/Sidebar.css";
@@ -30,9 +30,20 @@ const Sidebar = ({ collapsed }) => {
   const role = String(user?.role || "").trim().toLowerCase();
 
   const navItems = useMemo(() => {
+    if (role === "branch manager") {
+      return [
+        { to: "/staff-information", label: "Staff Information", icon: FaIdBadge },
+        { to: "/salary", label: "Payslip", icon: BsCash },
+        {
+          to: user?.branch_id ? `/payroll/${user.branch_id}` : "/payroll",
+          label: "Branch Payroll",
+          icon: TbGitBranch,
+        },
+      ];
+    }
+
     const items = [
       { to: "/dashboard", label: "Dashboard", icon: MdDashboard, roles: ["admin", "branch manager"] },
-      // { to: "/staff", label: "Staff", icon: FaUsers, roles: ["admin", "branch manager"] },    - Notice:  I disable for the meantime due to Boss Far Request
       { to: "/staff-information", label: "Staff Information", icon: FaIdBadge, roles: ["admin", "branch manager"] },
       { to: "/departments", label: "Department", icon: FaBuilding, roles: ["admin", "branch manager"] },
       { to: "/salary", label: "Payslip", icon: BsCash, roles: ["admin", "branch manager"] },
@@ -41,14 +52,14 @@ const Sidebar = ({ collapsed }) => {
       { to: "/approval", label: "Finance Approval", icon: AiOutlineCheckCircle, roles: ["admin", "branch manager"] },
       { to: "/branches", label: "Branch Payroll", icon: TbGitBranch, roles: ["admin", "branch manager"] },
       { to: "/system-update", label: "System Update", icon: FiSettings, roles: ["admin"] },
+      { to: "/exit-staff", label: "Exit Staff", icon: RxExit, roles: ["admin"] },
       { to: "/users", label: "Users", icon: FaUserGroup, roles: ["admin"] },
     ];
 
     return items.filter((x) => !x.roles || x.roles.includes(role));
-  }, [role]);
+  }, [role, user?.branch_id]);
 
-  const isPathActive = (basePath) =>
-    pathname === basePath || pathname.startsWith(basePath + "/");
+  const isPathActive = (basePath) => pathname === basePath || pathname.startsWith(basePath + "/");
 
   return (
     <aside className={`sidebar ${collapsed ? "collapsed" : ""}`}>

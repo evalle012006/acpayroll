@@ -125,7 +125,6 @@ export default function PromotionOrder() {
     loadOrders();
   }, [loadStaff, loadBranches, loadOrders]);
 
-  // ESC close modal + lock scroll
   useEffect(() => {
     if (!showCreate) return;
     const onKey = (e) => e.key === "Escape" && closeModal();
@@ -142,7 +141,6 @@ export default function PromotionOrder() {
     const prevBranchId = s?.branch_id ? Number(s.branch_id) : null;
     const prevBranch = prevBranchId ? branchMap.get(prevBranchId) : null;
 
-    // default present branch = previous branch
     setForm((p) => ({
       ...p,
       employee_id: employeeId,
@@ -214,7 +212,6 @@ export default function PromotionOrder() {
     }
   };
 
-  // Optional Admin actions
   const approve = async (id) => {
     try {
       await api.put(`/promotion-orders/${id}/approve`);
@@ -248,7 +245,6 @@ export default function PromotionOrder() {
   };
 
   const resolvePrevBranchText = (o) => {
-    // Prefer fields from DB; fallback to branch map by id
     if (o.prev_branch_code || o.prev_branch_name) return `${o.prev_branch_code || ""} - ${o.prev_branch_name || ""}`.trim();
     const b = o.prev_branch_id ? branchMap.get(Number(o.prev_branch_id)) : null;
     return branchLabel(b);

@@ -7,9 +7,17 @@ const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
 
-/* ------------------------- Helpers ------------------------- */
+const toStr = (v) => String(v ?? "").trim();
+
+const toInt = (v) => {
+  const n = Number(v);
+  return Number.isFinite(n) ? Math.trunc(n) : null;
+};
+
 const toNum = (v) => {
-  const n = Number(v ?? 0);
+  const s = String(v ?? "").trim();
+  if (!s) return 0;
+  const n = Number(s);
   return Number.isFinite(n) ? n : 0;
 };
 
@@ -19,11 +27,6 @@ const toNumOrNull = (v) => {
   return Number.isFinite(n) ? n : null;
 };
 
-const toInt = (v) => {
-  const n = Number(v);
-  return Number.isFinite(n) ? Math.trunc(n) : null;
-};
-
 const toDateOrNull = (v) => {
   const s = String(v ?? "").trim();
   if (!s) return null;
@@ -31,12 +34,9 @@ const toDateOrNull = (v) => {
   return /^\d{4}-\d{2}-\d{2}$/.test(d) ? d : null;
 };
 
-const toStr = (v) => String(v ?? "").trim();
-
 const toEmailOrNull = (v) => {
   const s = String(v ?? "").trim();
-  if (!s) return null;
-  return s; // keep flexible; validate on frontend if you want
+  return s ? s : null;
 };
 
 const buildFullname = ({ last_name, first_name, middle_name, fullname }) => {
@@ -48,7 +48,6 @@ const buildFullname = ({ last_name, first_name, middle_name, fullname }) => {
     const mid = mn ? ` ${mn}` : "";
     return `${ln}${ln && fn ? ", " : ""}${fn}${mid}`.trim().replace(/\s+/g, " ");
   }
-
   return toStr(fullname);
 };
 
@@ -57,7 +56,68 @@ const isAdmin = (req) => roleLower(req) === "admin";
 const isBranchManager = (req) => roleLower(req) === "branch manager";
 const getUserBranchId = (req) => req.user?.branch_id ?? null;
 
-/* ------------------------- Upload Setup ------------------------- */
+const toJsonbArray = (v) => {
+  try {
+    const parsed = typeof v === "string" ? JSON.parse(v) : v;
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+};
+
+const computeTotals = (body) => {
+  const salary = toNum(body.salary);
+  const ecola = toNum(body.ecola);
+
+  const cbu = toNum(body.cbu);
+  const cashbond = toNum(body.cashbond);
+  const utility_charge = toNum(body.utility ?? body.utility_charge);
+
+  const transportation = toNum(body.transportation);
+  const repairing = toNum(body.repairing);
+  const postage = toNum(body.postage);
+  const other_deduction = toNum(body.other_deduction);
+
+  const additional_target = toNum(body.additional_target);
+  const additional_monitoring = toNum(body.additional_monitoring);
+  const motorcycle = toNum(body.motorcycle);
+  const motorcycle_loan = toNum(body.motorcycle_loan);
+
+  const sss_er = toNum(body.sss_er);
+  const ph_er = toNum(body.ph_er);
+  const hdmf_er = toNum(body.hdmf_er);
+
+  const sss_ee = toNum(body.sss_ee);
+  const ph_ee = toNum(body.ph_ee);
+  const hdmf_ee = toNum(body.hdmf_ee);
+
+  const salary_total = salary + ecola;
+
+  const personal_deductions_total = cbu + cashbond + utility_charge;
+
+  const transport_allowances_total =
+    transportation +
+    repairing +
+    postage +
+    other_deduction +
+    additional_target +
+    additional_monitoring +
+    motorcycle +
+    motorcycle_loan;
+
+  const total_er = sss_er + ph_er + hdmf_er;
+  const total_ee = sss_ee + ph_ee + hdmf_ee;
+
+  return {
+    salary_total,
+    personal_deductions_total,
+    transport_allowances_total,
+    total_er,
+    total_ee,
+    utility_charge,
+  };
+};
+
 const staffUploadDir = path.join(__dirname, "..", "uploads", "staff");
 fs.mkdirSync(staffUploadDir, { recursive: true });
 
@@ -69,101 +129,38 @@ const storage = multer.diskStorage({
     cb(null, `staff_${Date.now()}_${Math.random().toString(16).slice(2)}${safeExt}`);
   },
 });
-
 const upload = multer({ storage, limits: { fileSize: 2 * 1024 * 1024 } });
 
-/* ------------------------- Branches ------------------------- */
-router.get("/branches", requireAuth, async (req, res) => {
-  try {
-    if (isAdmin(req)) {
-      const result = await pool.query("SELECT id, code, name, area FROM public.branches ORDER BY id ASC");
-      return res.json(result.rows);
-    }
-
-    if (isBranchManager(req)) {
-      const bid = getUserBranchId(req);
-      if (!bid) return res.json([]);
-      const result = await pool.query("SELECT id, code, name, area FROM public.branches WHERE id=$1", [bid]);
-      return res.json(result.rows);
-    }
-
-    return res.status(403).json({ message: "Access denied" });
-  } catch (e) {
-    console.error("GET /api/branches ERROR:", e.message);
-    return res.status(500).json({ message: "Server error" });
-  }
-});
-
-router.post("/branches", requireAuth, requireRole(["admin"]), async (req, res) => {
-  try {
-    const { code, name, area } = req.body;
-    if (!code || !name || !area) return res.status(400).json({ message: "code, name, area required" });
-
-    const result = await pool.query(
-      `INSERT INTO public.branches (code, name, area)
-       VALUES ($1,$2,$3)
-       RETURNING id, code, name, area`,
-      [code, name, area]
-    );
-
-    return res.json({ message: "Branch created", branch: result.rows[0] });
-  } catch (e) {
-    console.error("POST /api/branches ERROR:", e.message);
-    return res.status(500).json({ message: "Server error" });
-  }
-});
-
-router.put("/branches/:id", requireAuth, requireRole(["admin"]), async (req, res) => {
-  try {
-    const id = toInt(req.params.id);
-    if (!id) return res.status(400).json({ message: "Invalid branch id" });
-
-    const { code, name, area } = req.body;
-    if (!code || !name || !area) return res.status(400).json({ message: "code, name, area required" });
-
-    const result = await pool.query(
-      `UPDATE public.branches SET code=$1, name=$2, area=$3
-       WHERE id=$4
-       RETURNING id, code, name, area`,
-      [code, name, area, id]
-    );
-
-    if (result.rowCount === 0) return res.status(404).json({ message: "Branch not found" });
-    return res.json({ message: "Branch updated", branch: result.rows[0] });
-  } catch (e) {
-    console.error("PUT /api/branches/:id ERROR:", e.message);
-    return res.status(500).json({ message: "Server error" });
-  }
-});
-
-router.delete("/branches/:id", requireAuth, requireRole(["admin"]), async (req, res) => {
-  try {
-    const id = toInt(req.params.id);
-    if (!id) return res.status(400).json({ message: "Invalid branch id" });
-
-    const result = await pool.query("DELETE FROM public.branches WHERE id=$1 RETURNING id", [id]);
-    if (result.rowCount === 0) return res.status(404).json({ message: "Branch not found" });
-
-    return res.json({ message: "Branch deleted" });
-  } catch (e) {
-    console.error("DELETE /api/branches/:id ERROR:", e.message);
-    return res.status(500).json({ message: "Server error" });
-  }
-});
-
-/* ------------------------- Staff ------------------------- */
 router.get("/staff", requireAuth, async (req, res) => {
   try {
     if (isAdmin(req)) {
-      const result = await pool.query("SELECT * FROM public.staff ORDER BY id DESC");
-      return res.json(result.rows);
+      const r = await pool.query(`
+        SELECT s.*,
+               b.name AS branch_name,
+               b.code AS branch_code
+        FROM public.staff s
+        LEFT JOIN public.branches b ON b.id = s.branch_id
+        ORDER BY s.id DESC
+      `);
+      return res.json(r.rows);
     }
 
     if (isBranchManager(req)) {
       const bid = getUserBranchId(req);
       if (!bid) return res.json([]);
-      const result = await pool.query("SELECT * FROM public.staff WHERE branch_id=$1 ORDER BY id DESC", [bid]);
-      return res.json(result.rows);
+      const r = await pool.query(
+        `
+        SELECT s.*,
+               b.name AS branch_name,
+               b.code AS branch_code
+        FROM public.staff s
+        LEFT JOIN public.branches b ON b.id = s.branch_id
+        WHERE s.branch_id=$1
+        ORDER BY s.id DESC
+        `,
+        [bid]
+      );
+      return res.json(r.rows);
     }
 
     return res.status(403).json({ message: "Access denied" });
@@ -177,20 +174,13 @@ router.post("/staff", requireAuth, requireRole(["admin"]), async (req, res) => {
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
-
     const body = req.body || {};
 
     const last_name = toStr(body.last_name);
     const first_name = toStr(body.first_name);
     const middle_name = toStr(body.middle_name);
 
-    const fullname = buildFullname({
-      last_name,
-      first_name,
-      middle_name,
-      fullname: body.fullname,
-    });
-
+    const fullname = buildFullname({ last_name, first_name, middle_name, fullname: body.fullname });
     const position = toStr(body.position);
 
     if (!last_name || !first_name || !position) {
@@ -198,44 +188,87 @@ router.post("/staff", requireAuth, requireRole(["admin"]), async (req, res) => {
       return res.status(400).json({ message: "last_name, first_name, and position are required" });
     }
 
-    const staffInsert = await client.query(
+    const totals = computeTotals(body);
+
+    const children = toJsonbArray(body.children);
+    const education = toJsonbArray(body.education);
+    const employment_history = toJsonbArray(body.employment_history);
+    const beneficiaries = toJsonbArray(body.beneficiaries);
+
+    const ins = await client.query(
       `
       INSERT INTO public.staff
-        (employee_no, last_name, first_name, middle_name, fullname,
+        (
+          employee_no, last_name, first_name, middle_name, fullname,
 
-         address, municipality, province, contact, email,
-         date_of_birth, place_of_birth, gender, civil_status, citizenship,
-         height, weight, religion, blood_type,
+          address, municipality, province, contact, email,
+          date_of_birth, place_of_birth, gender, civil_status, citizenship,
+          height, weight, religion, blood_type,
 
-         "position", department, area, region, division, branch_id, status,
-         start_date, regularization_date,
+          "position", department, area, region, division,
+          branch_id, status,
+          start_date, regularization_date,
 
-         salary, ecola,
+          salary, ecola,
+          salary_total,
 
-         cbu, cashbond, utility_charge,
-         transportation, postage, motorcycle_loan,
-         additional_target, repairing, additional_monitoring,
-         motorcycle, other_deduction)
+          cbu, cashbond, utility_charge,
+          personal_deductions_total,
+
+          transportation, postage, motorcycle_loan,
+          additional_target, repairing, additional_monitoring,
+          motorcycle, other_deduction,
+          transport_allowances_total,
+
+          hdmf_er, sss_er, ph_er, total_er,
+          hdmf_ee, sss_ee, ph_ee, total_ee,
+          tax,
+
+          spouse_fullname, spouse_address, spouse_occupation, spouse_employer,
+          father_fullname, father_address, father_occupation, father_employer, father_contact,
+          mother_fullname, mother_address, mother_occupation, mother_employer, mother_contact,
+          guardian_fullname, guardian_address, guardian_occupation, guardian_employer, guardian_contact,
+          sss_no, philhealth_no, tin_no, pagibig_no,
+          children, education, employment_history, beneficiaries
+        )
       VALUES
-        ($1,$2,$3,$4,$5,
+        (
+          $1,$2,$3,$4,$5,
 
-         $6,$7,$8,$9,$10,
-         $11,$12,$13,$14,$15,
-         $16,$17,$18,$19,
+          $6,$7,$8,$9,$10,
+          $11,$12,$13,$14,$15,
+          $16,$17,$18,$19,
 
-         $20,$21,$22,$23,$24,
-         $25,$26,
+          $20,$21,$22,$23,$24,
+          $25,$26,
+          $27,$28,
 
-         $27,$28,
+          $29,$30,
+          $31,
 
-         $29,$30,$31,
-         $32,$33,$34,
-         $35,$36,$37,
-         $38,$39)
-      RETURNING id, fullname, "position";
+          $32,$33,$34,
+          $35,
+
+          $36,$37,$38,
+          $39,$40,$41,
+          $42,$43,
+          $44,
+
+          $45,$46,$47,$48,
+          $49,$50,$51,$52,
+          $53,
+
+          $54,$55,$56,$57,
+          $58,$59,$60,$61,$62,
+          $63,$64,$65,$66,$67,
+          $68,$69,$70,$71,$72,
+          $73,$74,$75,&76
+          $77::jsonb,$78::jsonb,$79::jsonb,$80::jsonb
+        )
+      RETURNING id;
       `,
       [
-        body.employee_no || null,
+        toStr(body.employee_no) || null,
         last_name,
         first_name,
         middle_name || null,
@@ -259,20 +292,25 @@ router.post("/staff", requireAuth, requireRole(["admin"]), async (req, res) => {
         toStr(body.blood_type) || null,
 
         position,
-        body.department || null,
-        body.area || null,
+        toStr(body.department) || null,
+        toStr(body.area) || null,
+        toStr(body.region) || null,
+        toStr(body.division) || null,
+
         toInt(body.branch_id),
         String(body.status || "Active"),
 
         toDateOrNull(body.start_date),
         toDateOrNull(body.regularization_date),
 
-        toNumOrNull(body.salary), // allow null if not sent
-        toNumOrNull(body.ecola),  // allow null if not sent
+        toNumOrNull(body.salary),
+        toNumOrNull(body.ecola),
+        totals.salary_total,
 
         toNum(body.cbu),
         toNum(body.cashbond),
-        toNum(body.utility ?? body.utility_charge),
+        totals.utility_charge,
+        totals.personal_deductions_total,
 
         toNum(body.transportation),
         toNum(body.postage),
@@ -284,34 +322,57 @@ router.post("/staff", requireAuth, requireRole(["admin"]), async (req, res) => {
 
         toNum(body.motorcycle),
         toNum(body.other_deduction),
+        totals.transport_allowances_total,
+
+        toNum(body.hdmf_er),
+        toNum(body.sss_er),
+        toNum(body.ph_er),
+        totals.total_er,
+
+        toNum(body.hdmf_ee),
+        toNum(body.sss_ee),
+        toNum(body.ph_ee),
+        totals.total_ee,
+
+        toNum(body.tax),
+
+        toStr(body.spouse_fullname) || null,
+        toStr(body.spouse_address) || null,
+        toStr(body.spouse_occupation) || null,
+        toStr(body.spouse_employer) || null,
+
+        toStr(body.father_fullname) || null,
+        toStr(body.father_address) || null,
+        toStr(body.father_occupation) || null,
+        toStr(body.father_employer) || null,
+        toStr(body.father_contact) || null,
+
+        toStr(body.mother_fullname) || null,
+        toStr(body.mother_address) || null,
+        toStr(body.mother_occupation) || null,
+        toStr(body.mother_employer) || null,
+        toStr(body.mother_contact) || null,
+
+        toStr(body.guardian_fullname) || null,
+        toStr(body.guardian_address) || null,
+        toStr(body.guardian_occupation) || null,
+        toStr(body.guardian_employer) || null,
+        toStr(body.guardian_contact) || null,
+
+        toStr(body.sss_no) || null,
+        toStr(body.philhealth_no) || null,
+        toStr(body.pagibig_no) || null,
+        toStr(body.tin_no) || null,
+
+        JSON.stringify(children),
+        JSON.stringify(education),
+        JSON.stringify(employment_history),
+        JSON.stringify(beneficiaries),
       ]
     );
 
-    const s = staffInsert.rows[0];
-
-    await client.query(
-      `
-      INSERT INTO public.staff_balances
-        (employee_id, fullname, "position",
-         cbu, cashbond, salary_advance, motorcycle_loan,
-         special_advance, cash_advance, other_receivable, staff_accounts_payable)
-      VALUES
-        ($1, $2, $3,
-         $4, $5, 0, 0,
-         0, 0, 0, 0)
-      ON CONFLICT (employee_id)
-      DO UPDATE SET
-        fullname = EXCLUDED.fullname,
-        "position" = EXCLUDED."position",
-        cbu = EXCLUDED.cbu,
-        cashbond = EXCLUDED.cashbond,
-        updated_at = NOW();
-      `,
-      [s.id, s.fullname, s.position, toNum(body.cbu), toNum(body.cashbond)]
-    );
-
     await client.query("COMMIT");
-    return res.json({ message: "Staff added", id: s.id });
+    return res.json({ message: "Staff added", id: ins.rows[0].id });
   } catch (e) {
     await client.query("ROLLBACK");
     console.error("POST /api/staff ERROR:", e.message);
@@ -338,13 +399,7 @@ router.put("/staff/:id", requireAuth, requireRole(["admin"]), async (req, res) =
     const first_name = toStr(body.first_name);
     const middle_name = toStr(body.middle_name);
 
-    const fullname = buildFullname({
-      last_name,
-      first_name,
-      middle_name,
-      fullname: body.fullname,
-    });
-
+    const fullname = buildFullname({ last_name, first_name, middle_name, fullname: body.fullname });
     const position = toStr(body.position);
 
     if (!last_name || !first_name || !position) {
@@ -352,62 +407,53 @@ router.put("/staff/:id", requireAuth, requireRole(["admin"]), async (req, res) =
       return res.status(400).json({ message: "last_name, first_name, and position are required" });
     }
 
-    const updated = await client.query(
+    const totals = computeTotals(body);
+
+    const children = toJsonbArray(body.children);
+    const education = toJsonbArray(body.education);
+    const employment_history = toJsonbArray(body.employment_history);
+    const beneficiaries = toJsonbArray(body.beneficiaries);
+
+    const r = await client.query(
       `
       UPDATE public.staff
       SET
-        employee_no=$1,
-        last_name=$2,
-        first_name=$3,
-        middle_name=$4,
-        fullname=$5,
+        employee_no=$1, last_name=$2, first_name=$3, middle_name=$4, fullname=$5,
 
-        address=$6,
-        municipality=$7,
-        province=$8,
-        contact=$9,
-        email=$10,
-        date_of_birth=$11,
-        place_of_birth=$12,
-        gender=$13,
-        civil_status=$14,
-        citizenship=$15,
-        height=$16,
-        weight=$17,
-        religion=$18,
-        blood_type=$19,
+        address=$6, municipality=$7, province=$8, contact=$9, email=$10,
+        date_of_birth=$11, place_of_birth=$12, gender=$13, civil_status=$14, citizenship=$15,
+        height=$16, weight=$17, religion=$18, blood_type=$19,
 
-        "position"=$20,
-        department=$21,
-        area=$22,
-        branch_id=$23,
-        status=$24,
+        "position"=$20, department=$21, area=$22, region=$23, division=$24,
+        branch_id=$25, status=$26,
+        start_date=$27, regularization_date=$28,
 
-        start_date=$25,
-        regularization_date=$26,
+        salary=$29, ecola=$30,
+        salary_total=$31,
 
-        salary=$27,
-        ecola=$28,
+        cbu=$32, cashbond=$33, utility_charge=$34,
+        personal_deductions_total=$35,
 
-        cbu=$29,
-        cashbond=$30,
-        utility_charge=$31,
+        transportation=$36, postage=$37, motorcycle_loan=$38,
+        additional_target=$39, repairing=$40, additional_monitoring=$41,
+        motorcycle=$42, other_deduction=$43,
+        transport_allowances_total=$44,
 
-        transportation=$32,
-        postage=$33,
-        motorcycle_loan=$34,
+        hdmf_er=$45, sss_er=$46, ph_er=$47, total_er=$48,
+        hdmf_ee=$49, sss_ee=$50, ph_ee=$51, total_ee=$52,
+        tax=$53,
 
-        additional_target=$35,
-        repairing=$36,
-        additional_monitoring=$37,
-
-        motorcycle=$38,
-        other_deduction=$39
-      WHERE id=$40
-      RETURNING id, fullname, "position";
+        spouse_fullname=$54, spouse_address=$55, spouse_occupation=$56, spouse_employer=$57,
+        father_fullname=$58, father_address=$59, father_occupation=$60, father_employer=$61, father_contact=$62,
+        mother_fullname=$63, mother_address=$64, mother_occupation=$65, mother_employer=$66, mother_contact=$67,
+        guardian_fullname=$68, guardian_address=$69, guardian_occupation=$70, guardian_employer=$71, guardian_contact=$72,
+        sss_no=$73, philhealth_no=$74, pagibig_no=$75, tin_no=$76,
+        children=$77::jsonb, education=$78::jsonb, employment_history=$79::jsonb, beneficiaries=$80::jsonb
+      WHERE id=$81
+      RETURNING id;
       `,
       [
-        body.employee_no || null,
+        toStr(body.employee_no) || null,
         last_name,
         first_name,
         middle_name || null,
@@ -431,8 +477,11 @@ router.put("/staff/:id", requireAuth, requireRole(["admin"]), async (req, res) =
         toStr(body.blood_type) || null,
 
         position,
-        body.department || null,
-        body.area || null,
+        toStr(body.department) || null,
+        toStr(body.area) || null,
+        toStr(body.region) || null,
+        toStr(body.division) || null,
+
         toInt(body.branch_id),
         String(body.status || "Active"),
 
@@ -441,10 +490,12 @@ router.put("/staff/:id", requireAuth, requireRole(["admin"]), async (req, res) =
 
         toNumOrNull(body.salary),
         toNumOrNull(body.ecola),
+        totals.salary_total,
 
         toNum(body.cbu),
         toNum(body.cashbond),
-        toNum(body.utility ?? body.utility_charge),
+        totals.utility_charge,
+        totals.personal_deductions_total,
 
         toNum(body.transportation),
         toNum(body.postage),
@@ -456,31 +507,61 @@ router.put("/staff/:id", requireAuth, requireRole(["admin"]), async (req, res) =
 
         toNum(body.motorcycle),
         toNum(body.other_deduction),
+        totals.transport_allowances_total,
+
+        toNum(body.hdmf_er),
+        toNum(body.sss_er),
+        toNum(body.ph_er),
+        totals.total_er,
+
+        toNum(body.hdmf_ee),
+        toNum(body.sss_ee),
+        toNum(body.ph_ee),
+        totals.total_ee,
+
+        toNum(body.tax),
+
+        toStr(body.spouse_fullname) || null,
+        toStr(body.spouse_address) || null,
+        toStr(body.spouse_occupation) || null,
+        toStr(body.spouse_employer) || null,
+
+        toStr(body.father_fullname) || null,
+        toStr(body.father_address) || null,
+        toStr(body.father_occupation) || null,
+        toStr(body.father_employer) || null,
+        toStr(body.father_contact) || null,
+
+        toStr(body.mother_fullname) || null,
+        toStr(body.mother_address) || null,
+        toStr(body.mother_occupation) || null,
+        toStr(body.mother_employer) || null,
+        toStr(body.mother_contact) || null,
+
+        toStr(body.guardian_fullname) || null,
+        toStr(body.guardian_address) || null,
+        toStr(body.guardian_occupation) || null,
+        toStr(body.guardian_employer) || null,
+        toStr(body.guardian_contact) || null,
+
+        toStr(body.sss_no) || null,
+        toStr(body.philhealth_no) || null,
+        toStr(body.pagibig_no) || null,
+        toStr(body.tin_no) || null,
+
+        JSON.stringify(children),
+        JSON.stringify(education),
+        JSON.stringify(employment_history),
+        JSON.stringify(beneficiaries),
 
         id,
       ]
     );
 
-    if (updated.rowCount === 0) {
+    if (r.rowCount === 0) {
       await client.query("ROLLBACK");
       return res.status(404).json({ message: "Staff not found" });
     }
-
-    const s = updated.rows[0];
-
-    await client.query(
-      `
-      UPDATE public.staff_balances
-      SET
-        fullname=$1,
-        "position"=$2,
-        cbu=$3,
-        cashbond=$4,
-        updated_at=NOW()
-      WHERE employee_id=$5
-      `,
-      [s.fullname, s.position, toNum(body.cbu), toNum(body.cashbond), s.id]
-    );
 
     await client.query("COMMIT");
     return res.json({ message: "Staff updated" });
@@ -498,7 +579,9 @@ router.delete("/staff/:id", requireAuth, requireRole(["admin"]), async (req, res
     const id = toInt(req.params.id);
     if (!id) return res.status(400).json({ message: "Invalid staff id" });
 
-    await pool.query("DELETE FROM public.staff WHERE id=$1", [id]);
+    const r = await pool.query("DELETE FROM public.staff WHERE id=$1 RETURNING id", [id]);
+    if (r.rowCount === 0) return res.status(404).json({ message: "Staff not found" });
+
     return res.json({ message: "Staff deleted" });
   } catch (e) {
     console.error("DELETE /api/staff/:id ERROR:", e.message);

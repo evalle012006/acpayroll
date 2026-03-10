@@ -8,4 +8,8 @@ const pool = new Pool({
   database: process.env.PG_DATABASE || "payroll",
 });
 
+pool.on("error", (err) => {
+  console.error("Unexpected PostgreSQL error:", err);
+});
+
 module.exports = pool;

@@ -1,10 +1,12 @@
+// routes/loanRequestsRoutes.js
 const express = require("express");
 const router = express.Router();
 const pool = require("../db");
 const { requireAuth, requireRole } = require("../middlewares/authMiddleware");
 
+/* ---------------- helpers ---------------- */
 const toNum = (v) => {
-  const n = Number(v);
+  const n = Number(v ?? 0);
   return Number.isFinite(n) ? n : 0;
 };
 
@@ -21,31 +23,146 @@ const toDate = (v) => {
 const roleLower = (req) => String(req.user?.role || "").trim().toLowerCase();
 const isAdmin = (req) => roleLower(req) === "admin";
 
-// GET /api/loan-requests
-router.get("/loan-requests", requireAuth, async (req, res) => {
+async function ensureBalanceRow(client, staffId) {
+  await client.query(
+    `
+    INSERT INTO public.staff_balances
+      (
+        employee_id,
+        fullname,
+        "position",
+        last_name,
+        first_name,
+        middle_name,
+        cbu,
+        cashbond,
+        utility,
+        salary_advance,
+        motorcycle_loan,
+        special_advance,
+        cash_advance,
+        other_receivable,
+        staff_accounts_payable,
+        created_at,
+        updated_at
+      )
+    SELECT
+      s.id,
+      s.fullname,
+      s."position",
+      s.last_name,
+      s.first_name,
+      s.middle_name,
+      0, 0, 0,
+      0, 0, 0, 0,
+      0, 0,
+      NOW(), NOW()
+    FROM public.staff s
+    WHERE s.id = $1::int
+    ON CONFLICT (employee_id) DO NOTHING
+    `,
+    [staffId]
+  );
+}
+
+function loanTypeToBalanceColumn(loanType) {
+  const lt = String(loanType || "").trim().toLowerCase();
+
+  if (lt === "salary advance") return "salary_advance";
+  if (lt === "special loan" || lt === "special advance") return "special_advance";
+  if (lt === "cash loan" || lt === "cash advance") return "cash_advance";
+  if (lt === "motorcycle loan") return "motorcycle_loan";
+
+  return null;
+}
+
+/* ---------------- GET all loans ---------------- */
+router.get("/loan-requests", requireAuth, async (_req, res) => {
   try {
     const r = await pool.query(
-      `SELECT *
-       FROM public.loan_requests
-       ORDER BY id DESC`
+      `
+      SELECT
+        lr.id,
+        lr.staff_id,
+        lr.employee_no,
+        lr.loan_type,
+        lr.reason,
+        lr.amount,
+        lr.term,
+        lr.interest,
+        lr.total,
+        lr.per_month,
+        lr.status,
+        lr.approved_at,
+        lr.disbursement_date,
+        COALESCE(s.fullname, '') AS staff_name,
+        s.first_name,
+        s.last_name,
+        s.middle_name
+      FROM public.loan_requests lr
+      LEFT JOIN public.staff s ON s.id = lr.staff_id
+      ORDER BY lr.id DESC
+      `
     );
+
     return res.json(r.rows);
   } catch (e) {
     console.error("GET /api/loan-requests ERROR:", e.message);
-    return res.status(500).json({ message: "Server error" });
+    return res.status(500).json({ message: e?.message || "Server error" });
   }
 });
 
-// POST /api/loan-requests  (create)
+/* ---------------- GET loans by staff ---------------- */
+router.get("/loan-requests/staff/:staffId", requireAuth, async (req, res) => {
+  try {
+    const staffId = toInt(req.params.staffId);
+    if (!staffId) return res.status(400).json({ message: "Invalid staff id" });
+
+    const r = await pool.query(
+      `
+      SELECT
+        lr.id,
+        lr.staff_id,
+        lr.employee_no,
+        lr.loan_type,
+        lr.reason,
+        lr.amount,
+        lr.term,
+        lr.interest,
+        lr.total,
+        lr.per_month,
+        lr.status,
+        lr.approved_at,
+        lr.disbursement_date,
+        COALESCE(s.fullname, '') AS staff_name,
+        s.first_name,
+        s.last_name,
+        s.middle_name
+      FROM public.loan_requests lr
+      LEFT JOIN public.staff s ON s.id = lr.staff_id
+      WHERE lr.staff_id = $1::int
+      ORDER BY lr.id DESC
+      `,
+      [staffId]
+    );
+
+    return res.json(r.rows);
+  } catch (e) {
+    console.error("GET /api/loan-requests/staff/:staffId ERROR:", e.message);
+    return res.status(500).json({ message: e?.message || "Server error" });
+  }
+});
+
+/* ---------------- CREATE loan request ---------------- */
 router.post(
   "/loan-requests",
   requireAuth,
   requireRole(["admin", "branch manager"]),
   async (req, res) => {
-    try {
-      const employee_id = toInt(req.body?.employee_id);
-      const staff_name = String(req.body?.staff_name || "").trim();
+    const client = await pool.connect();
 
+    try {
+      const staff_id = toInt(req.body?.staff_id ?? req.body?.employee_id);
       const loan_type = String(req.body?.loan_type || "").trim();
       const reason = String(req.body?.reason || "").trim();
 
@@ -53,47 +170,76 @@ router.post(
       const term = Math.max(1, toInt(req.body?.term) || 1);
       const interest = toNum(req.body?.interest);
 
-      const total = toNum(req.body?.total) || amount + (amount * interest) / 100;
+      const computedTotal = amount + (amount * interest) / 100;
+      const total = toNum(req.body?.total) || computedTotal;
       const per_month = toNum(req.body?.per_month) || (term ? total / term : total);
 
       const status = String(req.body?.status || "Pending").trim() || "Pending";
 
       const approved_at = req.body?.approved_at ? toDate(req.body.approved_at) : null;
       const disbursement_date = req.body?.disbursement_date ? toDate(req.body.disbursement_date) : null;
-      const entry_date = req.body?.entry_date ? toDate(req.body.entry_date) : null;
 
-      if (!employee_id) return res.status(400).json({ message: "employee_id is required" });
-      if (!staff_name) return res.status(400).json({ message: "staff_name is required" });
+      if (!staff_id) return res.status(400).json({ message: "staff_id is required" });
       if (!loan_type) return res.status(400).json({ message: "loan_type is required" });
       if (!amount) return res.status(400).json({ message: "amount is required" });
       if (!term) return res.status(400).json({ message: "term is required" });
       if (!reason) return res.status(400).json({ message: "reason is required" });
 
-      // staff snapshot for name parts (optional but matches your DB columns)
-      const s = await pool.query(
-        `SELECT id, first_name, last_name, middle_name
-         FROM public.staff
-         WHERE id=$1`,
-        [employee_id]
+      await client.query("BEGIN");
+
+      const s = await client.query(
+        `
+        SELECT id, employee_no
+        FROM public.staff
+        WHERE id = $1::int
+        `,
+        [staff_id]
       );
 
-      const first_name = s.rows[0]?.first_name ?? null;
-      const last_name = s.rows[0]?.last_name ?? null;
-      const middle_name = s.rows[0]?.middle_name ?? null;
+      if (s.rowCount === 0) {
+        await client.query("ROLLBACK");
+        return res.status(404).json({ message: "Staff not found" });
+      }
 
-      const ins = await pool.query(
+      const employee_no = s.rows[0]?.employee_no ?? null;
+
+      const ins = await client.query(
         `
         INSERT INTO public.loan_requests
-          (employee_id, staff_name, loan_type, reason, amount, term, interest, total, per_month,
-           status, approved_at, disbursement_date, entry_date,
-           first_name, last_name, middle_name)
+          (
+            staff_id,
+            employee_no,
+            loan_type,
+            reason,
+            amount,
+            term,
+            interest,
+            total,
+            per_month,
+            status,
+            approved_at,
+            disbursement_date
+          )
         VALUES
-          ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::date,$12::date,$13::date,$14,$15,$16)
+          (
+            $1::int,
+            $2::varchar,
+            $3::varchar,
+            $4::text,
+            $5::numeric,
+            $6::int,
+            $7::numeric,
+            $8::numeric,
+            $9::numeric,
+            $10::varchar,
+            $11::date,
+            $12::date
+          )
         RETURNING *;
         `,
         [
-          employee_id,
-          staff_name,
+          staff_id,
+          employee_no,
           loan_type,
           reason,
           amount,
@@ -104,52 +250,110 @@ router.post(
           status,
           approved_at,
           disbursement_date,
-          entry_date,
-          first_name,
-          last_name,
-          middle_name,
         ]
       );
 
+      await client.query("COMMIT");
       return res.json(ins.rows[0]);
     } catch (e) {
+      try {
+        await client.query("ROLLBACK");
+      } catch {}
       console.error("POST /api/loan-requests ERROR:", e.message);
-      return res.status(500).json({ message: "Server error" });
+      return res.status(500).json({ message: e?.message || "Server error" });
+    } finally {
+      client.release();
     }
   }
 );
 
-// PUT /api/loan-requests/:id  (update status only)
 router.put("/loan-requests/:id", requireAuth, async (req, res) => {
+  const client = await pool.connect();
+
   try {
     const id = toInt(req.params.id);
     if (!id) return res.status(400).json({ message: "Invalid id" });
 
-    const status = String(req.body?.status || "").trim();
-    if (!status) return res.status(400).json({ message: "status is required" });
+    const newStatus = String(req.body?.status || "").trim();
+    if (!newStatus) return res.status(400).json({ message: "status is required" });
 
-    // Only admin can approve/reject (recommended)
-    const sLower = status.toLowerCase();
+    const sLower = newStatus.toLowerCase();
     if ((sLower === "approved" || sLower === "rejected") && !isAdmin(req)) {
       return res.status(403).json({ message: "Access denied" });
     }
 
-    const upd = await pool.query(
+    await client.query("BEGIN");
+
+    const cur = await client.query(
       `
-      UPDATE public.loan_requests
-      SET status=$1,
-          approved_at = CASE WHEN $1='Approved' THEN NOW() ELSE approved_at END
-      WHERE id=$2
-      RETURNING *;
+      SELECT
+        id,
+        staff_id,
+        status,
+        loan_type,
+        total,
+        amount
+      FROM public.loan_requests
+      WHERE id = $1::int
+      FOR UPDATE
       `,
-      [status, id]
+      [id]
     );
 
-    if (upd.rowCount === 0) return res.status(404).json({ message: "Loan request not found" });
+    if (cur.rowCount === 0) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ message: "Loan request not found" });
+    }
+
+    const row = cur.rows[0];
+    const prevStatus = String(row.status || "").trim();
+
+    const upd = await client.query(
+      `
+      UPDATE public.loan_requests
+      SET
+        status = $1::varchar,
+        approved_at = CASE
+          WHEN $1::varchar = 'Approved' THEN COALESCE(approved_at, CURRENT_DATE)
+          ELSE approved_at
+        END
+      WHERE id = $2::int
+      RETURNING *;
+      `,
+      [newStatus, id]
+    );
+
+    if (prevStatus !== "Approved" && newStatus === "Approved") {
+      const staffId = toInt(row.staff_id);
+      const total = toNum(row.total) || toNum(row.amount);
+      const col = loanTypeToBalanceColumn(row.loan_type);
+
+      if (staffId && col) {
+        await ensureBalanceRow(client, staffId);
+
+        await client.query(
+          `
+          UPDATE public.staff_balances
+          SET
+            ${col} = COALESCE(${col}, 0) + $1::numeric,
+            updated_at = NOW()
+          WHERE employee_id = $2::int
+          `,
+          [total, staffId]
+        );
+      }
+    }
+
+    await client.query("COMMIT");
     return res.json(upd.rows[0]);
-  } catch (e) {
-    console.error("PUT /api/loan-requests/:id ERROR:", e.message);
-    return res.status(500).json({ message: "Server error" });
+  } catch (err) {
+    try {
+      await client.query("ROLLBACK");
+    } catch {}
+    console.error("PUT /api/loan-requests/:id ERROR:", err?.message || err);
+    return res.status(500).json({ message: err?.message || "Server error" });
+  } finally {
+    client.release();
   }
 });
 

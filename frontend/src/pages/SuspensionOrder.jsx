@@ -74,7 +74,6 @@ export default function SuspensionOrder() {
 
   useEffect(() => {
     loadData();
-    // eslint-disable-next-line
   }, []);
 
   const openCreate = () => {
@@ -294,7 +293,6 @@ export default function SuspensionOrder() {
         </div>
       </div>
 
-      {/* CREATE MODAL */}
       {showModal && (
         <div
           className="po-modal-overlay"

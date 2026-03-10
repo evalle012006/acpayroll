@@ -6,7 +6,7 @@ const clean = (v) => String(v ?? "").trim();
 
 const login = async (req, res) => {
   const username = clean(req.body?.username);
-  const password = String(req.body?.password ?? ""); // don't trim passwords
+  const password = String(req.body?.password ?? "");
 
   if (!username || !password) {
     return res.status(400).json({ message: "username and password are required" });
@@ -17,7 +17,6 @@ const login = async (req, res) => {
   }
 
   try {
-    // safer match: ignore case + spaces for username
     const result = await pool.query(
       `
       SELECT id, username, password, role, branch_id
@@ -42,7 +41,7 @@ const login = async (req, res) => {
     const payload = {
       id: user.id,
       username: user.username,
-      role: String(user.role || "").trim(), // keep exact from DB; middleware will normalize anyway
+      role: String(user.role || "").trim(),
       branch_id: user.branch_id ?? null,
     };
 

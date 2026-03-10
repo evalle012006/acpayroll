@@ -4,10 +4,8 @@ const pool = require("../db");
 const { requireAuth, requireRole } = require("../middlewares/authMiddleware");
 const bcrypt = require("bcryptjs");
 
-// Helpers
 const clean = (v) => String(v ?? "").trim();
 
-// ✅ ADMIN ONLY: list users (DO NOT expose password hash)
 router.get("/", requireAuth, requireRole(["admin"]), async (_req, res) => {
   try {
     const result = await pool.query(
@@ -22,12 +20,11 @@ router.get("/", requireAuth, requireRole(["admin"]), async (_req, res) => {
   }
 });
 
-// ✅ ADMIN ONLY: create user (hash password)
 router.post("/", requireAuth, requireRole(["admin"]), async (req, res) => {
   try {
     const username = clean(req.body?.username);
     const password = clean(req.body?.password);
-    const role = clean(req.body?.role); // expect: "admin" or "branch manager"
+    const role = clean(req.body?.role);
     const branch_id = req.body?.branch_id ?? null;
 
     if (!username || !password || !role) {
@@ -60,7 +57,6 @@ router.post("/", requireAuth, requireRole(["admin"]), async (req, res) => {
   }
 });
 
-// ✅ ADMIN ONLY: update user (optional password)
 router.put("/:id", requireAuth, requireRole(["admin"]), async (req, res) => {
   try {
     const id = Number(req.params.id);
@@ -76,7 +72,6 @@ router.put("/:id", requireAuth, requireRole(["admin"]), async (req, res) => {
       return res.status(400).json({ message: "username and role are required" });
     }
 
-    // Prevent duplicate username
     const existing = await pool.query(
       "SELECT id FROM public.users WHERE lower(trim(username)) = lower(trim($1)) AND id <> $2",
       [username, id]
@@ -85,7 +80,6 @@ router.put("/:id", requireAuth, requireRole(["admin"]), async (req, res) => {
       return res.status(409).json({ message: "Username already exists" });
     }
 
-    // Password optional
     let hashed = null;
     const password = clean(req.body?.password);
     if (password) {
@@ -116,7 +110,6 @@ router.put("/:id", requireAuth, requireRole(["admin"]), async (req, res) => {
   }
 });
 
-// ✅ ADMIN ONLY: reset password (dedicated endpoint)
 router.put("/:id/reset-password", requireAuth, requireRole(["admin"]), async (req, res) => {
   try {
     const id = Number(req.params.id);
@@ -151,7 +144,6 @@ router.put("/:id/reset-password", requireAuth, requireRole(["admin"]), async (re
   }
 });
 
-// ✅ ADMIN ONLY: delete user
 router.delete("/:id", requireAuth, requireRole(["admin"]), async (req, res) => {
   try {
     const id = Number(req.params.id);

@@ -3,7 +3,6 @@ import { useNavigate } from "react-router-dom";
 import api from "../api/axiosClient";
 import "../styles/TransferStaffOrder.css";
 
-/* ------------------------- Helpers ------------------------- */
 const readUser = () => {
   try {
     return JSON.parse(localStorage.getItem("user") || "null");
@@ -28,7 +27,6 @@ const displayName = (s) => {
 
 const branchLabel = (b) => (b ? `${toStr(b.code)} - ${toStr(b.name)}`.trim() : "-");
 
-/* ------------------------- Component ------------------------- */
 export default function TransferStaffOrder() {
   const navigate = useNavigate();
 
@@ -48,7 +46,6 @@ export default function TransferStaffOrder() {
 
   const [error, setError] = useState("");
 
-  // form
   const [dateCreated, setDateCreated] = useState(() => new Date().toISOString().slice(0, 10));
   const [division, setDivision] = useState("");
   const [area, setArea] = useState("");
@@ -65,7 +62,6 @@ export default function TransferStaffOrder() {
     window.location.href = "/login";
   }, []);
 
-  /* ------------------------- Load Branches & Staff ------------------------- */
   useEffect(() => {
     const loadRefs = async () => {
       setLoadingRefs(true);
@@ -85,7 +81,6 @@ export default function TransferStaffOrder() {
     loadRefs();
   }, [logout]);
 
-  /* ------------------------- Fetch Orders ------------------------- */
   const fetchOrders = useCallback(async () => {
     setLoadingOrders(true);
     setError("");
@@ -106,7 +101,6 @@ export default function TransferStaffOrder() {
     fetchOrders();
   }, [fetchOrders]);
 
-  /* ------------------------- Derived refs ------------------------- */
   const selectedEmployee = useMemo(
     () => staff.find((s) => Number(s.id) === Number(employeeId)) || null,
     [staff, employeeId]
@@ -122,22 +116,18 @@ export default function TransferStaffOrder() {
     [branches, toBranchId]
   );
 
-  /* ------------------------- Autofill from selected employee ------------------------- */
   useEffect(() => {
     if (!showModal || !selectedEmployee) return;
 
-    // default prev branch from employee branch
     if (selectedEmployee.branch_id && !fromBranchId) {
       setFromBranchId(String(selectedEmployee.branch_id));
     }
 
-    // default area from employee area, otherwise from branch.area
     if (!toStr(area)) {
       setArea(toStr(selectedEmployee.area) || toStr(fromBranch?.area) || "");
     }
   }, [showModal, selectedEmployee, fromBranchId, area, fromBranch]);
 
-  /* ------------------------- Approve / Reject (Admin) ------------------------- */
   const approveOrder = async (id) => {
     if (!canApprove) return;
     setError("");
@@ -168,7 +158,6 @@ export default function TransferStaffOrder() {
     }
   };
 
-  /* ------------------------- Modal handlers ------------------------- */
   const resetForm = () => {
     setDateCreated(new Date().toISOString().slice(0, 10));
     setDivision("");
@@ -204,7 +193,6 @@ export default function TransferStaffOrder() {
     };
   }, [showModal]);
 
-  /* ------------------------- Save Order ------------------------- */
   const saveOrder = async () => {
     setError("");
 
@@ -371,7 +359,6 @@ export default function TransferStaffOrder() {
         </div>
       </div>
 
-      {/* MODAL */}
       {showModal && (
         <div className="modal-overlay" onMouseDown={closeModal}>
           <div className="modal saas-modal" onMouseDown={(e) => e.stopPropagation()}>

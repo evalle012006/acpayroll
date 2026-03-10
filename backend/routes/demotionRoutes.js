@@ -3,7 +3,6 @@ const router = express.Router();
 const pool = require("../db");
 const { requireAuth, requireRole } = require("../middlewares/authMiddleware");
 
-/* ------------------------- Helpers ------------------------- */
 const toInt = (v) => {
   const n = Number(v);
   return Number.isFinite(n) ? Math.trunc(n) : null;
@@ -21,7 +20,6 @@ const isAdmin = (req) => roleLower(req) === "admin";
 const isBranchManager = (req) => roleLower(req) === "branch manager";
 const getUserBranchId = (req) => req.user?.branch_id ?? null;
 
-/* ------------------------- Order No Generator ------------------------- */
 async function generateOrderNo(client, prefix) {
   const now = new Date();
   const year = now.getFullYear();
@@ -62,7 +60,43 @@ async function generateOrderNo(client, prefix) {
   return `${prefix}-${year}-${mm}-${nnnn}`;
 }
 
-/* ------------------------- GET /api/demotion-orders ------------------------- */
+router.get(
+  "/demotion-orders/staff/:id",
+  requireAuth,
+  requireRole(["admin", "branch manager"]),
+  async (req, res) => {
+    try {
+      const employeeId = toInt(req.params.id);
+      if (!employeeId) return res.status(400).json({ message: "Invalid staff id" });
+
+      const s = await pool.query(`SELECT id, branch_id FROM public.staff WHERE id=$1`, [employeeId]);
+      if (s.rowCount === 0) return res.status(404).json({ message: "Staff not found" });
+
+      if (isBranchManager(req)) {
+        const myBid = getUserBranchId(req);
+        if (!myBid || Number(s.rows[0].branch_id) !== Number(myBid)) {
+          return res.status(403).json({ message: "Access denied" });
+        }
+      }
+
+      const r = await pool.query(
+        `
+        SELECT *
+        FROM public.demotion_orders
+        WHERE employee_id = $1
+        ORDER BY created_at DESC
+        `,
+        [employeeId]
+      );
+
+      return res.json(r.rows);
+    } catch (e) {
+      console.error("GET /api/demotion-orders/staff/:id ERROR:", e.message);
+      return res.status(500).json({ message: "Server error" });
+    }
+  }
+);
+
 router.get("/demotion-orders", requireAuth, async (req, res) => {
   try {
     const role = roleLower(req);
@@ -71,13 +105,11 @@ router.get("/demotion-orders", requireAuth, async (req, res) => {
       return res.status(403).json({ message: "Access denied" });
     }
 
-    // Admin sees all
     if (isAdmin(req)) {
       const r = await pool.query(`SELECT * FROM public.demotion_orders ORDER BY created_at DESC`);
       return res.json(r.rows);
     }
 
-    // Branch manager sees only orders of staff in their branch
     const branchId = getUserBranchId(req);
     if (!branchId) return res.json([]);
 
@@ -99,7 +131,6 @@ router.get("/demotion-orders", requireAuth, async (req, res) => {
   }
 });
 
-/* ------------------------- POST /api/demotion-orders ------------------------- */
 router.post("/demotion-orders", requireAuth, requireRole(["admin", "branch manager"]), async (req, res) => {
   const client = await pool.connect();
   try {
@@ -118,7 +149,6 @@ router.post("/demotion-orders", requireAuth, requireRole(["admin", "branch manag
     if (!effective_date) return res.status(400).json({ message: "Effective date required" });
     if (!to_branch_id) return res.status(400).json({ message: "Destination branch required" });
 
-    // read staff
     const s = await client.query(
       `SELECT id, first_name, last_name, middle_name, fullname, "position", branch_id FROM public.staff WHERE id=$1`,
       [employee_id]
@@ -126,7 +156,6 @@ router.post("/demotion-orders", requireAuth, requireRole(["admin", "branch manag
     if (s.rowCount === 0) return res.status(404).json({ message: "Staff not found" });
     const staffRow = s.rows[0];
 
-    // branch manager restriction
     if (isBranchManager(req)) {
       const bid = getUserBranchId(req);
       if (!bid || Number(staffRow.branch_id) !== Number(bid)) {
@@ -135,13 +164,11 @@ router.post("/demotion-orders", requireAuth, requireRole(["admin", "branch manag
       }
     }
 
-    // fetch prev branch info
     const prevBranchId = staffRow.branch_id ? Number(staffRow.branch_id) : null;
     const prevBr = prevBranchId
       ? await client.query(`SELECT id, code, name FROM public.branches WHERE id=$1`, [prevBranchId])
       : { rowCount: 0, rows: [] };
 
-    // fetch destination branch info
     const toBr = await client.query(`SELECT id, code, name FROM public.branches WHERE id=$1`, [to_branch_id]);
     if (toBr.rowCount === 0) return res.status(400).json({ message: "Destination branch not found" });
 
@@ -201,7 +228,6 @@ router.post("/demotion-orders", requireAuth, requireRole(["admin", "branch manag
   }
 });
 
-/* ------------------------- PUT /api/demotion-orders/:id/approve (ADMIN) ------------------------- */
 router.put("/demotion-orders/:id/approve", requireAuth, requireRole(["admin"]), async (req, res) => {
   const client = await pool.connect();
   try {
@@ -259,11 +285,7 @@ router.put("/demotion-orders/:id/approve", requireAuth, requireRole(["admin"]), 
         updated_at = NOW()
       WHERE employee_id = $3
       `,
-      [
-        String(order.employee_name || ""),
-        String(order.new_position || ""),
-        Number(order.employee_id),
-      ]
+      [String(order.employee_name || ""), String(order.new_position || ""), Number(order.employee_id)]
     );
 
     await client.query("COMMIT");
@@ -277,7 +299,6 @@ router.put("/demotion-orders/:id/approve", requireAuth, requireRole(["admin"]), 
   }
 });
 
-/* ------------------------- PUT /api/demotion-orders/:id/reject (ADMIN) ------------------------- */
 router.put("/demotion-orders/:id/reject", requireAuth, requireRole(["admin"]), async (req, res) => {
   try {
     const id = toInt(req.params.id);

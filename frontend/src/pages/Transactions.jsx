@@ -18,7 +18,6 @@ export default function Transactions() {
       </div>
 
       <div className="transactions-grid">
-        {/* TRANSFER */}
         <button type="button" className="transactions-card" onClick={() => go("/transactions/transfer")}>
           <div className="transactions-card-head">
             <div>
@@ -36,7 +35,6 @@ export default function Transactions() {
           </div>
         </button>
 
-        {/* LEAVE REQUESTS (MOVED FROM APPROVAL) */}
         <button type="button" className="transactions-card" onClick={() => go("/transactions/leave")}>
           <div className="transactions-card-head">
             <div>
@@ -54,7 +52,6 @@ export default function Transactions() {
           </div>
         </button>
 
-        {/* PROMOTION */}
         <button type="button" className="transactions-card" onClick={() => go("/transactions/promotion")}>
           <div className="transactions-card-head">
             <div>
@@ -72,7 +69,6 @@ export default function Transactions() {
           </div>
         </button>
 
-        {/* DEMOTION */}
         <button type="button" className="transactions-card" onClick={() => go("/transactions/demotion")}>
           <div className="transactions-card-head">
             <div>
@@ -90,7 +86,6 @@ export default function Transactions() {
           </div>
         </button>
 
-        {/* DEPLOYMENT */}
         <button type="button" className="transactions-card" onClick={() => go("/transactions/deployment")}>
           <div className="transactions-card-head">
             <div>
@@ -108,7 +103,6 @@ export default function Transactions() {
           </div>
         </button>
 
-        {/* SUSPENSION */}
         <button type="button" className="transactions-card" onClick={() => go("/transactions/suspension")}>
           <div className="transactions-card-head">
             <div>
@@ -126,7 +120,6 @@ export default function Transactions() {
           </div>
         </button>
 
-        {/* SOA */}
         <button type="button" className="transactions-card" onClick={() => go("/transactions/soa")}>
           <div className="transactions-card-head">
             <div>
@@ -144,7 +137,6 @@ export default function Transactions() {
           </div>
         </button>
 
-        {/* EXIT STAFF */}
         <button type="button" className="transactions-card" onClick={() => go("/transactions/exit")}>
           <div className="transactions-card-head">
             <div>

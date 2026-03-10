@@ -3,7 +3,6 @@ const router = express.Router();
 const pool = require("../db");
 const { requireAuth, requireRole } = require("../middlewares/authMiddleware");
 
-// ---------------- Helpers ----------------
 const toNum = (v) => {
   const n = Number(v ?? 0);
   return Number.isFinite(n) ? n : 0;
@@ -26,7 +25,6 @@ const isAdmin = (req) => roleLower(req) === "admin";
 const isBranchManager = (req) => roleLower(req) === "branch manager";
 const getUserBranchId = (req) => req.user?.branch_id ?? null;
 
-// order no generator (uses your order_sequences table style)
 async function generateOrderNo(client, prefix) {
   const now = new Date();
   const year = now.getFullYear();
@@ -67,11 +65,6 @@ async function generateOrderNo(client, prefix) {
   return `${prefix}-${year}-${mm}-${nnnn}`;
 }
 
-// ---------------- ROUTES ----------------
-
-// ✅ GET /api/promotion-orders
-// Admin: all orders
-// Branch manager: only orders of staff in their branch
 router.get("/promotion-orders", requireAuth, async (req, res) => {
   try {
     const role = roleLower(req);
@@ -105,8 +98,6 @@ router.get("/promotion-orders", requireAuth, async (req, res) => {
   }
 });
 
-// ✅ POST /api/promotion-orders
-// Admin or Branch manager creates promotion order (Pending)
 router.post("/promotion-orders", requireAuth, requireRole(["admin", "branch manager"]), async (req, res) => {
   const client = await pool.connect();
   try {
@@ -124,7 +115,6 @@ router.post("/promotion-orders", requireAuth, requireRole(["admin", "branch mana
     const old_salary = toNum(b.old_salary);
     const new_salary = toNum(b.new_salary);
 
-    // ✅ ECOLA support
     const old_ecola = toNum(b.old_ecola);
     const new_ecola = toNum(b.new_ecola);
 
@@ -155,7 +145,6 @@ router.post("/promotion-orders", requireAuth, requireRole(["admin", "branch mana
       return res.status(400).json({ message: "Present branch is required" });
     }
 
-    // validate staff exists + scope for branch manager
     const staffRes = await client.query(
       `SELECT id, fullname, branch_id FROM public.staff WHERE id=$1`,
       [employee_id]
@@ -254,7 +243,6 @@ router.post("/promotion-orders", requireAuth, requireRole(["admin", "branch mana
   }
 });
 
-// ✅ PUT /api/promotion-orders/:id/approve  (ADMIN)
 router.put("/promotion-orders/:id/approve", requireAuth, requireRole(["admin"]), async (req, res) => {
   const client = await pool.connect();
   try {
@@ -266,7 +254,6 @@ router.put("/promotion-orders/:id/approve", requireAuth, requireRole(["admin"]),
       return res.status(400).json({ message: "Invalid id" });
     }
 
-    // approve order
     const r = await client.query(
       `
       UPDATE public.promotion_orders
@@ -290,7 +277,6 @@ router.put("/promotion-orders/:id/approve", requireAuth, requireRole(["admin"]),
 
     const order = r.rows[0];
 
-    // ✅ apply to staff immediately: position, salary, ecola, and move branch if you want
     await client.query(
       `
       UPDATE public.staff
@@ -321,7 +307,6 @@ router.put("/promotion-orders/:id/approve", requireAuth, requireRole(["admin"]),
   }
 });
 
-// ✅ PUT /api/promotion-orders/:id/reject  (ADMIN)
 router.put("/promotion-orders/:id/reject", requireAuth, requireRole(["admin"]), async (req, res) => {
   try {
     const id = toInt(req.params.id);

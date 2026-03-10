@@ -27,6 +27,12 @@ export default function Departments() {
   const [deptStaff, setDeptStaff] = useState([]);
   const [loadingDeptStaff, setLoadingDeptStaff] = useState(false);
 
+  // ✅ NEW: dropdown filters (4 controls)
+  const [divisionFilter, setDivisionFilter] = useState("All");
+  const [regionFilter, setRegionFilter] = useState("All");
+  const [areaFilter, setAreaFilter] = useState("All");
+  const [branchFilter, setBranchFilter] = useState("All");
+
   const [form, setForm] = useState({
     code: "",
     name: "",
@@ -41,6 +47,30 @@ export default function Departments() {
     if (String(p).startsWith("http")) return p;
     return `${base}${p}`;
   };
+
+  const uniq = (arr) => Array.from(new Set((arr || []).map((x) => toStr(x)).filter(Boolean)));
+
+  const branchLabel = (s) => {
+    const code = toStr(s?.branch_code);
+    const name = toStr(s?.branch_name);
+    if (code && name) return `${code} (${name})`;
+    return name || code || "-";
+  };
+
+  const divisionOptions = useMemo(() => ["All", ...uniq(deptStaff.map((x) => x.division))], [deptStaff]);
+  const regionOptions = useMemo(() => ["All", ...uniq(deptStaff.map((x) => x.region))], [deptStaff]);
+  const areaOptions = useMemo(() => ["All", ...uniq(deptStaff.map((x) => x.area))], [deptStaff]);
+  const branchOptions = useMemo(() => ["All", ...uniq(deptStaff.map((x) => branchLabel(x)))], [deptStaff]);
+
+  const filteredDeptStaff = useMemo(() => {
+    return (deptStaff || []).filter((s) => {
+      if (divisionFilter !== "All" && toStr(s.division) !== divisionFilter) return false;
+      if (regionFilter !== "All" && toStr(s.region) !== regionFilter) return false;
+      if (areaFilter !== "All" && toStr(s.area) !== areaFilter) return false;
+      if (branchFilter !== "All" && branchLabel(s) !== branchFilter) return false;
+      return true;
+    });
+  }, [deptStaff, divisionFilter, regionFilter, areaFilter, branchFilter]);
 
   const loadDepartments = async () => {
     try {
@@ -84,9 +114,17 @@ export default function Departments() {
     resetForm();
   };
 
+  const resetViewFilters = () => {
+    setDivisionFilter("All");
+    setRegionFilter("All");
+    setAreaFilter("All");
+    setBranchFilter("All");
+  };
+
   const closeView = () => {
     setViewDept(null);
     setDeptStaff([]);
+    resetViewFilters();
   };
 
   // ESC close modals
@@ -148,6 +186,7 @@ export default function Departments() {
   const openView = useCallback(async (d) => {
     setViewDept(d);
     setDeptStaff([]);
+    resetViewFilters();
     setLoadingDeptStaff(true);
     try {
       const res = await api.get(`/departments/${d.id}/staff`);
@@ -164,9 +203,7 @@ export default function Departments() {
     const q = norm(search);
     if (!q) return departments;
 
-    return departments.filter((d) =>
-      [d.id, d.code, d.name, d.description].map((x) => norm(x)).join(" ").includes(q)
-    );
+    return departments.filter((d) => [d.id, d.code, d.name, d.description].map((x) => norm(x)).join(" ").includes(q));
   }, [departments, search]);
 
   return (
@@ -322,6 +359,49 @@ export default function Departments() {
             </div>
 
             <div className="modal-body" style={{ padding: 10 }}>
+              {/* ✅ 4 dropdown filters */}
+              <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 12, alignItems: "center" }}>
+                <div className="pill">
+                  Showing: <strong>{filteredDeptStaff.length}</strong>
+                </div>
+
+                <select className="input" value={divisionFilter} onChange={(e) => setDivisionFilter(e.target.value)} style={{ width: 220 }}>
+                  {divisionOptions.map((v) => (
+                    <option key={`div-${v}`} value={v}>
+                      {v === "All" ? "Division: All" : `Division: ${v}`}
+                    </option>
+                  ))}
+                </select>
+
+                <select className="input" value={regionFilter} onChange={(e) => setRegionFilter(e.target.value)} style={{ width: 240 }}>
+                  {regionOptions.map((v) => (
+                    <option key={`reg-${v}`} value={v}>
+                      {v === "All" ? "Region: All" : `Region: ${v}`}
+                    </option>
+                  ))}
+                </select>
+
+                <select className="input" value={areaFilter} onChange={(e) => setAreaFilter(e.target.value)} style={{ width: 240 }}>
+                  {areaOptions.map((v) => (
+                    <option key={`area-${v}`} value={v}>
+                      {v === "All" ? "Area: All" : `Area: ${v}`}
+                    </option>
+                  ))}
+                </select>
+
+                <select className="input" value={branchFilter} onChange={(e) => setBranchFilter(e.target.value)} style={{ width: 280 }}>
+                  {branchOptions.map((v) => (
+                    <option key={`br-${v}`} value={v}>
+                      {v === "All" ? "Branch: All" : `Branch: ${v}`}
+                    </option>
+                  ))}
+                </select>
+
+                <button className="btn btn-ghost" type="button" onClick={resetViewFilters}>
+                  Clear Filters
+                </button>
+              </div>
+
               <div className="table-scroll">
                 {loadingDeptStaff ? (
                   <div style={{ padding: 12 }}>Loading...</div>
@@ -339,12 +419,12 @@ export default function Departments() {
                       </tr>
                     </thead>
                     <tbody>
-                      {deptStaff.length === 0 ? (
+                      {filteredDeptStaff.length === 0 ? (
                         <tr>
-                          <td colSpan={7}>No staff found in this department.</td>
+                          <td colSpan={7}>No staff found for this filter.</td>
                         </tr>
                       ) : (
-                        deptStaff.map((s) => (
+                        filteredDeptStaff.map((s) => (
                           <tr key={s.id}>
                             <td>
                               {avatarUrl(s) ? (

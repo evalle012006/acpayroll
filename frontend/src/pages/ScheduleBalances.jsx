@@ -6,6 +6,8 @@ import api from "../api/axiosClient";
 const MONEY_COLS = [
   { key: "cbu", label: "CBU" },
   { key: "cashbond", label: "Cashbond" },
+  { key: "utility", label: "Utility" },
+  { key: "salary_loan", label: "Salary Loan" },
   { key: "salary_advance", label: "Salary Advance" },
   { key: "motorcycle_loan", label: "Motorcycle Loan" },
   { key: "special_advance", label: "Special Advance" },
@@ -15,13 +17,17 @@ const MONEY_COLS = [
 ];
 
 const toStr = (v) => String(v ?? "").trim();
+
 const toNum = (v) => {
   const n = Number(v);
   return Number.isFinite(n) ? n : 0;
 };
 
 const fmtMoney = (v) =>
-  `₱ ${toNum(v).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  `₱ ${toNum(v).toLocaleString(undefined, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
 
 const getCurrentMonth = () => {
   const d = new Date();
@@ -42,7 +48,6 @@ const displayName = (r) => {
   const ln = toStr(r?.last_name);
   const fn = toStr(r?.first_name);
   const mn = toStr(r?.middle_name);
-
   const built = `${ln}${ln && fn ? ", " : ""}${fn}${mn ? ` ${mn}` : ""}`.replace(/\s+/g, " ").trim();
   return built || toStr(r?.fullname) || "-";
 };
@@ -62,6 +67,8 @@ export default function ScheduleBalances() {
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
 
+  const [viewBranch, setViewBranch] = useState(null);
+
   const logout = useCallback(() => {
     localStorage.removeItem("token");
     localStorage.removeItem("user");
@@ -80,17 +87,25 @@ export default function ScheduleBalances() {
 
   const branchMap = useMemo(() => {
     const m = new Map();
-    (branches || []).forEach((b) => m.set(Number(b.id), b));
+    (branches || []).forEach((b) => m.set(String(b.id), b));
     return m;
   }, [branches]);
 
-  const fetchSnapshots = useCallback(
+  const branchLabel = useCallback(
+    (branchId) => {
+      const b = branchMap.get(String(branchId));
+      return b ? `${b.code} - ${b.name}` : String(branchId || "-");
+    },
+    [branchMap]
+  );
+
+  const fetchLiveBalances = useCallback(
     async (branchId = selectedBranch, m = month) => {
       if (!m) return;
 
       setLoading(true);
       try {
-        const res = await api.get("/schedule-balances", {
+        const res = await api.get("/schedule-balances/live", {
           params: {
             month: m,
             ...(branchId ? { branchId } : {}),
@@ -105,7 +120,7 @@ export default function ScheduleBalances() {
         setLoading(false);
       }
     },
-    [logout, month, selectedBranch]
+    [logout, selectedBranch, month]
   );
 
   useEffect(() => {
@@ -113,23 +128,34 @@ export default function ScheduleBalances() {
   }, [fetchBranches]);
 
   useEffect(() => {
-    fetchSnapshots(selectedBranch, month);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [month]);
+    fetchLiveBalances(selectedBranch, month);
+  }, [selectedBranch, month, fetchLiveBalances]);
 
-  const handleBranchChange = (e) => {
-    const branchId = e.target.value;
-    setSelectedBranch(branchId);
-    fetchSnapshots(branchId, month);
-  };
+  useEffect(() => {
+    if (!viewBranch) return;
+
+    const onKeyDown = (e) => {
+      if (e.key === "Escape") setViewBranch(null);
+    };
+
+    document.addEventListener("keydown", onKeyDown);
+    document.body.style.overflow = "hidden";
+
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      document.body.style.overflow = "";
+    };
+  }, [viewBranch]);
 
   const handleSearch = () => setSearch(searchInput);
+
   const handleClear = () => {
     setSearch("");
     setSearchInput("");
+    setSelectedBranch("");
   };
 
-  const handleRefresh = () => fetchSnapshots(selectedBranch, month);
+  const handleRefresh = () => fetchLiveBalances(selectedBranch, month);
 
   const saveSnapshotFromCurrent = async () => {
     if (!isAdmin) return alert("Admin only.");
@@ -140,7 +166,6 @@ export default function ScheduleBalances() {
     try {
       await api.post("/schedule-balances/snapshot/from-current", { month });
       alert("Snapshot saved.");
-      await fetchSnapshots(selectedBranch, month);
     } catch (err) {
       if (err?.response?.status === 401) return logout();
       if (err?.response?.status === 403) return alert("Access denied.");
@@ -150,71 +175,104 @@ export default function ScheduleBalances() {
     }
   };
 
-  const filteredRows = useMemo(() => {
-    const list = Array.isArray(rows) ? rows : [];
-    const q = (search || "").toLowerCase().trim();
-    if (!q) return list;
+  const filteredEmployeeRows = useMemo(() => {
+    const q = toStr(search).toLowerCase();
+    if (!q) return rows;
 
-    return list.filter((r) => {
+    return rows.filter((r) => {
       const hay = [
+        r.staff_id,
         r.employee_id,
-        r.staff_id ?? r.id,
-        r.position,
         r.fullname,
-        r.last_name,
-        r.first_name,
-        r.middle_name,
         displayName(r),
+        r.position,
+        branchLabel(r.branch_id),
       ]
         .map((x) => String(x ?? "").toLowerCase())
         .join(" ");
 
       return hay.includes(q);
     });
-  }, [rows, search]);
+  }, [rows, search, branchLabel]);
+
+  const groupedBranches = useMemo(() => {
+    const map = new Map();
+
+    for (const r of filteredEmployeeRows) {
+      const key = String(r.branch_id || "unassigned");
+
+      const existing = map.get(key) || {
+        branch_id: r.branch_id || "",
+        branch_label: branchLabel(r.branch_id),
+        staff_count: 0,
+        staff_rows: [],
+        cbu: 0,
+        cashbond: 0,
+        utility: 0,
+        salary_loan: 0,
+        salary_advance: 0,
+        motorcycle_loan: 0,
+        special_advance: 0,
+        cash_advance: 0,
+        other_receivable: 0,
+        staff_accounts_payable: 0,
+      };
+
+      existing.staff_count += 1;
+      existing.staff_rows.push(r);
+
+      for (const c of MONEY_COLS) {
+        existing[c.key] += toNum(r[c.key]);
+      }
+
+      map.set(key, existing);
+    }
+
+    return Array.from(map.values()).sort((a, b) => a.branch_label.localeCompare(b.branch_label));
+  }, [filteredEmployeeRows, branchLabel]);
 
   const totals = useMemo(() => {
     const t = Object.fromEntries(MONEY_COLS.map((c) => [c.key, 0]));
-    for (const r of filteredRows) {
-      for (const c of MONEY_COLS) t[c.key] += toNum(r?.[c.key]);
+    for (const row of groupedBranches) {
+      for (const c of MONEY_COLS) {
+        t[c.key] += toNum(row[c.key]);
+      }
     }
     return t;
-  }, [filteredRows]);
+  }, [groupedBranches]);
+
+  const totalStaffCount = useMemo(
+    () => groupedBranches.reduce((sum, r) => sum + Number(r.staff_count || 0), 0),
+    [groupedBranches]
+  );
 
   const exportToExcel = () => {
-    const data = filteredRows.map((r) => {
-      const bid = r.branch_id ? Number(r.branch_id) : null;
-      const b = bid ? branchMap.get(bid) : null;
+    const data = groupedBranches.map((r) => ({
+      "Month Label": month,
+      "Branch ID": r.branch_id ?? "",
+      Branch: r.branch_label,
+      "Staff Count": r.staff_count,
+      CBU: toNum(r.cbu),
+      Cashbond: toNum(r.cashbond),
+      Utility: toNum(r.utility),
+      "Salary Loan": toNum(r.salary_loan),
+      "Salary Advance": toNum(r.salary_advance),
+      "Motorcycle Loan": toNum(r.motorcycle_loan),
+      "Special Advance": toNum(r.special_advance),
+      "Cash Advance": toNum(r.cash_advance),
+      "Other Receivable": toNum(r.other_receivable),
+      "Staff Accounts Payable": toNum(r.staff_accounts_payable),
+    }));
 
-      return {
-        "Snapshot Month": month,
-        "Staff ID": r.staff_id ?? r.id ?? "",
-        "Employee ID": r.employee_id ?? "",
-        "Full Name": displayName(r),
-        Position: r.position ?? "",
-        "Branch ID": bid ?? "",
-        Branch: b ? `${b.code} - ${b.name}` : "",
-        CBU: toNum(r.cbu),
-        Cashbond: toNum(r.cashbond),
-        "Salary Advance": toNum(r.salary_advance),
-        "Motorcycle Loan": toNum(r.motorcycle_loan),
-        "Special Advance": toNum(r.special_advance),
-        "Cash Advance": toNum(r.cash_advance),
-        "Other Receivable": toNum(r.other_receivable),
-        "Staff Accounts Payable": toNum(r.staff_accounts_payable),
-      };
-    });
-
-    data.push({
-      "Snapshot Month": month,
-      "Staff ID": "",
-      "Employee ID": "",
-      "Full Name": "TOTAL",
-      Position: "",
+    data.unshift({
+      "Month Label": month,
       "Branch ID": "",
-      Branch: "",
+      Branch: "TOTAL",
+      "Staff Count": totalStaffCount,
       CBU: totals.cbu,
       Cashbond: totals.cashbond,
+      Utility: totals.utility,
+      "Salary Loan": totals.salary_loan,
       "Salary Advance": totals.salary_advance,
       "Motorcycle Loan": totals.motorcycle_loan,
       "Special Advance": totals.special_advance,
@@ -225,21 +283,8 @@ export default function ScheduleBalances() {
 
     const ws = XLSX.utils.json_to_sheet(data);
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "ScheduleBalances");
-
-    const branchObj = branches.find((b) => String(b.id) === String(selectedBranch));
-    const fileName = branchObj
-      ? `ScheduleBalances_${month}_${branchObj.code}_${branchObj.name}.xlsx`
-      : `ScheduleBalances_${month}_AllBranches.xlsx`;
-
-    XLSX.writeFile(wb, fileName);
-  };
-
-  const branchLabel = (branchId) => {
-    const bid = branchId ? Number(branchId) : null;
-    if (!bid) return "-";
-    const b = branchMap.get(bid);
-    return b ? `${b.code} - ${b.name}` : String(bid);
+    XLSX.utils.book_append_sheet(wb, ws, "ScheduleBalancesByBranch");
+    XLSX.writeFile(wb, `ScheduleBalances_ByBranch_${month}.xlsx`);
   };
 
   return (
@@ -247,7 +292,7 @@ export default function ScheduleBalances() {
       <div className="balances-page-header">
         <div>
           <h2 className="balances-title">Schedule of Balances</h2>
-          <p className="balances-subtitle">Monthly stored (bank record). Select month and branch to view.</p>
+          <p className="balances-subtitle">Per-branch balances from current transactions and staff balances.</p>
         </div>
 
         <div className="balances-actions">
@@ -262,7 +307,7 @@ export default function ScheduleBalances() {
             onKeyDown={(e) => e.key === "Enter" && handleSearch()}
           />
 
-          <select className="branch-select" value={selectedBranch} onChange={handleBranchChange}>
+          <select className="branch-select" value={selectedBranch} onChange={(e) => setSelectedBranch(e.target.value)}>
             <option value="">All Branches</option>
             {branches.map((b) => (
               <option key={b.id} value={b.id}>
@@ -274,6 +319,7 @@ export default function ScheduleBalances() {
           <button className="btn-secondary" onClick={handleSearch} type="button">
             Search
           </button>
+
           <button className="btn-secondary" onClick={handleClear} type="button">
             Clear
           </button>
@@ -288,7 +334,7 @@ export default function ScheduleBalances() {
             </button>
           )}
 
-          <button className="btn-primary" onClick={exportToExcel} type="button" disabled={filteredRows.length === 0}>
+          <button className="btn-primary" onClick={exportToExcel} type="button" disabled={groupedBranches.length === 0}>
             Export Excel
           </button>
         </div>
@@ -297,9 +343,9 @@ export default function ScheduleBalances() {
       <div className="balances-card">
         <div className="balances-card-header">
           <div className="balances-card-title">
-            Records <span className="balances-count">{filteredRows.length}</span>
+            Branch Records <span className="balances-count">{groupedBranches.length}</span>
             <span style={{ marginLeft: 10, fontSize: 12, opacity: 0.8 }}>
-              Month: <b>{month || "-"}</b> • Branch: <b>{selectedBranch ? branchLabel(selectedBranch) : "All"}</b>
+              Month Label: <b>{month || "-"}</b> • Branch: <b>{selectedBranch ? branchLabel(selectedBranch) : "All"}</b>
             </span>
           </div>
           {loading && <div className="balances-loading">Loading…</div>}
@@ -309,60 +355,133 @@ export default function ScheduleBalances() {
           <table className="balances-table">
             <thead>
               <tr>
-                <th>Staff ID</th>
-                <th>Employee ID</th>
-                <th>Full Name</th>
-                <th>Position</th>
                 <th>Branch</th>
+                <th>Staff Count</th>
                 {MONEY_COLS.map((c) => (
                   <th key={c.key}>{c.label}</th>
                 ))}
+                <th>Action</th>
               </tr>
+
+              {!loading && groupedBranches.length > 0 && (
+                <tr className="totals-row">
+                  <th className="totals-label">TOTAL</th>
+                  <th className="totals-money">{totalStaffCount}</th>
+
+                  {MONEY_COLS.map((c) => (
+                    <th key={c.key} className="totals-money">
+                      {fmtMoney(totals[c.key])}
+                    </th>
+                  ))}
+
+                  <th></th>
+                </tr>
+              )}
             </thead>
 
             <tbody>
-              {!loading && filteredRows.length === 0 ? (
+              {!loading && groupedBranches.length === 0 ? (
                 <tr>
-                  <td colSpan={5 + MONEY_COLS.length} className="empty-state">
-                    No Data for this Month.
-                    <div style={{ marginTop: 8, fontSize: 12, opacity: 0.85 }}>
-                      {isAdmin ? "Tip: Click “Save Snapshot” to store current balances for this month." : ""}
-                    </div>
+                  <td colSpan={MONEY_COLS.length + 3} className="empty-state">
+                    No data found.
                   </td>
                 </tr>
               ) : (
-                filteredRows.map((item, idx) => (
-                  <tr key={item.id ?? `${item.staff_id}-${idx}`}>
-                    <td>{item.staff_id ?? "-"}</td>
-                    <td>{item.employee_id ?? "-"}</td>
-                    <td className="td-strong">{displayName(item)}</td>
-                    <td>{item.position ?? "-"}</td>
-                    <td>{branchLabel(item.branch_id)}</td>
+                groupedBranches.map((item, idx) => (
+                  <tr key={`${item.branch_id}-${idx}`}>
+                    <td className="td-strong">{item.branch_label}</td>
+                    <td>{item.staff_count}</td>
+
                     {MONEY_COLS.map((c) => (
                       <td key={c.key} className="td-money">
-                        {fmtMoney(item?.[c.key])}
+                        {fmtMoney(item[c.key])}
                       </td>
                     ))}
+
+                    <td>
+                      <button className="btn-secondary" type="button" onClick={() => setViewBranch(item)}>
+                        View
+                      </button>
+                    </td>
                   </tr>
                 ))
-              )}
-
-              {!loading && filteredRows.length > 0 && (
-                <tr className="totals-row">
-                  <td colSpan={5} className="totals-label">
-                    TOTAL
-                  </td>
-                  {MONEY_COLS.map((c) => (
-                    <td key={c.key} className="totals-money">
-                      {fmtMoney(totals[c.key])}
-                    </td>
-                  ))}
-                </tr>
               )}
             </tbody>
           </table>
         </div>
       </div>
+
+      {viewBranch && (
+        <div
+          className="modal-overlay"
+          onMouseDown={(e) => e.target.classList.contains("modal-overlay") && setViewBranch(null)}
+        >
+          <div
+            className="modal saas-modal"
+            style={{ maxWidth: 1200, width: "95vw" }}
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <div className="modal-head">
+              <div>
+                <h3 className="modal-title">{viewBranch.branch_label}</h3>
+                <p className="modal-subtitle">Staff assigned to this branch</p>
+              </div>
+              <button className="modal-x" type="button" onClick={() => setViewBranch(null)}>
+                ✕
+              </button>
+            </div>
+
+            <div className="table-card">
+              <div className="table-wrap">
+                <table className="table">
+                  <thead>
+                    <tr>
+                      <th>Staff ID</th>
+                      <th>Employee ID</th>
+                      <th>Full Name</th>
+                      <th>Position</th>
+                      {MONEY_COLS.map((c) => (
+                        <th key={c.key}>{c.label}</th>
+                      ))}
+                    </tr>
+                  </thead>
+
+                  <tbody>
+                    {viewBranch.staff_rows.length === 0 ? (
+                      <tr>
+                        <td colSpan={MONEY_COLS.length + 4} className="empty-state">
+                          No staff found.
+                        </td>
+                      </tr>
+                    ) : (
+                      viewBranch.staff_rows.map((r, idx) => (
+                        <tr key={`${r.staff_id}-${idx}`}>
+                          <td>{r.staff_id ?? "-"}</td>
+                          <td>{r.employee_id ?? "-"}</td>
+                          <td className="td-strong">{displayName(r)}</td>
+                          <td>{r.position ?? "-"}</td>
+
+                          {MONEY_COLS.map((c) => (
+                            <td key={c.key} className="td-money">
+                              {fmtMoney(r[c.key])}
+                            </td>
+                          ))}
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div className="modal-buttons">
+              <button className="btn-secondary" type="button" onClick={() => setViewBranch(null)}>
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

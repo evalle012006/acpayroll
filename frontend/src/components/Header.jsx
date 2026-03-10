@@ -1,19 +1,8 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
-import {
-  FaBars,
-  FaUser,
-  FaCog,
-  FaSignOutAlt,
-  FaMoon,
-  FaSun,
-  FaBell,
-  FaCheck,
-  FaTrash,
-} from "react-icons/fa";
+import {FaBars, FaUser, FaCog, FaSignOutAlt, FaMoon, FaSun, FaBell, FaCheck, FaTrash,} from "react-icons/fa";
 import "../styles/Header.css";
 
-/* ---------------- Storage helpers ---------------- */
 const readUser = () => {
   try {
     return JSON.parse(localStorage.getItem("user") || "null");
@@ -43,7 +32,7 @@ const newNotif = ({ title = "Notification", message = "", type = "info" } = {}) 
   id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
   title,
   message,
-  type, // "info" | "success" | "warning" | "error"
+  type,
   read: false,
   created_at: new Date().toISOString(),
 });
@@ -78,7 +67,6 @@ const Header = ({ toggleSidebar }) => {
     [notifications]
   );
 
-  /* ---------------- Theme ---------------- */
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme);
     localStorage.setItem("theme", theme);
@@ -86,7 +74,6 @@ const Header = ({ toggleSidebar }) => {
 
   const toggleTheme = () => setTheme((prev) => (prev === "light" ? "dark" : "light"));
 
-  /* ---------------- Close on outside click ---------------- */
   useEffect(() => {
     const handleClickOutside = (event) => {
       const p = profileRef.current;
@@ -103,7 +90,6 @@ const Header = ({ toggleSidebar }) => {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  /* ---------------- Keep user/avatar synced ---------------- */
   useEffect(() => {
     const onAuthChanged = () => {
       setUser(readUser());
@@ -119,14 +105,11 @@ const Header = ({ toggleSidebar }) => {
     };
   }, []);
 
-  /* ---------------- Notifications sync + event hook ---------------- */
   useEffect(() => {
-    // If another tab updates notifications
     const onStorage = (e) => {
       if (e.key === NOTIF_KEY) setNotifications(readNotifs());
     };
 
-    // Allow any page to push a notification
     const onNotify = (e) => {
       const detail = e?.detail || {};
       setNotifications((prev) => {
@@ -193,13 +176,12 @@ const Header = ({ toggleSidebar }) => {
       <FaBars className="menu-toggle" onClick={toggleSidebar} />
 
       <div className="header-right">
-        {/* Theme toggle */}
+
         <button className="theme-btn" onClick={toggleTheme} type="button">
           {theme === "light" ? <FaMoon /> : <FaSun />}
           <span className="theme-text">{theme === "light" ? "Dark" : "Light"}</span>
         </button>
 
-        {/* ✅ Notification bar between theme + profile */}
         <div className="notif-wrap" ref={notifRef}>
           <button className="notif-btn" type="button" onClick={toggleNotif} aria-label="Notifications">
             <FaBell />
@@ -254,7 +236,6 @@ const Header = ({ toggleSidebar }) => {
           )}
         </div>
 
-        {/* Profile dropdown */}
         <div className="admin-profile" ref={profileRef}>
           <div className="admin-info" onClick={toggleProfile} role="button" tabIndex={0}>
             <div className="admin-label">

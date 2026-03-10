@@ -1,6 +1,5 @@
 import React, { useMemo, useState } from "react";
 
-/* ------------------------- Helpers ------------------------- */
 const toStr = (v) => String(v ?? "").trim();
 
 const toNum = (v) => {
@@ -113,7 +112,7 @@ function StaffDetailsStep({ form, onChange }) {
             <option value="">Select...</option>
             <option value="Single">Single</option>
             <option value="Married">Married</option>
-            <option value="Separated">Separated</option>
+            <option value="Separated">Complicated</option>
             <option value="Widowed">Widowed</option>
           </select>
         </div>
@@ -204,68 +203,6 @@ function ContractDetailsStep({ form, branches, onChange }) {
         <div className="field">
           <label>Regularization Date</label>
           <input className="input" name="regularization_date" type="date" value={form.regularization_date} onChange={onChange} />
-        </div>
-
-        {/* header you asked */}
-        <div className="field" style={{ gridColumn: "1 / -1", marginTop: 8 }}>
-          <div style={{ fontWeight: 900, borderTop: "1px solid var(--border)", paddingTop: 10, opacity: 0.9 }}>
-            Personal Deductions
-          </div>
-        </div>
-
-        <div className="field">
-          <label>CBU</label>
-          <input className="input" name="cbu" value={form.cbu} onChange={onChange} />
-        </div>
-
-        <div className="field">
-          <label>Cashbond</label>
-          <input className="input" name="cashbond" value={form.cashbond} onChange={onChange} />
-        </div>
-
-        <div className="field">
-          <label>Utility</label>
-          <input className="input" name="utility" value={form.utility} onChange={onChange} />
-        </div>
-
-        <div className="field">
-          <label>Transportation</label>
-          <input className="input" name="transportation" value={form.transportation} onChange={onChange} />
-        </div>
-
-        <div className="field">
-          <label>Postage</label>
-          <input className="input" name="postage" value={form.postage} onChange={onChange} />
-        </div>
-
-        <div className="field">
-          <label>Motorcycle Loan</label>
-          <input className="input" name="motorcycle_loan" value={form.motorcycle_loan} onChange={onChange} />
-        </div>
-
-        <div className="field">
-          <label>Additional Target</label>
-          <input className="input" name="additional_target" value={form.additional_target} onChange={onChange} />
-        </div>
-
-        <div className="field">
-          <label>Repairing</label>
-          <input className="input" name="repairing" value={form.repairing} onChange={onChange} />
-        </div>
-
-        <div className="field">
-          <label>Additional Monitoring</label>
-          <input className="input" name="additional_monitoring" value={form.additional_monitoring} onChange={onChange} />
-        </div>
-
-        <div className="field">
-          <label>Motorcycle</label>
-          <input className="input" name="motorcycle" value={form.motorcycle} onChange={onChange} />
-        </div>
-
-        <div className="field">
-          <label>Other Deduction</label>
-          <input className="input" name="other_deduction" value={form.other_deduction} onChange={onChange} />
         </div>
       </div>
     </div>

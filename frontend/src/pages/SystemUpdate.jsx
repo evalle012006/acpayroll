@@ -19,12 +19,7 @@ export default function SystemUpdate() {
 
       <div className="sys-grid">
 
-        {/* SALARY RATES */}
-        <button
-          type="button"
-          className="sys-card"
-          onClick={() => go("/system-update/rates")}
-        >
+        <button type="button" className="sys-card" onClick={() => go("/system-update/rates")}>
           <div className="sys-card-head">
             <div>
               <div className="sys-card-title">Salary & Allowance Rates</div>
@@ -45,7 +40,6 @@ export default function SystemUpdate() {
           </div>
         </button>
 
-        {/* FUTURE MODULE EXAMPLE */}
         <button
           type="button"
           className="sys-card"

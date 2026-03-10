@@ -264,3 +264,118 @@
   justify-content: space-between;
   gap: 12px;
 }
+
+/* ===== modal ===== */
+
+.sys-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 18px;
+  z-index: 9999;
+}
+
+.sys-modal {
+  width: 100%;
+  max-width: 680px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  box-shadow: var(--shadow-soft);
+  overflow: hidden;
+}
+
+.sys-modal-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 18px;
+  border-bottom: 1px solid var(--border);
+}
+
+.sys-modal-title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 900;
+  color: var(--text);
+}
+
+.sys-modal-sub {
+  margin: 6px 0 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.sys-modal-close {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--panel-2, var(--panel));
+  color: var(--text);
+  cursor: pointer;
+  font-weight: 900;
+}
+
+.sys-modal-close:hover {
+  background: var(--hover);
+}
+
+.sys-modal-body {
+  padding: 18px;
+}
+
+.sys-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.sys-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.sys-field.full {
+  grid-column: 1 / -1;
+}
+
+.sys-field label {
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--text-2, var(--text));
+}
+
+.sys-field input {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--panel-2, var(--panel));
+  color: var(--text);
+  outline: none;
+}
+
+.sys-field input:focus {
+  border-color: rgba(79, 70, 229, 0.55);
+}
+
+.sys-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 14px 18px 18px;
+  border-top: 1px solid var(--border);
+}
+
+@media (max-width: 720px) {
+  .sys-form-grid {
+    grid-template-columns: 1fr;
+  }
+}

@@ -324,7 +324,6 @@ export default function Soa() {
                   <input value={form.prev_branch} readOnly placeholder="Auto-filled" />
                 </div>
 
-                {/* Money fields */}
                 <div className="form-group">
                   <label>CBU</label>
                   <input type="number" step="0.01" name="cbu" value={form.cbu} onChange={onChange} />

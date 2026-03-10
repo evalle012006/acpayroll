@@ -13,6 +13,13 @@ const readUser = () => {
 
 const norm = (v) => String(v ?? "").trim().toLowerCase();
 
+const toDateOnly = (v) => {
+  if (!v) return "";
+  const s = String(v);
+  if (s.includes("T")) return s.split("T")[0];
+  return s.slice(0, 10);
+};
+
 const Branches = () => {
   const navigate = useNavigate();
   const user = useMemo(() => readUser(), []);
@@ -30,10 +37,13 @@ const Branches = () => {
   const [saving, setSaving] = useState(false);
 
   const [showModal, setShowModal] = useState(false);
-  const [viewData, setViewData] = useState(null);
 
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
+
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
 
@@ -79,12 +89,12 @@ const Branches = () => {
     setShowModal(true);
   };
 
-  const openEdit = (b) => {
+  const openEdit = (branch) => {
     if (!isAdmin) return;
-    setEditId(b.id);
-    setCode(b.code || "");
-    setName(b.name || "");
-    setArea(b.area || "");
+    setEditId(branch.id);
+    setCode(branch.code || "");
+    setName(branch.name || "");
+    setArea(branch.area || "");
     setShowModal(true);
   };
 
@@ -93,33 +103,49 @@ const Branches = () => {
     resetForm();
   };
 
-  const closeViewModal = () => setViewData(null);
-
   useEffect(() => {
-    const isAnyModalOpen = showModal || !!viewData;
-    if (!isAnyModalOpen) return;
+    if (!showModal) return;
 
-    const onKeyDown = (e) => e.key === "Escape" && (closeFormModal(), closeViewModal());
+    const onKeyDown = (e) => {
+      if (e.key === "Escape") closeFormModal();
+    };
+
     document.addEventListener("keydown", onKeyDown);
     document.body.style.overflow = "hidden";
+
     return () => {
       document.removeEventListener("keydown", onKeyDown);
       document.body.style.overflow = "";
     };
-  }, [showModal, viewData]);
+  }, [showModal]);
 
   const filteredBranches = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return branches;
-    return branches.filter((b) =>
-      String(b.code || "").toLowerCase().includes(q) ||
-      String(b.name || "").toLowerCase().includes(q) ||
-      String(b.area || "").toLowerCase().includes(q) ||
-      String(b.id || "").toLowerCase().includes(q)
-    );
-  }, [branches, search]);
 
-  useEffect(() => setPage(1), [search, pageSize]);
+    return branches.filter((branch) => {
+      const matchesSearch =
+        !q ||
+        String(branch.id || "").toLowerCase().includes(q) ||
+        String(branch.code || "").toLowerCase().includes(q) ||
+        String(branch.name || "").toLowerCase().includes(q) ||
+        String(branch.area || "").toLowerCase().includes(q);
+
+      if (!matchesSearch) return false;
+
+      const branchDate = toDateOnly(branch.updated_at || branch.created_at);
+
+      if (dateFrom && branchDate && branchDate < dateFrom) return false;
+      if (dateTo && branchDate && branchDate > dateTo) return false;
+
+      if ((dateFrom || dateTo) && !branchDate) return false;
+
+      return true;
+    });
+  }, [branches, search, dateFrom, dateTo]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [search, pageSize, dateFrom, dateTo]);
 
   const totalRows = filteredBranches.length;
   const totalPages = Math.max(1, Math.ceil(totalRows / pageSize));
@@ -136,8 +162,8 @@ const Branches = () => {
     return `${start}-${end} of ${totalRows}`;
   }, [page, pageSize, totalRows]);
 
-  const goPrev = () => setPage((p) => Math.max(1, p - 1));
-  const goNext = () => setPage((p) => Math.min(totalPages, p + 1));
+  const goPrev = () => setPage((prev) => Math.max(1, prev - 1));
+  const goNext = () => setPage((prev) => Math.min(totalPages, prev + 1));
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -147,8 +173,11 @@ const Branches = () => {
     try {
       const payload = { code, name, area };
 
-      if (editId) await api.put(`/branches/${editId}`, payload);
-      else await api.post(`/branches`, payload);
+      if (editId) {
+        await api.put(`/branches/${editId}`, payload);
+      } else {
+        await api.post("/branches", payload);
+      }
 
       await fetchBranches();
       closeFormModal();
@@ -203,12 +232,41 @@ const Branches = () => {
               placeholder="Search by ID, code, name, or area..."
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && setSearch(searchInput)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") setSearch(searchInput);
+              }}
             />
+
+            <input
+              className="input"
+              type="date"
+              value={dateFrom}
+              onChange={(e) => setDateFrom(e.target.value)}
+              title="Date From"
+            />
+
+            <input
+              className="input"
+              type="date"
+              value={dateTo}
+              onChange={(e) => setDateTo(e.target.value)}
+              title="Date To"
+            />
+
             <button className="btn btn-outline" onClick={() => setSearch(searchInput)} type="button">
               Search
             </button>
-            <button className="btn btn-ghost" type="button" onClick={() => (setSearch(""), setSearchInput(""))}>
+
+            <button
+              className="btn btn-ghost"
+              type="button"
+              onClick={() => {
+                setSearch("");
+                setSearchInput("");
+                setDateFrom("");
+                setDateTo("");
+              }}
+            >
               Clear
             </button>
           </div>
@@ -241,55 +299,67 @@ const Branches = () => {
                 <thead>
                   <tr>
                     <th style={{ width: 90 }}>ID</th>
-                    <th style={{ width: 160 }}>Branch Code</th>
-                    <th>Branch Name</th>
-                    <th style={{ width: 220 }}>Area</th>
-                    <th style={{ width: 420 }}>Actions</th>
+                    <th style={{ width: 180 }}>Branch Code</th>
+                    <th style={{ width: 260 }}>Branch Name</th>
+                    <th style={{ width: 180 }}>Area</th>
+                    <th style={{ width: 140 }}>Date</th>
+                    <th style={{ width: 380 }}>Actions</th>
                   </tr>
                 </thead>
 
                 <tbody>
                   {pagedBranches.length === 0 ? (
                     <tr>
-                      <td colSpan={5} className="empty">
+                      <td colSpan={6} className="empty">
                         No branches found.
                       </td>
                     </tr>
                   ) : (
-                    pagedBranches.map((b) => (
-                      <tr key={b.id}>
-                        <td className="mono">{b.id}</td>
-                        <td className="mono">{b.code}</td>
-                        <td className="strong">{b.name}</td>
-                        <td>{b.area}</td>
-
+                    pagedBranches.map((branch) => (
+                      <tr key={branch.id}>
+                        <td className="mono">{branch.id}</td>
+                        <td className="mono">{branch.code}</td>
+                        <td className="strong">{branch.name}</td>
+                        <td>{branch.area}</td>
+                        <td className="mono">{toDateOnly(branch.updated_at || branch.created_at) || "-"}</td>
                         <td>
                           <div className="actions">
-                            <button className="action-btn btn-payroll" onClick={() => navigate(`/payroll/${Number(b.id)}`)} type="button">
-                              Payroll
-                            </button>
+                            <div className="action-group">
+                              <button
+                                className="action-btn btn-payroll"
+                                onClick={() => navigate(`/payroll/${Number(branch.id)}`)}
+                                type="button"
+                              >
+                                Payroll
+                              </button>
 
-                            <button className="action-btn btn-transpo" onClick={() => navigate(`/transportation/${Number(b.id)}`)} type="button">
-                              Transpo
-                            </button>
+                              <button
+                                className="action-btn btn-transpo"
+                                onClick={() => navigate(`/transportation/${Number(branch.id)}`)}
+                                type="button"
+                              >
+                                Transpo
+                              </button>
 
-                            <button className="action-btn btn-bonus" onClick={() => navigate(`/bonus/${Number(b.id)}`)} type="button">
-                              Bonus
-                            </button>
-
-                            <button className="action-btn btn-view" onClick={() => setViewData(b)} type="button">
-                              View
-                            </button>
+                              <button
+                                className="action-btn btn-bonus"
+                                onClick={() => navigate(`/bonus/${Number(branch.id)}`)}
+                                type="button"
+                              >
+                                Bonus
+                              </button>
+                            </div>
 
                             {isAdmin && (
-                              <>
-                                <button className="action-btn btn-edit" onClick={() => openEdit(b)} type="button">
+                              <div className="action-group">
+                                <button className="action-btn btn-edit" onClick={() => openEdit(branch)} type="button">
                                   Edit
                                 </button>
-                                <button className="action-btn btn-delete" onClick={() => deleteBranch(b.id)} type="button">
+
+                                <button className="action-btn btn-delete" onClick={() => deleteBranch(branch.id)} type="button">
                                   Delete
                                 </button>
-                              </>
+                              </div>
                             )}
                           </div>
                         </td>
@@ -307,6 +377,7 @@ const Branches = () => {
                 <button className="btn btn-outline btn-sm" onClick={() => setPage(1)} disabled={page === 1} type="button">
                   ⏮ First
                 </button>
+
                 <button className="btn btn-outline btn-sm" onClick={goPrev} disabled={page === 1} type="button">
                   ◀ Prev
                 </button>
@@ -318,12 +389,8 @@ const Branches = () => {
                 <button className="btn btn-outline btn-sm" onClick={goNext} disabled={page === totalPages} type="button">
                   Next ▶
                 </button>
-                <button
-                  className="btn btn-outline btn-sm"
-                  onClick={() => setPage(totalPages)}
-                  disabled={page === totalPages}
-                  type="button"
-                >
+
+                <button className="btn btn-outline btn-sm" onClick={() => setPage(totalPages)} disabled={page === totalPages} type="button">
                   Last ⏭
                 </button>
               </div>
@@ -331,44 +398,6 @@ const Branches = () => {
           </>
         )}
       </div>
-
-      {viewData && (
-        <div className="modal-overlay" onMouseDown={closeViewModal}>
-          <div className="modal" onMouseDown={(e) => e.stopPropagation()}>
-            <div className="modal-head">
-              <h3>Branch Details</h3>
-              <button className="icon-btn" onClick={closeViewModal} type="button">
-                ✕
-              </button>
-            </div>
-
-            <div className="modal-body">
-              <div className="kv">
-                <span>Branch ID</span>
-                <strong className="mono">{viewData.id}</strong>
-              </div>
-              <div className="kv">
-                <span>Code</span>
-                <strong className="mono">{viewData.code}</strong>
-              </div>
-              <div className="kv">
-                <span>Name</span>
-                <strong>{viewData.name}</strong>
-              </div>
-              <div className="kv">
-                <span>Area</span>
-                <strong>{viewData.area}</strong>
-              </div>
-            </div>
-
-            <div className="modal-foot">
-              <button className="btn btn-outline" onClick={closeViewModal} type="button">
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {isAdmin && showModal && (
         <div className="modal-overlay" onMouseDown={closeFormModal}>

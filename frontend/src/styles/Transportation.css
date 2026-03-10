@@ -297,7 +297,7 @@
 
 /* zebra + hover */
 .transpo-table tbody tr:nth-child(even) td {
-  background: color-mix(in srgb, var(--panel) 88%, var(--panel-2));
+  background: color-mix(in srgb, var(--panel) 90%, var(--panel-2));
 }
 
 .transpo-table tbody tr:hover td {
@@ -391,4 +391,156 @@
     flex-direction: column;
     align-items: stretch;
   }
+}
+
+/* ===== Action (⋯) menu ===== */
+.transpo-dots-btn{
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text);
+  width: 38px;
+  height: 32px;
+  border-radius: 10px;
+  font-weight: 900;
+  cursor: pointer;
+}
+.transpo-dots-btn:hover{
+  background: color-mix(in srgb, var(--panel-2) 90%, transparent);
+}
+
+.transpo-action-menu{
+  position: absolute;
+  right: 6px;
+  top: 38px;
+  min-width: 170px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: var(--shadow-soft);
+  overflow: hidden;
+  z-index: 10;
+}
+
+.transpo-action-item{
+  width: 100%;
+  text-align: left;
+  padding: 10px 12px;
+  background: transparent;
+  border: none;
+  color: var(--text);
+  font-weight: 800;
+  cursor: pointer;
+}
+.transpo-action-item:hover{
+  background: color-mix(in srgb, var(--panel-2) 70%, transparent);
+}
+.transpo-action-item.danger{
+  color: #ef4444;
+}
+
+/* ===== Modal ===== */
+.transpo-modal-overlay{
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.6);
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 18px;
+}
+.transpo-modal{
+  width: min(900px, 100%);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  box-shadow: var(--shadow-soft);
+  overflow: hidden;
+}
+.transpo-modal-head{
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.transpo-modal-title{
+  font-size: 14px;
+  font-weight: 1000;
+  color: var(--text);
+}
+.transpo-modal-sub{
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 4px;
+}
+.transpo-modal-x{
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 10px;
+  width: 36px;
+  height: 32px;
+  cursor: pointer;
+  font-weight: 900;
+}
+.transpo-modal-body{
+  padding: 14px 16px;
+}
+.transpo-modal-row{
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.transpo-modal-row label{
+  font-size: 12px;
+  font-weight: 900;
+  color: var(--muted);
+}
+.transpo-modal-row input{
+  background: var(--panel-2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 10px 12px;
+  font-weight: 800;
+}
+
+.transpo-modal-grid{
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+@media (max-width: 900px){
+  .transpo-modal-grid{ grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 640px){
+  .transpo-modal-grid{ grid-template-columns: 1fr; }
+}
+
+.transpo-modal-field label{
+  display: block;
+  font-size: 11px;
+  font-weight: 900;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+.transpo-modal-field input{
+  width: 100%;
+  background: var(--panel-2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 10px 12px;
+  font-weight: 800;
+}
+
+.transpo-modal-actions{
+  padding: 14px 16px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
 }

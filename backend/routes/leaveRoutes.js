@@ -3,7 +3,6 @@ const router = express.Router();
 const pool = require("../db");
 const { requireAuth, requireRole } = require("../middlewares/authMiddleware");
 
-// helpers
 const toInt = (v) => {
   const n = Number(v);
   return Number.isFinite(n) ? Math.trunc(n) : null;
@@ -21,17 +20,19 @@ const isAdmin = (req) => roleLower(req) === "admin";
 const isBranchManager = (req) => roleLower(req) === "branch manager";
 const getUserBranchId = (req) => req.user?.branch_id ?? null;
 
-// your sample codes look like: AL20260225, SL20260225
 const makeTxnCode = (leaveType) => {
   const d = new Date();
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, "0");
   const day = String(d.getDate()).padStart(2, "0");
 
-  const prefix =
-    String(leaveType || "").toLowerCase().includes("sick") ? "SL" :
-    String(leaveType || "").toLowerCase().includes("annual") ? "AL" :
-    "LV";
+  const lt = String(leaveType || "").toLowerCase();
+
+  const prefix = lt.includes("sick")
+    ? "SL"
+    : lt.includes("annual")
+    ? "AL"
+    : "LV";
 
   return `${prefix}${y}${m}${day}`;
 };
@@ -72,28 +73,25 @@ router.get("/leave-requests", requireAuth, async (req, res) => {
   }
 });
 
-router.get("/leave-requests/staff/:id", requireAuth, async (req, res) => {
-  try {
-    const staffId = toInt(req.params.id);
-    if (!staffId) return res.status(400).json({ message: "Invalid staff id" });
+router.get(
+  "/leave-requests/staff/:staffId",
+  requireAuth,
+  requireRole(["admin", "branch manager"]),
+  async (req, res) => {
+    try {
+      const staffId = toInt(req.params.staffId);
+      if (!staffId) return res.status(400).json({ message: "Invalid staff id" });
 
-    if (isAdmin(req)) {
-      const r = await pool.query(
-        `SELECT id, staff_name, leave_type, start_date, end_date, status, transaction_code, entry_date, employee_id
-         FROM public.leave_requests
-         WHERE employee_id = $1
-         ORDER BY entry_date DESC NULLS LAST, id DESC`,
-        [staffId]
-      );
-      return res.json(r.rows);
-    }
+      if (isBranchManager(req)) {
+        const bid = getUserBranchId(req);
+        if (!bid) return res.status(403).json({ message: "Access denied" });
 
-    if (isBranchManager(req)) {
-      const bid = getUserBranchId(req);
-      if (!bid) return res.json([]);
-
-      const chk = await pool.query(`SELECT id FROM public.staff WHERE id=$1 AND branch_id=$2`, [staffId, bid]);
-      if (chk.rowCount === 0) return res.status(403).json({ message: "Access denied" });
+        const chk = await pool.query(
+          `SELECT id FROM public.staff WHERE id=$1 AND branch_id=$2`,
+          [staffId, bid]
+        );
+        if (chk.rowCount === 0) return res.status(403).json({ message: "Access denied" });
+      }
 
       const r = await pool.query(
         `SELECT id, staff_name, leave_type, start_date, end_date, status, transaction_code, entry_date, employee_id
@@ -102,15 +100,14 @@ router.get("/leave-requests/staff/:id", requireAuth, async (req, res) => {
          ORDER BY entry_date DESC NULLS LAST, id DESC`,
         [staffId]
       );
-      return res.json(r.rows);
-    }
 
-    return res.status(403).json({ message: "Access denied" });
-  } catch (e) {
-    console.error("GET /api/leave-requests/staff/:id ERROR:", e.message);
-    return res.status(500).json({ message: "Server error" });
+      return res.json(r.rows);
+    } catch (e) {
+      console.error("GET /api/leave-requests/staff/:staffId ERROR:", e.message);
+      return res.status(500).json({ message: "Server error" });
+    }
   }
-});
+);
 
 router.post(
   "/leave-requests",
@@ -129,11 +126,15 @@ router.post(
 
       if (!employee_id) return res.status(400).json({ message: "employee_id is required" });
       if (!leave_type) return res.status(400).json({ message: "leave_type is required" });
-      if (!start_date || !end_date) return res.status(400).json({ message: "start_date and end_date are required" });
-      if (String(start_date) > String(end_date)) return res.status(400).json({ message: "Start date must be on or before end date" });
+      if (!start_date || !end_date)
+        return res.status(400).json({ message: "start_date and end_date are required" });
+      if (String(start_date) > String(end_date))
+        return res.status(400).json({ message: "Start date must be on or before end date" });
 
-      // get staff
-      const s = await client.query(`SELECT id, fullname, branch_id FROM public.staff WHERE id=$1`, [employee_id]);
+      const s = await client.query(
+        `SELECT id, fullname, branch_id FROM public.staff WHERE id=$1`,
+        [employee_id]
+      );
       if (s.rowCount === 0) {
         await client.query("ROLLBACK");
         return res.status(404).json({ message: "Staff not found" });
@@ -141,7 +142,6 @@ router.post(
 
       const staffRow = s.rows[0];
 
-      // branch manager guard
       if (isBranchManager(req)) {
         const bid = getUserBranchId(req);
         if (!bid || Number(staffRow.branch_id) !== Number(bid)) {
@@ -151,7 +151,6 @@ router.post(
       }
 
       const txnCode = makeTxnCode(leave_type);
-
       const id = `LV-${Date.now()}-${Math.random().toString(16).slice(2, 6).toUpperCase()}`;
 
       const ins = await client.query(
@@ -162,15 +161,7 @@ router.post(
           ($1, $2, $3, $4::date, $5::date, 'Pending', $6, CURRENT_DATE, $7)
         RETURNING id, staff_name, leave_type, start_date, end_date, status, transaction_code, entry_date, employee_id
         `,
-        [
-          id,
-          String(staffRow.fullname || ""),
-          leave_type,
-          start_date,
-          end_date,
-          txnCode,
-          employee_id,
-        ]
+        [id, String(staffRow.fullname || ""), leave_type, start_date, end_date, txnCode, employee_id]
       );
 
       await client.query("COMMIT");

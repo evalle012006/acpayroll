@@ -39,7 +39,6 @@ export default function Login() {
           throw new Error("Login response missing token/user.");
         }
 
-        // clear old session first
         localStorage.removeItem("token");
         localStorage.removeItem("user");
 

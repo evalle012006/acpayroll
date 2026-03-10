@@ -29,8 +29,11 @@ import Bonus from "./pages/Bonus";
 import Settings from "./pages/Settings";
 import LeaveTransactions from "./pages/LeaveTransactions";
 import ExitStaff from "./pages/ExitStaff";
+import ExitStaffOrders from "./pages/ExitStaffOrders";
 import Soa from "./pages/Soa";
 import Deployment from "./pages/Deployment";
+
+import { CompRatesProvider } from "./context/CompRatesContext";
 
 const readUser = () => {
   try {
@@ -56,23 +59,47 @@ const ProtectedRoute = ({ allowedRoles, children }) => {
     const u = readUser();
     const uRole = roleLower(u);
     const allowed = allowedRoles.map((r) => String(r).trim().toLowerCase());
-    if (!allowed.includes(uRole)) return <Navigate to="/dashboard" replace />;
+
+    if (!allowed.includes(uRole)) {
+      if (uRole === "branch manager") return <Navigate to="/staff-information" replace />;
+      return <Navigate to="/dashboard" replace />;
+    }
   }
 
   return children;
 };
 
-function AppShell() {
+function ProtectedLayout({ children }) {
   const [collapsed, setCollapsed] = useState(false);
+
+  return (
+    <CompRatesProvider>
+      <div className={`layout ${collapsed ? "collapsed" : ""}`}>
+        <Sidebar collapsed={collapsed} />
+
+        <div className="main-content">
+          <Header toggleSidebar={() => setCollapsed((p) => !p)} />
+          <div className="page-content">{children}</div>
+        </div>
+      </div>
+    </CompRatesProvider>
+  );
+}
+
+function AppShell() {
   const [authTick, setAuthTick] = useState(0);
   const navigate = useNavigate();
 
-  const isLoggedIn = useMemo(() => hasAuth(), [authTick]);
+  const user = useMemo(() => readUser(), [authTick]);
+  const uRole = useMemo(() => roleLower(user), [user]);
 
   useEffect(() => {
     const onAuthChanged = () => {
       setAuthTick((t) => t + 1);
-      if (!hasAuth()) navigate("/login", { replace: true });
+
+      if (!hasAuth()) {
+        navigate("/login", { replace: true });
+      }
     };
 
     window.addEventListener("auth-changed", onAuthChanged);
@@ -84,48 +111,46 @@ function AppShell() {
     };
   }, [navigate]);
 
+  const homeRedirect = () => {
+    if (!hasAuth()) return "/login";
+    if (uRole === "branch manager") return "/staff-information";
+    return "/dashboard";
+  };
+
   return (
-    <div className={`layout ${collapsed ? "collapsed" : ""}`}>
-      {isLoggedIn && <Sidebar collapsed={collapsed} />}
-
-      <div className="main-content">
-        {isLoggedIn && <Header toggleSidebar={() => setCollapsed((p) => !p)} />}
-
-        <div className="page-content">
-          <Routes>
-            <Route path="/" element={<Navigate to={hasAuth() ? "/dashboard" : "/login"} replace />} />
-            <Route path="/login" element={hasAuth() ? <Navigate to="/dashboard" replace /> : <Login />} />
-            <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
-            <Route path="/staff" element={<ProtectedRoute><Staff /></ProtectedRoute>} />
-            <Route path="/staff-information" element={<ProtectedRoute allowedRoles={["admin", "branch manager"]}><StaffInformation /></ProtectedRoute>}/>
-            <Route path="/departments" element={<ProtectedRoute allowedRoles={["admin", "branch manager"]}><Departments /></ProtectedRoute>}/>
-            <Route path="/salary" element={<ProtectedRoute><Salary /></ProtectedRoute>} />
-            <Route path="/bonus/:branchId" element={<ProtectedRoute allowedRoles={["admin", "branch manager"]}><Bonus /></ProtectedRoute>}/>
-            <Route path="/schedule-balances" element={<ProtectedRoute><ScheduleBalances /></ProtectedRoute>} />
-            <Route path="/approval" element={<ProtectedRoute><Approval /></ProtectedRoute>} />
-            <Route path="/branches" element={<ProtectedRoute><Branches /></ProtectedRoute>} />
-            <Route path="/system-update" element={<ProtectedRoute allowedRoles={["admin"]}><SystemUpdate /></ProtectedRoute>}/>
-            <Route path="/system-update/rates" element={<ProtectedRoute allowedRoles={["admin"]}><SystemRates /></ProtectedRoute>}/>
-            <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
-            <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
-            <Route path="/transactions/promotion" element={<ProtectedRoute allowedRoles={["admin", "branch manager"]}><PromotionOrder /></ProtectedRoute>} />
-            <Route path="/transportation/:id" element={<ProtectedRoute><Transportation /></ProtectedRoute>} />
-            <Route path="/payroll" element={<ProtectedRoute><Payroll /></ProtectedRoute>} />
-            <Route path="/payroll/:branchId" element={<ProtectedRoute><Payroll /></ProtectedRoute>} />
-            <Route path="/transactions" element={<ProtectedRoute allowedRoles={["admin", "branch manager"]}><Transactions /></ProtectedRoute>}/>
-            <Route path="/transactions/transfer" element={<ProtectedRoute allowedRoles={["admin", "branch manager"]}><TransferStaffOrder /></ProtectedRoute>}/>
-            <Route path="/transactions/demotion" element={<ProtectedRoute allowedRoles={["admin", "branch manager"]}><DemotionOrder /></ProtectedRoute>}/>
-            <Route path="/transactions/suspension" element={<ProtectedRoute allowedRoles={["admin", "branch manager"]}><SuspensionOrder /></ProtectedRoute>}/>
-            <Route path="/transactions/exit" element={<ProtectedRoute allowedRoles={["admin", "branch manager"]}><ExitStaff /></ProtectedRoute>}/>
-            <Route path="/transactions/leave" element={<ProtectedRoute allowedRoles={["admin", "branch manager"]}><LeaveTransactions /></ProtectedRoute>}/>
-            <Route path="/transactions/soa" element={<ProtectedRoute allowedRoles={["admin", "branch manager"]}><Soa /></ProtectedRoute>}/>
-            <Route path="/users" element={<ProtectedRoute allowedRoles={["admin"]}><Users /></ProtectedRoute>}/>
-            <Route path="/transactions/deployment" element={<ProtectedRoute allowedRoles={["admin", "branch manager"]}><Deployment /></ProtectedRoute>}/>
-            <Route path="*" element={<Navigate to={hasAuth() ? "/dashboard" : "/login"} replace />} />
-          </Routes>
-        </div>
-      </div>
-    </div>
+    <Routes>
+      <Route path="/" element={<Navigate to={homeRedirect()} replace />} />
+      <Route path="/login" element={hasAuth() ? <Navigate to={homeRedirect()} replace /> : <Login />} />
+      <Route path="/staff-information" element={<ProtectedRoute allowedRoles={["admin", "branch manager"]}><ProtectedLayout><StaffInformation /></ProtectedLayout></ProtectedRoute>}/>
+      <Route path="/salary" element={<ProtectedRoute allowedRoles={["admin", "branch manager"]}><ProtectedLayout><Salary /></ProtectedLayout></ProtectedRoute>}/>
+      <Route path="/payroll/:branchId" element={<ProtectedRoute allowedRoles={["admin", "branch manager"]}><ProtectedLayout><Payroll /></ProtectedLayout></ProtectedRoute>}/>
+      <Route path="/profile" element={<ProtectedRoute allowedRoles={["admin", "branch manager"]}><ProtectedLayout><Profile /></ProtectedLayout></ProtectedRoute>}/>
+      <Route path="/settings" element={<ProtectedRoute allowedRoles={["admin", "branch manager"]}><ProtectedLayout><Settings /></ProtectedLayout></ProtectedRoute>}/>
+      <Route path="/dashboard" element={<ProtectedRoute allowedRoles={["admin"]}><ProtectedLayout><Dashboard /></ProtectedLayout></ProtectedRoute>}/>
+      <Route path="/payroll" element={<ProtectedRoute allowedRoles={["admin"]}><ProtectedLayout><Payroll /></ProtectedLayout></ProtectedRoute>}/>
+      <Route path="/staff" element={<ProtectedRoute allowedRoles={["admin"]}><ProtectedLayout><Staff /></ProtectedLayout></ProtectedRoute>}/>
+      <Route path="/transportation/:id" element={<ProtectedRoute allowedRoles={["admin"]}><ProtectedLayout><Transportation /></ProtectedLayout></ProtectedRoute>}/>
+      <Route path="/schedule-balances" element={<ProtectedRoute allowedRoles={["admin"]}><ProtectedLayout><ScheduleBalances /></ProtectedLayout></ProtectedRoute>}/>
+      <Route path="/approval" element={<ProtectedRoute allowedRoles={["admin"]}><ProtectedLayout><Approval /></ProtectedLayout></ProtectedRoute>}/>
+      <Route path="/branches" element={<ProtectedRoute allowedRoles={["admin"]}><ProtectedLayout><Branches /></ProtectedLayout></ProtectedRoute>}/>
+      <Route path="/departments" element={<ProtectedRoute allowedRoles={["admin"]}><ProtectedLayout><Departments /></ProtectedLayout></ProtectedRoute>}/>
+      <Route path="/bonus/:branchId" element={<ProtectedRoute allowedRoles={["admin"]}><ProtectedLayout><Bonus /></ProtectedLayout></ProtectedRoute>}/>
+      <Route path="/system-update" element={<ProtectedRoute allowedRoles={["admin"]}><ProtectedLayout><SystemUpdate /></ProtectedLayout></ProtectedRoute>}/>
+      <Route path="/system-update/rates" element={<ProtectedRoute allowedRoles={["admin"]}><ProtectedLayout><SystemRates /></ProtectedLayout></ProtectedRoute>}/>
+      <Route path="/users"element={<ProtectedRoute allowedRoles={["admin"]}><ProtectedLayout><Users /></ProtectedLayout></ProtectedRoute>}/>
+      <Route path="/transactions" element={<ProtectedRoute allowedRoles={["admin"]}><ProtectedLayout><Transactions /></ProtectedLayout></ProtectedRoute>}/>
+      <Route path="/transactions/promotion" element={<ProtectedRoute allowedRoles={["admin"]}><ProtectedLayout><PromotionOrder /></ProtectedLayout></ProtectedRoute>}/>
+      <Route path="/transactions/transfer" element={<ProtectedRoute allowedRoles={["admin"]}><ProtectedLayout><TransferStaffOrder /></ProtectedLayout></ProtectedRoute>}/>
+      <Route path="/transactions/demotion" element={<ProtectedRoute allowedRoles={["admin"]}><ProtectedLayout><DemotionOrder /></ProtectedLayout></ProtectedRoute>}/>
+      <Route path="/transactions/suspension" element={<ProtectedRoute allowedRoles={["admin"]}><ProtectedLayout><SuspensionOrder /></ProtectedLayout></ProtectedRoute>}/>
+      <Route path="/transactions/exit" element={<ProtectedRoute allowedRoles={["admin"]}><ProtectedLayout><ExitStaffOrders /></ProtectedLayout></ProtectedRoute>}/>
+      <Route path="/transactions/leave" element={<ProtectedRoute allowedRoles={["admin"]}><ProtectedLayout><LeaveTransactions /></ProtectedLayout></ProtectedRoute>}/>
+      <Route path="/transactions/soa" element={<ProtectedRoute allowedRoles={["admin"]}><ProtectedLayout><Soa /></ProtectedLayout></ProtectedRoute>}/>
+      <Route path="/transactions/deployment" element={<ProtectedRoute allowedRoles={["admin"]}><ProtectedLayout><Deployment /></ProtectedLayout></ProtectedRoute>}/>
+      <Route path="/exit-staff" element={<ProtectedRoute allowedRoles={["admin"]}><ProtectedLayout><ExitStaff /></ProtectedLayout></ProtectedRoute>}/>
+      <Route path="/exit-staff-orders" element={<ProtectedRoute allowedRoles={["admin"]}><ProtectedLayout><ExitStaffOrders /></ProtectedLayout></ProtectedRoute>}/>
+      <Route path="*" element={<Navigate to={homeRedirect()} replace />} />
+    </Routes>
   );
 }
 

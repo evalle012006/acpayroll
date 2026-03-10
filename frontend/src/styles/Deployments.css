@@ -349,3 +349,56 @@
   background: #0f1f3d;
   border-color: rgba(255, 255, 255, 0.1);
 }
+
+/* Editable table rows (contentEditable) */
+.editable-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.editable-table tr {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.editable-table td {
+  padding: 10px 12px;
+  vertical-align: middle;
+  font-size: 13px;
+}
+
+.editable-table td:first-child {
+  width: 45%;
+  opacity: 0.85;
+  font-weight: 600;
+}
+
+.editable-table td:last-child {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.editable-section {
+  padding-top: 18px;
+  padding-bottom: 8px;
+  font-size: 16px;
+  font-weight: 900;
+  opacity: 0.95;
+}
+
+.editable-value {
+  display: inline-block;
+  min-width: 160px;
+  padding: 4px 6px;
+  border-radius: 8px;
+  outline: none;
+  cursor: text;
+}
+
+.editable-value:focus {
+  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.35);
+}
+
+.editable-placeholder:empty:before {
+  content: attr(data-placeholder);
+  opacity: 0.45;
+}

@@ -3,7 +3,6 @@ const router = express.Router();
 const pool = require("../db");
 const { requireAuth, requireRole } = require("../middlewares/authMiddleware");
 
-/* ---------------- Helpers ---------------- */
 const toNum = (v) => {
   const n = Number(v ?? 0);
   return Number.isFinite(n) ? n : 0;
@@ -16,8 +15,6 @@ const toInt = (v) => {
 
 const toStr = (v) => String(v ?? "").trim();
 
-/* ---------------- GET all settlements ---------------- */
-// GET /api/settlements
 router.get("/settlements", requireAuth, async (req, res) => {
   try {
     const r = await pool.query(
@@ -32,8 +29,6 @@ router.get("/settlements", requireAuth, async (req, res) => {
   }
 });
 
-/* ---------------- CREATE settlement ---------------- */
-// POST /api/settlements
 router.post(
   "/settlements",
   requireAuth,
@@ -49,7 +44,6 @@ router.post(
       if (!employee_id) return res.status(400).json({ message: "employee_id is required" });
       if (!employee_name) return res.status(400).json({ message: "employee_name is required" });
 
-      // Snapshot name parts from staff table (matches your settlements columns)
       const s = await pool.query(
         `SELECT first_name, last_name, middle_name
          FROM public.staff
@@ -61,14 +55,12 @@ router.post(
       const last_name = s.rows[0]?.last_name ?? null;
       const middle_name = s.rows[0]?.middle_name ?? null;
 
-      // Money fields (force numbers)
       const cbu = toNum(req.body?.cbu);
       const cashbond = toNum(req.body?.cashbond);
       const utility = toNum(req.body?.utility);
       const thirteenth_month_pay = toNum(req.body?.thirteenth_month_pay);
       const last_pay = toNum(req.body?.last_pay);
 
-      // Optional
       const separation_pay =
         req.body?.separation_pay === "" || req.body?.separation_pay == null
           ? null
@@ -145,8 +137,6 @@ router.post(
   }
 );
 
-/* ---------------- DELETE settlement ---------------- */
-// DELETE /api/settlements/:id
 router.delete(
   "/settlements/:id",
   requireAuth,

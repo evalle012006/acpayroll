@@ -1,5 +1,5 @@
 const bcrypt = require("bcryptjs");
-const pool = require("./db"); // <-- db.js is in the same folder
+const pool = require("./db");
 
 (async () => {
   try {
@@ -8,7 +8,6 @@ const pool = require("./db"); // <-- db.js is in the same folder
     for (const u of rows) {
       const plain = String(u.password || "");
 
-      // skip if already bcrypt hash
       if (plain.startsWith("$2a$") || plain.startsWith("$2b$") || plain.startsWith("$2y$")) {
         console.log(`Skipping (already hashed): ${u.username}`);
         continue;
@@ -21,10 +20,10 @@ const pool = require("./db"); // <-- db.js is in the same folder
       console.log(`Hashed: ${u.username}`);
     }
 
-    console.log("✅ Done hashing all users.");
+    console.log("Done hashing all users.");
     process.exit(0);
   } catch (err) {
-    console.error("❌ Error hashing users:", err.message);
+    console.error("Error hashing users:", err.message);
     process.exit(1);
   }
 })();

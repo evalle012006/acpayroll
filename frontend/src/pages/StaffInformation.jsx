@@ -2,10 +2,31 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import "../styles/StaffInformation.css";
 import api from "../api/axiosClient";
 
-/* ------------------------- Helpers ------------------------- */
+const safeJsonArray = (v) => {
+  try {
+    const parsed = typeof v === "string" ? JSON.parse(v) : v;
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+};
+
+const jsonText = (v) => {
+  try {
+    return JSON.stringify(Array.isArray(v) ? v : [], null, 2);
+  } catch {
+    return "[]";
+  }
+};
+
 const toStr = (v) => String(v ?? "").trim();
 const norm = (v) => toStr(v).toLowerCase();
-const fmtDate = (d) => (d ? String(d).split("T")[0] : "-");
+
+const fmtDate = (d) => {
+  if (!d) return "-";
+  const s = String(d);
+  return s.includes("T") ? s.split("T")[0] : s.slice(0, 10);
+};
 
 const toNum = (v) => {
   const s = String(v ?? "").trim();
@@ -13,6 +34,12 @@ const toNum = (v) => {
   const n = Number(s);
   return Number.isFinite(n) ? n : 0;
 };
+
+const money = (v) =>
+  toNum(v).toLocaleString(undefined, {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  });
 
 const getBase = () => {
   const base = api.defaults.baseURL || "";
@@ -24,9 +51,7 @@ const displayName = (s) => {
   const fn = toStr(s?.first_name);
   const mn = toStr(s?.middle_name);
   if (ln || fn || mn) {
-    return `${ln}${ln && fn ? ", " : ""}${fn}${mn ? ` ${mn}` : ""}`
-      .replace(/\s+/g, " ")
-      .trim();
+    return `${ln}${ln && fn ? ", " : ""}${fn}${mn ? ` ${mn}` : ""}`.replace(/\s+/g, " ").trim();
   }
   return toStr(s?.fullname) || "-";
 };
@@ -35,38 +60,37 @@ const displayFormName = (form) => {
   const ln = toStr(form?.last_name);
   const fn = toStr(form?.first_name);
   const mn = toStr(form?.middle_name);
-  const built = `${ln}${ln && fn ? ", " : ""}${fn}${mn ? ` ${mn}` : ""}`
-    .replace(/\s+/g, " ")
-    .trim();
+  const built = `${ln}${ln && fn ? ", " : ""}${fn}${mn ? ` ${mn}` : ""}`.replace(/\s+/g, " ").trim();
   return built || "New staff";
 };
 
-/* ------------------------- Step Tabs (Add/Edit) ------------------------- */
-function StepTabs({ step, onSelectStep, canGoContract }) {
+const loanDisplayDate = (l) =>
+  l?.entry_date || l?.approved_at || l?.disbursement_date || l?.created_at || l?.updated_at || null;
+
+function StepTabs({ step, onSelectStep, canGoContract, canGoBalances }) {
   return (
     <div className="step-tabs">
-      <button
-        type="button"
-        className={`step-tab ${step === 1 ? "active" : ""}`}
-        onClick={() => onSelectStep(1)}
-      >
+      <button type="button" className={`step-tab ${step === 1 ? "active" : ""}`} onClick={() => onSelectStep(1)}>
         Staff Details
       </button>
 
-      <button
-        type="button"
-        className={`step-tab ${step === 2 ? "active" : ""}`}
-        onClick={() => onSelectStep(2)}
+      <button type="button" className={`step-tab ${step === 2 ? "active" : ""}`} onClick={() => onSelectStep(2)}
         disabled={!canGoContract}
         title={!canGoContract ? "Complete Staff Details first" : ""}
       >
         Contract Details
       </button>
+
+      <button type="button" className={`step-tab ${step === 3 ? "active" : ""}`} onClick={() => onSelectStep(3)}
+        disabled={!canGoBalances}
+        title={!canGoBalances ? "Complete Contract Details first" : ""}
+      >
+        Personal Balances
+      </button>
     </div>
   );
 }
 
-/* ------------------------- Step 1: Staff Details (Personal) ------------------------- */
 function StaffDetailsStep({ form, onChange }) {
   return (
     <div className="modal-body staff-add-grid">
@@ -154,12 +178,12 @@ function StaffDetailsStep({ form, onChange }) {
 
         <div className="field">
           <label>Height</label>
-          <input className="input" name="height" value={form.height} onChange={onChange} placeholder="e.g., 170" />
+          <input className="input" name="height" value={form.height} onChange={onChange} />
         </div>
 
         <div className="field">
           <label>Weight</label>
-          <input className="input" name="weight" value={form.weight} onChange={onChange} placeholder="e.g., 65" />
+          <input className="input" name="weight" value={form.weight} onChange={onChange} />
         </div>
 
         <div className="field">
@@ -169,14 +193,149 @@ function StaffDetailsStep({ form, onChange }) {
 
         <div className="field">
           <label>Blood Type</label>
-          <input className="input" name="blood_type" value={form.blood_type} onChange={onChange} placeholder="e.g., O+" />
+          <input className="input" name="blood_type" value={form.blood_type} onChange={onChange} />
+        </div>
+
+        <div className="field" style={{ marginTop: 14 }}>
+          <h3 style={{ margin: 0 }}>Spouse & Family</h3>
+        </div>
+
+        <div className="field">
+          <label>Spouse Fullname</label>
+          <input className="input" name="spouse_fullname" value={form.spouse_fullname} onChange={onChange} />
+        </div>
+
+        <div className="field">
+          <label>Spouse Address</label>
+          <input className="input" name="spouse_address" value={form.spouse_address} onChange={onChange} />
+        </div>
+
+        <div className="field">
+          <label>Spouse Occupation</label>
+          <input className="input" name="spouse_occupation" value={form.spouse_occupation} onChange={onChange} />
+        </div>
+
+        <div className="field">
+          <label>Spouse Employer</label>
+          <input className="input" name="spouse_employer" value={form.spouse_employer} onChange={onChange} />
+        </div>
+
+        <div className="field">
+          <label>Children (JSON array)</label>
+          <textarea className="input" name="children" value={form.children} onChange={onChange} rows={5} />
+        </div>
+
+        <div className="field" style={{ marginTop: 14 }}>
+          <h3 style={{ margin: 0 }}>Parents / Guardian</h3>
+        </div>
+
+        <div className="field">
+          <label>Father Fullname</label>
+          <input className="input" name="father_fullname" value={form.father_fullname} onChange={onChange} />
+        </div>
+        <div className="field">
+          <label>Father Address</label>
+          <input className="input" name="father_address" value={form.father_address} onChange={onChange} />
+        </div>
+        <div className="field">
+          <label>Father Occupation</label>
+          <input className="input" name="father_occupation" value={form.father_occupation} onChange={onChange} />
+        </div>
+        <div className="field">
+          <label>Father Employer</label>
+          <input className="input" name="father_employer" value={form.father_employer} onChange={onChange} />
+        </div>
+        <div className="field">
+          <label>Father Contact</label>
+          <input className="input" name="father_contact" value={form.father_contact} onChange={onChange} />
+        </div>
+
+        <div className="field">
+          <label>Mother Fullname</label>
+          <input className="input" name="mother_fullname" value={form.mother_fullname} onChange={onChange} />
+        </div>
+        <div className="field">
+          <label>Mother Address</label>
+          <input className="input" name="mother_address" value={form.mother_address} onChange={onChange} />
+        </div>
+        <div className="field">
+          <label>Mother Occupation</label>
+          <input className="input" name="mother_occupation" value={form.mother_occupation} onChange={onChange} />
+        </div>
+        <div className="field">
+          <label>Mother Employer</label>
+          <input className="input" name="mother_employer" value={form.mother_employer} onChange={onChange} />
+        </div>
+        <div className="field">
+          <label>Mother Contact</label>
+          <input className="input" name="mother_contact" value={form.mother_contact} onChange={onChange} />
+        </div>
+
+        <div className="field">
+          <label>Guardian Fullname</label>
+          <input className="input" name="guardian_fullname" value={form.guardian_fullname} onChange={onChange} />
+        </div>
+        <div className="field">
+          <label>Guardian Address</label>
+          <input className="input" name="guardian_address" value={form.guardian_address} onChange={onChange} />
+        </div>
+        <div className="field">
+          <label>Guardian Occupation</label>
+          <input className="input" name="guardian_occupation" value={form.guardian_occupation} onChange={onChange} />
+        </div>
+        <div className="field">
+          <label>Guardian Employer</label>
+          <input className="input" name="guardian_employer" value={form.guardian_employer} onChange={onChange} />
+        </div>
+        <div className="field">
+          <label>Guardian Contact</label>
+          <input className="input" name="guardian_contact" value={form.guardian_contact} onChange={onChange} />
+        </div>
+
+        <div className="field" style={{ marginTop: 14 }}>
+          <h3 style={{ margin: 0 }}>Background (JSON arrays)</h3>
+        </div>
+
+        <div className="field">
+          <label>Education (JSON array)</label>
+          <textarea className="input" name="education" value={form.education} onChange={onChange} rows={5} />
+        </div>
+
+        <div className="field">
+          <label>Employment History (JSON array)</label>
+          <textarea className="input" name="employment_history" value={form.employment_history} onChange={onChange} rows={5} />
+        </div>
+
+        <div className="field">
+          <label>Beneficiaries (JSON array)</label>
+          <textarea className="input" name="beneficiaries" value={form.beneficiaries} onChange={onChange} rows={5} />
+        </div>
+
+        <div className="field" style={{ marginTop: 14 }}>
+          <h3 style={{ margin: 0 }}>Remittances IDs</h3>
+        </div>
+
+        <div className="field">
+          <label>SSS No.</label>
+          <input className="input" name="sss_no" value={form.sss_no} onChange={onChange} />
+        </div>
+        <div className="field">
+          <label>PhilHealth No.</label>
+          <input className="input" name="philhealth_no" value={form.philhealth_no} onChange={onChange} />
+        </div>
+        <div className="field">
+          <label>Pag-IBIG No.</label>
+          <input className="input" name="pagibig_no" value={form.pagibig_no} onChange={onChange} />
+        </div>
+        <div className="field">
+          <label>TIN No.</label>
+          <input className="input" name="tin_no" value={form.tin_no} onChange={onChange} />
         </div>
       </div>
     </div>
   );
 }
 
-/* ------------------------- Step 2: Contract Details (Employment + Deductions) ------------------------- */
 function ContractDetailsStep({ form, branches, onChange }) {
   return (
     <div className="modal-body staff-add-grid">
@@ -191,7 +350,6 @@ function ContractDetailsStep({ form, branches, onChange }) {
           <input className="input" name="department" value={form.department} onChange={onChange} />
         </div>
 
-        {/* ✅ Area, Region, Division */}
         <div className="field">
           <label>Area</label>
           <input className="input" name="area" value={form.area} onChange={onChange} />
@@ -207,7 +365,6 @@ function ContractDetailsStep({ form, branches, onChange }) {
           <input className="input" name="division" value={form.division} onChange={onChange} />
         </div>
 
-        {/* ✅ Branch dropdown shows NAME only */}
         <div className="field">
           <label>Branch</label>
           <select className="input" name="branch_id" value={form.branch_id} onChange={onChange}>
@@ -239,17 +396,27 @@ function ContractDetailsStep({ form, branches, onChange }) {
         </div>
 
         <div className="field">
-          <label>CBU</label>
+          <label>Basic Salary</label>
+          <input className="input" name="salary" value={form.salary} onChange={onChange} />
+        </div>
+
+        <div className="field">
+          <label>Ecola</label>
+          <input className="input" name="ecola" value={form.ecola} onChange={onChange} />
+        </div>
+
+        <div className="field">
+          <label>CBU (staff table default)</label>
           <input className="input" name="cbu" value={form.cbu} onChange={onChange} />
         </div>
 
         <div className="field">
-          <label>Cashbond</label>
+          <label>Cashbond (staff table default)</label>
           <input className="input" name="cashbond" value={form.cashbond} onChange={onChange} />
         </div>
 
         <div className="field">
-          <label>Utility</label>
+          <label>Utility (staff table default)</label>
           <input className="input" name="utility" value={form.utility} onChange={onChange} />
         </div>
 
@@ -259,13 +426,13 @@ function ContractDetailsStep({ form, branches, onChange }) {
         </div>
 
         <div className="field">
-          <label>Postage</label>
-          <input className="input" name="postage" value={form.postage} onChange={onChange} />
+          <label>Repairing</label>
+          <input className="input" name="repairing" value={form.repairing} onChange={onChange} />
         </div>
 
         <div className="field">
-          <label>Motorcycle Loan</label>
-          <input className="input" name="motorcycle_loan" value={form.motorcycle_loan} onChange={onChange} />
+          <label>Postage</label>
+          <input className="input" name="postage" value={form.postage} onChange={onChange} />
         </div>
 
         <div className="field">
@@ -274,48 +441,163 @@ function ContractDetailsStep({ form, branches, onChange }) {
         </div>
 
         <div className="field">
-          <label>Repairing</label>
-          <input className="input" name="repairing" value={form.repairing} onChange={onChange} />
-        </div>
-
-        <div className="field">
           <label>Additional Monitoring</label>
           <input className="input" name="additional_monitoring" value={form.additional_monitoring} onChange={onChange} />
-        </div>
-
-        <div className="field">
-          <label>Motorcycle</label>
-          <input className="input" name="motorcycle" value={form.motorcycle} onChange={onChange} />
         </div>
 
         <div className="field">
           <label>Other Deduction</label>
           <input className="input" name="other_deduction" value={form.other_deduction} onChange={onChange} />
         </div>
+
+        <div className="field">
+          <label>SSS ER</label>
+          <input className="input" name="sss_er" value={form.sss_er} onChange={onChange} />
+        </div>
+        <div className="field">
+          <label>PhilHealth ER</label>
+          <input className="input" name="ph_er" value={form.ph_er} onChange={onChange} />
+        </div>
+        <div className="field">
+          <label>HDMF ER</label>
+          <input className="input" name="hdmf_er" value={form.hdmf_er} onChange={onChange} />
+        </div>
+
+        <div className="field">
+          <label>SSS EE</label>
+          <input className="input" name="sss_ee" value={form.sss_ee} onChange={onChange} />
+        </div>
+        <div className="field">
+          <label>PhilHealth EE</label>
+          <input className="input" name="ph_ee" value={form.ph_ee} onChange={onChange} />
+        </div>
+        <div className="field">
+          <label>HDMF EE</label>
+          <input className="input" name="hdmf_ee" value={form.hdmf_ee} onChange={onChange} />
+        </div>
+
+        <div className="field">
+          <label>Withheld Tax</label>
+          <input className="input" name="tax" value={form.tax} onChange={onChange} />
+        </div>
       </div>
     </div>
   );
 }
 
-/* ------------------------- Profile Modal ------------------------- */
+function PersonalBalancesStep({ balanceForm, onBalanceChange }) {
+  const totalSavings =
+    toNum(balanceForm.cbu) + toNum(balanceForm.cashbond) + toNum(balanceForm.utility);
+
+  const totalBalances =
+    toNum(balanceForm.salary_advance) +
+    toNum(balanceForm.special_advance) +
+    toNum(balanceForm.cash_advance) +
+    toNum(balanceForm.motorcycle_loan) +
+    toNum(balanceForm.other_receivable) +
+    toNum(balanceForm.staff_accounts_payable);
+
+  return (
+    <div className="modal-body staff-add-grid">
+      <div className="staff-add-left" style={{ width: "100%" }}>
+        <div className="field full" style={{ marginTop: 8 }}>
+          <h3 style={{ margin: 0 }}>Personal Savings</h3>
+        </div>
+
+        <div className="field">
+          <label>CBU</label>
+          <input className="input" name="cbu" value={balanceForm.cbu} onChange={onBalanceChange} />
+        </div>
+
+        <div className="field">
+          <label>Cashbond</label>
+          <input className="input" name="cashbond" value={balanceForm.cashbond} onChange={onBalanceChange} />
+        </div>
+
+        <div className="field">
+          <label>Utility</label>
+          <input className="input" name="utility" value={balanceForm.utility} onChange={onBalanceChange} />
+        </div>
+
+        <div className="field full">
+          <label>Total Personal Savings</label>
+          <div className="input" style={{ background: "var(--panel-2)" }}>{money(totalSavings)}</div>
+        </div>
+
+        <div className="field full" style={{ marginTop: 16 }}>
+          <h3 style={{ margin: 0 }}>Personal Balances</h3>
+        </div>
+
+        <div className="field">
+          <label>Salary Advance</label>
+          <input className="input" name="salary_advance" value={balanceForm.salary_advance} onChange={onBalanceChange} />
+        </div>
+
+        <div className="field">
+          <label>Special Advance</label>
+          <input className="input" name="special_advance" value={balanceForm.special_advance} onChange={onBalanceChange} />
+        </div>
+
+        <div className="field">
+          <label>Cash Advance</label>
+          <input className="input" name="cash_advance" value={balanceForm.cash_advance} onChange={onBalanceChange} />
+        </div>
+
+        <div className="field">
+          <label>Motorcycle Loan</label>
+          <input className="input" name="motorcycle_loan" value={balanceForm.motorcycle_loan} onChange={onBalanceChange} />
+        </div>
+
+        <div className="field">
+          <label>Other Receivable</label>
+          <input className="input" name="other_receivable" value={balanceForm.other_receivable} onChange={onBalanceChange} />
+        </div>
+
+        <div className="field">
+          <label>Staff Accounts Payable</label>
+          <input className="input" name="staff_accounts_payable" value={balanceForm.staff_accounts_payable} onChange={onBalanceChange} />
+        </div>
+
+        <div className="field full">
+          <label>Total Personal Balance</label>
+          <div className="input" style={{ background: "var(--panel-2)" }}>{money(totalBalances)}</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function StaffProfileModal({ staff, avatarUrl, onClose, branchNameById }) {
   const [tab, setTab] = useState("staff");
-
-  // placeholders for future routes
+  const [leaveKind, setLeaveKind] = useState("All");
   const [leaveRows, setLeaveRows] = useState([]);
-  const [attachments, setAttachments] = useState([]);
-  const [historyRows, setHistoryRows] = useState([]);
-
   const [loadingLeave, setLoadingLeave] = useState(false);
-  const [loadingAttach, setLoadingAttach] = useState(false);
-  const [loadingHist, setLoadingHist] = useState(false);
-
   const [errLeave, setErrLeave] = useState("");
-  const [errAttach, setErrAttach] = useState("");
-  const [errHist, setErrHist] = useState("");
 
-  const TabButton = ({ id, label }) => (
-    <button className={`tab-btn ${tab === id ? "active" : ""}`} onClick={() => setTab(id)} type="button">
+  const [historyKind, setHistoryKind] = useState("All");
+  const [loanRows, setLoanRows] = useState([]);
+  const [loadingLoan, setLoadingLoan] = useState(false);
+  const [errLoan, setErrLoan] = useState("");
+
+  const [sapHistoryRows, setSapHistoryRows] = useState([]);
+  const [loadingSapHist, setLoadingSapHist] = useState(false);
+  const [errSapHist, setErrSapHist] = useState("");
+
+  const [demotionRows, setDemotionRows] = useState([]);
+  const [loadingDemotion, setLoadingDemotion] = useState(false);
+  const [errDemotion, setErrDemotion] = useState("");
+
+  const [balances, setBalances] = useState(null);
+  const [loadingBal, setLoadingBal] = useState(false);
+  const [errBal, setErrBal] = useState("");
+
+  const childrenArr = useMemo(() => safeJsonArray(staff?.children), [staff?.children]);
+  const educationArr = useMemo(() => safeJsonArray(staff?.education), [staff?.education]);
+  const employmentArr = useMemo(() => safeJsonArray(staff?.employment_history), [staff?.employment_history]);
+  const beneficiariesArr = useMemo(() => safeJsonArray(staff?.beneficiaries), [staff?.beneficiaries]);
+
+  const Chip = ({ label, active, onClick }) => (
+    <button type="button" className={`chip ${active ? "active" : ""}`} onClick={onClick}>
       {label}
     </button>
   );
@@ -327,15 +609,217 @@ function StaffProfileModal({ staff, avatarUrl, onClose, branchNameById }) {
     </div>
   );
 
+  const totals = useMemo(() => {
+    const salaryTotal = toNum(staff.salary) + toNum(staff.ecola);
+    const personalTotal = toNum(staff.cbu) + toNum(staff.cashbond) + toNum(staff.utility_charge ?? staff.utility);
+    const transpoTotal =
+      toNum(staff.transportation) +
+      toNum(staff.repairing) +
+      toNum(staff.postage) +
+      toNum(staff.additional_target) +
+      toNum(staff.additional_monitoring) +
+      toNum(staff.other_deduction);
+
+    const totalER = toNum(staff.sss_er) + toNum(staff.ph_er) + toNum(staff.hdmf_er);
+    const totalEE = toNum(staff.sss_ee) + toNum(staff.ph_ee) + toNum(staff.hdmf_ee);
+
+    return { salaryTotal, personalTotal, transpoTotal, totalER, totalEE };
+  }, [staff]);
+
+  const loadLeaves = useCallback(async () => {
+    if (!staff?.id) return;
+    setLoadingLeave(true);
+    setErrLeave("");
+    try {
+      const res = await api.get(`/leave-requests/staff/${staff.id}`);
+      setLeaveRows(Array.isArray(res.data) ? res.data : []);
+    } catch (e) {
+      setErrLeave(e?.response?.data?.message || "Failed to load leave details.");
+      setLeaveRows([]);
+    } finally {
+      setLoadingLeave(false);
+    }
+  }, [staff?.id]);
+
+  const loadSapHistory = useCallback(async () => {
+    if (!staff?.id) return;
+    setLoadingSapHist(true);
+    setErrSapHist("");
+    try {
+      const res = await api.get(`/staff-accounts-payable/employee/${staff.employee_no}`);
+      setSapHistoryRows(Array.isArray(res.data) ? res.data : []);
+    } catch (e) {
+      setErrSapHist(e?.response?.data?.message || "Failed to load staff payable history.");
+      setSapHistoryRows([]);
+    } finally {
+      setLoadingSapHist(false);
+    }
+  }, [staff?.id, staff?.employee_no]);
+
+  const loadLoans = useCallback(async () => {
+    if (!staff?.id) return;
+    setLoadingLoan(true);
+    setErrLoan("");
+    try {
+      const res = await api.get(`/loan-requests/staff/${staff.id}`);
+      setLoanRows(Array.isArray(res.data) ? res.data : []);
+    } catch (e) {
+      setErrLoan(e?.response?.data?.message || "Failed to load loan history.");
+      setLoanRows([]);
+    } finally {
+      setLoadingLoan(false);
+    }
+  }, [staff?.id]);
+
+  const loadDemotions = useCallback(async () => {
+    if (!staff?.id) return;
+    setLoadingDemotion(true);
+    setErrDemotion("");
+    try {
+      let rows = [];
+      try {
+        const res = await api.get(`/demotion-orders/staff/${staff.id}`);
+        rows = Array.isArray(res.data) ? res.data : [];
+      } catch {
+        const res2 = await api.get(`/demotion-orders`);
+        const all = Array.isArray(res2.data) ? res2.data : [];
+        rows = all.filter((x) => String(x.employee_id) === String(staff.id));
+      }
+      setDemotionRows(rows);
+    } catch (e) {
+      setErrDemotion(e?.response?.data?.message || "Failed to load demotion orders.");
+      setDemotionRows([]);
+    } finally {
+      setLoadingDemotion(false);
+    }
+  }, [staff?.id]);
+
+  const loadBalances = useCallback(async () => {
+    if (!staff?.id) return;
+    setLoadingBal(true);
+    setErrBal("");
+    try {
+      const res = await api.get(`/staff-balances/${staff.id}`);
+      setBalances(res.data || null);
+    } catch (e) {
+      setErrBal(e?.response?.data?.message || "Failed to load personal balances.");
+      setBalances(null);
+    } finally {
+      setLoadingBal(false);
+    }
+  }, [staff?.id]);
+
+  useEffect(() => {
+    if (tab === "leave") loadLeaves();
+    if (tab === "history") {
+      loadLoans();
+      loadDemotions();
+      loadSapHistory();
+    }
+    if (tab === "balances") loadBalances();
+  }, [tab, loadLeaves, loadLoans, loadDemotions, loadSapHistory, loadBalances]);
+
+  const historyItems = useMemo(() => {
+    const items = [];
+
+    if (historyKind === "All" || historyKind === "Loans") {
+      for (const l of loanRows || []) {
+        const date = loanDisplayDate(l);
+        const title = l.loan_type || "Loan";
+        const ref = l.transaction_code || l.employee_no || l.id;
+        const amount = `₱ ${money(l.amount)}`;
+        const term = l.term || "-";
+        const interest = `${Number(l.interest || 0)}%`;
+        const total = `₱ ${money(l.total)}`;
+        const perMonth = `₱ ${money(l.per_month)}`;
+        const status = l.status || "Pending";
+
+        const extraDates = [
+          l.entry_date ? `Entry: ${fmtDate(l.entry_date)}` : null,
+          l.approved_at ? `Approved: ${fmtDate(l.approved_at)}` : null,
+          l.disbursement_date ? `Disbursed: ${fmtDate(l.disbursement_date)}` : null,
+        ]
+          .filter(Boolean)
+          .join(" • ");
+
+        items.push({
+          _type: "LOAN",
+          id: l.id,
+          ref,
+          date,
+          status,
+          title,
+          subtitle: `Amount: ${amount} • Term: ${term} • Interest: ${interest}`,
+          extra: `Total: ${total} • Per Month: ${perMonth}${extraDates ? ` • ${extraDates}` : ""}`,
+          reason: l.reason || "",
+          rejection_reason: l.rejection_reason || "",
+        });
+      }
+    }
+
+    if (historyKind === "All" || historyKind === "SAP") {
+      for (const x of sapHistoryRows || []) {
+        items.push({
+          _type: "SAP",
+          id: x.id,
+          ref: x.id,
+          date: x.entry_date || x.created_at || x.approved_at || x.rejected_at || null,
+          status: x.status || "Pending",
+          title: "Staff Accounts Payable",
+          subtitle: `Amount: ₱ ${money(x.amount)} • Term: ${x.term || "-"} • Per Month: ₱ ${money(x.per_month)}`,
+          extra: `Balance: ₱ ${money(x.balance)} • Description: ${x.description || "-"}`,
+          reason: "",
+          rejection_reason: x.rejection_reason || "",
+        });
+      }
+    }
+
+    if (historyKind === "All" || historyKind === "Demotions") {
+      for (const d of demotionRows || []) {
+        items.push({
+          _type: "DEMOTION",
+          id: d.id,
+          ref: d.order_no || d.id,
+          date: d.created_at || d.updated_at || d.effective_date || null,
+          status: d.status || "Pending",
+          title: "Demotion Order",
+          subtitle: `Prev: ${d.old_position || "-"} → New: ${d.new_position || "-"}`,
+          extra: `Effective: ${fmtDate(d.effective_date) || "-"} • To Branch: ${
+            `${d.to_branch_code || ""} ${d.to_branch_name || ""}`.trim() || (d.to_branch_id ?? "-")
+          }`,
+          reason: d.details || "",
+          rejection_reason: d.rejection_reason || "",
+        });
+      }
+    }
+
+    items.sort((a, b) => {
+      const ad = a.date ? new Date(a.date).getTime() : 0;
+      const bd = b.date ? new Date(b.date).getTime() : 0;
+      return bd - ad;
+    });
+
+    return items;
+  }, [loanRows, sapHistoryRows, demotionRows, historyKind]);
+
+  const filteredLeaves = useMemo(() => {
+    const list = Array.isArray(leaveRows) ? leaveRows : [];
+    if (leaveKind === "All") return list;
+    return list.filter((r) => String(r.status || "").toLowerCase() === leaveKind.toLowerCase());
+  }, [leaveRows, leaveKind]);
+
+  const bal = balances || {};
+  const utilityValue = toNum(bal.utility ?? staff.utility_charge ?? staff.utility);
+  const headerName = displayName(staff);
+  const headerPosition = toStr(staff?.position) || "-";
+  const headerStatus = toStr(staff?.status) || "Active";
+
   return (
     <div className="modal-overlay" onMouseDown={onClose}>
       <div className="modal staff-profile-modal" onMouseDown={(e) => e.stopPropagation()} style={{ maxWidth: 1200 }}>
         <div className="modal-head">
           <div>
             <h3>Staff Profile</h3>
-            <div className="mini">
-              {displayName(staff)} • {staff.position || "-"} • {staff.status || "Active"}
-            </div>
           </div>
           <button className="icon-btn" onClick={onClose} type="button">
             ✕
@@ -343,21 +827,47 @@ function StaffProfileModal({ staff, avatarUrl, onClose, branchNameById }) {
         </div>
 
         <div className="modal-body staff-profile-scroll">
-          <div className="staff-view-top">
+          <div style={{ display: "flex", alignItems: "center", gap: 16, padding: "8px 0 14px 0" }}>
             {avatarUrl(staff) ? (
-              <img className="staff-avatar-lg" src={avatarUrl(staff)} alt="staff" />
+              <img src={avatarUrl(staff)} alt="staff" style={{ width: 92, height: 92, borderRadius: "50%", objectFit: "cover", flex: "0 0 auto" }} />
             ) : (
-              <div className="staff-avatar-lg staff-avatar--fallback">{displayName(staff).slice(0, 1).toUpperCase()}</div>
+              <div
+                className="staff-avatar-lg staff-avatar--fallback"
+                style={{ width: 92, height: 92, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", flex: "0 0 auto" }}
+              >
+                {headerName.slice(0, 1).toUpperCase()}
+              </div>
             )}
+
+            <div style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
+              <div style={{ fontWeight: 900, fontSize: 16, lineHeight: 1.2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                {headerName}
+              </div>
+              <div style={{ opacity: 0.85, marginTop: 4, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                {headerPosition}
+              </div>
+              <div style={{ marginTop: 6, fontWeight: 800, color: String(headerStatus).toLowerCase() === "inactive" ? "#ef4444" : "#22c55e" }}>
+                {headerStatus}
+              </div>
+            </div>
           </div>
 
-          {/* ✅ Tabs will not disappear */}
           <div className="staff-tabs" style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <TabButton id="staff" label="Staff Details" />
-            <TabButton id="contract" label="Contract Details" />
-            <TabButton id="leave" label="Leave Details" />
-            <TabButton id="attachments" label="Attachments" />
-            <TabButton id="history" label="Transaction History" />
+            {["staff", "contract", "leave", "attachments", "history", "balances"].map((t) => (
+              <button key={t} className={`tab-btn ${tab === t ? "active" : ""}`} onClick={() => setTab(t)} type="button">
+                {t === "staff"
+                  ? "Staff Details"
+                  : t === "contract"
+                  ? "Contract Details"
+                  : t === "leave"
+                  ? "Leave Details"
+                  : t === "attachments"
+                  ? "Attachments"
+                  : t === "history"
+                  ? "Transaction History"
+                  : "Personal Balances"}
+              </button>
+            ))}
           </div>
 
           <br />
@@ -369,7 +879,7 @@ function StaffProfileModal({ staff, avatarUrl, onClose, branchNameById }) {
                 <tr><td>ID</td><td>{staff.id}</td></tr>
                 <tr><td>Employee No</td><td>{staff.employee_no || "-"}</td></tr>
                 <tr><td>Name</td><td>{displayName(staff)}</td></tr>
-                <tr><td>Deployment Date</td><td>{fmtDate(staff.start_date)}</td></tr>
+                <tr><td>Start Date</td><td>{fmtDate(staff.start_date)}</td></tr>
                 <tr><td>Address</td><td>{staff.address || "-"}</td></tr>
                 <tr><td>Municipality</td><td>{staff.municipality || "-"}</td></tr>
                 <tr><td>Province</td><td>{staff.province || "-"}</td></tr>
@@ -386,6 +896,72 @@ function StaffProfileModal({ staff, avatarUrl, onClose, branchNameById }) {
                 <tr><td>Weight</td><td>{toStr(staff.weight) || "-"}</td></tr>
                 <tr><td>Religion</td><td>{staff.religion || "-"}</td></tr>
                 <tr><td>Blood Type</td><td>{staff.blood_type || "-"}</td></tr>
+
+                <tr><td><h2>Spouse & Children Information</h2></td></tr>
+                <tr><td>Spouse Fullname</td><td>{staff.spouse_fullname || "-"}</td></tr>
+                <tr><td>Spouse Address</td><td>{staff.spouse_address || "-"}</td></tr>
+                <tr><td>Spouse Occupation</td><td>{staff.spouse_occupation || "-"}</td></tr>
+                <tr><td>Spouse Employer</td><td>{staff.spouse_employer || "-"}</td></tr>
+                <tr><td><h3>Children</h3></td></tr>
+
+                {childrenArr.length === 0 ? (
+                  <tr><td colSpan="2">-</td></tr>
+                ) : (
+                  childrenArr.map((c, idx) => (
+                    <React.Fragment key={idx}>
+                      <tr><td>Fullname</td><td>{c?.fullname || "-"}</td></tr>
+                      <tr><td>Date of Birth</td><td>{c?.date_of_birth || "-"}</td></tr>
+                      <tr><td>Place of Birth</td><td>{c?.place_of_birth || "-"}</td></tr>
+                      <tr><td colSpan="2"><hr /></td></tr>
+                    </React.Fragment>
+                  ))
+                )}
+
+                <tr><td><h2>Parents / Guardian</h2></td></tr>
+                <tr><td>Father Fullname</td><td>{staff.father_fullname || "-"}</td></tr>
+                <tr><td>Father Address</td><td>{staff.father_address || "-"}</td></tr>
+                <tr><td>Father Occupation</td><td>{staff.father_occupation || "-"}</td></tr>
+                <tr><td>Father Employer</td><td>{staff.father_employer || "-"}</td></tr>
+                <tr><td>Father Contact</td><td>{staff.father_contact || "-"}</td></tr>
+
+                <tr><td>Mother Fullname</td><td>{staff.mother_fullname || "-"}</td></tr>
+                <tr><td>Mother Address</td><td>{staff.mother_address || "-"}</td></tr>
+                <tr><td>Mother Occupation</td><td>{staff.mother_occupation || "-"}</td></tr>
+                <tr><td>Mother Employer</td><td>{staff.mother_employer || "-"}</td></tr>
+                <tr><td>Mother Contact</td><td>{staff.mother_contact || "-"}</td></tr>
+
+                <tr><td>Guardian Fullname</td><td>{staff.guardian_fullname || "-"}</td></tr>
+                <tr><td>Guardian Address</td><td>{staff.guardian_address || "-"}</td></tr>
+                <tr><td>Guardian Occupation</td><td>{staff.guardian_occupation || "-"}</td></tr>
+                <tr><td>Guardian Employer</td><td>{staff.guardian_employer || "-"}</td></tr>
+                <tr><td>Guardian Contact</td><td>{staff.guardian_contact || "-"}</td></tr>
+
+                <tr><td><h2>Education</h2></td></tr>
+                <tr>
+                  <td colSpan="2" className="mono" style={{ whiteSpace: "pre-wrap" }}>
+                    {educationArr.length ? JSON.stringify(educationArr, null, 2) : "-"}
+                  </td>
+                </tr>
+
+                <tr><td><h2>Employment</h2></td></tr>
+                <tr>
+                  <td colSpan="2" className="mono" style={{ whiteSpace: "pre-wrap" }}>
+                    {employmentArr.length ? JSON.stringify(employmentArr, null, 2) : "-"}
+                  </td>
+                </tr>
+
+                <tr><td><h2>Beneficiaries</h2></td></tr>
+                <tr>
+                  <td colSpan="2" className="mono" style={{ whiteSpace: "pre-wrap" }}>
+                    {beneficiariesArr.length ? JSON.stringify(beneficiariesArr, null, 2) : "-"}
+                  </td>
+                </tr>
+
+                <tr><td><h2>Remittances</h2></td></tr>
+                <tr><td>SSS No.</td><td>{staff.sss_no || "-"}</td></tr>
+                <tr><td>PhilHealth No.</td><td>{staff.philhealth_no || "-"}</td></tr>
+                <tr><td>Pab-Ibig No.</td><td>{staff.pagibig_no || "-"}</td></tr>
+                <tr><td>TIN No.</td><td>{staff.tin_no || "-"}</td></tr>
               </tbody>
             </table>
           )}
@@ -400,86 +976,156 @@ function StaffProfileModal({ staff, avatarUrl, onClose, branchNameById }) {
                 <tr><td>Area</td><td>{staff.area || "-"}</td></tr>
                 <tr><td>Region</td><td>{staff.region || "-"}</td></tr>
                 <tr><td>Division</td><td>{staff.division || "-"}</td></tr>
-
                 <tr><td>Status</td><td>{staff.status || "Active"}</td></tr>
                 <tr><td>Start Date</td><td>{fmtDate(staff.start_date)}</td></tr>
                 <tr><td>Regularization Date</td><td>{fmtDate(staff.regularization_date)}</td></tr>
-
                 <tr><td><h2>Salary Details</h2></td></tr>
-                <tr><td>Basic Salary</td><td>{toNum(staff.salary).toLocaleString()}</td></tr>
-                <tr><td>Ecola</td><td>{toNum(staff.ecola).toLocaleString()}</td></tr>
-                <tr><td><h3>Total</h3></td><td>{toNum(staff.total).toLocaleString()}</td></tr>
-
+                <tr><td>Basic Salary</td><td>{money(staff.salary)}</td></tr>
+                <tr><td>Ecola</td><td>{money(staff.ecola)}</td></tr>
+                <tr><td><h3>Total</h3></td><td>{money(totals.salaryTotal)}</td></tr>
                 <tr><td><h2>Personal Deductions</h2></td></tr>
-                <tr><td>CBU</td><td>{toNum(staff.cbu).toLocaleString()}</td></tr>
-                <tr><td>Cashbond</td><td>{toNum(staff.cashbond).toLocaleString()}</td></tr>
-                <tr><td>Utility</td><td>{toNum(staff.utility_charge ?? staff.utility).toLocaleString()}</td></tr>
-                <tr><td><h3>Total</h3></td><td>{toNum(staff.total).toLocaleString()}</td></tr>
-
-                <tr><td><h2>Transportation & Allowances</h2></td></tr>
-                <tr><td>Transportation</td><td>{toNum(staff.transportation).toLocaleString()}</td></tr>
-                <tr><td>Repairing</td><td>{toNum(staff.repairing).toLocaleString()}</td></tr>
-                <tr><td>Postage</td><td>{toNum(staff.postage).toLocaleString()}</td></tr>
-                <tr><td>Others</td><td>{toNum(staff.other_deduction).toLocaleString()}</td></tr>
-                <tr><td><h3>Total</h3></td><td>{toNum(staff.total).toLocaleString()}</td></tr>
-
-                <tr><td><h2>Remittances: ER</h2></td></tr>
-                <tr><td>SSS</td><td>{toNum(staff.sss_er).toLocaleString()}</td></tr>
-                <tr><td>Philhealth</td><td>{toNum(staff.ph_er).toLocaleString()}</td></tr>
-                <tr><td>HDMF</td><td>{toNum(staff.hdmf_er).toLocaleString()}</td></tr>
-                <tr><td><h3>Total</h3></td><td>{toNum(staff.total_er).toLocaleString()}</td></tr>
-
-                <tr><td><h2>Remittances: EE</h2></td></tr>
-                <tr><td>SSS</td><td>{toNum(staff.sss_ee).toLocaleString()}</td></tr>
-                <tr><td>Philhealth</td><td>{toNum(staff.ph_ee).toLocaleString()}</td></tr>
-                <tr><td>HDMF</td><td>{toNum(staff.hdmf_ee).toLocaleString()}</td></tr>
-                <tr><td><h3>Total</h3></td><td>{toNum(staff.total_ee).toLocaleString()}</td></tr>
-
-                <tr><td><h2>Remittances: Tax</h2></td></tr>
-                <tr><td>With Held Tax</td><td>{toNum(staff.tax).toLocaleString()}</td></tr>
+                <tr><td>CBU</td><td>{money(staff.cbu)}</td></tr>
+                <tr><td>Cashbond</td><td>{money(staff.cashbond)}</td></tr>
+                <tr><td>Utility</td><td>{money(staff.utility_charge ?? staff.utility)}</td></tr>
               </tbody>
             </table>
           )}
 
           {tab === "leave" && (
             <>
-              {loadingLeave ? (
-                <div className="empty-state">Loading leave details…</div>
-              ) : errLeave ? (
-                <div className="empty-state" style={{ color: "#ef4444" }}>{errLeave}</div>
-              ) : leaveRows.length === 0 ? (
-                <EmptyState title="No leave details yet." hint="Add your leave routes later and this will show records." />
-              ) : (
-                <div />
-              )}
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
+                {["All", "Pending", "Approved", "Rejected"].map((k) => (
+                  <Chip key={k} label={k} active={leaveKind === k} onClick={() => setLeaveKind(k)} />
+                ))}
+              </div>
+
+              {loadingLeave && <div className="empty-state">Loading leave details…</div>}
+              {!loadingLeave && errLeave ? <div className="empty-state" style={{ color: "#ef4444" }}>{errLeave}</div> : null}
+              {!loadingLeave && !errLeave && filteredLeaves.length === 0 ? <EmptyState title="No leave records yet." hint="Requests will show here." /> : null}
+
+              {!loadingLeave && !errLeave && filteredLeaves.length > 0 ? (
+                <div className="table-scroll">
+                  <table className="saas-table staffinfo-table">
+                    <thead>
+                      <tr>
+                        <th style={{ width: 190 }}>Code</th>
+                        <th style={{ width: 170 }}>Type</th>
+                        <th style={{ width: 130 }}>Start</th>
+                        <th style={{ width: 130 }}>End</th>
+                        <th style={{ width: 140 }}>Entry Date</th>
+                        <th style={{ width: 120 }}>Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredLeaves.map((r) => (
+                        <tr key={r.id}>
+                          <td className="mono">{r.transaction_code || r.id}</td>
+                          <td>{r.leave_type || "-"}</td>
+                          <td className="mono">{fmtDate(r.start_date)}</td>
+                          <td className="mono">{fmtDate(r.end_date)}</td>
+                          <td className="mono">{fmtDate(r.entry_date)}</td>
+                          <td className="mono">{r.status || "-"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : null}
             </>
           )}
 
-          {tab === "attachments" && (
-            <>
-              {loadingAttach ? (
-                <div className="empty-state">Loading attachments…</div>
-              ) : errAttach ? (
-                <div className="empty-state" style={{ color: "#ef4444" }}>{errAttach}</div>
-              ) : attachments.length === 0 ? (
-                <EmptyState title="No attachments yet." hint="Add upload routes later and this will show files." />
-              ) : (
-                <div />
-              )}
-            </>
-          )}
+          {tab === "attachments" && <EmptyState title="No attachments yet." hint="Add upload routes later and this will show files." />}
 
           {tab === "history" && (
             <>
-              {loadingHist ? (
-                <div className="empty-state">Loading transaction history…</div>
-              ) : errHist ? (
-                <div className="empty-state" style={{ color: "#ef4444" }}>{errHist}</div>
-              ) : historyRows.length === 0 ? (
-                <EmptyState title="No transaction history yet." hint="Once you log transfers/demotions/exits/etc. this can show records." />
-              ) : (
-                <div />
-              )}
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
+                <Chip label="All" active={historyKind === "All"} onClick={() => setHistoryKind("All")} />
+                <Chip label="Loans" active={historyKind === "Loans"} onClick={() => setHistoryKind("Loans")} />
+                <Chip label="Demotions" active={historyKind === "Demotions"} onClick={() => setHistoryKind("Demotions")} />
+                <Chip label="SAP" active={historyKind === "SAP"} onClick={() => setHistoryKind("SAP")} />
+              </div>
+
+              {(loadingLoan || loadingDemotion || loadingSapHist) && <div className="empty-state">Loading transaction history…</div>}
+              {!loadingLoan && errLoan ? <div className="empty-state" style={{ color: "#ef4444" }}>{errLoan}</div> : null}
+              {!loadingDemotion && errDemotion ? <div className="empty-state" style={{ color: "#ef4444" }}>{errDemotion}</div> : null}
+              {!loadingSapHist && errSapHist ? <div className="empty-state" style={{ color: "#ef4444" }}>{errSapHist}</div> : null}
+
+              {!loadingLoan && !loadingDemotion && !errLoan && !errDemotion && historyItems.length === 0 ? (
+                <EmptyState title="No transaction history yet." hint="Loans + Demotion orders will appear here." />
+              ) : null}
+
+              {!loadingLoan && !loadingDemotion && historyItems.length > 0 ? (
+                <div className="table-scroll">
+                  <table className="saas-table staffinfo-table">
+                    <thead>
+                      <tr>
+                        <th style={{ width: 120 }}>Type</th>
+                        <th style={{ width: 200 }}>Ref</th>
+                        <th>Details</th>
+                        <th style={{ width: 140 }}>Date</th>
+                        <th style={{ width: 130 }}>Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {historyItems.map((it) => (
+                        <tr key={`${it._type}-${it.id}`}>
+                          <td className="mono">{it._type}</td>
+                          <td className="mono">{it.ref}</td>
+                          <td>
+                            <div className="strong">{it.title}</div>
+                            <div style={{ fontSize: 12, opacity: 0.9, marginTop: 4 }}>{it.subtitle}</div>
+                            {it.extra ? <div style={{ fontSize: 12, opacity: 0.85, marginTop: 4 }}>{it.extra}</div> : null}
+                            {it.reason ? <div style={{ fontSize: 12, opacity: 0.85, marginTop: 6 }}>Remarks: {it.reason}</div> : null}
+                            {it.rejection_reason ? <div style={{ fontSize: 12, color: "#ef4444", marginTop: 6 }}>Rejection: {it.rejection_reason}</div> : null}
+                          </td>
+                          <td className="mono">{it.date ? fmtDate(it.date) : "-"}</td>
+                          <td className="mono">{it.status}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : null}
+            </>
+          )}
+
+          {tab === "balances" && (
+            <>
+              {loadingBal ? <div className="empty-state">Loading balances…</div> : null}
+              {errBal ? <div className="empty-state" style={{ color: "#ef4444" }}>{errBal}</div> : null}
+
+              {!loadingBal && !errBal ? (
+                <table className="profile-table">
+                  <tbody>
+                    <tr><td colSpan="2"><h2>Personal Savings</h2></td></tr>
+                    <tr><td>CBU</td><td>{money(bal.cbu)}</td></tr>
+                    <tr><td>Cashbond</td><td>{money(bal.cashbond)}</td></tr>
+                    <tr><td>Utility</td><td>{money(utilityValue)}</td></tr>
+                    <tr><td><strong>Total Personal Savings</strong></td><td>{money(toNum(bal.cbu) + toNum(bal.cashbond) + utilityValue)}</td></tr>
+
+                    <tr><td colSpan="2"><h2>Personal Balances</h2></td></tr>
+                    <tr><td>Salary Advance</td><td>{money(bal.salary_advance)}</td></tr>
+                    <tr><td>Special Advance</td><td>{money(bal.special_advance)}</td></tr>
+                    <tr><td>Cash Advance</td><td>{money(bal.cash_advance)}</td></tr>
+                    <tr><td>Motorcycle Loan</td><td>{money(bal.motorcycle_loan)}</td></tr>
+                    <tr><td>Other Receivable</td><td>{money(bal.other_receivable)}</td></tr>
+                    <tr><td>Staff Accounts Payable</td><td>{money(bal.staff_accounts_payable)}</td></tr>
+                    <tr>
+                      <td><strong>Total Personal Balance</strong></td>
+                      <td>
+                        {money(
+                          toNum(bal.salary_advance) +
+                            toNum(bal.special_advance) +
+                            toNum(bal.cash_advance) +
+                            toNum(bal.motorcycle_loan) +
+                            toNum(bal.other_receivable) +
+                            toNum(bal.staff_accounts_payable)
+                        )}
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              ) : null}
             </>
           )}
         </div>
@@ -494,11 +1140,9 @@ function StaffProfileModal({ staff, avatarUrl, onClose, branchNameById }) {
   );
 }
 
-/* ------------------------- Main Page ------------------------- */
 export default function StaffInformation() {
   const [staff, setStaff] = useState([]);
   const [branches, setBranches] = useState([]);
-
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -507,7 +1151,6 @@ export default function StaffInformation() {
   const [statusFilter, setStatusFilter] = useState("All");
 
   const [viewStaff, setViewStaff] = useState(null);
-  const [showAdd, setShowAdd] = useState(false);
   const [editStaff, setEditStaff] = useState(null);
 
   const [saving, setSaving] = useState(false);
@@ -516,6 +1159,18 @@ export default function StaffInformation() {
 
   const [formStep, setFormStep] = useState(1);
   const base = useMemo(() => getBase(), []);
+
+  const [balanceForm, setBalanceForm] = useState({
+    cbu: "",
+    cashbond: "",
+    utility: "",
+    salary_advance: "",
+    special_advance: "",
+    cash_advance: "",
+    motorcycle_loan: "",
+    other_receivable: "",
+    staff_accounts_payable: "",
+  });
 
   const branchMap = useMemo(() => {
     const m = new Map();
@@ -537,7 +1192,6 @@ export default function StaffInformation() {
     last_name: "",
     first_name: "",
     middle_name: "",
-
     address: "",
     municipality: "",
     province: "",
@@ -552,7 +1206,33 @@ export default function StaffInformation() {
     weight: "",
     religion: "",
     blood_type: "",
-
+    spouse_fullname: "",
+    spouse_address: "",
+    spouse_occupation: "",
+    spouse_employer: "",
+    sss_no: "",
+    philhealth_no: "",
+    pagibig_no:"",
+    tin_no: "",
+    father_fullname: "",
+    father_address: "",
+    father_occupation: "",
+    father_employer: "",
+    father_contact: "",
+    mother_fullname: "",
+    mother_address: "",
+    mother_occupation: "",
+    mother_employer: "",
+    mother_contact: "",
+    guardian_fullname: "",
+    guardian_address: "",
+    guardian_occupation: "",
+    guardian_employer: "",
+    guardian_contact: "",
+    children: "[]",
+    education: "[]",
+    employment_history: "[]",
+    beneficiaries: "[]",
     position: "",
     department: "",
     area: "",
@@ -560,22 +1240,26 @@ export default function StaffInformation() {
     division: "",
     branch_id: "",
     status: "Active",
-
     start_date: "",
     regularization_date: "",
-
+    salary: "",
+    ecola: "",
     cbu: "",
     cashbond: "",
     utility: "",
-
     transportation: "",
     postage: "",
-    motorcycle_loan: "",
     additional_target: "",
     repairing: "",
     additional_monitoring: "",
-    motorcycle: "",
     other_deduction: "",
+    sss_er: "",
+    ph_er: "",
+    hdmf_er: "",
+    sss_ee: "",
+    ph_ee: "",
+    hdmf_ee: "",
+    tax: "",
   });
 
   const avatarUrl = (s) => {
@@ -591,7 +1275,6 @@ export default function StaffInformation() {
       last_name: "",
       first_name: "",
       middle_name: "",
-
       address: "",
       municipality: "",
       province: "",
@@ -606,7 +1289,33 @@ export default function StaffInformation() {
       weight: "",
       religion: "",
       blood_type: "",
-
+      spouse_fullname: "",
+      spouse_address: "",
+      spouse_occupation: "",
+      spouse_employer: "",
+      sss_no: "",
+      philhealth_no: "",
+      pagibig_no:"",
+      tin_no: "",
+      father_fullname: "",
+      father_address: "",
+      father_occupation: "",
+      father_employer: "",
+      father_contact: "",
+      mother_fullname: "",
+      mother_address: "",
+      mother_occupation: "",
+      mother_employer: "",
+      mother_contact: "",
+      guardian_fullname: "",
+      guardian_address: "",
+      guardian_occupation: "",
+      guardian_employer: "",
+      guardian_contact: "",
+      children: "[]",
+      education: "[]",
+      employment_history: "[]",
+      beneficiaries: "[]",
       position: "",
       department: "",
       area: "",
@@ -614,36 +1323,53 @@ export default function StaffInformation() {
       division: "",
       branch_id: "",
       status: "Active",
-
       start_date: "",
       regularization_date: "",
-
+      salary: "",
+      ecola: "",
       cbu: "",
       cashbond: "",
       utility: "",
-
       transportation: "",
       postage: "",
-      motorcycle_loan: "",
       additional_target: "",
       repairing: "",
       additional_monitoring: "",
-      motorcycle: "",
       other_deduction: "",
+      sss_er: "",
+      ph_er: "",
+      hdmf_er: "",
+      sss_ee: "",
+      ph_ee: "",
+      hdmf_ee: "",
+      tax: "",
     });
+
+    setBalanceForm({
+      cbu: "",
+      cashbond: "",
+      utility: "",
+      salary_advance: "",
+      special_advance: "",
+      cash_advance: "",
+      motorcycle_loan: "",
+      other_receivable: "",
+      staff_accounts_payable: "",
+    });
+
     setPhotoFile(null);
     setPhotoPreview("");
     setFormStep(1);
   };
 
   const closeAllModals = () => {
-    setShowAdd(false);
     setViewStaff(null);
     setEditStaff(null);
     resetForm();
   };
 
   const onChange = (e) => setForm((p) => ({ ...p, [e.target.name]: e.target.value }));
+  const onBalanceChange = (e) => setBalanceForm((p) => ({ ...p, [e.target.name]: e.target.value }));
 
   const onPickPhoto = (file) => {
     setPhotoFile(file || null);
@@ -672,7 +1398,7 @@ export default function StaffInformation() {
   }, [loadAll]);
 
   useEffect(() => {
-    const isAnyModalOpen = showAdd || !!viewStaff || !!editStaff;
+    const isAnyModalOpen = !!viewStaff || !!editStaff;
     if (!isAnyModalOpen) return;
 
     const onKey = (e) => e.key === "Escape" && closeAllModals();
@@ -682,7 +1408,7 @@ export default function StaffInformation() {
       document.removeEventListener("keydown", onKey);
       document.body.style.overflow = "";
     };
-  }, [showAdd, viewStaff, editStaff]);
+  }, [viewStaff, editStaff]);
 
   const filteredStaff = useMemo(() => {
     const q = norm(search);
@@ -719,23 +1445,28 @@ export default function StaffInformation() {
     });
   }, [staff, search, statusFilter, branchNameById]);
 
-  const isStaffStepValid = useMemo(() => !!toStr(form.last_name) && !!toStr(form.first_name), [form.last_name, form.first_name]);
-  const isContractStepValid = useMemo(() => !!toStr(form.position), [form.position]);
+  const isStaffStepValid = useMemo(
+    () => !!toStr(form.last_name) && !!toStr(form.first_name),
+    [form.last_name, form.first_name]
+  );
+  const isContractStepValid = useMemo(
+    () => !!toStr(form.position),
+    [form.position]
+  );
 
   const setStepGuarded = (nextStep) => {
     if (nextStep === 2 && !isStaffStepValid) {
       alert("Please complete required fields in Staff Details (Last Name, First Name).");
       return;
     }
+    if (nextStep === 3 && !isContractStepValid) {
+      alert("Position is required in Contract Details.");
+      return;
+    }
     setFormStep(nextStep);
   };
 
-  const openAdd = () => {
-    resetForm();
-    setShowAdd(true);
-  };
-
-  const openEdit = (s) => {
+  const openEdit = async (s) => {
     setEditStaff(s);
 
     setForm({
@@ -743,7 +1474,6 @@ export default function StaffInformation() {
       last_name: s.last_name || "",
       first_name: s.first_name || "",
       middle_name: s.middle_name || "",
-
       address: String(s.address ?? ""),
       municipality: String(s.municipality ?? ""),
       province: String(s.province ?? ""),
@@ -758,7 +1488,33 @@ export default function StaffInformation() {
       weight: String(s.weight ?? ""),
       religion: String(s.religion ?? ""),
       blood_type: String(s.blood_type ?? ""),
-
+      spouse_fullname: String(s.spouse_fullname ?? ""),
+      spouse_address: String(s.spouse_address ?? ""),
+      spouse_occupation: String(s.spouse_occupation ?? ""),
+      spouse_employer: String(s.spouse_employer ?? ""),
+      sss_no: String(s.sss_no ?? ""),
+      philhealth_no: String(s.philhealth_no ?? ""),
+      pagibig_no: String(s.pagibig_no ?? ""),
+      tin_no: String(s.tin_no ?? ""),
+      father_fullname: String(s.father_fullname ?? ""),
+      father_address: String(s.father_address ?? ""),
+      father_occupation: String(s.father_occupation ?? ""),
+      father_employer: String(s.father_employer ?? ""),
+      father_contact: String(s.father_contact ?? ""),
+      mother_fullname: String(s.mother_fullname ?? ""),
+      mother_address: String(s.mother_address ?? ""),
+      mother_occupation: String(s.mother_occupation ?? ""),
+      mother_employer: String(s.mother_employer ?? ""),
+      mother_contact: String(s.mother_contact ?? ""),
+      guardian_fullname: String(s.guardian_fullname ?? ""),
+      guardian_address: String(s.guardian_address ?? ""),
+      guardian_occupation: String(s.guardian_occupation ?? ""),
+      guardian_employer: String(s.guardian_employer ?? ""),
+      guardian_contact: String(s.guardian_contact ?? ""),
+      children: jsonText(s.children),
+      education: jsonText(s.education),
+      employment_history: jsonText(s.employment_history),
+      beneficiaries: jsonText(s.beneficiaries),
       position: s.position || "",
       department: s.department || "",
       area: String(s.area ?? ""),
@@ -766,94 +1522,134 @@ export default function StaffInformation() {
       division: String(s.division ?? ""),
       branch_id: String(s.branch_id ?? ""),
       status: String(s.status || "Active"),
-
       start_date: s.start_date ? String(s.start_date).split("T")[0] : "",
       regularization_date: s.regularization_date ? String(s.regularization_date).split("T")[0] : "",
-
+      salary: String(s.salary ?? ""),
+      ecola: String(s.ecola ?? ""),
       cbu: String(s.cbu ?? ""),
       cashbond: String(s.cashbond ?? ""),
       utility: String(s.utility_charge ?? s.utility ?? ""),
-
       transportation: String(s.transportation ?? ""),
       postage: String(s.postage ?? ""),
-      motorcycle_loan: String(s.motorcycle_loan ?? ""),
       additional_target: String(s.additional_target ?? ""),
       repairing: String(s.repairing ?? ""),
       additional_monitoring: String(s.additional_monitoring ?? ""),
-      motorcycle: String(s.motorcycle ?? ""),
       other_deduction: String(s.other_deduction ?? ""),
+      sss_er: String(s.sss_er ?? ""),
+      ph_er: String(s.ph_er ?? ""),
+      hdmf_er: String(s.hdmf_er ?? ""),
+      sss_ee: String(s.sss_ee ?? ""),
+      ph_ee: String(s.ph_ee ?? ""),
+      hdmf_ee: String(s.hdmf_ee ?? ""),
+      tax: String(s.tax ?? ""),
     });
+
+    try {
+      const res = await api.get(`/staff-balances/${s.id}`);
+      const bal = res.data || {};
+      setBalanceForm({
+        cbu: String(bal.cbu ?? ""),
+        cashbond: String(bal.cashbond ?? ""),
+        utility: String(bal.utility ?? ""),
+        salary_advance: String(bal.salary_advance ?? ""),
+        special_advance: String(bal.special_advance ?? ""),
+        cash_advance: String(bal.cash_advance ?? ""),
+        motorcycle_loan: String(bal.motorcycle_loan ?? ""),
+        other_receivable: String(bal.other_receivable ?? ""),
+        staff_accounts_payable: String(bal.staff_accounts_payable ?? ""),
+      });
+    } catch {
+      setBalanceForm({
+        cbu: "",
+        cashbond: "",
+        utility: "",
+        salary_advance: "",
+        special_advance: "",
+        cash_advance: "",
+        motorcycle_loan: "",
+        other_receivable: "",
+        staff_accounts_payable: "",
+      });
+    }
 
     setPhotoPreview(s.photo_url ? avatarUrl(s) : "");
     setPhotoFile(null);
     setFormStep(1);
   };
 
-  const buildPayload = () => ({
-    ...form,
-    branch_id: form.branch_id ? Number(form.branch_id) : null,
+  const buildPayload = () => {
+    const total_er = toNum(form.sss_er) + toNum(form.ph_er) + toNum(form.hdmf_er);
+    const total_ee = toNum(form.sss_ee) + toNum(form.ph_ee) + toNum(form.hdmf_ee);
 
-    date_of_birth: form.date_of_birth || null,
-    start_date: form.start_date || null,
-    regularization_date: form.regularization_date || null,
-
-    height: form.height === "" ? null : Number(form.height),
-    weight: form.weight === "" ? null : Number(form.weight),
-
-    cbu: toNum(form.cbu),
-    cashbond: toNum(form.cashbond),
-    utility: toNum(form.utility),
-
-    transportation: toNum(form.transportation),
-    postage: toNum(form.postage),
-    motorcycle_loan: toNum(form.motorcycle_loan),
-    additional_target: toNum(form.additional_target),
-    repairing: toNum(form.repairing),
-    additional_monitoring: toNum(form.additional_monitoring),
-    motorcycle: toNum(form.motorcycle),
-    other_deduction: toNum(form.other_deduction),
-  });
-
-  const saveStaff = async (e) => {
-    e.preventDefault();
-
-    if (!isStaffStepValid) {
-      alert("Please complete required fields in Staff Details (Last Name, First Name).");
-      setFormStep(1);
-      return;
-    }
-
-    if (formStep !== 2) {
-      setFormStep(2);
-      return;
-    }
-
-    if (!isContractStepValid) {
-      alert("Position is required in Contract Details.");
-      return;
-    }
-
-    setSaving(true);
-    try {
-      const payload = buildPayload();
-      const res = await api.post("/staff", payload);
-      const newId = res.data?.id;
-
-      if (photoFile && newId) {
-        const fd = new FormData();
-        fd.append("photo", photoFile);
-        await api.post(`/staff/${newId}/photo`, fd);
-      }
-
-      closeAllModals();
-      await loadAll();
-      alert("Staff saved.");
-    } catch (err) {
-      alert(err?.response?.data?.message || err.message || "Failed to save staff.");
-    } finally {
-      setSaving(false);
-    }
+    return {
+      ...form,
+      branch_id: form.branch_id ? Number(form.branch_id) : null,
+      date_of_birth: form.date_of_birth || null,
+      start_date: form.start_date || null,
+      regularization_date: form.regularization_date || null,
+      height: form.height === "" ? null : Number(form.height),
+      weight: form.weight === "" ? null : Number(form.weight),
+      salary: form.salary === "" ? null : Number(form.salary),
+      ecola: form.ecola === "" ? null : Number(form.ecola),
+      cbu: toNum(form.cbu),
+      cashbond: toNum(form.cashbond),
+      utility: toNum(form.utility),
+      transportation: toNum(form.transportation),
+      postage: toNum(form.postage),
+      additional_target: toNum(form.additional_target),
+      repairing: toNum(form.repairing),
+      additional_monitoring: toNum(form.additional_monitoring),
+      other_deduction: toNum(form.other_deduction),
+      sss_er: toNum(form.sss_er),
+      ph_er: toNum(form.ph_er),
+      hdmf_er: toNum(form.hdmf_er),
+      total_er,
+      sss_ee: toNum(form.sss_ee),
+      ph_ee: toNum(form.ph_ee),
+      hdmf_ee: toNum(form.hdmf_ee),
+      total_ee,
+      tax: toNum(form.tax),
+      children: safeJsonArray(form.children),
+      education: safeJsonArray(form.education),
+      employment_history: safeJsonArray(form.employment_history),
+      beneficiaries: safeJsonArray(form.beneficiaries),
+      spouse_fullname: toStr(form.spouse_fullname) || null,
+      spouse_address: toStr(form.spouse_address) || null,
+      spouse_occupation: toStr(form.spouse_occupation) || null,
+      spouse_employer: toStr(form.spouse_employer) || null,
+      sss_no: toStr(form.sss_no) || null,
+      philhealth_no: toStr(form.philhealth_no) || null,
+      pagibig_no: toStr(form.pagibig_no) || null,
+      tin_no: toStr(form.tin_no) || null,
+      father_fullname: toStr(form.father_fullname) || null,
+      father_address: toStr(form.father_address) || null,
+      father_occupation: toStr(form.father_occupation) || null,
+      father_employer: toStr(form.father_employer) || null,
+      father_contact: toStr(form.father_contact) || null,
+      mother_fullname: toStr(form.mother_fullname) || null,
+      mother_address: toStr(form.mother_address) || null,
+      mother_occupation: toStr(form.mother_occupation) || null,
+      mother_employer: toStr(form.mother_employer) || null,
+      mother_contact: toStr(form.mother_contact) || null,
+      guardian_fullname: toStr(form.guardian_fullname) || null,
+      guardian_address: toStr(form.guardian_address) || null,
+      guardian_occupation: toStr(form.guardian_occupation) || null,
+      guardian_employer: toStr(form.guardian_employer) || null,
+      guardian_contact: toStr(form.guardian_contact) || null,
+    };
   };
+
+  const buildBalancePayload = () => ({
+    cbu: toNum(balanceForm.cbu),
+    cashbond: toNum(balanceForm.cashbond),
+    utility: toNum(balanceForm.utility),
+    salary_advance: toNum(balanceForm.salary_advance),
+    special_advance: toNum(balanceForm.special_advance),
+    cash_advance: toNum(balanceForm.cash_advance),
+    motorcycle_loan: toNum(balanceForm.motorcycle_loan),
+    other_receivable: toNum(balanceForm.other_receivable),
+    staff_accounts_payable: toNum(balanceForm.staff_accounts_payable),
+  });
 
   const updateStaff = async (e) => {
     e.preventDefault();
@@ -865,13 +1661,19 @@ export default function StaffInformation() {
       return;
     }
 
-    if (formStep !== 2) {
+    if (formStep === 1) {
       setFormStep(2);
       return;
     }
 
     if (!isContractStepValid) {
       alert("Position is required in Contract Details.");
+      setFormStep(2);
+      return;
+    }
+
+    if (formStep === 2) {
+      setFormStep(3);
       return;
     }
 
@@ -879,6 +1681,8 @@ export default function StaffInformation() {
     try {
       const payload = buildPayload();
       await api.put(`/staff/${editStaff.id}`, payload);
+
+      await api.put(`/staff-balances/${editStaff.id}`, buildBalancePayload());
 
       if (photoFile) {
         const fd = new FormData();
@@ -904,15 +1708,12 @@ export default function StaffInformation() {
       <div className="staffinfo-header">
         <div>
           <h2>Staff Information</h2>
-          <p>View staff, add staff, edit staff, upload photo, and set Active/Inactive status.</p>
+          <p>View staff, edit staff, upload photo, and set Active/Inactive status.</p>
         </div>
 
         <div className="staffinfo-actions">
           <button className="btn btn-outline" onClick={loadAll} type="button">
             Refresh
-          </button>
-          <button className="btn btn-primary" onClick={openAdd} type="button">
-            + Add Staff
           </button>
         </div>
       </div>
@@ -932,10 +1733,19 @@ export default function StaffInformation() {
             onChange={(e) => setSearchInput(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && setSearch(searchInput)}
           />
+
           <button className="btn btn-outline" onClick={() => setSearch(searchInput)} type="button">
             Search
           </button>
-          <button className="btn btn-ghost" type="button" onClick={() => (setSearch(""), setSearchInput(""))}>
+
+          <button
+            className="btn btn-ghost"
+            type="button"
+            onClick={() => {
+              setSearch("");
+              setSearchInput("");
+            }}
+          >
             Clear
           </button>
 
@@ -963,9 +1773,6 @@ export default function StaffInformation() {
                   <th>Name</th>
                   <th style={{ width: 180 }}>Position</th>
                   <th style={{ width: 180 }}>Department</th>
-                  <th style={{ width: 180 }}>Area</th>
-                  <th style={{ width: 180 }}>Region</th>
-                  <th style={{ width: 180 }}>Division</th>
                   <th style={{ width: 200 }}>Branch</th>
                   <th style={{ width: 120 }}>Status</th>
                   <th style={{ width: 140 }}>Start Date</th>
@@ -977,7 +1784,7 @@ export default function StaffInformation() {
               <tbody>
                 {filteredStaff.length === 0 ? (
                   <tr>
-                    <td colSpan={14} className="empty">
+                    <td colSpan={11} className="empty">
                       No staff found.
                     </td>
                   </tr>
@@ -999,9 +1806,6 @@ export default function StaffInformation() {
                       <td className="strong">{displayName(s)}</td>
                       <td>{s.position || "-"}</td>
                       <td>{s.department || "-"}</td>
-                      <td>{s.area || "-"}</td>
-                      <td>{s.region || "-"}</td>
-                      <td>{s.division || "-"}</td>
                       <td>{branchNameById(s.branch_id) || "-"}</td>
 
                       <td>
@@ -1039,81 +1843,6 @@ export default function StaffInformation() {
         />
       )}
 
-      {/* ------------------------- Add Staff (2-Step) ------------------------- */}
-      {showAdd && (
-        <div className="modal-overlay" onMouseDown={closeAllModals}>
-          <div className="modal staff-profile-modal" onMouseDown={(e) => e.stopPropagation()} style={{ maxWidth: 1200 }}>
-            <div className="modal-head">
-              <div>
-                <h3>Add Staff</h3>
-                <div className="mini">
-                  {displayFormName(form)} • {form.position || "-"} • {form.status || "Active"}
-                </div>
-              </div>
-              <button className="icon-btn" onClick={closeAllModals} type="button">
-                ✕
-              </button>
-            </div>
-
-            <form onSubmit={saveStaff}>
-              <div className="modal-body staff-profile-scroll">
-                <div className="staff-view-top">
-                  {photoPreview ? (
-                    <img className="staff-avatar-lg" src={photoPreview} alt="staff" />
-                  ) : (
-                    <div className="staff-avatar-lg staff-avatar--fallback">
-                      {(toStr(form.last_name || form.first_name || "?").slice(0, 1).toUpperCase() || "?")}
-                    </div>
-                  )}
-                </div>
-
-                <div style={{ display: "flex", justifyContent: "center", marginTop: 10, marginBottom: 10 }}>
-                  <label className="btn btn-outline photo-upload">
-                    Upload Photo
-                    <input type="file" accept="image/*" hidden onChange={(e) => onPickPhoto(e.target.files?.[0] || null)} />
-                  </label>
-                </div>
-
-                <StepTabs step={formStep} onSelectStep={setStepGuarded} canGoContract={isStaffStepValid} />
-                <br />
-
-                {formStep === 1 ? (
-                  <StaffDetailsStep form={form} onChange={onChange} />
-                ) : (
-                  <ContractDetailsStep form={form} branches={branches} onChange={onChange} />
-                )}
-              </div>
-
-              <div className="modal-foot">
-                {formStep === 1 ? (
-                  <>
-                    <button className="btn btn-primary" type="button" onClick={() => setStepGuarded(2)} disabled={!isStaffStepValid}>
-                      Next
-                    </button>
-                    <button className="btn btn-ghost" type="button" onClick={closeAllModals}>
-                      Cancel
-                    </button>
-                  </>
-                ) : (
-                  <>
-                    <button className="btn btn-outline" type="button" onClick={() => setFormStep(1)}>
-                      Back
-                    </button>
-                    <button className="btn btn-primary" type="submit" disabled={saving}>
-                      {saving ? "Saving..." : "Save Staff"}
-                    </button>
-                    <button className="btn btn-ghost" type="button" onClick={closeAllModals}>
-                      Cancel
-                    </button>
-                  </>
-                )}
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* ------------------------- Edit Staff (2-Step) ------------------------- */}
       {editStaff && (
         <div className="modal-overlay" onMouseDown={closeAllModals}>
           <div className="modal staff-profile-modal" onMouseDown={(e) => e.stopPropagation()} style={{ maxWidth: 1200 }}>
@@ -1148,18 +1877,21 @@ export default function StaffInformation() {
                   </label>
                 </div>
 
-                <StepTabs step={formStep} onSelectStep={setStepGuarded} canGoContract={isStaffStepValid} />
+                <StepTabs
+                  step={formStep}
+                  onSelectStep={setStepGuarded}
+                  canGoContract={isStaffStepValid}
+                  canGoBalances={isContractStepValid}
+                />
                 <br />
 
-                {formStep === 1 ? (
-                  <StaffDetailsStep form={form} onChange={onChange} />
-                ) : (
-                  <ContractDetailsStep form={form} branches={branches} onChange={onChange} />
-                )}
+                {formStep === 1 && <StaffDetailsStep form={form} onChange={onChange} />}
+                {formStep === 2 && <ContractDetailsStep form={form} branches={branches} onChange={onChange} />}
+                {formStep === 3 && <PersonalBalancesStep balanceForm={balanceForm} onBalanceChange={onBalanceChange} />}
               </div>
 
               <div className="modal-foot">
-                {formStep === 1 ? (
+                {formStep === 1 && (
                   <>
                     <button className="btn btn-primary" type="button" onClick={() => setStepGuarded(2)} disabled={!isStaffStepValid}>
                       Next
@@ -1168,9 +1900,25 @@ export default function StaffInformation() {
                       Cancel
                     </button>
                   </>
-                ) : (
+                )}
+
+                {formStep === 2 && (
                   <>
                     <button className="btn btn-outline" type="button" onClick={() => setFormStep(1)}>
+                      Back
+                    </button>
+                    <button className="btn btn-primary" type="button" onClick={() => setStepGuarded(3)} disabled={!isContractStepValid}>
+                      Next
+                    </button>
+                    <button className="btn btn-ghost" type="button" onClick={closeAllModals}>
+                      Cancel
+                    </button>
+                  </>
+                )}
+
+                {formStep === 3 && (
+                  <>
+                    <button className="btn btn-outline" type="button" onClick={() => setFormStep(2)}>
                       Back
                     </button>
                     <button className="btn btn-primary" type="submit" disabled={saving}>

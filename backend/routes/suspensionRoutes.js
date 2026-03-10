@@ -19,11 +19,6 @@ const roleLower = (req) => String(req.user?.role || "").trim().toLowerCase();
 const isAdmin = (req) => roleLower(req) === "admin";
 const isBranchManager = (req) => roleLower(req) === "branch manager";
 
-/**
- * GET /api/suspension-orders
- * Admin: all
- * Branch manager: (optional) still all for now (no branch_id column on suspension_orders)
- */
 router.get("/suspension-orders", requireAuth, async (req, res) => {
   try {
     const role = roleLower(req);
@@ -43,11 +38,6 @@ router.get("/suspension-orders", requireAuth, async (req, res) => {
   }
 });
 
-/**
- * POST /api/suspension-orders
- * Roles: admin, branch manager
- * Body: employee_id, employee_name, suspension_start OR start_date, suspension_end OR end_date, reason, details?
- */
 router.post(
   "/suspension-orders",
   requireAuth,
@@ -61,7 +51,6 @@ router.post(
       const reason = clean(req.body?.reason);
       const details = clean(req.body?.details);
 
-      // Accept either naming from your current frontend OR DB column names
       const start_date = toDate(req.body?.suspension_start ?? req.body?.start_date);
       const end_date = toDate(req.body?.suspension_end ?? req.body?.end_date);
 
@@ -70,7 +59,6 @@ router.post(
       if (!end_date) return res.status(400).json({ message: "End date is required" });
       if (!reason) return res.status(400).json({ message: "Reason is required" });
 
-      // Snapshot staff info (name parts)
       const s = await client.query(
         `SELECT id, fullname, first_name, last_name, middle_name
          FROM public.staff
@@ -86,13 +74,10 @@ router.post(
       const staff = s.rows[0];
       const employee_name = clean(req.body?.employee_name) || clean(staff.fullname);
 
-      // Generate a simple order_no like "SUS-00000123"
-      // If you already have a better format, replace this block
       const seq = await client.query(`SELECT nextval('public.suspension_orders_id_seq') AS n`);
       const n = Number(seq.rows?.[0]?.n || 0);
       const order_no = `SUS-${String(n).padStart(8, "0")}`;
 
-      // Insert using explicit id (so order_no matches the same "n")
       const ins = await client.query(
         `
         INSERT INTO public.suspension_orders
@@ -130,10 +115,6 @@ router.post(
   }
 );
 
-/**
- * PUT /api/suspension-orders/:id/approve
- * Admin only
- */
 router.put(
   "/suspension-orders/:id/approve",
   requireAuth,
@@ -164,11 +145,6 @@ router.put(
   }
 );
 
-/**
- * PUT /api/suspension-orders/:id/reject
- * Admin only
- * Body: { reason }
- */
 router.put(
   "/suspension-orders/:id/reject",
   requireAuth,
