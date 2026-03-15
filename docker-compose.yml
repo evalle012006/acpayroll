@@ -1,0 +1,59 @@
+networks:
+  default:
+    name: services-network
+    external: true
+
+volumes:
+  acpayroll_db_data:
+    driver: local
+  acpayroll_uploads:
+    driver: local
+
+services:
+
+  # ── PostgreSQL Database ──────────────────────────────────────
+  acpayroll-db:
+    image: postgres:16-alpine
+    container_name: acpayroll-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${PG_USER}
+      POSTGRES_PASSWORD: ${PG_PASSWORD}
+      POSTGRES_DB: ${PG_DATABASE}
+    volumes:
+      - acpayroll_db_data:/var/lib/postgresql/data
+      - ./init_db.sql:/docker-entrypoint-initdb.d/init_db.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${PG_USER} -d ${PG_DATABASE}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Backend API ──────────────────────────────────────────────
+  acpayroll-backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: acpayroll-backend
+    restart: unless-stopped
+    env_file: ./backend/.env
+    volumes:
+      - acpayroll_uploads:/app/uploads
+    depends_on:
+      acpayroll-db:
+        condition: service_healthy
+
+  # ── Frontend ─────────────────────────────────────────────────
+  acpayroll-frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_URL: ${VITE_API_URL}
+    container_name: acpayroll-frontend
+    restart: unless-stopped
+    depends_on:
+      - acpayroll-backend
+    environment:
+      - VIRTUAL_HOST=${DOMAIN}
+      - LETSENCRYPT_HOST=${DOMAIN}
