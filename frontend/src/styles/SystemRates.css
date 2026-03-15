@@ -1,6 +1,42 @@
-/* ===============================
-   SYSTEM UPDATE - GRID CARDS
-================================= */
+.sys-page {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 22px;
+  color: var(--text);
+}
+
+.sys-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.sys-title {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 900;
+  color: var(--text);
+}
+
+.sys-subtitle {
+  margin: 6px 0 0;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--muted);
+}
+
+.sys-error {
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(239, 68, 68, 0.28);
+  background: rgba(239, 68, 68, 0.1);
+  color: #fca5a5;
+  font-size: 13px;
+  font-weight: 800;
+}
 
 .sys-grid {
   display: grid;
@@ -8,25 +44,28 @@
   gap: 16px;
 }
 
-/* clickable card */
 .sys-card {
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: 16px;
+  box-shadow: var(--shadow-soft);
+  overflow: hidden;
+  color: var(--text);
+}
+
+.sys-card.clickable {
   padding: 16px;
   cursor: pointer;
   transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
   text-align: left;
-  color: var(--text);
 }
 
-.sys-card:hover {
+.sys-card.clickable:hover {
   transform: translateY(-4px);
   box-shadow: var(--shadow);
   border-color: color-mix(in srgb, var(--border) 70%, var(--primary));
 }
 
-/* make all text inside card follow theme */
 .sys-card * {
   color: inherit;
 }
@@ -36,6 +75,8 @@
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border);
 }
 
 .sys-card-title {
@@ -45,7 +86,7 @@
 }
 
 .sys-card-meta {
-  margin-top: 6px;
+  margin-top: 4px;
   font-size: 12px;
   font-weight: 800;
   color: var(--muted);
@@ -62,19 +103,12 @@
   margin: 0;
 }
 
-.sys-actions {
-  margin-top: 12px;
-  display: flex;
-  justify-content: flex-end;
-}
-
 .sys-link {
   font-size: 13px;
   font-weight: 900;
   color: var(--primary);
 }
 
-/* pill */
 .sys-pill {
   display: inline-flex;
   align-items: center;
@@ -89,57 +123,37 @@
   font-weight: 900;
 }
 
-/* stronger dark surface */
-[data-theme="dark"] .sys-card {
-  background: #0f1f3d;
-  border-color: rgba(255, 255, 255, 0.10);
-}
-
-[data-theme="dark"] .sys-pill {
-  background: rgba(255, 255, 255, 0.06);
-  border-color: rgba(255, 255, 255, 0.10);
-}
-
-/* ===============================
-   SYSTEM UPDATE - TABLE
-================================= */
-
 .sys-table {
   width: 100%;
   overflow-x: auto;
 }
 
-/* header row */
-.sys-row.sys-row-head {
+.sys-row.sys-row-head,
+.sys-row {
   display: grid;
-  grid-template-columns: 2.2fr 1fr 1fr 1fr 1.2fr;
-  gap: 10px;
+  grid-template-columns: 2.4fr 1fr 1fr 1.15fr 0.9fr 1fr 0.9fr 1.45fr;
+  gap: 12px;
   align-items: center;
+}
+
+.sys-row.sys-row-head {
   padding: 12px 18px;
   background: var(--table-header);
   color: #fff;
   font-size: 12px;
   font-weight: 900;
   text-transform: uppercase;
-  letter-spacing: 0.5px;
-  position: sticky;
-  top: 0;
-  z-index: 2;
+  letter-spacing: 0.4px;
 }
 
-/* body rows */
 .sys-row {
-  display: grid;
-  grid-template-columns: 2.2fr 1fr 1fr 1fr 1.2fr;
-  gap: 10px;
-  align-items: center;
-  padding: 12px 18px;
+  padding: 14px 18px;
   border-bottom: 1px solid var(--border);
   background: var(--panel);
   color: var(--text);
+  min-width: 1180px;
 }
 
-/* zebra + hover */
 .sys-row:nth-child(even):not(.sys-row-head) {
   background: var(--panel-2);
 }
@@ -148,12 +162,29 @@
   background: var(--row-hover);
 }
 
-/* new row highlight */
 .sys-row.sys-row-new {
-  background: color-mix(in srgb, var(--panel-2) 80%, transparent);
+  background: color-mix(in srgb, var(--panel-2) 82%, transparent);
 }
 
-/* inputs */
+.sys-row > div,
+.sys-row > input {
+  min-width: 0;
+}
+
+.sys-row > div {
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.sys-row > div:first-child {
+  font-weight: 800;
+}
+
+.sys-row > div:not(:first-child):not(.sys-actions) {
+  white-space: nowrap;
+}
+
 .sys-row input {
   width: 100%;
   padding: 10px 12px;
@@ -182,15 +213,14 @@
   background: var(--panel-2);
 }
 
-/* actions cell */
 .sys-actions {
   display: flex;
-  justify-content: flex-end;
+  justify-content: flex-start;
+  align-items: center;
   gap: 8px;
   flex-wrap: wrap;
 }
 
-/* action buttons inside table */
 .sys-btn {
   border: none;
   border-radius: 12px;
@@ -200,6 +230,7 @@
   transition: 0.2s;
   background: var(--primary);
   color: #fff;
+  white-space: nowrap;
 }
 
 .sys-btn:hover {
@@ -209,6 +240,7 @@
 .sys-btn.danger {
   background: #ef4444;
 }
+
 .sys-btn.danger:hover {
   background: #dc2626;
 }
@@ -218,54 +250,12 @@
   cursor: not-allowed;
 }
 
-/* small helper note */
 .sys-note {
   padding: 12px 18px;
   font-size: 12px;
   font-weight: 800;
   color: var(--muted);
 }
-
-/* Responsive: stack columns on small screens */
-@media (max-width: 900px) {
-  .sys-row,
-  .sys-row.sys-row-head {
-    grid-template-columns: 1.8fr 1fr 1fr;
-    grid-template-areas:
-      "pos pos pos"
-      "sal ecola trans"
-      "actions actions actions";
-  }
-
-  .sys-row > :nth-child(1) {
-    grid-area: pos;
-  }
-  .sys-row > :nth-child(2) {
-    grid-area: sal;
-  }
-  .sys-row > :nth-child(3) {
-    grid-area: ecola;
-  }
-  .sys-row > :nth-child(4) {
-    grid-area: trans;
-  }
-  .sys-row > :nth-child(5) {
-    grid-area: actions;
-  }
-
-  .sys-actions {
-    justify-content: flex-start;
-  }
-}
-
-.sys-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-/* ===== modal ===== */
 
 .sys-modal-overlay {
   position: fixed;
@@ -280,7 +270,7 @@
 
 .sys-modal {
   width: 100%;
-  max-width: 680px;
+  max-width: 760px;
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: 16px;
@@ -372,6 +362,28 @@
   gap: 10px;
   padding: 14px 18px 18px;
   border-top: 1px solid var(--border);
+}
+
+
+[data-theme="dark"] .sys-card {
+  background: #0f1f3d;
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+[data-theme="dark"] .sys-pill {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+[data-theme="dark"] .sys-modal {
+  background: #0f1f3d;
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+@media (max-width: 1100px) {
+  .sys-header {
+    align-items: flex-start;
+  }
 }
 
 @media (max-width: 720px) {

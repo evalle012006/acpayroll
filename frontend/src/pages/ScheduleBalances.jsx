@@ -7,7 +7,6 @@ const MONEY_COLS = [
   { key: "cbu", label: "CBU" },
   { key: "cashbond", label: "Cashbond" },
   { key: "utility", label: "Utility" },
-  { key: "salary_loan", label: "Salary Loan" },
   { key: "salary_advance", label: "Salary Advance" },
   { key: "motorcycle_loan", label: "Motorcycle Loan" },
   { key: "special_advance", label: "Special Advance" },
@@ -181,8 +180,7 @@ export default function ScheduleBalances() {
 
     return rows.filter((r) => {
       const hay = [
-        r.staff_id,
-        r.employee_id,
+        r.employee_no,
         r.fullname,
         displayName(r),
         r.position,
@@ -209,7 +207,6 @@ export default function ScheduleBalances() {
         cbu: 0,
         cashbond: 0,
         utility: 0,
-        salary_loan: 0,
         salary_advance: 0,
         motorcycle_loan: 0,
         special_advance: 0,
@@ -255,7 +252,6 @@ export default function ScheduleBalances() {
       CBU: toNum(r.cbu),
       Cashbond: toNum(r.cashbond),
       Utility: toNum(r.utility),
-      "Salary Loan": toNum(r.salary_loan),
       "Salary Advance": toNum(r.salary_advance),
       "Motorcycle Loan": toNum(r.motorcycle_loan),
       "Special Advance": toNum(r.special_advance),
@@ -272,7 +268,6 @@ export default function ScheduleBalances() {
       CBU: totals.cbu,
       Cashbond: totals.cashbond,
       Utility: totals.utility,
-      "Salary Loan": totals.salary_loan,
       "Salary Advance": totals.salary_advance,
       "Motorcycle Loan": totals.motorcycle_loan,
       "Special Advance": totals.special_advance,
@@ -301,7 +296,7 @@ export default function ScheduleBalances() {
           <input
             className="search-input"
             type="text"
-            placeholder="Search staff id, employee id, name, or position..."
+            placeholder="Search employee no, name, or position..."
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && handleSearch()}
@@ -436,8 +431,7 @@ export default function ScheduleBalances() {
                 <table className="table">
                   <thead>
                     <tr>
-                      <th>Staff ID</th>
-                      <th>Employee ID</th>
+                      <th>Employee No</th>
                       <th>Full Name</th>
                       <th>Position</th>
                       {MONEY_COLS.map((c) => (
@@ -449,15 +443,14 @@ export default function ScheduleBalances() {
                   <tbody>
                     {viewBranch.staff_rows.length === 0 ? (
                       <tr>
-                        <td colSpan={MONEY_COLS.length + 4} className="empty-state">
+                        <td colSpan={MONEY_COLS.length + 3} className="empty-state">
                           No staff found.
                         </td>
                       </tr>
                     ) : (
                       viewBranch.staff_rows.map((r, idx) => (
-                        <tr key={`${r.staff_id}-${idx}`}>
-                          <td>{r.staff_id ?? "-"}</td>
-                          <td>{r.employee_id ?? "-"}</td>
+                        <tr key={`${r.employee_no || idx}-${idx}`}>
+                          <td>{r.employee_no ?? "-"}</td>
                           <td className="td-strong">{displayName(r)}</td>
                           <td>{r.position ?? "-"}</td>
 

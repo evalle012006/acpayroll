@@ -197,7 +197,7 @@ export default function SystemRates() {
 
               <div className="sys-actions">
                 <button className="sys-btn" onClick={() => openViewModal(r)}>
-                  {isAdmin ? "View / Edit" : "View"}
+                  {isAdmin ? "Edit" : "View"}
                 </button>
 
                 {isAdmin && (

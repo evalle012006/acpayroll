@@ -1,3 +1,4 @@
+// routes/apiRoutes.js
 const express = require("express");
 const router = express.Router();
 const pool = require("../db");
@@ -7,6 +8,7 @@ const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
 
+/* ------------------------- Helpers ------------------------- */
 const toStr = (v) => String(v ?? "").trim();
 
 const toNum = (v) => {
@@ -40,6 +42,7 @@ const buildFullname = (b) => {
     .replace(/\s+/g, " ")
     .trim();
 
+  // fallback to legacy fullname if present
   return built || toStr(b?.fullname);
 };
 
@@ -48,6 +51,7 @@ const isAdmin = (req) => roleLower(req) === "admin";
 const isBranchManager = (req) => roleLower(req) === "branch manager";
 const getUserBranchId = (req) => req.user?.branch_id ?? null;
 
+/* ------------------------- Branch-manager staff guard ------------------------- */
 async function assertStaffInManagersBranch(req, staffId) {
   if (!isBranchManager(req)) return true;
   const bid = getUserBranchId(req);
@@ -60,6 +64,7 @@ async function assertStaffInManagersBranch(req, staffId) {
   return check.rowCount > 0;
 }
 
+/* ------------------------- Upload dirs (multer) ------------------------- */
 const staffUploadDir = path.join(__dirname, "..", "uploads", "staff");
 fs.mkdirSync(staffUploadDir, { recursive: true });
 
@@ -93,6 +98,9 @@ const uploadAttachment = multer({
   limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
 });
 
+/* ===========================================================
+   BRANCHES
+   =========================================================== */
 router.get("/branches", requireAuth, async (req, res) => {
   try {
     if (isAdmin(req)) {
@@ -181,6 +189,11 @@ router.delete("/branches/:id", requireAuth, requireRole(["admin"]), async (req, 
   }
 });
 
+/* ===========================================================
+   STAFF
+   - UPDATED for last_name / first_name / middle_name
+   - Server computes fullname automatically
+   =========================================================== */
 router.get("/staff", requireAuth, async (req, res) => {
   try {
     if (isAdmin(req)) {
@@ -312,6 +325,7 @@ router.post("/staff", requireAuth, requireRole(["admin"]), async (req, res) => {
 
     const newId = ins.rows[0].id;
 
+    // Keep balances table synced to employee_id + fullname + position
     await client.query(
       `
       INSERT INTO public.staff_balances
@@ -471,6 +485,7 @@ router.put("/staff/:id", requireAuth, requireRole(["admin"]), async (req, res) =
       return res.status(404).json({ message: "Staff not found" });
     }
 
+    // keep balances synced
     await client.query(
       `UPDATE public.staff_balances
        SET fullname=$1, "position"=$2, updated_at=NOW()
@@ -502,6 +517,7 @@ router.delete("/staff/:id", requireAuth, requireRole(["admin"]), async (req, res
   }
 });
 
+/* ------------------------- STAFF PHOTO UPLOAD ------------------------- */
 router.post(
   "/staff/:id/photo",
   requireAuth,
@@ -527,6 +543,9 @@ router.post(
   }
 );
 
+/* ===========================================================
+   LEAVE / LOAN / BALANCES (used by Dashboard + Salary)
+   =========================================================== */
 router.get("/leave-requests", requireAuth, async (_req, res) => {
   try {
     const r = await pool.query(`SELECT * FROM public.leave_requests ORDER BY id DESC`);
@@ -579,6 +598,9 @@ router.get("/staff-balances", requireAuth, async (_req, res) => {
   }
 });
 
+/* ===========================================================
+   ORDER NUMBER GENERATOR
+   =========================================================== */
 async function generateOrderNo(client, prefix) {
   const now = new Date();
   const year = now.getFullYear();
@@ -619,6 +641,12 @@ async function generateOrderNo(client, prefix) {
   return `${prefix}-${year}-${mm}-${nnnn}`;
 }
 
+/* ===========================================================
+   PROMOTION / DEMOTION / SUSPENSION / EXIT / TRANSFER
+   (same behavior as your file)
+   =========================================================== */
+
+/* -------- PROMOTION ORDERS -------- */
 router.get("/promotion-orders", requireAuth, async (req, res) => {
   try {
     const role = roleLower(req);
@@ -766,6 +794,7 @@ router.put("/promotion-orders/:id/approve", requireAuth, requireRole(["admin"]),
       [order.new_position, toNum(order.new_salary), order.employee_id]
     );
 
+    // also keep staff_balances position synced
     await client.query(
       `UPDATE public.staff_balances SET "position"=$1, updated_at=NOW() WHERE employee_id=$2`,
       [order.new_position, order.employee_id]
@@ -814,6 +843,7 @@ router.put("/promotion-orders/:id/reject", requireAuth, requireRole(["admin"]), 
   }
 });
 
+/* -------- DEMOTION ORDERS -------- */
 router.get("/demotion-orders", requireAuth, async (req, res) => {
   try {
     const role = roleLower(req);
@@ -934,6 +964,7 @@ router.put("/demotion-orders/:id/reject", requireAuth, requireRole(["admin"]), a
   }
 });
 
+/* -------- SUSPENSION ORDERS -------- */
 router.get("/suspension-orders", requireAuth, async (req, res) => {
   try {
     const role = roleLower(req);
@@ -1054,6 +1085,7 @@ router.put("/suspension-orders/:id/reject", requireAuth, requireRole(["admin"]),
   }
 });
 
+/* -------- EXIT STAFF ORDERS -------- */
 router.get("/exit-staff-orders", requireAuth, async (req, res) => {
   try {
     const role = roleLower(req);
@@ -1248,6 +1280,7 @@ router.put("/exit-staff-orders/:id/reject", requireAuth, requireRole(["admin"]),
   }
 });
 
+/* -------- TRANSFER STAFF ORDERS -------- */
 router.get("/transfer-staff-orders", requireAuth, async (req, res) => {
   try {
     const role = roleLower(req);
@@ -1424,6 +1457,9 @@ router.put("/transfer-staff-orders/:id/reject", requireAuth, requireRole(["admin
   }
 });
 
+/* ===========================================================
+   STAFF ATTACHMENTS
+   =========================================================== */
 router.get("/staff/:id/attachments", requireAuth, async (req, res) => {
   try {
     const staffId = toInt(req.params.id);
@@ -1524,6 +1560,7 @@ router.delete(
         const absolute = path.join(__dirname, "..", att.file_url.replace("/uploads/", "uploads/"));
         fs.unlinkSync(absolute);
       } catch {
+        // ignore
       }
 
       return res.json({ message: "Deleted" });

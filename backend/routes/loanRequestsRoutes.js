@@ -1,4 +1,3 @@
-// routes/loanRequestsRoutes.js
 const express = require("express");
 const router = express.Router();
 const pool = require("../db");
@@ -41,6 +40,7 @@ async function ensureBalanceRow(client, staffId) {
         motorcycle_loan,
         special_advance,
         cash_advance,
+        pag_ibig_loan,
         other_receivable,
         staff_accounts_payable,
         created_at,
@@ -54,7 +54,7 @@ async function ensureBalanceRow(client, staffId) {
       s.first_name,
       s.middle_name,
       0, 0, 0,
-      0, 0, 0, 0,
+      0, 0, 0, 0, 0,
       0, 0,
       NOW(), NOW()
     FROM public.staff s
@@ -72,6 +72,7 @@ function loanTypeToBalanceColumn(loanType) {
   if (lt === "special loan" || lt === "special advance") return "special_advance";
   if (lt === "cash loan" || lt === "cash advance") return "cash_advance";
   if (lt === "motorcycle loan") return "motorcycle_loan";
+  if (lt === "pag-ibig loan" || lt === "pag ibig loan") return "pag_ibig_loan";
 
   return null;
 }
@@ -267,6 +268,7 @@ router.post(
   }
 );
 
+/* ---------------- UPDATE loan request status ---------------- */
 router.put("/loan-requests/:id", requireAuth, async (req, res) => {
   const client = await pool.connect();
 

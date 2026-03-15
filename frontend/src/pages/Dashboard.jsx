@@ -2,6 +2,16 @@ import { useEffect, useMemo, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import "../styles/Dashboard.css";
 import api from "../api/axiosClient";
+import {
+  ResponsiveContainer,
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+} from "recharts";
 
 const toNum = (v) => {
   const n = Number(v);
@@ -192,6 +202,38 @@ export default function Dashboard() {
     )
   );
 
+  const balanceLineData = [
+    { name: "CBU", value: toNum(stats.totalCBU) },
+    { name: "Cashbond", value: toNum(stats.totalCashbond) },
+    { name: "Salary Advance", value: toNum(stats.totalSalaryAdvance) },
+    { name: "Motorcycle Loan", value: toNum(stats.totalMotorcycleLoan) },
+    { name: "Special Advance", value: toNum(stats.totalSpecialAdvance) },
+    { name: "Cash Advance", value: toNum(stats.totalCashAdvance) },
+    { name: "Other Receivable", value: toNum(stats.totalOtherReceivable) },
+    { name: "Staff Payable", value: toNum(stats.totalStaffAccountsPayable) },
+  ];
+
+  const approvalLineData = [
+    {
+      name: "Leaves",
+      Pending: toNum(stats.pendingLeaves),
+      Approved: toNum(stats.approvedLeaves),
+      Rejected: toNum(stats.rejectedLeaves),
+    },
+    {
+      name: "Loans",
+      Pending: toNum(stats.pendingLoans),
+      Approved: toNum(stats.approvedLoans),
+      Rejected: toNum(stats.rejectedLoans),
+    },
+  ];
+
+  const chartTooltipMoney = (value) =>
+    `₱ ${toNum(value).toLocaleString(undefined, {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    })}`;
+
   return (
     <div className="dash" data-theme={isDark ? "dark" : "light"}>
       <div className="dash__head">
@@ -203,7 +245,6 @@ export default function Dashboard() {
       </div>
 
       <div className="dash__kpis">
-        {/* TOTAL EMPLOYEES (table inside) */}
         <EmployeeKpiCard
           title="TOTAL EMPLOYEES"
           active={stats.activeEmployees}
@@ -247,8 +288,8 @@ export default function Dashboard() {
         <div className="card card--panel">
           <div className="card__head">
             <div>
-              <div className="card__title">Balances Breakdown</div>
-              <div className="card__sub">Receivables vs Payables</div>
+              <div className="card__title">Balances Trend</div>
+              <div className="card__sub">Line graph of all balance totals</div>
             </div>
             <button className="btn btn--ghost" type="button">
               Actions
@@ -256,19 +297,61 @@ export default function Dashboard() {
           </div>
 
           <div className="chart">
-            <div className="chart__placeholder">Chart placeholder (CBU/Cashbond/Advances/Loans…)</div>
+            <ResponsiveContainer width="100%" height={280}>
+              <LineChart
+                data={balanceLineData}
+                margin={{ top: 10, right: 20, left: 0, bottom: 10 }}
+              >
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.16)" />
+                <XAxis
+                  dataKey="name"
+                  stroke="#94a3b8"
+                  tick={{ fontSize: 11 }}
+                  interval={0}
+                  angle={-15}
+                  textAnchor="end"
+                  height={60}
+                />
+                <YAxis
+                  stroke="#94a3b8"
+                  tick={{ fontSize: 11 }}
+                  tickFormatter={(v) => `₱${Math.round(v / 1000)}k`}
+                />
+                <Tooltip
+                  formatter={(value) => chartTooltipMoney(value)}
+                  contentStyle={{
+                    background: "#0f172a",
+                    border: "1px solid rgba(148,163,184,0.2)",
+                    borderRadius: 12,
+                    color: "#fff",
+                  }}
+                  labelStyle={{ color: "#cbd5e1" }}
+                />
+                <Legend />
+                <Line
+                  type="monotone"
+                  dataKey="value"
+                  name="Amount"
+                  stroke="#3b82f6"
+                  strokeWidth={3}
+                  dot={{ r: 4 }}
+                  activeDot={{ r: 6 }}
+                />
+              </LineChart>
+            </ResponsiveContainer>
           </div>
 
           <div className="legend">
-            <span className="dot dot--blue" /> Receivables
-            <span className="legend__spacer" />
-            <span className="dot dot--green" /> Payables
+            <span className="dot dot--blue" /> Balance totals
           </div>
         </div>
 
         <div className="card card--panel">
           <div className="card__head">
-            <div className="card__title">Approval Rate</div>
+            <div>
+              <div className="card__title">Approval Trends</div>
+              <div className="card__sub">Leave and loan request status comparison</div>
+            </div>
             <div className="icons">
               <button className="iconBtn" aria-label="settings" type="button">
                 ⚙
@@ -279,15 +362,51 @@ export default function Dashboard() {
             </div>
           </div>
 
-          <div className="donutWrap">
-            <Donut percent={leaveApprovalPct} label="Leaves" />
-            <div className="donutMeta">
-              <div className="donutMeta__label">Loan Approval Target</div>
-              <div className="donutMeta__bar">
-                <span style={{ width: `${loanApprovalPct}%` }} />
-              </div>
-              <div className="donutMeta__pct">{loanApprovalPct}%</div>
-            </div>
+          <div className="chart">
+            <ResponsiveContainer width="100%" height={280}>
+              <LineChart
+                data={approvalLineData}
+                margin={{ top: 10, right: 20, left: 0, bottom: 10 }}
+              >
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.16)" />
+                <XAxis dataKey="name" stroke="#94a3b8" tick={{ fontSize: 11 }} />
+                <YAxis stroke="#94a3b8" tick={{ fontSize: 11 }} />
+                <Tooltip
+                  contentStyle={{
+                    background: "#0f172a",
+                    border: "1px solid rgba(148,163,184,0.2)",
+                    borderRadius: 12,
+                    color: "#fff",
+                  }}
+                  labelStyle={{ color: "#cbd5e1" }}
+                />
+                <Legend />
+                <Line
+                  type="monotone"
+                  dataKey="Pending"
+                  stroke="#3b82f6"
+                  strokeWidth={3}
+                  dot={{ r: 4 }}
+                  activeDot={{ r: 6 }}
+                />
+                <Line
+                  type="monotone"
+                  dataKey="Approved"
+                  stroke="#22c55e"
+                  strokeWidth={3}
+                  dot={{ r: 4 }}
+                  activeDot={{ r: 6 }}
+                />
+                <Line
+                  type="monotone"
+                  dataKey="Rejected"
+                  stroke="#ef4444"
+                  strokeWidth={3}
+                  dot={{ r: 4 }}
+                  activeDot={{ r: 6 }}
+                />
+              </LineChart>
+            </ResponsiveContainer>
           </div>
         </div>
       </div>
@@ -335,7 +454,6 @@ function EmployeeKpiCard({ title, active, inactive, total, badge, accent }) {
         <div className="kpi__badge">{badge}</div>
       </div>
 
-      {/* mini table */}
       <div style={{ marginTop: 10 }}>
         <table style={{ width: "100%", borderCollapse: "collapse" }}>
           <tbody>
@@ -491,19 +609,6 @@ function InfoCard({ title, value, strong }) {
     <div className={`infoCard ${strong ? "infoCard--strong" : ""}`}>
       <div className="infoCard__title">{title}</div>
       <div className="infoCard__value">{value}</div>
-    </div>
-  );
-}
-
-function Donut({ percent = 75, label = "Percent" }) {
-  const p = Math.max(0, Math.min(100, toNum(percent)));
-  const deg = (p / 100) * 360;
-  return (
-    <div className="donut" style={{ "--deg": `${deg}deg` }}>
-      <div className="donut__inner">
-        <div className="donut__label">{label}</div>
-        <div className="donut__value">{p}</div>
-      </div>
     </div>
   );
 }

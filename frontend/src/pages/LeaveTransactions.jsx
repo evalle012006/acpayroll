@@ -38,9 +38,6 @@ export default function LeaveTransactions() {
   const [selectedLeaveType, setSelectedLeaveType] = useState("All");
   const [showCreateLeave, setShowCreateLeave] = useState(false);
 
-  // NOTE:
-  // Your DB table leave_requests DOES NOT have "reason" (based on your screenshot),
-  // so we keep it in the UI for now but we DO NOT send it to backend.
   const [leaveForm, setLeaveForm] = useState({
     employee_id: "",
     staff_name: "",
@@ -98,7 +95,6 @@ export default function LeaveTransactions() {
     }
   }, [logout]);
 
-  // ✅ ADDED: Refresh handler (doesn't remove anything)
   const handleRefresh = useCallback(async () => {
     await Promise.all([fetchStaff(), fetchBranches(), fetchLeave()]);
   }, [fetchStaff, fetchBranches, fetchLeave]);
@@ -114,7 +110,6 @@ export default function LeaveTransactions() {
     fetchLeave();
   }, [user, fetchStaff, fetchBranches, fetchLeave]);
 
-  // ESC close modal
   useEffect(() => {
     if (!showCreateLeave) return;
 
@@ -231,7 +226,6 @@ export default function LeaveTransactions() {
           <p className="approval-subtitle">Create and manage leave requests</p>
         </div>
 
-        {/* ✅ UPDATED: Back + Refresh + Add Leave */}
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
           <button
             className="btn-secondary"
@@ -347,8 +341,7 @@ export default function LeaveTransactions() {
           </table>
         </div>
       </div>
-
-      {/* ✅ CREATE LEAVE MODAL */}
+      
       {showCreateLeave && (
         <div
           className="modal-overlay"

@@ -22,12 +22,10 @@ export default function Departments() {
   const [editDept, setEditDept] = useState(null);
   const [saving, setSaving] = useState(false);
 
-  // ✅ View modal (staff in dept)
   const [viewDept, setViewDept] = useState(null);
   const [deptStaff, setDeptStaff] = useState([]);
   const [loadingDeptStaff, setLoadingDeptStaff] = useState(false);
 
-  // ✅ NEW: dropdown filters (4 controls)
   const [divisionFilter, setDivisionFilter] = useState("All");
   const [regionFilter, setRegionFilter] = useState("All");
   const [areaFilter, setAreaFilter] = useState("All");
@@ -127,7 +125,6 @@ export default function Departments() {
     resetViewFilters();
   };
 
-  // ESC close modals
   useEffect(() => {
     const isAnyOpen = showModal || !!viewDept;
     if (!isAnyOpen) return;
@@ -145,7 +142,6 @@ export default function Departments() {
       document.removeEventListener("keydown", onKey);
       document.body.style.overflow = "";
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showModal, viewDept]);
 
   const onChange = (e) => setForm((p) => ({ ...p, [e.target.name]: e.target.value }));
@@ -182,7 +178,6 @@ export default function Departments() {
     }
   };
 
-  // ✅ View staff list per department
   const openView = useCallback(async (d) => {
     setViewDept(d);
     setDeptStaff([]);
@@ -302,7 +297,6 @@ export default function Departments() {
         )}
       </div>
 
-      {/* ✅ ADD/EDIT MODAL */}
       {showModal && (
         <div className="modal-overlay" onMouseDown={closeModal}>
           <div className="modal" onMouseDown={(e) => e.stopPropagation()}>
@@ -344,7 +338,6 @@ export default function Departments() {
         </div>
       )}
 
-      {/* ✅ VIEW STAFF MODAL */}
       {viewDept && (
         <div className="modal-overlay" onMouseDown={closeView}>
           <div className="modal staff-profile-modal" onMouseDown={(e) => e.stopPropagation()} style={{ maxWidth: 1100 }}>
@@ -359,7 +352,6 @@ export default function Departments() {
             </div>
 
             <div className="modal-body" style={{ padding: 10 }}>
-              {/* ✅ 4 dropdown filters */}
               <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 12, alignItems: "center" }}>
                 <div className="pill">
                   Showing: <strong>{filteredDeptStaff.length}</strong>

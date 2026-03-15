@@ -196,8 +196,8 @@ export default function ExitStaff() {
             <thead>
               <tr>
                 <th>EMPLOYEE ID</th>
-                <th>STAFF CODE</th>
-                <th>EMPLOYEE</th>
+                <th>EMPLOYEE NO</th>
+                <th>EMPLOYEE NAME</th>
                 <th>BRANCH</th>
                 <th>DEPARTMENT</th>
                 <th>POSITION</th>

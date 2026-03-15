@@ -85,7 +85,7 @@ function EditableCell({ value, placeholder, align = "right", onChange }) {
       onInput={emit}
       onBlur={emit}
       onKeyDown={(e) => {
-        if (e.key === "Enter") e.preventDefault(); // keep single-line
+        if (e.key === "Enter") e.preventDefault();
       }}
     />
   );
@@ -1034,7 +1034,7 @@ function ContractDetailsStep({ form, branches, setForm }) {
 }
 
 function StaffCreateModal({ branches, onClose, onCreated }) {
-  useMemo(() => getBase(), []); // keep if you want base later
+  useMemo(() => getBase(), []);
   const [step, setStep] = useState(1);
 
   const [saving, setSaving] = useState(false);

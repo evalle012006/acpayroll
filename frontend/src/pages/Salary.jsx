@@ -5,7 +5,6 @@ import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
 import api from "../api/axiosClient";
 
-/* ------------------------- Helpers ------------------------- */
 const toStr = (v) => String(v ?? "").trim();
 
 const toNum = (v) => {
@@ -44,7 +43,6 @@ export default function Salary() {
   const [branchFilter, setBranchFilter] = useState("All");
   const [logoBase64, setLogoBase64] = useState("");
 
-  /* ------------------------- Logo to base64 ------------------------- */
   useEffect(() => {
     const img = new Image();
     img.src = logo;
@@ -59,7 +57,6 @@ export default function Salary() {
     };
   }, []);
 
-  /* ------------------------- Load all ------------------------- */
   useEffect(() => {
     const run = async () => {
       try {
@@ -94,7 +91,6 @@ export default function Salary() {
     run();
   }, []);
 
-  /* ------------------------- ESC closes modal + lock scroll ------------------------- */
   useEffect(() => {
     if (!selectedStaff) return;
 
@@ -177,7 +173,6 @@ export default function Salary() {
     return map;
   }, [sapRows]);
 
-  /* ------------------------- Lazy fetch per employee balance if missing ------------------------- */
   const fetchBalanceForEmp = useCallback(
     async (employeeId) => {
       const key = String(employeeId);
@@ -205,7 +200,6 @@ export default function Salary() {
     [balancesByEmp]
   );
 
-  /* ------------------------- Compute payroll breakdown ------------------------- */
   const staffWithComputed = useMemo(() => {
     return (staff || []).map((s) => {
       const bal = balancesByEmp.get(String(s.id)) || {};
@@ -218,12 +212,10 @@ export default function Salary() {
       };
       const monthlySap = approvedSapByEmp.get(String(s.id)) || 0;
 
-      // Basic pay
       const salary = toNum(s.salary);
       const ecola = toNum(s.ecola);
       const totalCompensation = salary + ecola;
 
-      // Transportation & Allowances
       const transportation = toNum(s.transportation);
       const repairing = toNum(s.repairing);
       const postage = toNum(s.postage);
@@ -236,7 +228,6 @@ export default function Salary() {
 
       const grossPay = totalCompensation + total_allowances;
 
-      // Contributions
       const hdmf_er = toNum(s.hdmf_er);
       const sss_er = toNum(s.sss_er);
       const ph_er = toNum(s.ph_er);
@@ -247,15 +238,12 @@ export default function Salary() {
       const ph_ee = toNum(s.ph_ee);
       const total_ee = hdmf_ee + sss_ee + ph_ee;
 
-      // Deductions from staff / balances
       const tax = toNum(s.tax);
       const utility_charge = toNum(s.utility_charge ?? bal.utility ?? s.utility);
 
-      // Savings from balances
       const cbu = toNum(bal.cbu);
       const cashbond = toNum(bal.cashbond);
 
-      // ✅ monthly deductions only
       const salary_advance = toNum(monthlyLoans.salary_advance);
       const motorcycle_loan = toNum(monthlyLoans.motorcycle_loan);
       const special_advance = toNum(monthlyLoans.special_advance);
@@ -365,7 +353,6 @@ export default function Salary() {
     });
   }, [staffWithComputed, search, branchFilter]);
 
-  /* ------------------------- Payslip HTML ------------------------- */
   const buildPayslipHTML = (s, { autoPrint = false } = {}) => {
     const salary = toNum(s.salary);
     const ecola = toNum(s.ecola);

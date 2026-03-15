@@ -95,7 +95,6 @@ export default function DemotionOrder() {
 
   useEffect(() => {
     loadData();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const openCreate = () => {
@@ -121,7 +120,6 @@ export default function DemotionOrder() {
       middle_name: clean(emp?.middle_name),
       prev_position: clean(emp?.position || emp?.["position"]),
       prev_branch_id: emp?.branch_id != null ? String(emp.branch_id) : "",
-      // don't auto pick destination, user chooses
     }));
   };
 
@@ -133,7 +131,6 @@ export default function DemotionOrder() {
 
     const payload = {
       employee_id: Number(form.employee_id),
-      // backend builds employee_name; but ok if you also send it
       employee_name: displayNameParts({
         last_name: form.last_name,
         first_name: form.first_name,
@@ -345,7 +342,6 @@ export default function DemotionOrder() {
         </div>
       </div>
 
-      {/* CREATE MODAL */}
       {showModal && (
         <div
           className="po-modal-overlay"
@@ -366,7 +362,6 @@ export default function DemotionOrder() {
 
             <form className="po-form" onSubmit={submitCreate}>
               <div className="po-grid">
-                {/* Employee */}
                 <div className="po-field full">
                   <label>Employee (ID + Name)</label>
                   <select value={form.employee_id} onChange={(e) => onSelectEmployee(e.target.value)}>
@@ -379,7 +374,6 @@ export default function DemotionOrder() {
                   </select>
                 </div>
 
-                {/* Readonly name parts */}
                 <div className="po-field">
                   <label>Employee ID</label>
                   <input value={form.employee_id} readOnly />
@@ -400,7 +394,6 @@ export default function DemotionOrder() {
                   <input value={form.middle_name} readOnly />
                 </div>
 
-                {/* Positions */}
                 <div className="po-field">
                   <label>Previous Position</label>
                   <input value={form.prev_position} readOnly />
@@ -416,7 +409,6 @@ export default function DemotionOrder() {
                   />
                 </div>
 
-                {/* Branches */}
                 <div className="po-field">
                   <label>Previous Branch</label>
                   <input value={form.prev_branch_id ? branchLabel(form.prev_branch_id) : "-"} readOnly />
@@ -440,7 +432,6 @@ export default function DemotionOrder() {
                   </select>
                 </div>
 
-                {/* Effective + Details */}
                 <div className="po-field">
                   <label>Effective Date</label>
                   <input
@@ -474,7 +465,6 @@ export default function DemotionOrder() {
         </div>
       )}
 
-      {/* REJECT MODAL */}
       {rejecting && (
         <div
           className="po-modal-overlay"

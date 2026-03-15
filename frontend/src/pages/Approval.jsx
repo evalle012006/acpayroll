@@ -2,7 +2,14 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import "../styles/Approval.css";
 import api from "../api/axiosClient";
 
-const loanTypes = ["All", "Salary Advance", "Special Loan", "Cash Loan", "Motorcycle Loan"];
+const loanTypes = [
+  "All",
+  "Salary Advance",
+  "Special Loan",
+  "Cash Loan",
+  "Motorcycle Loan",
+  "Pag-ibig Loan",
+];
 
 const readUser = () => {
   try {
@@ -124,7 +131,6 @@ export default function Approval() {
 
   const fetchSap = useCallback(async () => {
     const data = await safeGet("/staff-accounts-payable", setLoadingSap);
-    console.log("SAP rows:", data);
     setSapRows(data);
   }, [safeGet]);
 
@@ -180,7 +186,9 @@ export default function Approval() {
       const s = staffMap.get(String(staffId));
       if (!s) return "-";
 
-      const built = `${s.last_name || ""}${s.last_name && s.first_name ? ", " : ""}${s.first_name || ""}${s.middle_name ? ` ${s.middle_name}` : ""}`
+      const built = `${s.last_name || ""}${s.last_name && s.first_name ? ", " : ""}${s.first_name || ""}${
+        s.middle_name ? ` ${s.middle_name}` : ""
+      }`
         .replace(/\s+/g, " ")
         .trim();
 
@@ -199,7 +207,8 @@ export default function Approval() {
   const renderEmployeeOptions = () =>
     staffList.map((s) => (
       <option key={s.id} value={s.id}>
-        {(s.employee_no ? `${s.employee_no} - ` : "") + (s.fullname || `${s.last_name || ""}, ${s.first_name || ""}`)}
+        {(s.employee_no ? `${s.employee_no} - ` : "") +
+          (s.fullname || `${s.last_name || ""}, ${s.first_name || ""}`)}
       </option>
     ));
 
@@ -244,7 +253,9 @@ export default function Approval() {
     const emp = staffList.find((s) => String(s.id) === String(employeeId));
     const display =
       emp?.fullname ||
-      `${emp?.last_name || ""}${emp?.last_name && emp?.first_name ? ", " : ""}${emp?.first_name || ""}${emp?.middle_name ? ` ${emp.middle_name}` : ""}`.trim();
+      `${emp?.last_name || ""}${emp?.last_name && emp?.first_name ? ", " : ""}${emp?.first_name || ""}${
+        emp?.middle_name ? ` ${emp.middle_name}` : ""
+      }`.trim();
 
     setSapForm((prev) => ({
       ...prev,
@@ -327,12 +338,13 @@ export default function Approval() {
     const amount = toNum(sapForm.amount);
     const term = Math.max(1, toNum(sapForm.term));
     const per_month = term ? amount / term : 0;
-    const balance = sapForm.balance === "" || sapForm.balance == null ? amount : toNum(sapForm.balance);
+    const balance =
+      sapForm.balance === "" || sapForm.balance == null ? amount : toNum(sapForm.balance);
 
     try {
       setCreatingSap(true);
 
-      const res = await api.post("/staff-accounts-payable", {
+      await api.post("/staff-accounts-payable", {
         employee_no: sapForm.employee_no,
         staff_name: sapForm.staff_name,
         description: sapForm.description,
@@ -341,8 +353,6 @@ export default function Approval() {
         per_month,
         balance,
       });
-
-      console.log("Created SAP:", res.data);
 
       alert("Staff Accounts Payable added successfully.");
       resetSapForm();
@@ -363,7 +373,9 @@ export default function Approval() {
       return;
     }
 
-    const ok = window.confirm(`Are you sure you want to ${String(status).toLowerCase()} this loan request?`);
+    const ok = window.confirm(
+      `Are you sure you want to ${String(status).toLowerCase()} this loan request?`
+    );
     if (!ok) return;
 
     try {
@@ -387,7 +399,9 @@ export default function Approval() {
       return;
     }
 
-    const ok = window.confirm(`Are you sure you want to ${String(status).toLowerCase()} this SAP record?`);
+    const ok = window.confirm(
+      `Are you sure you want to ${String(status).toLowerCase()} this SAP record?`
+    );
     if (!ok) return;
 
     try {
@@ -474,21 +488,30 @@ export default function Approval() {
       </div>
 
       {showCreateLoan && (
-        <div className="modal-overlay" onMouseDown={(e) => e.target.classList.contains("modal-overlay") && setShowCreateLoan(false)}>
+        <div
+          className="modal-overlay"
+          onMouseDown={(e) => e.target.classList.contains("modal-overlay") && setShowCreateLoan(false)}
+        >
           <div className="modal saas-modal" onMouseDown={(e) => e.stopPropagation()}>
             <div className="modal-head">
               <div>
                 <h3 className="modal-title">Add Loan Request</h3>
                 <p className="modal-subtitle">This request will be submitted with status: Pending</p>
               </div>
-              <button className="modal-x" type="button" onClick={() => setShowCreateLoan(false)}>✕</button>
+              <button className="modal-x" type="button" onClick={() => setShowCreateLoan(false)}>
+                ✕
+              </button>
             </div>
 
             <form onSubmit={handleCreateLoan} className="modal-form">
               <div className="modal-grid">
                 <div className="form-group">
                   <label>Employee</label>
-                  <select value={loanForm.staff_id} onChange={(e) => handleLoanEmployeeSelect(e.target.value)} required>
+                  <select
+                    value={loanForm.staff_id}
+                    onChange={(e) => handleLoanEmployeeSelect(e.target.value)}
+                    required
+                  >
                     <option value="">Select Employee</option>
                     {renderEmployeeOptions()}
                   </select>
@@ -497,7 +520,11 @@ export default function Approval() {
                 <div className="form-group">
                   <label>Branch</label>
                   <input
-                    value={loanForm.branch_code || loanForm.branch_name ? `${loanForm.branch_code} - ${loanForm.branch_name}` : ""}
+                    value={
+                      loanForm.branch_code || loanForm.branch_name
+                        ? `${loanForm.branch_code} - ${loanForm.branch_name}`
+                        : ""
+                    }
                     readOnly
                     placeholder="Auto-filled"
                   />
@@ -505,43 +532,77 @@ export default function Approval() {
 
                 <div className="form-group">
                   <label>Loan Type</label>
-                  <select value={loanForm.loan_type} onChange={(e) => setLoanForm((p) => ({ ...p, loan_type: e.target.value }))} required>
+                  <select
+                    value={loanForm.loan_type}
+                    onChange={(e) => setLoanForm((p) => ({ ...p, loan_type: e.target.value }))}
+                    required
+                  >
                     <option value="">Select Loan Type</option>
                     <option value="Motorcycle Loan">Motorcycle Loan</option>
                     <option value="Salary Advance">Salary Advance</option>
                     <option value="Cash Loan">Cash Advance</option>
                     <option value="Special Loan">Special Loan</option>
+                    <option value="Pag-ibig Loan">Pag-ibig Loan</option>
                   </select>
                 </div>
 
                 <div className="form-group">
                   <label>Amount</label>
-                  <input type="number" value={loanForm.amount} onChange={(e) => setLoanForm((p) => ({ ...p, amount: e.target.value }))} required />
+                  <input
+                    type="number"
+                    value={loanForm.amount}
+                    onChange={(e) => setLoanForm((p) => ({ ...p, amount: e.target.value }))}
+                    required
+                  />
                 </div>
 
                 <div className="form-group">
                   <label>Term (Months)</label>
-                  <input type="number" value={loanForm.term} onChange={(e) => setLoanForm((p) => ({ ...p, term: e.target.value }))} required />
+                  <input
+                    type="number"
+                    value={loanForm.term}
+                    onChange={(e) => setLoanForm((p) => ({ ...p, term: e.target.value }))}
+                    required
+                  />
                 </div>
 
                 <div className="form-group">
                   <label>Interest (%)</label>
-                  <input type="number" value={loanForm.interest} onChange={(e) => setLoanForm((p) => ({ ...p, interest: e.target.value }))} required />
+                  <input
+                    type="number"
+                    value={loanForm.interest}
+                    onChange={(e) => setLoanForm((p) => ({ ...p, interest: e.target.value }))}
+                    required
+                  />
                 </div>
 
                 <div className="form-group">
                   <label>Approved Date (Optional)</label>
-                  <input type="date" value={loanForm.approved_at} onChange={(e) => setLoanForm((p) => ({ ...p, approved_at: e.target.value }))} />
+                  <input
+                    type="date"
+                    value={loanForm.approved_at}
+                    onChange={(e) => setLoanForm((p) => ({ ...p, approved_at: e.target.value }))}
+                  />
                 </div>
 
                 <div className="form-group">
                   <label>Disbursement Date (Optional)</label>
-                  <input type="date" value={loanForm.disbursement_date} onChange={(e) => setLoanForm((p) => ({ ...p, disbursement_date: e.target.value }))} />
+                  <input
+                    type="date"
+                    value={loanForm.disbursement_date}
+                    onChange={(e) =>
+                      setLoanForm((p) => ({ ...p, disbursement_date: e.target.value }))
+                    }
+                  />
                 </div>
 
                 <div className="form-group full">
                   <label>Reason</label>
-                  <textarea value={loanForm.reason} onChange={(e) => setLoanForm((p) => ({ ...p, reason: e.target.value }))} required />
+                  <textarea
+                    value={loanForm.reason}
+                    onChange={(e) => setLoanForm((p) => ({ ...p, reason: e.target.value }))}
+                    required
+                  />
                 </div>
               </div>
 
@@ -557,7 +618,9 @@ export default function Approval() {
               </div>
 
               <div className="modal-buttons">
-                <button className="btn-secondary" type="button" onClick={() => setShowCreateLoan(false)}>Cancel</button>
+                <button className="btn-secondary" type="button" onClick={() => setShowCreateLoan(false)}>
+                  Cancel
+                </button>
                 <button className="btn-primary" type="submit" disabled={creatingLoan}>
                   {creatingLoan ? "Submitting..." : "Submit"}
                 </button>
@@ -568,21 +631,30 @@ export default function Approval() {
       )}
 
       {showCreateSAP && (
-        <div className="modal-overlay" onMouseDown={(e) => e.target.classList.contains("modal-overlay") && setShowCreateSAP(false)}>
+        <div
+          className="modal-overlay"
+          onMouseDown={(e) => e.target.classList.contains("modal-overlay") && setShowCreateSAP(false)}
+        >
           <div className="modal saas-modal" onMouseDown={(e) => e.stopPropagation()}>
             <div className="modal-head">
               <div>
                 <h3 className="modal-title">Add Staff Accounts Payable</h3>
                 <p className="modal-subtitle">Creates a payable record for the employee</p>
               </div>
-              <button className="modal-x" type="button" onClick={() => setShowCreateSAP(false)}>✕</button>
+              <button className="modal-x" type="button" onClick={() => setShowCreateSAP(false)}>
+                ✕
+              </button>
             </div>
 
             <form onSubmit={handleCreateSAP} className="modal-form">
               <div className="modal-grid">
                 <div className="form-group full">
                   <label>Employee</label>
-                  <select value={sapForm.employee_id} onChange={(e) => handleSapEmployeeSelect(e.target.value)} required>
+                  <select
+                    value={sapForm.employee_id}
+                    onChange={(e) => handleSapEmployeeSelect(e.target.value)}
+                    required
+                  >
                     <option value="">Select Employee</option>
                     {renderEmployeeOptions()}
                   </select>
@@ -600,7 +672,11 @@ export default function Approval() {
 
                 <div className="form-group full">
                   <label>Description</label>
-                  <textarea value={sapForm.description} onChange={(e) => setSapForm((p) => ({ ...p, description: e.target.value }))} required />
+                  <textarea
+                    value={sapForm.description}
+                    onChange={(e) => setSapForm((p) => ({ ...p, description: e.target.value }))}
+                    required
+                  />
                 </div>
 
                 <div className="form-group">
@@ -612,7 +688,10 @@ export default function Approval() {
                       setSapForm((p) => ({
                         ...p,
                         amount: e.target.value,
-                        balance: p.balance === "" || String(p.balance) === String(p.amount) ? e.target.value : p.balance,
+                        balance:
+                          p.balance === "" || String(p.balance) === String(p.amount)
+                            ? e.target.value
+                            : p.balance,
                       }))
                     }
                     required
@@ -621,12 +700,22 @@ export default function Approval() {
 
                 <div className="form-group">
                   <label>Term (Months)</label>
-                  <input type="number" value={sapForm.term} onChange={(e) => setSapForm((p) => ({ ...p, term: e.target.value }))} required />
+                  <input
+                    type="number"
+                    value={sapForm.term}
+                    onChange={(e) => setSapForm((p) => ({ ...p, term: e.target.value }))}
+                    required
+                  />
                 </div>
 
                 <div className="form-group">
                   <label>Balance</label>
-                  <input type="number" value={sapForm.balance} onChange={(e) => setSapForm((p) => ({ ...p, balance: e.target.value }))} required />
+                  <input
+                    type="number"
+                    value={sapForm.balance}
+                    onChange={(e) => setSapForm((p) => ({ ...p, balance: e.target.value }))}
+                    required
+                  />
                 </div>
               </div>
 
@@ -638,7 +727,9 @@ export default function Approval() {
               </div>
 
               <div className="modal-buttons">
-                <button className="btn-secondary" type="button" onClick={() => setShowCreateSAP(false)}>Cancel</button>
+                <button className="btn-secondary" type="button" onClick={() => setShowCreateSAP(false)}>
+                  Cancel
+                </button>
                 <button className="btn-primary" type="submit" disabled={creatingSap}>
                   {creatingSap ? "Saving..." : "Save"}
                 </button>
@@ -649,19 +740,29 @@ export default function Approval() {
       )}
 
       {showLoanModal && (
-        <div className="modal-overlay" onMouseDown={(e) => e.target.classList.contains("modal-overlay") && setShowLoanModal(false)}>
+        <div
+          className="modal-overlay"
+          onMouseDown={(e) => e.target.classList.contains("modal-overlay") && setShowLoanModal(false)}
+        >
           <div className="modal saas-modal" onMouseDown={(e) => e.stopPropagation()}>
             <div className="modal-head">
               <div>
                 <h3 className="modal-title">Loan Requests</h3>
                 <p className="modal-subtitle">Filter by type, then approve or reject</p>
               </div>
-              <button className="modal-x" type="button" onClick={() => setShowLoanModal(false)}>✕</button>
+              <button className="modal-x" type="button" onClick={() => setShowLoanModal(false)}>
+                ✕
+              </button>
             </div>
 
             <div className="filters">
               {loanTypes.map((t) => (
-                <button key={t} className={`chip ${selectedLoanType === t ? "active" : ""}`} onClick={() => setSelectedLoanType(t)} type="button">
+                <button
+                  key={t}
+                  className={`chip ${selectedLoanType === t ? "active" : ""}`}
+                  onClick={() => setSelectedLoanType(t)}
+                  type="button"
+                >
                   {t}
                 </button>
               ))}
@@ -688,7 +789,9 @@ export default function Approval() {
                   <tbody>
                     {filteredLoan.length === 0 ? (
                       <tr>
-                        <td colSpan={11} className="empty-state">No requests found.</td>
+                        <td colSpan={11} className="empty-state">
+                          No requests found.
+                        </td>
                       </tr>
                     ) : (
                       filteredLoan.map((item) => (
@@ -706,7 +809,9 @@ export default function Approval() {
                           <td>{item.interest}%</td>
                           <td>₱ {fmtMoney(item.per_month)}</td>
                           <td>₱ {fmtMoney(item.total)}</td>
-                          <td><span className={badgeClass(item.status)}>{item.status}</span></td>
+                          <td>
+                            <span className={badgeClass(item.status)}>{item.status}</span>
+                          </td>
                           <td style={{ fontSize: 12, opacity: 0.85 }}>
                             <div>Approved: {fmtDate(item.approved_at)}</div>
                             <div>Disbursed: {fmtDate(item.disbursement_date)}</div>
@@ -714,14 +819,26 @@ export default function Approval() {
                           <td>
                             {item.status === "Pending" ? (
                               <div className="row-actions">
-                                <button className="btn-success" onClick={() => updateLoanStatus(item.id, "Approved")} type="button">
-                                  Approve
+                                <button
+                                  className="btn-success"
+                                  onClick={() => updateLoanStatus(item.id, "Approved")}
+                                  type="button"
+                                  disabled={processingId === `loan-${item.id}-Approved`}
+                                >
+                                  {processingId === `loan-${item.id}-Approved` ? "Approving..." : "Approve"}
                                 </button>
-                                <button className="btn-danger" onClick={() => updateLoanStatus(item.id, "Rejected")} type="button">
-                                  Reject
+                                <button
+                                  className="btn-danger"
+                                  onClick={() => updateLoanStatus(item.id, "Rejected")}
+                                  type="button"
+                                  disabled={processingId === `loan-${item.id}-Rejected`}
+                                >
+                                  {processingId === `loan-${item.id}-Rejected` ? "Rejecting..." : "Reject"}
                                 </button>
                               </div>
-                            ) : "-"}
+                            ) : (
+                              "-"
+                            )}
                           </td>
                         </tr>
                       ))
@@ -732,21 +849,28 @@ export default function Approval() {
             </div>
 
             <div className="modal-buttons">
-              <button className="btn-secondary" type="button" onClick={() => setShowLoanModal(false)}>Close</button>
+              <button className="btn-secondary" type="button" onClick={() => setShowLoanModal(false)}>
+                Close
+              </button>
             </div>
           </div>
         </div>
       )}
 
       {showSapModal && (
-        <div className="modal-overlay" onMouseDown={(e) => e.target.classList.contains("modal-overlay") && setShowSapModal(false)}>
+        <div
+          className="modal-overlay"
+          onMouseDown={(e) => e.target.classList.contains("modal-overlay") && setShowSapModal(false)}
+        >
           <div className="modal saas-modal" onMouseDown={(e) => e.stopPropagation()}>
             <div className="modal-head">
               <div>
                 <h3 className="modal-title">Staff Accounts Payable</h3>
                 <p className="modal-subtitle">Approve/Reject is Admin only</p>
               </div>
-              <button className="modal-x" type="button" onClick={() => setShowSapModal(false)}>✕</button>
+              <button className="modal-x" type="button" onClick={() => setShowSapModal(false)}>
+                ✕
+              </button>
             </div>
 
             <div className="table-card">
@@ -769,7 +893,9 @@ export default function Approval() {
                   <tbody>
                     {sapRows.length === 0 ? (
                       <tr>
-                        <td colSpan={10} className="empty-state">No SAP records found.</td>
+                        <td colSpan={10} className="empty-state">
+                          No SAP records found.
+                        </td>
                       </tr>
                     ) : (
                       sapRows.map((x) => (
@@ -786,7 +912,9 @@ export default function Approval() {
                           <td>{x.term}</td>
                           <td>₱ {fmtMoney(x.per_month)}</td>
                           <td>₱ {fmtMoney(x.balance)}</td>
-                          <td><span className={badgeClass(x.status)}>{x.status}</span></td>
+                          <td>
+                            <span className={badgeClass(x.status)}>{x.status}</span>
+                          </td>
                           <td style={{ fontSize: 12, opacity: 0.85 }}>
                             <div>Approved: {fmtDate(x.approved_at)}</div>
                             <div>Rejected: {fmtDate(x.rejected_at)}</div>
@@ -795,8 +923,13 @@ export default function Approval() {
                             {x.status === "Pending" ? (
                               isAdmin ? (
                                 <div className="row-actions">
-                                  <button className="btn-success" onClick={() => updateSapStatus(x.id, "Approved")} type="button">
-                                    Approve
+                                  <button
+                                    className="btn-success"
+                                    onClick={() => updateSapStatus(x.id, "Approved")}
+                                    type="button"
+                                    disabled={processingId === `sap-${x.id}-Approved`}
+                                  >
+                                    {processingId === `sap-${x.id}-Approved` ? "Approving..." : "Approve"}
                                   </button>
                                   <button
                                     className="btn-danger"
@@ -809,12 +942,17 @@ export default function Approval() {
                                       updateSapStatus(x.id, "Rejected", String(reason).trim());
                                     }}
                                     type="button"
+                                    disabled={processingId === `sap-${x.id}-Rejected`}
                                   >
-                                    Reject
+                                    {processingId === `sap-${x.id}-Rejected` ? "Rejecting..." : "Reject"}
                                   </button>
                                 </div>
-                              ) : "-"
-                            ) : "-"}
+                              ) : (
+                                "-"
+                              )
+                            ) : (
+                              "-"
+                            )}
                           </td>
                         </tr>
                       ))
@@ -825,7 +963,9 @@ export default function Approval() {
             </div>
 
             <div className="modal-buttons">
-              <button className="btn-secondary" type="button" onClick={() => setShowSapModal(false)}>Close</button>
+              <button className="btn-secondary" type="button" onClick={() => setShowSapModal(false)}>
+                Close
+              </button>
             </div>
           </div>
         </div>

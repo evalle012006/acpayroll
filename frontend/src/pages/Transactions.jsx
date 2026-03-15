@@ -124,13 +124,13 @@ export default function Transactions() {
           <div className="transactions-card-head">
             <div>
               <div className="transactions-card-title">Statement of Accounts</div>
-              <div className="transactions-card-meta">Register Exit Staff Last Pay/ Liabilities.</div>
+              <div className="transactions-card-meta">Register Exit Staff Last Pay / Liabilities.</div>
             </div>
             <span className="transactions-pill">Open</span>
           </div>
 
           <div className="transactions-card-body">
-            <p className="transactions-mini">Calculate staff accounts liabilities/ last pay and other income.</p>
+            <p className="transactions-mini">Calculate staff account liabilities, last pay, and other income.</p>
             <div className="transactions-actions">
               <span className="transactions-link">Proceed →</span>
             </div>
@@ -148,9 +148,26 @@ export default function Transactions() {
 
           <div className="transactions-card-body">
             <p className="transactions-mini">Record exit date, clearance status, and final remarks.</p>
-              <div className="transactions-actions">
-                <span className="transactions-link">Proceed →</span>
-              </div>
+            <div className="transactions-actions">
+              <span className="transactions-link">Proceed →</span>
+            </div>
+          </div>
+        </button>
+
+        <button type="button" className="transactions-card" onClick={() => go("/transactions/sbf")}>
+          <div className="transactions-card-head">
+            <div>
+              <div className="transactions-card-title">SBF Order</div>
+              <div className="transactions-card-meta">Staff Benevolent Fund assistance request.</div>
+            </div>
+            <span className="transactions-pill">Open</span>
+          </div>
+
+          <div className="transactions-card-body">
+            <p className="transactions-mini">Create and manage Staff Benevolent Fund orders and approvals.</p>
+            <div className="transactions-actions">
+              <span className="transactions-link">Proceed →</span>
+            </div>
           </div>
         </button>
       </div>

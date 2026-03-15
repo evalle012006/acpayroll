@@ -50,7 +50,7 @@ export default function ExitStaffOrders() {
 
   const emptyForm = useMemo(
     () => ({
-      employee_id: "",
+      employee_no: "",
       last_name: "",
       first_name: "",
       middle_name: "",
@@ -146,8 +146,8 @@ export default function ExitStaffOrders() {
   }, [showCreate, closeModal]);
 
   const selectedStaff = useMemo(() => {
-    return staff.find((x) => String(x.id) === String(form.employee_id)) || null;
-  }, [staff, form.employee_id]);
+    return staff.find((x) => String(x.id) === String(form.employee_no)) || null;
+  }, [staff, form.employee_no]);
 
   const onSelectEmployee = (id) => {
     const s = staff.find((x) => String(x.id) === String(id));
@@ -156,7 +156,7 @@ export default function ExitStaffOrders() {
 
     setForm((p) => ({
       ...p,
-      employee_id: id,
+      employee_no,
       last_name: toStr(s?.last_name),
       first_name: toStr(s?.first_name),
       middle_name: toStr(s?.middle_name),
@@ -172,14 +172,14 @@ export default function ExitStaffOrders() {
 
     setErr("");
 
-    const employeeId = Number(form.employee_id);
-    if (!employeeId) return setErr("Select employee.");
+    const employeeNo = Number(form.employee_no);
+    if (!employeeNo) return setErr("Select employee.");
     if (!toStr(form.exit_type)) return setErr("Exit type is required.");
     if (!toStr(form.date_created)) return setErr("Date created is required.");
     if (!toStr(form.effective_date)) return setErr("Effective date is required.");
 
     const payload = {
-      employee_id: employeeId,
+      employee_no: employeeNo,
       exit_type: toStr(form.exit_type),
       date_created: toDate10(form.date_created),
       effective_date: toDate10(form.effective_date),
@@ -350,7 +350,7 @@ export default function ExitStaffOrders() {
                   return (
                     <tr key={o.id}>
                       <td className="exit-mono">{o.order_no || "-"}</td>
-                      <td className="exit-mono">{o.employee_id}</td>
+                      <td className="exit-mono">{o.employee_no}</td>
                       <td className="exit-strong">{o.employee_name || displayNameParts(o)}</td>
                       <td>{`${o.branch_code || "-"} - ${o.branch_name || "-"}`}</td>
                       <td>{o.exit_type || "-"}</td>
@@ -431,7 +431,7 @@ export default function ExitStaffOrders() {
               <div className="exit-grid">
                 <div className="exit-field">
                   <label>Employee</label>
-                  <select value={form.employee_id} onChange={(e) => onSelectEmployee(e.target.value)} required>
+                  <select value={form.employee_no} onChange={(e) => onSelectEmployee(e.target.value)} required>
                     <option value="">{loadingStaff ? "Loading staff..." : "Select Employee"}</option>
                     {staff.map((s) => (
                       <option key={s.id} value={s.id}>
@@ -443,7 +443,7 @@ export default function ExitStaffOrders() {
 
                 <div className="exit-field">
                   <label>Employee ID</label>
-                  <input value={form.employee_id || ""} readOnly />
+                  <input value={form.employee_no || ""} readOnly />
                 </div>
 
                 <div className="exit-field">

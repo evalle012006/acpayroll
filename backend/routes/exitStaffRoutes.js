@@ -32,9 +32,6 @@ const normalizeExitType = (v) => {
   return clean(v);
 };
 
-/* =========================================================
-   FINAL EXIT STAFF LIST
-========================================================= */
 router.get("/exit-staff", requireAuth, async (req, res) => {
   try {
     if (!isAdmin(req) && !isBranchManager(req)) {
@@ -134,7 +131,7 @@ router.post(
     try {
       await client.query("BEGIN");
 
-      const employee_id = toInt(req.body?.employee_id);
+      const employee_no = clean(req.body?.employee_no);
       const exit_type = normalizeExitType(req.body?.exit_type);
       const date_created = toDate(req.body?.date_created) || toDate(new Date().toISOString());
       const effective_date = toDate(req.body?.effective_date);
@@ -143,7 +140,7 @@ router.post(
       const settlement_branch_id = toInt(req.body?.settlement_branch_id);
       const remarks = clean(req.body?.remarks);
 
-      if (!employee_id) {
+      if (!employee_no) {
         await client.query("ROLLBACK");
         return res.status(400).json({ message: "Employee required" });
       }
@@ -168,16 +165,15 @@ router.post(
         SELECT
           id,
           employee_no,
-          staff_code,
           fullname,
           first_name,
           last_name,
           middle_name,
           branch_id
         FROM public.staff
-        WHERE id = $1
+        WHERE employee_no = $1
         `,
-        [employee_id]
+        [employee_no]
       );
 
       if (s.rowCount === 0) {
@@ -246,7 +242,7 @@ router.post(
         (
           id,
           order_no,
-          employee_id,
+          employee_no,
           employee_name,
           last_name,
           first_name,
@@ -293,7 +289,7 @@ router.post(
         [
           n,
           order_no,
-          employee_id,
+          employee_no,
           employee_name,
           clean(staff.last_name),
           clean(staff.first_name),
@@ -373,7 +369,7 @@ router.put(
         WHERE id = $1
         `,
         [
-          order.employee_id,
+          order.employee_no,
           normalizeExitType(order.exit_type),
           toDate(order.effective_date),
           clean(order.remarks) || null,

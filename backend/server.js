@@ -25,6 +25,7 @@ const loanRequestsRoutes = require("./routes/loanRequestsRoutes");
 const staffAccountsPayableRoutes = require("./routes/staffAccountsPayableRoutes");
 const transportOverrideRoutes = require("./routes/transportOverrideRoutes");
 const branchesRoutes = require("./routes/branchesRoutes");
+const sbfRoutes = require("./routes/sbfRoutes");
 
 const app = express();
 
@@ -64,6 +65,7 @@ app.use("/api", exitStaffRoutes);
 app.use("/api", loanRequestsRoutes);
 app.use("/api", staffAccountsPayableRoutes);
 app.use("/api", branchesRoutes);
+app.use("/api", sbfRoutes);
 
 app.get("/test", (_req, res) => {
   res.send("Backend is working!");

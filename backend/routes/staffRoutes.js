@@ -118,6 +118,8 @@ const computeTotals = (body) => {
   };
 };
 
+const generateEmployeeNoFromId = (id) => `EMP-${String(id).padStart(6, "0")}`;
+
 const staffUploadDir = path.join(__dirname, "..", "uploads", "staff");
 fs.mkdirSync(staffUploadDir, { recursive: true });
 
@@ -186,6 +188,18 @@ router.post("/staff", requireAuth, requireRole(["admin"]), async (req, res) => {
     if (!last_name || !first_name || !position) {
       await client.query("ROLLBACK");
       return res.status(400).json({ message: "last_name, first_name, and position are required" });
+    }
+
+    const requestedEmployeeNo = toStr(body.employee_no) || null;
+    if (requestedEmployeeNo) {
+      const dup = await client.query(
+        `SELECT 1 FROM public.staff WHERE LOWER(TRIM(employee_no)) = LOWER(TRIM($1)) LIMIT 1`,
+        [requestedEmployeeNo]
+      );
+      if (dup.rowCount > 0) {
+        await client.query("ROLLBACK");
+        return res.status(409).json({ message: "Employee No already exists" });
+      }
     }
 
     const totals = computeTotals(body);
@@ -262,13 +276,13 @@ router.post("/staff", requireAuth, requireRole(["admin"]), async (req, res) => {
           $58,$59,$60,$61,$62,
           $63,$64,$65,$66,$67,
           $68,$69,$70,$71,$72,
-          $73,$74,$75,&76
+          $73,$74,$75,$76,
           $77::jsonb,$78::jsonb,$79::jsonb,$80::jsonb
         )
       RETURNING id;
       `,
       [
-        toStr(body.employee_no) || null,
+        requestedEmployeeNo,
         last_name,
         first_name,
         middle_name || null,
@@ -361,8 +375,8 @@ router.post("/staff", requireAuth, requireRole(["admin"]), async (req, res) => {
 
         toStr(body.sss_no) || null,
         toStr(body.philhealth_no) || null,
-        toStr(body.pagibig_no) || null,
         toStr(body.tin_no) || null,
+        toStr(body.pagibig_no) || null,
 
         JSON.stringify(children),
         JSON.stringify(education),
@@ -371,8 +385,16 @@ router.post("/staff", requireAuth, requireRole(["admin"]), async (req, res) => {
       ]
     );
 
+    const newId = ins.rows[0].id;
+    const finalEmployeeNo = requestedEmployeeNo || generateEmployeeNoFromId(newId);
+
+    await client.query(
+      `UPDATE public.staff SET employee_no = $1 WHERE id = $2`,
+      [finalEmployeeNo, newId]
+    );
+
     await client.query("COMMIT");
-    return res.json({ message: "Staff added", id: ins.rows[0].id });
+    return res.json({ message: "Staff added", id: newId, employee_no: finalEmployeeNo });
   } catch (e) {
     await client.query("ROLLBACK");
     console.error("POST /api/staff ERROR:", e.message);
@@ -405,6 +427,24 @@ router.put("/staff/:id", requireAuth, requireRole(["admin"]), async (req, res) =
     if (!last_name || !first_name || !position) {
       await client.query("ROLLBACK");
       return res.status(400).json({ message: "last_name, first_name, and position are required" });
+    }
+
+    const employeeNo = toStr(body.employee_no) || null;
+    if (employeeNo) {
+      const dup = await client.query(
+        `
+        SELECT 1
+        FROM public.staff
+        WHERE LOWER(TRIM(employee_no)) = LOWER(TRIM($1))
+          AND id <> $2
+        LIMIT 1
+        `,
+        [employeeNo, id]
+      );
+      if (dup.rowCount > 0) {
+        await client.query("ROLLBACK");
+        return res.status(409).json({ message: "Employee No already exists" });
+      }
     }
 
     const totals = computeTotals(body);
@@ -453,7 +493,7 @@ router.put("/staff/:id", requireAuth, requireRole(["admin"]), async (req, res) =
       RETURNING id;
       `,
       [
-        toStr(body.employee_no) || null,
+        employeeNo,
         last_name,
         first_name,
         middle_name || null,

@@ -1,5 +1,5 @@
 import { NavLink, useLocation } from "react-router-dom";
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { MdDashboard } from "react-icons/md";
 import { FaExchangeAlt, FaBuilding } from "react-icons/fa";
@@ -10,8 +10,10 @@ import { TbGitBranch } from "react-icons/tb";
 import { FiSettings } from "react-icons/fi";
 import { FaUserGroup, FaIdBadge } from "react-icons/fa6";
 import { RxExit } from "react-icons/rx";
+import { LuFiles } from "react-icons/lu";
 
 import amber from "../assets/amber.jpg";
+import api from "../api/axiosClient";
 import "../styles/Sidebar.css";
 
 const readUser = () => {
@@ -23,11 +25,44 @@ const readUser = () => {
   }
 };
 
+const norm = (v) => String(v ?? "").trim().toLowerCase();
+
+const countPending = (rows) =>
+  (Array.isArray(rows) ? rows : []).filter(
+    (x) => norm(x?.status) === "pending"
+  ).length;
+
 const Sidebar = ({ collapsed }) => {
   const { pathname } = useLocation();
-
   const user = readUser();
-  const role = String(user?.role || "").trim().toLowerCase();
+  const role = norm(user?.role);
+
+  const [reportPending, setReportPending] = useState(0);
+
+  useEffect(() => {
+    const loadPending = async () => {
+      try {
+        const [leaveRes, loanRes, sbfRes] = await Promise.all([
+          api.get("/leave-requests").catch(() => ({ data: [] })),
+          api.get("/loan-requests").catch(() => ({ data: [] })),
+          api.get("/sbf-orders").catch(() => ({ data: [] })),
+        ]);
+
+        const total =
+          countPending(leaveRes.data) +
+          countPending(loanRes.data) +
+          countPending(sbfRes.data);
+
+        setReportPending(total);
+      } catch {
+        setReportPending(0);
+      }
+    };
+
+    loadPending();
+    const timer = setInterval(loadPending, 15000);
+    return () => clearInterval(timer);
+  }, []);
 
   const navItems = useMemo(() => {
     if (role === "branch manager") {
@@ -53,13 +88,21 @@ const Sidebar = ({ collapsed }) => {
       { to: "/branches", label: "Branch Payroll", icon: TbGitBranch, roles: ["admin", "branch manager"] },
       { to: "/system-update", label: "System Update", icon: FiSettings, roles: ["admin"] },
       { to: "/exit-staff", label: "Exit Staff", icon: RxExit, roles: ["admin"] },
+      {
+        to: "/reports",
+        label: "Reports",
+        icon: LuFiles,
+        roles: ["admin"],
+        badge: reportPending > 0 ? reportPending : null,
+      },
       { to: "/users", label: "Users", icon: FaUserGroup, roles: ["admin"] },
     ];
 
     return items.filter((x) => !x.roles || x.roles.includes(role));
-  }, [role, user?.branch_id]);
+  }, [role, user?.branch_id, reportPending]);
 
-  const isPathActive = (basePath) => pathname === basePath || pathname.startsWith(basePath + "/");
+  const isPathActive = (basePath) =>
+    pathname === basePath || pathname.startsWith(basePath + "/");
 
   return (
     <aside className={`sidebar ${collapsed ? "collapsed" : ""}`}>
@@ -91,7 +134,18 @@ const Sidebar = ({ collapsed }) => {
               <span className="sidebar-icon">
                 <Icon />
               </span>
-              {!collapsed && <span className="sidebar-label">{item.label}</span>}
+
+              {!collapsed && (
+                <span className="sidebar-label-wrap">
+                  <span className="sidebar-label">{item.label}</span>
+
+                  {item.badge ? (
+                    <span className="sidebar-badge">
+                      {item.badge > 99 ? "99+" : item.badge}
+                    </span>
+                  ) : null}
+                </span>
+              )}
             </NavLink>
           );
         })}

@@ -17,6 +17,9 @@ const monthToDate = (monthStr) => {
 const monthEndExpr = (paramRef) =>
   `((DATE_TRUNC('month', ${paramRef}::date) + INTERVAL '1 month - 1 day')::date)`;
 
+/* =========================================================
+   GET SNAPSHOT
+========================================================= */
 router.get("/", requireAuth, async (req, res) => {
   try {
     const snapshotMonth = monthToDate(req.query.month);
@@ -29,44 +32,50 @@ router.get("/", requireAuth, async (req, res) => {
     const params = [snapshotMonth];
     let sql = `
       SELECT
-        id,
-        snapshot_month,
-        staff_id,
-        employee_id,
-        fullname,
-        position,
-        branch_id,
-        cbu,
-        cashbond,
-        utility,
-        salary_loan,
-        salary_advance,
-        motorcycle_loan,
-        special_advance,
-        cash_advance,
-        other_receivable,
-        staff_accounts_payable,
-        created_at,
-        updated_at
-      FROM public.schedule_balance_snapshots
-      WHERE snapshot_month = $1::date
+        sbs.id,
+        sbs.snapshot_month,
+        sbs.staff_id,
+        sbs.employee_no,
+        sbs.fullname,
+        sbs.position,
+        sbs.branch_id,
+        sbs.last_name,
+        sbs.first_name,
+        sbs.middle_name,
+        sbs.cbu,
+        sbs.cashbond,
+        sbs.utility,
+        sbs.salary_loan,
+        sbs.salary_advance,
+        sbs.motorcycle_loan,
+        sbs.special_advance,
+        sbs.cash_advance,
+        sbs.other_receivable,
+        sbs.staff_accounts_payable,
+        sbs.created_at,
+        sbs.updated_at
+      FROM public.schedule_balance_snapshots sbs
+      WHERE sbs.snapshot_month = $1::date
     `;
 
     if (branchId) {
       params.push(branchId);
-      sql += ` AND branch_id = $2::int`;
+      sql += ` AND sbs.branch_id = $2::int`;
     }
 
-    sql += ` ORDER BY fullname ASC`;
+    sql += ` ORDER BY sbs.fullname ASC`;
 
     const result = await pool.query(sql, params);
     return res.json(result.rows);
   } catch (e) {
-    console.error("GET /api/schedule-balances ERROR:", e.message);
-    return res.status(500).json({ message: "Server error" });
+    console.error("GET /api/schedule-balances ERROR:", e);
+    return res.status(500).json({ message: e.message || "Server error" });
   }
 });
 
+/* =========================================================
+   GET LIVE
+========================================================= */
 router.get("/live", requireAuth, async (req, res) => {
   try {
     const snapshotMonth = monthToDate(req.query.month);
@@ -237,23 +246,26 @@ router.get("/live", requireAuth, async (req, res) => {
 
       sap_remaining AS (
         SELECT
-          sap.employee_id,
+          sap.employee_no,
           SUM(COALESCE(sap.balance, sap.amount, 0))::numeric(12,2) AS staff_accounts_payable
         FROM public.staff_accounts_payable sap
         CROSS JOIN cutoff c
         WHERE
-          sap.employee_id IS NOT NULL
+          sap.employee_no IS NOT NULL
           AND LOWER(COALESCE(sap.status, '')) = 'approved'
           AND COALESCE(sap.approved_at, sap.created_at) <= c.month_end
-        GROUP BY sap.employee_id
+        GROUP BY sap.employee_no
       )
 
       SELECT
-        sb.id,
-        sb.employee_id AS staff_id,
-        sb.employee_id,
+        s.id,
+        s.id AS staff_id,
+        s.employee_no,
         COALESCE(sb.fullname, s.fullname) AS fullname,
-        COALESCE(sb."position", s."position") AS position,
+        COALESCE(sb.last_name, s.last_name) AS last_name,
+        COALESCE(sb.first_name, s.first_name) AS first_name,
+        COALESCE(sb.middle_name, s.middle_name) AS middle_name,
+        COALESCE(sb.position, s.position) AS position,
         s.branch_id,
 
         COALESCE(sb.cbu, 0) AS cbu,
@@ -274,11 +286,11 @@ router.get("/live", requireAuth, async (req, res) => {
         NOW() AS updated_at
       FROM public.staff_balances sb
       LEFT JOIN public.staff s
-        ON s.id = sb.employee_id
+        ON s.employee_no = sb.employee_no
       LEFT JOIN loan_remaining lr
-        ON lr.staff_id = sb.employee_id
+        ON lr.staff_id = s.id
       LEFT JOIN sap_remaining sap
-        ON sap.employee_id = sb.employee_id
+        ON sap.employee_no = s.employee_no
       ${whereSql}
       ORDER BY COALESCE(sb.fullname, s.fullname) ASC
     `;
@@ -286,11 +298,14 @@ router.get("/live", requireAuth, async (req, res) => {
     const result = await pool.query(sql, params);
     return res.json(result.rows);
   } catch (e) {
-    console.error("GET /api/schedule-balances/live ERROR:", e.message);
+    console.error("GET /api/schedule-balances/live ERROR:", e);
     return res.status(500).json({ message: e.message || "Server error" });
   }
 });
 
+/* =========================================================
+   SAVE SNAPSHOT FROM CURRENT
+========================================================= */
 router.post(
   "/snapshot/from-current",
   requireAuth,
@@ -461,22 +476,25 @@ router.post(
 
         sap_remaining AS (
           SELECT
-            sap.employee_id,
+            sap.employee_no,
             SUM(COALESCE(sap.balance, sap.amount, 0))::numeric(12,2) AS staff_accounts_payable
           FROM public.staff_accounts_payable sap
           CROSS JOIN cutoff c
           WHERE
-            sap.employee_id IS NOT NULL
+            sap.employee_no IS NOT NULL
             AND LOWER(COALESCE(sap.status, '')) = 'approved'
             AND COALESCE(sap.approved_at, sap.created_at) <= c.month_end
-          GROUP BY sap.employee_id
+          GROUP BY sap.employee_no
         )
 
         SELECT
-          sb.employee_id AS staff_id,
-          sb.employee_id,
+          s.id AS staff_id,
+          s.employee_no,
           COALESCE(sb.fullname, s.fullname) AS fullname,
-          COALESCE(sb."position", s."position") AS position,
+          COALESCE(sb.last_name, s.last_name) AS last_name,
+          COALESCE(sb.first_name, s.first_name) AS first_name,
+          COALESCE(sb.middle_name, s.middle_name) AS middle_name,
+          COALESCE(sb.position, s.position) AS position,
           s.branch_id,
 
           COALESCE(sb.cbu, 0) AS cbu,
@@ -493,11 +511,11 @@ router.post(
           COALESCE(sap.staff_accounts_payable, 0) AS staff_accounts_payable
         FROM public.staff_balances sb
         LEFT JOIN public.staff s
-          ON s.id = sb.employee_id
+          ON s.employee_no = sb.employee_no
         LEFT JOIN loan_remaining lr
-          ON lr.staff_id = sb.employee_id
+          ON lr.staff_id = s.id
         LEFT JOIN sap_remaining sap
-          ON sap.employee_id = sb.employee_id
+          ON sap.employee_no = s.employee_no
         ORDER BY COALESCE(sb.fullname, s.fullname) ASC
         `,
         [snapshotMonth]
@@ -514,10 +532,13 @@ router.post(
           INSERT INTO public.schedule_balance_snapshots (
             snapshot_month,
             staff_id,
-            employee_id,
+            employee_no,
             fullname,
             position,
             branch_id,
+            last_name,
+            first_name,
+            middle_name,
             cbu,
             cashbond,
             utility,
@@ -534,13 +555,13 @@ router.post(
           VALUES (
             $1::date,
             $2::int,
-            $3::int,
+            $3::varchar,
             $4::varchar,
             $5::varchar,
             $6::int,
-            $7::numeric,
-            $8::numeric,
-            $9::numeric,
+            $7::varchar,
+            $8::varchar,
+            $9::varchar,
             $10::numeric,
             $11::numeric,
             $12::numeric,
@@ -548,15 +569,21 @@ router.post(
             $14::numeric,
             $15::numeric,
             $16::numeric,
+            $17::numeric,
+            $18::numeric,
+            $19::numeric,
             NOW(),
             NOW()
           )
           ON CONFLICT (snapshot_month, staff_id)
           DO UPDATE SET
-            employee_id = EXCLUDED.employee_id,
+            employee_no = EXCLUDED.employee_no,
             fullname = EXCLUDED.fullname,
             position = EXCLUDED.position,
             branch_id = EXCLUDED.branch_id,
+            last_name = EXCLUDED.last_name,
+            first_name = EXCLUDED.first_name,
+            middle_name = EXCLUDED.middle_name,
             cbu = EXCLUDED.cbu,
             cashbond = EXCLUDED.cashbond,
             utility = EXCLUDED.utility,
@@ -572,10 +599,13 @@ router.post(
           [
             snapshotMonth,
             staff_id,
-            r.employee_id ? Number(r.employee_id) : null,
+            r.employee_no || null,
             String(r.fullname || ""),
             String(r.position || ""),
             r.branch_id ? Number(r.branch_id) : null,
+            r.last_name || null,
+            r.first_name || null,
+            r.middle_name || null,
             toNum(r.cbu),
             toNum(r.cashbond),
             toNum(r.utility),
@@ -600,7 +630,7 @@ router.post(
       try {
         await client.query("ROLLBACK");
       } catch {}
-      console.error("POST /api/schedule-balances/snapshot/from-current ERROR:", e.message);
+      console.error("POST /api/schedule-balances/snapshot/from-current ERROR:", e);
       return res.status(500).json({ message: e.message || "Server error" });
     } finally {
       client.release();

@@ -3,26 +3,23 @@ const router = express.Router();
 const pool = require("../db");
 const { requireAuth, requireRole } = require("../middlewares/authMiddleware");
 
-const toInt = (v) => {
-  const n = Number(v);
-  return Number.isFinite(n) ? Math.trunc(n) : null;
-};
-
 const toNum = (v) => {
   const n = Number(v ?? 0);
   return Number.isFinite(n) ? n : 0;
 };
 
+const clean = (v) => String(v ?? "").trim();
+
 const roleLower = (req) => String(req.user?.role || "").trim().toLowerCase();
 const isAdmin = (req) => roleLower(req) === "admin";
 const isBranchManager = (req) => roleLower(req) === "branch manager";
 
-async function ensureBalanceRow(client, staffId) {
+async function ensureBalanceRow(client, employeeNo) {
   await client.query(
     `
     INSERT INTO public.staff_balances
       (
-        employee_id,
+        employee_no,
         fullname,
         "position",
         last_name,
@@ -41,7 +38,7 @@ async function ensureBalanceRow(client, staffId) {
         updated_at
       )
     SELECT
-      s.id,
+      s.employee_no,
       s.fullname,
       s."position",
       s.last_name,
@@ -52,10 +49,10 @@ async function ensureBalanceRow(client, staffId) {
       0,0,
       NOW(), NOW()
     FROM public.staff s
-    WHERE s.id = $1
-    ON CONFLICT (employee_id) DO NOTHING
+    WHERE s.employee_no = $1
+    ON CONFLICT (employee_no) DO NOTHING
     `,
-    [staffId]
+    [employeeNo]
   );
 }
 
@@ -65,11 +62,11 @@ router.get(
   requireRole(["admin", "branch manager"]),
   async (req, res) => {
     try {
-      // Admin
       if (isAdmin(req)) {
         const r = await pool.query(`
           SELECT
             sb.*,
+            s.id AS staff_id,
             s.branch_id,
             COALESCE(sb."position", s."position") AS "position",
             COALESCE(sb.fullname, s.fullname) AS fullname,
@@ -77,7 +74,7 @@ router.get(
             COALESCE(sb.first_name, s.first_name) AS first_name,
             COALESCE(sb.middle_name, s.middle_name) AS middle_name
           FROM public.staff_balances sb
-          LEFT JOIN public.staff s ON s.id = sb.employee_id
+          LEFT JOIN public.staff s ON s.employee_no = sb.employee_no
           ORDER BY sb.id DESC
         `);
         return res.json(r.rows);
@@ -90,6 +87,7 @@ router.get(
         `
         SELECT
           sb.*,
+          s.id AS staff_id,
           s.branch_id,
           COALESCE(sb."position", s."position") AS "position",
           COALESCE(sb.fullname, s.fullname) AS fullname,
@@ -97,7 +95,7 @@ router.get(
           COALESCE(sb.first_name, s.first_name) AS first_name,
           COALESCE(sb.middle_name, s.middle_name) AS middle_name
         FROM public.staff_balances sb
-        JOIN public.staff s ON s.id = sb.employee_id
+        JOIN public.staff s ON s.employee_no = sb.employee_no
         WHERE s.branch_id = $1
         ORDER BY sb.id DESC
         `,
@@ -106,31 +104,38 @@ router.get(
 
       return res.json(r.rows);
     } catch (e) {
-      console.error("GET /api/staff-balances ERROR:", e.message);
-      return res.status(500).json({ message: "Server error" });
+      console.error("GET /api/staff-balances ERROR:", e);
+      return res.status(500).json({ message: e.message || "Server error" });
     }
   }
 );
 
 router.get(
-  "/staff-balances/:staffId",
+  "/staff-balances/:employeeNo",
   requireAuth,
   requireRole(["admin", "branch manager"]),
   async (req, res) => {
     const client = await pool.connect();
     try {
-      const staffId = toInt(req.params.staffId);
-      if (!staffId) return res.status(400).json({ message: "Invalid staff id" });
+      const employeeNo = clean(req.params.employeeNo);
+      if (!employeeNo) {
+        return res.status(400).json({ message: "Invalid employee no" });
+      }
 
       const myRole = roleLower(req);
       const myBranchId = req.user?.branch_id ?? null;
 
+      const s = await client.query(
+        `SELECT id, employee_no, branch_id FROM public.staff WHERE employee_no = $1 LIMIT 1`,
+        [employeeNo]
+      );
+
+      if (s.rowCount === 0) {
+        return res.status(404).json({ message: "Staff not found" });
+      }
+
       if (myRole === "branch manager") {
         if (!myBranchId) return res.status(403).json({ message: "Access denied" });
-
-        const s = await client.query(`SELECT id, branch_id FROM public.staff WHERE id=$1`, [staffId]);
-        if (s.rowCount === 0) return res.status(404).json({ message: "Staff not found" });
-
         if (Number(s.rows[0].branch_id) !== Number(myBranchId)) {
           return res.status(403).json({ message: "Access denied" });
         }
@@ -138,46 +143,46 @@ router.get(
 
       await client.query("BEGIN");
 
-      await ensureBalanceRow(client, staffId);
+      await ensureBalanceRow(client, employeeNo);
 
       const r = await client.query(
         `
         SELECT
-          sb.employee_id,
+          s.id AS staff_id,
+          sb.employee_no,
           COALESCE(sb.fullname, s.fullname) AS fullname,
           COALESCE(sb."position", s."position") AS "position",
           COALESCE(sb.last_name, s.last_name) AS last_name,
           COALESCE(sb.first_name, s.first_name) AS first_name,
           COALESCE(sb.middle_name, s.middle_name) AS middle_name,
 
-          COALESCE(sb.cbu,0) as cbu,
-          COALESCE(sb.cashbond,0) as cashbond,
-          COALESCE(sb.utility,0) as utility,
+          COALESCE(sb.cbu,0) AS cbu,
+          COALESCE(sb.cashbond,0) AS cashbond,
+          COALESCE(sb.utility,0) AS utility,
 
-          COALESCE(sb.salary_advance,0) as salary_advance,
-          COALESCE(sb.special_advance,0) as special_advance,
-          COALESCE(sb.cash_advance,0) as cash_advance,
-          COALESCE(sb.motorcycle_loan,0) as motorcycle_loan,
-          COALESCE(sb.other_receivable,0) as other_receivable,
-          COALESCE(sb.staff_accounts_payable,0) as staff_accounts_payable,
+          COALESCE(sb.salary_advance,0) AS salary_advance,
+          COALESCE(sb.special_advance,0) AS special_advance,
+          COALESCE(sb.cash_advance,0) AS cash_advance,
+          COALESCE(sb.motorcycle_loan,0) AS motorcycle_loan,
+          COALESCE(sb.other_receivable,0) AS other_receivable,
+          COALESCE(sb.staff_accounts_payable,0) AS staff_accounts_payable,
 
           sb.created_at,
           sb.updated_at
         FROM public.staff_balances sb
-        LEFT JOIN public.staff s ON s.id = sb.employee_id
-        WHERE sb.employee_id = $1
+        LEFT JOIN public.staff s ON s.employee_no = sb.employee_no
+        WHERE sb.employee_no = $1
         LIMIT 1
         `,
-        [staffId]
+        [employeeNo]
       );
 
-      await ensureBalanceRow(client, staffId);
-      
       await client.query("COMMIT");
 
       if (r.rowCount === 0) {
         return res.json({
-          employee_id: staffId,
+          staff_id: s.rows[0].id,
+          employee_no: employeeNo,
           fullname: "",
           position: "",
           last_name: "",
@@ -202,8 +207,8 @@ router.get(
       try {
         await client.query("ROLLBACK");
       } catch {}
-      console.error("GET /api/staff-balances/:staffId ERROR:", e.message);
-      return res.status(500).json({ message: "Server error" });
+      console.error("GET /api/staff-balances/:employeeNo ERROR:", e);
+      return res.status(500).json({ message: e.message || "Server error" });
     } finally {
       client.release();
     }
@@ -223,7 +228,7 @@ router.post(
         `
         INSERT INTO public.staff_balances
           (
-            employee_id,
+            employee_no,
             fullname,
             "position",
             last_name,
@@ -242,7 +247,7 @@ router.post(
             updated_at
           )
         SELECT
-          s.id,
+          s.employee_no,
           s.fullname,
           s."position",
           s.last_name,
@@ -253,8 +258,8 @@ router.post(
           0,0,
           NOW(), NOW()
         FROM public.staff s
-        LEFT JOIN public.staff_balances sb ON sb.employee_id = s.id
-        WHERE sb.employee_id IS NULL
+        LEFT JOIN public.staff_balances sb ON sb.employee_no = s.employee_no
+        WHERE sb.employee_no IS NULL
         `
       );
 
@@ -264,8 +269,8 @@ router.post(
       try {
         await client.query("ROLLBACK");
       } catch {}
-      console.error("POST /api/staff-balances/bootstrap ERROR:", e.message);
-      return res.status(500).json({ message: "Server error" });
+      console.error("POST /api/staff-balances/bootstrap ERROR:", e);
+      return res.status(500).json({ message: e.message || "Server error" });
     } finally {
       client.release();
     }
@@ -273,18 +278,33 @@ router.post(
 );
 
 router.put(
-  "/staff-balances/:staffId",
+  "/staff-balances/:employeeNo",
   requireAuth,
   requireRole(["admin", "branch manager"]),
   async (req, res) => {
     const client = await pool.connect();
     try {
-      const staffId = toInt(req.params.staffId);
-      if (!staffId) return res.status(400).json({ message: "Invalid staff id" });
+      const employeeNo = clean(req.params.employeeNo);
+      if (!employeeNo) return res.status(400).json({ message: "Invalid employee no" });
+
+      if (isBranchManager(req)) {
+        const myBranchId = req.user?.branch_id ?? null;
+        if (!myBranchId) return res.status(403).json({ message: "Access denied" });
+
+        const s = await client.query(
+          `SELECT employee_no, branch_id FROM public.staff WHERE employee_no = $1 LIMIT 1`,
+          [employeeNo]
+        );
+
+        if (s.rowCount === 0) return res.status(404).json({ message: "Staff not found" });
+        if (Number(s.rows[0].branch_id) !== Number(myBranchId)) {
+          return res.status(403).json({ message: "Access denied" });
+        }
+      }
 
       await client.query("BEGIN");
 
-      await ensureBalanceRow(client, staffId);
+      await ensureBalanceRow(client, employeeNo);
 
       await client.query(
         `
@@ -300,7 +320,7 @@ router.put(
           other_receivable = $8,
           staff_accounts_payable = $9,
           updated_at = NOW()
-        WHERE employee_id = $10
+        WHERE employee_no = $10
         `,
         [
           toNum(req.body?.cbu),
@@ -312,13 +332,13 @@ router.put(
           toNum(req.body?.motorcycle_loan),
           toNum(req.body?.other_receivable),
           toNum(req.body?.staff_accounts_payable),
-          staffId,
+          employeeNo,
         ]
       );
 
       const r = await client.query(
-        `SELECT * FROM public.staff_balances WHERE employee_id = $1 LIMIT 1`,
-        [staffId]
+        `SELECT * FROM public.staff_balances WHERE employee_no = $1 LIMIT 1`,
+        [employeeNo]
       );
 
       await client.query("COMMIT");
@@ -327,8 +347,8 @@ router.put(
       try {
         await client.query("ROLLBACK");
       } catch {}
-      console.error("PUT /api/staff-balances/:staffId ERROR:", e.message);
-      return res.status(500).json({ message: "Server error" });
+      console.error("PUT /api/staff-balances/:employeeNo ERROR:", e);
+      return res.status(500).json({ message: e.message || "Server error" });
     } finally {
       client.release();
     }

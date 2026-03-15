@@ -185,6 +185,7 @@ router.put("/deployments/:id", requireAuth, requireRole(["admin", "branch manage
     }
     const row = existing.rows[0];
 
+    // cannot edit approved
     if (String(row.status || "").toLowerCase() === "approved") {
       await client.query("ROLLBACK");
       return res.status(400).json({ message: "Approved deployments cannot be edited" });
@@ -295,6 +296,7 @@ router.put("/deployments/:id/approve", requireAuth, requireRole(["admin"]), asyn
 
     const order = r.rows[0];
 
+    // update staff.branch_id
     await client.query(`UPDATE public.staff SET branch_id=$1 WHERE id=$2`, [order.branch_id, order.employee_id]);
 
     await client.query("COMMIT");

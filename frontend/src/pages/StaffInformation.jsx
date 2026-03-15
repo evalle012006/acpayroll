@@ -74,14 +74,20 @@ function StepTabs({ step, onSelectStep, canGoContract, canGoBalances }) {
         Staff Details
       </button>
 
-      <button type="button" className={`step-tab ${step === 2 ? "active" : ""}`} onClick={() => onSelectStep(2)}
+      <button
+        type="button"
+        className={`step-tab ${step === 2 ? "active" : ""}`}
+        onClick={() => onSelectStep(2)}
         disabled={!canGoContract}
         title={!canGoContract ? "Complete Staff Details first" : ""}
       >
         Contract Details
       </button>
 
-      <button type="button" className={`step-tab ${step === 3 ? "active" : ""}`} onClick={() => onSelectStep(3)}
+      <button
+        type="button"
+        className={`step-tab ${step === 3 ? "active" : ""}`}
+        onClick={() => onSelectStep(3)}
         disabled={!canGoBalances}
         title={!canGoBalances ? "Complete Contract Details first" : ""}
       >
@@ -494,6 +500,7 @@ function PersonalBalancesStep({ balanceForm, onBalanceChange }) {
     toNum(balanceForm.special_advance) +
     toNum(balanceForm.cash_advance) +
     toNum(balanceForm.motorcycle_loan) +
+    toNum(balanceForm.pag_ibig_loan) +
     toNum(balanceForm.other_receivable) +
     toNum(balanceForm.staff_accounts_payable);
 
@@ -546,6 +553,11 @@ function PersonalBalancesStep({ balanceForm, onBalanceChange }) {
         <div className="field">
           <label>Motorcycle Loan</label>
           <input className="input" name="motorcycle_loan" value={balanceForm.motorcycle_loan} onChange={onBalanceChange} />
+        </div>
+
+        <div className="field">
+          <label>Pag-ibig Loan</label>
+          <input className="input" name="pag_ibig_loan" value={balanceForm.pag_ibig_loan} onChange={onBalanceChange} />
         </div>
 
         <div className="field">
@@ -699,7 +711,7 @@ function StaffProfileModal({ staff, avatarUrl, onClose, branchNameById }) {
     setLoadingBal(true);
     setErrBal("");
     try {
-      const res = await api.get(`/staff-balances/${staff.id}`);
+      const res = await api.get(`/staff-balances/${staff.employee_no}`);
       setBalances(res.data || null);
     } catch (e) {
       setErrBal(e?.response?.data?.message || "Failed to load personal balances.");
@@ -960,7 +972,7 @@ function StaffProfileModal({ staff, avatarUrl, onClose, branchNameById }) {
                 <tr><td><h2>Remittances</h2></td></tr>
                 <tr><td>SSS No.</td><td>{staff.sss_no || "-"}</td></tr>
                 <tr><td>PhilHealth No.</td><td>{staff.philhealth_no || "-"}</td></tr>
-                <tr><td>Pab-Ibig No.</td><td>{staff.pagibig_no || "-"}</td></tr>
+                <tr><td>Pag-Ibig No.</td><td>{staff.pagibig_no || "-"}</td></tr>
                 <tr><td>TIN No.</td><td>{staff.tin_no || "-"}</td></tr>
               </tbody>
             </table>
@@ -1108,6 +1120,7 @@ function StaffProfileModal({ staff, avatarUrl, onClose, branchNameById }) {
                     <tr><td>Special Advance</td><td>{money(bal.special_advance)}</td></tr>
                     <tr><td>Cash Advance</td><td>{money(bal.cash_advance)}</td></tr>
                     <tr><td>Motorcycle Loan</td><td>{money(bal.motorcycle_loan)}</td></tr>
+                    <tr><td>Pag-ibig Loan</td><td>{money(bal.pag_ibig_loan)}</td></tr>
                     <tr><td>Other Receivable</td><td>{money(bal.other_receivable)}</td></tr>
                     <tr><td>Staff Accounts Payable</td><td>{money(bal.staff_accounts_payable)}</td></tr>
                     <tr>
@@ -1118,6 +1131,7 @@ function StaffProfileModal({ staff, avatarUrl, onClose, branchNameById }) {
                             toNum(bal.special_advance) +
                             toNum(bal.cash_advance) +
                             toNum(bal.motorcycle_loan) +
+                            toNum(bal.pag_ibig_loan) +
                             toNum(bal.other_receivable) +
                             toNum(bal.staff_accounts_payable)
                         )}
@@ -1168,6 +1182,7 @@ export default function StaffInformation() {
     special_advance: "",
     cash_advance: "",
     motorcycle_loan: "",
+    pag_ibig_loan: "",
     other_receivable: "",
     staff_accounts_payable: "",
   });
@@ -1212,7 +1227,7 @@ export default function StaffInformation() {
     spouse_employer: "",
     sss_no: "",
     philhealth_no: "",
-    pagibig_no:"",
+    pagibig_no: "",
     tin_no: "",
     father_fullname: "",
     father_address: "",
@@ -1295,7 +1310,7 @@ export default function StaffInformation() {
       spouse_employer: "",
       sss_no: "",
       philhealth_no: "",
-      pagibig_no:"",
+      pagibig_no: "",
       tin_no: "",
       father_fullname: "",
       father_address: "",
@@ -1353,6 +1368,7 @@ export default function StaffInformation() {
       special_advance: "",
       cash_advance: "",
       motorcycle_loan: "",
+      pag_ibig_loan: "",
       other_receivable: "",
       staff_accounts_payable: "",
     });
@@ -1545,7 +1561,7 @@ export default function StaffInformation() {
     });
 
     try {
-      const res = await api.get(`/staff-balances/${s.id}`);
+      const res = await api.get(`/staff-balances/${s.employee_no}`);
       const bal = res.data || {};
       setBalanceForm({
         cbu: String(bal.cbu ?? ""),
@@ -1555,6 +1571,7 @@ export default function StaffInformation() {
         special_advance: String(bal.special_advance ?? ""),
         cash_advance: String(bal.cash_advance ?? ""),
         motorcycle_loan: String(bal.motorcycle_loan ?? ""),
+        pag_ibig_loan: String(bal.pag_ibig_loan ?? ""),
         other_receivable: String(bal.other_receivable ?? ""),
         staff_accounts_payable: String(bal.staff_accounts_payable ?? ""),
       });
@@ -1567,6 +1584,7 @@ export default function StaffInformation() {
         special_advance: "",
         cash_advance: "",
         motorcycle_loan: "",
+        pag_ibig_loan: "",
         other_receivable: "",
         staff_accounts_payable: "",
       });
@@ -1647,6 +1665,7 @@ export default function StaffInformation() {
     special_advance: toNum(balanceForm.special_advance),
     cash_advance: toNum(balanceForm.cash_advance),
     motorcycle_loan: toNum(balanceForm.motorcycle_loan),
+    pag_ibig_loan: toNum(balanceForm.pag_ibig_loan),
     other_receivable: toNum(balanceForm.other_receivable),
     staff_accounts_payable: toNum(balanceForm.staff_accounts_payable),
   });
@@ -1682,7 +1701,7 @@ export default function StaffInformation() {
       const payload = buildPayload();
       await api.put(`/staff/${editStaff.id}`, payload);
 
-      await api.put(`/staff-balances/${editStaff.id}`, buildBalancePayload());
+      await api.put(`/staff-balances/${editStaff.employee_no}`, buildBalancePayload());
 
       if (photoFile) {
         const fd = new FormData();
