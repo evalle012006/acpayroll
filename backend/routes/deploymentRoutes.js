@@ -9,7 +9,7 @@ const toInt = (v) => {
 };
 
 const toDate = (v) => {
-  const s = String(v ?? "").slice(0, 10);
+  const s = String(v ?? "").trim().slice(0, 10);
   return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : null;
 };
 
@@ -18,32 +18,72 @@ const toStr = (v) => String(v ?? "").trim();
 const roleLower = (req) => String(req.user?.role || "").trim().toLowerCase();
 const isAdmin = (req) => roleLower(req) === "admin";
 const isBranchManager = (req) => roleLower(req) === "branch manager";
-const getUserBranchId = (req) => req.user?.branch_id ?? null;
+const getUserBranchCode = (req) => toStr(req.user?.branch_id);
+
+async function getBranchByCode(client, branchCode) {
+  const code = toStr(branchCode);
+  if (!code) return null;
+
+  const r = await client.query(
+    `
+    SELECT id, code, name
+    FROM public.branches
+    WHERE LOWER(TRIM(code)) = LOWER(TRIM($1))
+    LIMIT 1
+    `,
+    [code]
+  );
+
+  return r.rowCount ? r.rows[0] : null;
+}
 
 async function assertStaffInManagersBranch(req, client, employeeId) {
   if (!isBranchManager(req)) return true;
 
-  const bid = getUserBranchId(req);
-  if (!bid) return false;
+  const managerBranchCode = getUserBranchCode(req);
+  if (!managerBranchCode) return false;
 
-  const r = await client.query(`SELECT id FROM public.staff WHERE id=$1 AND branch_id=$2`, [employeeId, bid]);
+  const managerBranch = await getBranchByCode(client, managerBranchCode);
+  if (!managerBranch?.id) return false;
+
+  const r = await client.query(
+    `
+    SELECT id
+    FROM public.staff
+    WHERE id = $1 AND branch_id = $2
+    `,
+    [employeeId, managerBranch.id]
+  );
+
   return r.rowCount > 0;
 }
 
 router.get("/deployments", requireAuth, async (req, res) => {
+  const client = await pool.connect();
   try {
     if (isAdmin(req)) {
-      const r = await pool.query(`SELECT * FROM public.deployment_orders ORDER BY id DESC`);
+      const r = await client.query(`
+        SELECT *
+        FROM public.deployment_orders
+        ORDER BY id DESC
+      `);
       return res.json(r.rows);
     }
 
     if (isBranchManager(req)) {
-      const bid = getUserBranchId(req);
-      if (!bid) return res.json([]);
-      const r = await pool.query(
-        `SELECT * FROM public.deployment_orders WHERE branch_id=$1 ORDER BY id DESC`,
-        [bid]
+      const managerBranch = await getBranchByCode(client, getUserBranchCode(req));
+      if (!managerBranch?.id) return res.json([]);
+
+      const r = await client.query(
+        `
+        SELECT *
+        FROM public.deployment_orders
+        WHERE branch_id = $1
+        ORDER BY id DESC
+        `,
+        [managerBranch.id]
       );
+
       return res.json(r.rows);
     }
 
@@ -51,29 +91,52 @@ router.get("/deployments", requireAuth, async (req, res) => {
   } catch (e) {
     console.error("GET /api/deployments ERROR:", e.message);
     return res.status(500).json({ message: "Server error" });
+  } finally {
+    client.release();
   }
 });
 
 router.get("/deployments/:id", requireAuth, async (req, res) => {
+  const client = await pool.connect();
   try {
     const id = toInt(req.params.id);
     if (!id) return res.status(400).json({ message: "Invalid id" });
 
     if (isBranchManager(req)) {
-      const bid = getUserBranchId(req);
-      const r = await pool.query(`SELECT * FROM public.deployment_orders WHERE id=$1 AND branch_id=$2`, [id, bid]);
+      const managerBranch = await getBranchByCode(client, getUserBranchCode(req));
+      if (!managerBranch?.id) return res.status(403).json({ message: "Access denied" });
+
+      const r = await client.query(
+        `
+        SELECT *
+        FROM public.deployment_orders
+        WHERE id = $1 AND branch_id = $2
+        `,
+        [id, managerBranch.id]
+      );
+
       if (r.rowCount === 0) return res.status(404).json({ message: "Not found" });
       return res.json(r.rows[0]);
     }
 
     if (!isAdmin(req)) return res.status(403).json({ message: "Access denied" });
 
-    const r = await pool.query(`SELECT * FROM public.deployment_orders WHERE id=$1`, [id]);
+    const r = await client.query(
+      `
+      SELECT *
+      FROM public.deployment_orders
+      WHERE id = $1
+      `,
+      [id]
+    );
+
     if (r.rowCount === 0) return res.status(404).json({ message: "Not found" });
     return res.json(r.rows[0]);
   } catch (e) {
     console.error("GET /api/deployments/:id ERROR:", e.message);
     return res.status(500).json({ message: "Server error" });
+  } finally {
+    client.release();
   }
 });
 
@@ -83,7 +146,7 @@ router.post("/deployments", requireAuth, requireRole(["admin", "branch manager"]
     await client.query("BEGIN");
 
     const employee_id = toInt(req.body?.employee_id);
-    const branch_id = toInt(req.body?.branch_id);
+    const branch_code = toStr(req.body?.branch_code);
     const deployment_date = toDate(req.body?.deployment_date);
     const details = toStr(req.body?.details);
 
@@ -91,10 +154,12 @@ router.post("/deployments", requireAuth, requireRole(["admin", "branch manager"]
       await client.query("ROLLBACK");
       return res.status(400).json({ message: "Employee is required" });
     }
-    if (!branch_id) {
+
+    if (!branch_code) {
       await client.query("ROLLBACK");
-      return res.status(400).json({ message: "Branch is required" });
+      return res.status(400).json({ message: "Branch code is required" });
     }
+
     if (!deployment_date) {
       await client.query("ROLLBACK");
       return res.status(400).json({ message: "Deployment date is required" });
@@ -107,38 +172,48 @@ router.post("/deployments", requireAuth, requireRole(["admin", "branch manager"]
     }
 
     const s = await client.query(
-      `SELECT id, fullname, first_name, last_name, middle_name
-       FROM public.staff
-       WHERE id=$1`,
+      `
+      SELECT id, fullname, first_name, last_name, middle_name
+      FROM public.staff
+      WHERE id = $1
+      `,
       [employee_id]
     );
+
     if (s.rowCount === 0) {
       await client.query("ROLLBACK");
       return res.status(404).json({ message: "Staff not found" });
     }
-    const staffRow = s.rows[0];
 
-    const b = await client.query(`SELECT id, code, name FROM public.branches WHERE id=$1`, [branch_id]);
-    if (b.rowCount === 0) {
+    const staffRow = s.rows[0];
+    const branchRow = await getBranchByCode(client, branch_code);
+
+    if (!branchRow) {
       await client.query("ROLLBACK");
       return res.status(404).json({ message: "Branch not found" });
     }
-    const branchRow = b.rows[0];
 
     const ins = await client.query(
       `
       INSERT INTO public.deployment_orders
-        (employee_id, employee_name,
-         first_name, last_name, middle_name,
-         branch_id, branch_code, branch_name,
-         deployment_date, details,
-         status, created_by)
+        (
+          employee_id,
+          employee_name,
+          first_name,
+          last_name,
+          middle_name,
+          branch_id,
+          branch_code,
+          branch_name,
+          deployment_date,
+          details,
+          status,
+          created_by
+        )
       VALUES
-        ($1,$2,
-         $3,$4,$5,
-         $6,$7,$8,
-         $9::date,$10,
-         'Pending',$11)
+        (
+          $1,$2,$3,$4,$5,$6,$7,$8,$9::date,$10,'Pending',$11
+        )
       RETURNING *;
       `,
       [
@@ -147,9 +222,9 @@ router.post("/deployments", requireAuth, requireRole(["admin", "branch manager"]
         toStr(staffRow.first_name) || null,
         toStr(staffRow.last_name) || null,
         toStr(staffRow.middle_name) || null,
-        branch_id,
-        toStr(branchRow.code) || "",
-        toStr(branchRow.name) || "",
+        branchRow.id,
+        branchRow.code,
+        branchRow.name,
         deployment_date,
         details || null,
         req.user?.id ?? null,
@@ -178,14 +253,22 @@ router.put("/deployments/:id", requireAuth, requireRole(["admin", "branch manage
       return res.status(400).json({ message: "Invalid id" });
     }
 
-    const existing = await client.query(`SELECT * FROM public.deployment_orders WHERE id=$1`, [id]);
+    const existing = await client.query(
+      `
+      SELECT *
+      FROM public.deployment_orders
+      WHERE id = $1
+      `,
+      [id]
+    );
+
     if (existing.rowCount === 0) {
       await client.query("ROLLBACK");
       return res.status(404).json({ message: "Deployment not found" });
     }
+
     const row = existing.rows[0];
 
-    // cannot edit approved
     if (String(row.status || "").toLowerCase() === "approved") {
       await client.query("ROLLBACK");
       return res.status(400).json({ message: "Approved deployments cannot be edited" });
@@ -199,40 +282,40 @@ router.put("/deployments/:id", requireAuth, requireRole(["admin", "branch manage
       }
     }
 
-    const branch_id = toInt(req.body?.branch_id);
+    const branch_code = toStr(req.body?.branch_code);
     const deployment_date = toDate(req.body?.deployment_date);
     const details = toStr(req.body?.details);
 
-    if (!branch_id) {
+    if (!branch_code) {
       await client.query("ROLLBACK");
-      return res.status(400).json({ message: "Branch is required" });
+      return res.status(400).json({ message: "Branch code is required" });
     }
+
     if (!deployment_date) {
       await client.query("ROLLBACK");
       return res.status(400).json({ message: "Deployment date is required" });
     }
 
-    const b = await client.query(`SELECT id, code, name FROM public.branches WHERE id=$1`, [branch_id]);
-    if (b.rowCount === 0) {
+    const branchRow = await getBranchByCode(client, branch_code);
+    if (!branchRow) {
       await client.query("ROLLBACK");
       return res.status(404).json({ message: "Branch not found" });
     }
-    const branchRow = b.rows[0];
 
     const upd = await client.query(
       `
       UPDATE public.deployment_orders
       SET
-        branch_id=$1,
-        branch_code=$2,
-        branch_name=$3,
-        deployment_date=$4::date,
-        details=$5,
-        updated_at=NOW()
-      WHERE id=$6
+        branch_id = $1,
+        branch_code = $2,
+        branch_name = $3,
+        deployment_date = $4::date,
+        details = $5,
+        updated_at = NOW()
+      WHERE id = $6
       RETURNING *;
       `,
-      [branch_id, toStr(branchRow.code) || "", toStr(branchRow.name) || "", deployment_date, details || null, id]
+      [branchRow.id, branchRow.code, branchRow.name, deployment_date, details || null, id]
     );
 
     await client.query("COMMIT");
@@ -251,7 +334,15 @@ router.delete("/deployments/:id", requireAuth, requireRole(["admin"]), async (re
     const id = toInt(req.params.id);
     if (!id) return res.status(400).json({ message: "Invalid id" });
 
-    const r = await pool.query(`DELETE FROM public.deployment_orders WHERE id=$1 RETURNING id`, [id]);
+    const r = await pool.query(
+      `
+      DELETE FROM public.deployment_orders
+      WHERE id = $1
+      RETURNING id
+      `,
+      [id]
+    );
+
     if (r.rowCount === 0) return res.status(404).json({ message: "Deployment not found" });
 
     return res.json({ message: "Deleted", id: r.rows[0].id });
@@ -276,14 +367,14 @@ router.put("/deployments/:id/approve", requireAuth, requireRole(["admin"]), asyn
       `
       UPDATE public.deployment_orders
       SET
-        status='Approved',
-        approved_by=$2,
-        approved_at=COALESCE(approved_at, NOW()),
-        rejected_by=NULL,
-        rejected_at=NULL,
-        rejection_reason=NULL,
-        updated_at=NOW()
-      WHERE id=$1 AND status='Pending'
+        status = 'Approved',
+        approved_by = $2,
+        approved_at = COALESCE(approved_at, NOW()),
+        rejected_by = NULL,
+        rejected_at = NULL,
+        rejection_reason = NULL,
+        updated_at = NOW()
+      WHERE id = $1 AND status = 'Pending'
       RETURNING *;
       `,
       [id, req.user?.id ?? null]
@@ -296,8 +387,14 @@ router.put("/deployments/:id/approve", requireAuth, requireRole(["admin"]), asyn
 
     const order = r.rows[0];
 
-    // update staff.branch_id
-    await client.query(`UPDATE public.staff SET branch_id=$1 WHERE id=$2`, [order.branch_id, order.employee_id]);
+    await client.query(
+      `
+      UPDATE public.staff
+      SET branch_id = $1
+      WHERE id = $2
+      `,
+      [order.branch_id, order.employee_id]
+    );
 
     await client.query("COMMIT");
     return res.json(order);

@@ -8,6 +8,8 @@
   display: flex;
   justify-content: space-between;
   align-items: flex-end;
+  gap: 14px;
+  flex-wrap: wrap;
 }
 
 .order-title {
@@ -36,11 +38,15 @@
   padding: 14px 18px;
   display: flex;
   justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
   border-bottom: 1px solid var(--border);
 }
 
 .order-card-title {
   font-weight: 900;
+  color: var(--text);
 }
 
 .order-card-meta {
@@ -61,14 +67,27 @@
 
 .table th {
   background: var(--table-header);
-  color: white;
+  color: #ffffff;
   padding: 12px;
   text-align: left;
+  font-size: 13px;
+  font-weight: 800;
+  white-space: nowrap;
 }
 
 .table td {
   padding: 12px;
   border-bottom: 1px solid var(--border);
+  color: var(--text);
+  vertical-align: top;
+}
+
+.table tbody tr {
+  transition: background 0.18s ease;
+}
+
+.table tbody tr:hover {
+  background: rgba(255, 255, 255, 0.03);
 }
 
 .empty-state {
@@ -95,33 +114,158 @@
   gap: 6px;
 }
 
+.field label {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+}
+
 .field input,
-.field textarea {
-  padding: 10px;
+.field textarea,
+.field select {
+  padding: 10px 12px;
   border-radius: 10px;
   border: 1px solid var(--border);
   background: var(--panel-2);
+  color: var(--text);
+  outline: none;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
+}
+
+.field input:focus,
+.field textarea:focus,
+.field select:focus {
+  border-color: rgba(59, 130, 246, 0.55);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.12);
+}
+
+.field textarea {
+  resize: vertical;
+  min-height: 84px;
+}
+
+/* search area */
+.order-search-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.order-search-input {
+  min-width: 300px;
+  height: 38px;
+  padding: 0 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--panel-2);
+  color: var(--text);
+  outline: none;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
+}
+
+.order-search-input:focus {
+  border-color: rgba(59, 130, 246, 0.55);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.12);
+}
+
+.order-search-input::placeholder {
+  color: var(--muted);
+}
+
+/* selected order card */
+.order-selected {
+  padding: 12px;
+  margin-bottom: 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: rgba(59, 130, 246, 0.08);
   color: var(--text);
 }
 
 /* dark tuning */
 [data-theme="dark"] .order-card {
   background: #0f1f3d;
-  border-color: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.08);
 }
 
-.field select {
-  padding: 10px;
-  border-radius: 10px;
-  border: 1px solid var(--border);
-  background: var(--panel-2);
-  color: var(--text);
+[data-theme="dark"] .order-title {
+  color: #e7eefb;
 }
 
-.field select {
-  padding: 10px;
-  border-radius: 10px;
-  border: 1px solid var(--border);
-  background: var(--panel-2);
-  color: var(--text);
+[data-theme="dark"] .order-subtitle {
+  color: #9bb0cf;
+}
+
+[data-theme="dark"] .order-card-title {
+  color: #e7eefb;
+}
+
+[data-theme="dark"] .order-card-meta {
+  color: #8ea3c3;
+}
+
+[data-theme="dark"] .table th {
+  color: #f8fbff;
+}
+
+[data-theme="dark"] .table td {
+  color: #ced9ea;
+  border-bottom-color: rgba(255, 255, 255, 0.06);
+}
+
+[data-theme="dark"] .table tbody tr:hover {
+  background: rgba(255, 255, 255, 0.025);
+}
+
+[data-theme="dark"] .empty-state {
+  color: #8ea3c3;
+}
+
+[data-theme="dark"] .field label {
+  color: #d9e4f5;
+}
+
+[data-theme="dark"] .field input,
+[data-theme="dark"] .field textarea,
+[data-theme="dark"] .field select,
+[data-theme="dark"] .order-search-input {
+  background: #12264b;
+  border-color: rgba(255, 255, 255, 0.08);
+  color: #dbe7f8;
+}
+
+[data-theme="dark"] .field input::placeholder,
+[data-theme="dark"] .field textarea::placeholder,
+[data-theme="dark"] .order-search-input::placeholder {
+  color: #7f95b7;
+}
+
+[data-theme="dark"] .field input:focus,
+[data-theme="dark"] .field textarea:focus,
+[data-theme="dark"] .field select:focus,
+[data-theme="dark"] .order-search-input:focus {
+  border-color: rgba(96, 165, 250, 0.65);
+  box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.14);
+}
+
+[data-theme="dark"] .order-selected {
+  background: rgba(59, 130, 246, 0.12);
+  border-color: rgba(255, 255, 255, 0.08);
+  color: #dbe7f8;
+}
+
+/* responsive */
+@media (max-width: 900px) {
+  .form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .form-grid .full {
+    grid-column: span 1;
+  }
+
+  .order-search-input {
+    min-width: 100%;
+  }
 }

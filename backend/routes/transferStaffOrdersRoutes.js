@@ -122,6 +122,7 @@ router.post(
 
       const division = toStr(b.division);
       const area = toStr(b.area);
+      const region = toStr(b.region);
       const details = toStr(b.details);
 
       const date_created = toDateOrNull(b.date_created);
@@ -132,6 +133,7 @@ router.post(
       if (prev_branch_id === to_branch_id) return res.status(400).json({ message: "Branches must differ" });
       if (!division) return res.status(400).json({ message: "Division required" });
       if (!area) return res.status(400).json({ message: "Area required" });
+      if (!region) return res.status(400).json({ message: "Region required" });
       if (!date_created) return res.status(400).json({ message: "Date created required" });
       if (!effective_date) return res.status(400).json({ message: "Effective date required" });
       if (!details) return res.status(400).json({ message: "Details required" });
@@ -168,16 +170,16 @@ router.post(
           (order_no, employee_id, employee_name,
            prev_branch_id, prev_branch_code, prev_branch_name,
            to_branch_id, to_branch_code, to_branch_name,
-           area, division, date_created, effective_date, details,
+           area, region, division, date_created, effective_date, details,
            status, created_by,
            last_name, first_name, middle_name)
         VALUES
           ($1,$2,$3,
            $4,$5,$6,
            $7,$8,$9,
-           $10,$11,$12::date,$13::date,$14,
-           'Pending',$15,
-           $16,$17,$18)
+           $10,$11,$12,$13::date,$14::date,$15,
+           'Pending',$16,
+           $17,$18,$19)
         RETURNING *;
         `,
         [
@@ -194,6 +196,7 @@ router.post(
           toStr(b.to_branch_name),
 
           area,
+          region,
           division,
           date_created,
           effective_date,
@@ -248,8 +251,16 @@ router.put(
 
       const order = r.rows[0];
       await pool.query(
-        `UPDATE public.staff SET branch_id=$1 WHERE id=$2`,
-        [order.to_branch_id, order.employee_id]
+        `
+        UPDATE public.staff
+        SET
+          branch_id = $1,
+          area = $2,
+          region = $3,
+          division = $4
+        WHERE id = $5
+        `,
+        [order.to_branch_id, order.area, order.region, order.division, order.employee_id]
       );
 
       return res.json(order);

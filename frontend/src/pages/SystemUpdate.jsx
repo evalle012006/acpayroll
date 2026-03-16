@@ -47,9 +47,9 @@ export default function SystemUpdate() {
         >
           <div className="sys-card-head">
             <div>
-              <div className="sys-card-title">Overtime Rules</div>
+              <div className="sys-card-title">Area Configurations</div>
               <div className="sys-card-meta">
-                Configure overtime computation multipliers.
+                Area / Region / Division Configuration.
               </div>
             </div>
             <span className="sys-pill">Soon</span>

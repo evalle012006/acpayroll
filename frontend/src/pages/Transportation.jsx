@@ -10,7 +10,8 @@ const toNum = (v) => {
   return Number.isFinite(n) ? n : 0;
 };
 
-const norm = (v) => String(v ?? "").trim().toLowerCase();
+const toStr = (v) => String(v ?? "").trim();
+const norm = (v) => toStr(v).toLowerCase();
 const toDate10 = (v) => (v ? String(v).slice(0, 10) : "");
 
 const OVERRIDE_FIELDS = [
@@ -48,7 +49,8 @@ const isExpired = (until) => {
 };
 
 export default function Transportation() {
-  const { id } = useParams(); // branch id
+  const params = useParams();
+  const branchParam = toStr(params.branchId ?? params.id);
   const navigate = useNavigate();
 
   const [branch, setBranch] = useState(null);
@@ -58,25 +60,21 @@ export default function Transportation() {
 
   const money = (v) => toNum(v).toLocaleString();
 
-  // overrides map: { [staffId]: { until, values } }
   const [overrides, setOverrides] = useState({});
-
-  // action menu state
   const [menuOpenFor, setMenuOpenFor] = useState(null);
   const menuWrapRef = useRef(null);
 
-  // modal state
   const [editModalStaff, setEditModalStaff] = useState(null);
   const [editUntil, setEditUntil] = useState("");
   const [editValues, setEditValues] = useState(() => emptyOverrideValues());
   const [savingOverride, setSavingOverride] = useState(false);
 
   /* ---------------- Load overrides from PostgreSQL ---------------- */
-  const loadOverrides = useCallback(async () => {
-    if (!id) return;
+  const loadOverrides = useCallback(async (resolvedBranchId) => {
+    if (!resolvedBranchId) return;
 
     try {
-      const res = await api.get(`/transport-overrides/branch/${id}`);
+      const res = await api.get(`/transport-overrides/branch/${resolvedBranchId}`);
       const map = {};
 
       (Array.isArray(res.data) ? res.data : []).forEach((r) => {
@@ -100,11 +98,7 @@ export default function Transportation() {
     } catch (err) {
       console.error("loadOverrides failed:", err?.response?.data || err?.message || err);
     }
-  }, [id]);
-
-  useEffect(() => {
-    loadOverrides();
-  }, [loadOverrides]);
+  }, []);
 
   /* ---------------- Click outside menu ---------------- */
   useEffect(() => {
@@ -122,7 +116,7 @@ export default function Transportation() {
   /* ---------------- Data load ---------------- */
   useEffect(() => {
     const run = async () => {
-      if (!id) {
+      if (!branchParam) {
         setError("No branch ID provided.");
         setLoading(false);
         return;
@@ -134,24 +128,36 @@ export default function Transportation() {
       try {
         const branchesRes = await api.get("/branches");
         const branches = Array.isArray(branchesRes.data) ? branchesRes.data : [];
-        const b = branches.find((x) => Number(x.id) === Number(id));
 
-        if (!b) {
+        const foundBranch = branches.find((x) => {
+          const idMatch = Number.isFinite(Number(branchParam)) && Number(x.id) === Number(branchParam);
+          const codeMatch = norm(x.code) === norm(branchParam);
+          return idMatch || codeMatch;
+        });
+
+        if (!foundBranch) {
           setError("Branch not found.");
           setLoading(false);
           return;
         }
 
-        setBranch(b);
+        setBranch(foundBranch);
 
         const staffRes = await api.get("/staff");
         const all = Array.isArray(staffRes.data) ? staffRes.data : [];
 
-        const byBranchId = all.filter((s) => Number(s.branch_id) === Number(b.id));
+        const byBranchId = all.filter((s) => Number(s.branch_id) === Number(foundBranch.id));
+        const byBranchCode = all.filter((s) => norm(s.branch_code) === norm(foundBranch.code));
+
         const filtered =
-          byBranchId.length > 0 ? byBranchId : all.filter((s) => norm(s.area) === norm(b.area));
+          byBranchId.length > 0
+            ? byBranchId
+            : byBranchCode.length > 0
+            ? byBranchCode
+            : all.filter((s) => norm(s.area) === norm(foundBranch.area));
 
         setStaff(filtered);
+        await loadOverrides(foundBranch.id);
       } catch (err) {
         const status = err?.response?.status;
         if (status === 404) setError("Branch not found.");
@@ -164,7 +170,7 @@ export default function Transportation() {
     };
 
     run();
-  }, [id]);
+  }, [branchParam, loadOverrides]);
 
   /* ---------------- Apply override (if active) ---------------- */
   const applyOverrideToStaffRow = useCallback(
@@ -281,7 +287,7 @@ export default function Transportation() {
   };
 
   const saveManualEdit = async () => {
-    if (!editModalStaff?.id) return;
+    if (!editModalStaff?.id || !branch?.id) return;
 
     const until = toDate10(editUntil);
     if (!until) return alert("Please set Effective date until.");
@@ -292,13 +298,13 @@ export default function Transportation() {
     setSavingOverride(true);
     try {
       await api.post("/transport-overrides", {
-        branch_id: Number(id),
+        branch_id: Number(branch.id),
         staff_id: Number(editModalStaff.id),
         until,
         values: editValues,
       });
 
-      await loadOverrides();
+      await loadOverrides(branch.id);
       closeModal();
       alert("Manual override saved.");
     } catch (err) {
@@ -309,9 +315,11 @@ export default function Transportation() {
   };
 
   const clearOverrideForStaff = async (staffId) => {
+    if (!branch?.id) return;
+
     try {
-      await api.delete(`/transport-overrides/branch/${id}/staff/${staffId}`);
-      await loadOverrides();
+      await api.delete(`/transport-overrides/branch/${branch.id}/staff/${staffId}`);
+      await loadOverrides(branch.id);
     } catch (err) {
       alert(err?.response?.data?.message || "Failed to remove override");
     }

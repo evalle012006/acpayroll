@@ -9,7 +9,8 @@ const toNum = (v) => {
   return Number.isFinite(n) ? n : 0;
 };
 
-const norm = (v) => String(v ?? "").trim().toLowerCase();
+const toStr = (v) => String(v ?? "").trim();
+const norm = (v) => toStr(v).toLowerCase();
 const fmt = (n) => toNum(n).toLocaleString();
 const fmtDate = (d) => (d ? String(d).split("T")[0] : "-");
 const toDate10 = (v) => (v ? String(v).slice(0, 10) : "");
@@ -20,20 +21,17 @@ const monthlyFromWhole = (v) => {
   return n / 12;
 };
 
-const overrideKey = (branchId) => `payroll_manual_overrides::branch_${branchId}`;
+const overrideKey = (branchKey) => `payroll_manual_overrides::branch_${branchKey}`;
 
 const OVERRIDE_FIELDS = [
   "salary",
   "ecola",
-
   "hdmf_er",
   "sss_er",
   "ph_er",
-
   "hdmf_ee",
   "sss_ee",
   "ph_ee",
-
   "tax",
   "utility_charge",
   "cbu",
@@ -50,15 +48,12 @@ const OVERRIDE_FIELDS = [
 const LABELS = {
   salary: "Salary",
   ecola: "Ecola",
-
   hdmf_er: "HDMF ER",
   sss_er: "SSS ER",
   ph_er: "PhilHealth ER",
-
   hdmf_ee: "HDMF EE",
   sss_ee: "SSS EE",
   ph_ee: "PhilHealth EE",
-
   tax: "Tax",
   utility_charge: "Utility",
   cbu: "CBU",
@@ -74,7 +69,9 @@ const LABELS = {
 
 function Payroll() {
   const params = useParams();
-  const branchId = params.branchId ?? params.id;
+  const rawBranchParam = params.branchId ?? params.id;
+  const branchParam = toStr(rawBranchParam);
+
   const navigate = useNavigate();
 
   const [staff, setStaff] = useState([]);
@@ -104,26 +101,26 @@ function Payroll() {
 
   useEffect(() => {
     try {
-      const raw = localStorage.getItem(overrideKey(branchId));
+      const raw = localStorage.getItem(overrideKey(branchParam));
       const parsed = raw ? JSON.parse(raw) : {};
       setOverrides(parsed && typeof parsed === "object" ? parsed : {});
     } catch {
       setOverrides({});
     }
-  }, [branchId]);
+  }, [branchParam]);
 
   const persistOverrides = useCallback(
     (next) => {
       setOverrides(next);
       try {
-        localStorage.setItem(overrideKey(branchId), JSON.stringify(next));
+        localStorage.setItem(overrideKey(branchParam), JSON.stringify(next));
       } catch {}
     },
-    [branchId]
+    [branchParam]
   );
 
   useEffect(() => {
-    if (!branchId) return;
+    if (!branchParam) return;
 
     const today = new Date();
     const isExpired = (until) => {
@@ -143,7 +140,7 @@ function Payroll() {
     });
 
     if (changed) persistOverrides(next);
-  }, [overrides, branchId, persistOverrides]);
+  }, [overrides, branchParam, persistOverrides]);
 
   useEffect(() => {
     const run = async () => {
@@ -154,18 +151,33 @@ function Payroll() {
         const [branchesRes, staffRes] = await Promise.all([api.get("/branches"), api.get("/staff")]);
 
         const branches = Array.isArray(branchesRes.data) ? branchesRes.data : [];
-        const foundBranch = branches.find((x) => Number(x.id) === Number(branchId));
+
+        const foundBranch = branches.find((x) => {
+          const idMatch = Number.isFinite(Number(branchParam)) && Number(x.id) === Number(branchParam);
+          const codeMatch = norm(x.code) === norm(branchParam);
+          return idMatch || codeMatch;
+        });
+
         if (!foundBranch) {
           setError("Branch not found.");
           setLoading(false);
           return;
         }
+
         setBranch(foundBranch);
 
         const allStaff = Array.isArray(staffRes.data) ? staffRes.data : [];
-        const byBranchId = allStaff.filter((s) => Number(s.branch_id) === Number(branchId));
+
+        const byBranchId = allStaff.filter((s) => Number(s.branch_id) === Number(foundBranch.id));
+
+        const byBranchCode = allStaff.filter((s) => norm(s.branch_code) === norm(foundBranch.code));
+
         const filtered =
-          byBranchId.length > 0 ? byBranchId : allStaff.filter((s) => norm(s.area) === norm(foundBranch.area));
+          byBranchId.length > 0
+            ? byBranchId
+            : byBranchCode.length > 0
+            ? byBranchCode
+            : allStaff.filter((s) => norm(s.area) === norm(foundBranch.area));
 
         setStaff(filtered);
       } catch (err) {
@@ -179,15 +191,20 @@ function Payroll() {
     };
 
     run();
-  }, [branchId]);
+  }, [branchParam]);
 
   useEffect(() => {
     const loadBalances = async () => {
       try {
+        if (!branch) {
+          setScheduleBalances({});
+          return;
+        }
+
         const month = new Date().toISOString().slice(0, 7);
 
         const res = await api.get("/schedule-balances/live", {
-          params: { month, branchId },
+          params: { month, branchId: branch.id },
         });
 
         const rows = Array.isArray(res.data) ? res.data : [];
@@ -212,8 +229,8 @@ function Payroll() {
       }
     };
 
-    if (branchId) loadBalances();
-  }, [branchId]);
+    loadBalances();
+  }, [branch]);
 
   const applyOverrideToStaffRow = useCallback(
     (s) => {
@@ -440,13 +457,10 @@ function Payroll() {
                 <th rowSpan={2}>Full Name</th>
                 <th rowSpan={2}>Position</th>
                 <th rowSpan={2}>Date Regularized</th>
-
                 <th colSpan={3}>EARNINGS</th>
                 <th colSpan={4}>EMPLOYER (ER)</th>
                 <th colSpan={4}>EMPLOYEE (EE)</th>
-
                 <th colSpan={11}>DEDUCTIONS</th>
-
                 <th rowSpan={2}>Total Deduction</th>
                 <th rowSpan={2}>Net Pay</th>
                 <th rowSpan={2}>10th</th>

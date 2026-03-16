@@ -120,9 +120,12 @@ export default function Salary() {
     return m;
   }, [branches]);
 
-  const balancesByEmp = useMemo(() => {
+  const balancesByEmpNo = useMemo(() => {
     const m = new Map();
-    for (const b of balances || []) m.set(String(b.employee_id), b);
+    for (const b of balances || []) {
+      const key = toStr(b.employee_no);
+      if (key) m.set(key, b);
+    }
     return m;
   }, [balances]);
 
@@ -174,35 +177,37 @@ export default function Salary() {
   }, [sapRows]);
 
   const fetchBalanceForEmp = useCallback(
-    async (employeeId) => {
-      const key = String(employeeId);
-      if (!employeeId) return null;
-      if (balancesByEmp.has(key)) return balancesByEmp.get(key);
+    async (employeeNo) => {
+      const key = toStr(employeeNo);
+      if (!key) return null;
+      if (balancesByEmpNo.has(key)) return balancesByEmpNo.get(key);
 
       try {
-        const res = await api.get(`/staff-balances/${employeeId}`);
+        const res = await api.get(`/staff-balances/${encodeURIComponent(key)}`);
         const row = res.data || null;
+
         if (row) {
           setBalances((prev) => {
             const next = Array.isArray(prev) ? [...prev] : [];
-            const idx = next.findIndex((x) => String(x.employee_id) === key);
+            const idx = next.findIndex((x) => toStr(x.employee_no) === key);
             if (idx >= 0) next[idx] = row;
             else next.push(row);
             return next;
           });
         }
+
         return row;
       } catch (e) {
         console.error("Fetch staff balance failed:", e);
         return null;
       }
     },
-    [balancesByEmp]
+    [balancesByEmpNo]
   );
 
   const staffWithComputed = useMemo(() => {
     return (staff || []).map((s) => {
-      const bal = balancesByEmp.get(String(s.id)) || {};
+      const bal = balancesByEmpNo.get(toStr(s.employee_no)) || {};
       const monthlyLoans = approvedLoansByEmp.get(String(s.id)) || {
         salary_advance: 0,
         motorcycle_loan: 0,
@@ -325,7 +330,7 @@ export default function Salary() {
         payroll_date: new Date().toISOString(),
       };
     });
-  }, [staff, balancesByEmp, approvedLoansByEmp, approvedSapByEmp, branchMap]);
+  }, [staff, balancesByEmpNo, approvedLoansByEmp, approvedSapByEmp, branchMap]);
 
   const filteredStaff = useMemo(() => {
     const q = toStr(search).toLowerCase();
@@ -345,6 +350,7 @@ export default function Salary() {
         emp.area,
         emp.branch_code,
         emp.branch_name,
+        emp.employee_no,
       ]
         .map((x) => toStr(x).toLowerCase())
         .join(" ");
@@ -431,6 +437,7 @@ export default function Salary() {
               <div class="meta">
                 <div><strong>Date:</strong> ${today}</div>
                 <div><strong>Employee ID:</strong> ${s.id}</div>
+                <div><strong>Employee No:</strong> ${s.employee_no || "-"}</div>
                 <div><strong>Branch:</strong> ${branchLabel}</div>
                 <div><strong>Area:</strong> ${s.area ?? "-"}</div>
               </div>
@@ -603,8 +610,12 @@ export default function Salary() {
   };
 
   const openStaff = async (emp) => {
-    const hasBal = balancesByEmp.has(String(emp.id));
-    if (!hasBal) await fetchBalanceForEmp(emp.id);
+    const empNo = toStr(emp.employee_no);
+    const hasBal = balancesByEmpNo.has(empNo);
+
+    if (!hasBal && empNo) {
+      await fetchBalanceForEmp(empNo);
+    }
 
     const latest = staffWithComputed.find((x) => String(x.id) === String(emp.id)) || emp;
     setSelectedStaff(latest);
@@ -682,6 +693,7 @@ export default function Salary() {
             <thead>
               <tr>
                 <th>ID</th>
+                <th>Employee No</th>
                 <th>Name</th>
                 <th>Position</th>
                 <th>Branch</th>
@@ -694,6 +706,7 @@ export default function Salary() {
               {filteredStaff.map((emp) => (
                 <tr key={emp.id}>
                   <td>{emp.id}</td>
+                  <td>{emp.employee_no || "-"}</td>
                   <td className="td-strong">{emp.display_name}</td>
                   <td>{emp.position || "-"}</td>
                   <td>{emp.branch_code || emp.branch_name ? `${emp.branch_code} • ${emp.branch_name}` : "-"}</td>
@@ -708,7 +721,7 @@ export default function Salary() {
 
               {filteredStaff.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="empty-state">
+                  <td colSpan={7} className="empty-state">
                     No staff found.
                   </td>
                 </tr>

@@ -54,7 +54,7 @@ const buildFullname = ({ last_name, first_name, middle_name, fullname }) => {
 const roleLower = (req) => String(req.user?.role || "").trim().toLowerCase();
 const isAdmin = (req) => roleLower(req) === "admin";
 const isBranchManager = (req) => roleLower(req) === "branch manager";
-const getUserBranchId = (req) => req.user?.branch_id ?? null;
+const getUserBranchCode = (req) => toStr(req.user?.branch_id);
 
 const toJsonbArray = (v) => {
   try {
@@ -120,6 +120,24 @@ const computeTotals = (body) => {
 
 const generateEmployeeNoFromId = (id) => `EMP-${String(id).padStart(6, "0")}`;
 
+async function getBranchIdFromCode(branchCode) {
+  const code = toStr(branchCode);
+  if (!code) return null;
+
+  const r = await pool.query(
+    `
+    SELECT id
+    FROM public.branches
+    WHERE LOWER(TRIM(code)) = LOWER(TRIM($1))
+    LIMIT 1
+    `,
+    [code]
+  );
+
+  if (r.rowCount === 0) return null;
+  return r.rows[0].id;
+}
+
 const staffUploadDir = path.join(__dirname, "..", "uploads", "staff");
 fs.mkdirSync(staffUploadDir, { recursive: true });
 
@@ -148,8 +166,12 @@ router.get("/staff", requireAuth, async (req, res) => {
     }
 
     if (isBranchManager(req)) {
-      const bid = getUserBranchId(req);
+      const branchCode = getUserBranchCode(req);
+      if (!branchCode) return res.json([]);
+
+      const bid = await getBranchIdFromCode(branchCode);
       if (!bid) return res.json([]);
+
       const r = await pool.query(
         `
         SELECT s.*,
@@ -157,7 +179,7 @@ router.get("/staff", requireAuth, async (req, res) => {
                b.code AS branch_code
         FROM public.staff s
         LEFT JOIN public.branches b ON b.id = s.branch_id
-        WHERE s.branch_id=$1
+        WHERE s.branch_id = $1
         ORDER BY s.id DESC
         `,
         [bid]
@@ -641,7 +663,10 @@ router.post(
       if (!req.file) return res.status(400).json({ message: "No file uploaded." });
 
       if (isBranchManager(req)) {
-        const bid = getUserBranchId(req);
+        const branchCode = getUserBranchCode(req);
+        const bid = await getBranchIdFromCode(branchCode);
+        if (!bid) return res.status(403).json({ message: "Access denied" });
+
         const check = await pool.query(`SELECT id FROM public.staff WHERE id=$1 AND branch_id=$2`, [staffId, bid]);
         if (check.rowCount === 0) return res.status(403).json({ message: "Access denied" });
       }

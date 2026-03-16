@@ -14,6 +14,7 @@ const roleOptions = [
 
 const Users = () => {
   const [rows, setRows] = useState([]);
+  const [branches, setBranches] = useState([]);
   const [loading, setLoading] = useState(false);
 
   const [search, setSearch] = useState("");
@@ -54,8 +55,21 @@ const Users = () => {
     }
   };
 
+  const fetchBranches = async () => {
+    try {
+      const res = await api.get("/branches");
+      setBranches(Array.isArray(res.data) ? res.data : []);
+    } catch (err) {
+      const status = err?.response?.status;
+      if (status === 401) return handle401();
+      if (status === 403) return;
+      console.error(err?.response?.data?.message || "Failed to load branches");
+    }
+  };
+
   useEffect(() => {
     fetchUsers();
+    fetchBranches();
   }, []);
 
   useEffect(() => {
@@ -80,17 +94,26 @@ const Users = () => {
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     if (!q) return rows;
+
     return rows.filter(
       (r) =>
+        String(r.id || "").toLowerCase().includes(q) ||
         String(r.username || "").toLowerCase().includes(q) ||
         String(r.role || "").toLowerCase().includes(q) ||
-        String(r.id || "").toLowerCase().includes(q)
+        String(r.branch_id || "").toLowerCase().includes(q) ||
+        String(r.branch_name || "").toLowerCase().includes(q) ||
+        String(r.branch_address || "").toLowerCase().includes(q)
     );
   }, [rows, search]);
 
   const openAdd = () => {
     setEditId(null);
-    setForm({ username: "", password: "", role: "admin", branch_id: null });
+    setForm({
+      username: "",
+      password: "",
+      role: "admin",
+      branch_id: null,
+    });
     setShowModal(true);
   };
 
@@ -119,11 +142,18 @@ const Users = () => {
     e.preventDefault();
     if (saving) return;
 
+    const normalizedRole = String(form.role || "").trim().toLowerCase();
+    const requiresBranch = normalizedRole === "branch manager";
+
+    if (requiresBranch && !form.branch_id) {
+      return alert("Branch is required for Branch Manager.");
+    }
+
     setSaving(true);
     try {
       const payload = {
         username: String(form.username || "").trim(),
-        role: String(form.role || "").trim().toLowerCase(),
+        role: normalizedRole,
         branch_id: form.branch_id === "" ? null : form.branch_id ?? null,
       };
 
@@ -200,6 +230,9 @@ const Users = () => {
     return found ? found.label : String(value || "");
   };
 
+  const selectedBranch = branches.find((b) => Number(b.id) === Number(form.branch_id)) || null;
+  const needsBranch = form.role === "branch manager";
+
   return (
     <div className="users-page">
       <div className="users-header">
@@ -221,7 +254,7 @@ const Users = () => {
         <div className="users-controls">
           <input
             className="input"
-            placeholder="Search by id, username, or role..."
+            placeholder="Search by id, username, role, branch, or address..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
@@ -240,7 +273,8 @@ const Users = () => {
                   <th style={{ width: 90 }}>ID</th>
                   <th>Username</th>
                   <th style={{ width: 220 }}>Role</th>
-                  <th style={{ width: 120 }}>Branch ID</th>
+                  <th style={{ width: 180 }}>Branch</th>
+                  <th style={{ width: 260 }}>Branch Address</th>
                   <th style={{ width: 140 }}>Created</th>
                   <th style={{ width: 320 }}>Actions</th>
                 </tr>
@@ -249,7 +283,7 @@ const Users = () => {
               <tbody>
                 {filtered.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="empty">
+                    <td colSpan={7} className="empty">
                       No users found.
                     </td>
                   </tr>
@@ -259,7 +293,8 @@ const Users = () => {
                       <td className="mono">{u.id}</td>
                       <td className="strong">{u.username}</td>
                       <td>{roleLabel(u.role)}</td>
-                      <td className="mono">{u.branch_id ?? "-"}</td>
+                      <td>{u.branch_name ?? "-"}</td>
+                      <td>{u.branch_address ?? "-"}</td>
                       <td>{u.created_at ? String(u.created_at).split("T")[0] : "-"}</td>
 
                       <td>
@@ -322,11 +357,10 @@ const Users = () => {
                   </select>
                 </div>
 
-                <div className="field">
-                  <label>Branch ID (required for Branch Manager)</label>
-                  <input
+                <div className="field full">
+                  <label>Branch {needsBranch ? "*" : ""}</label>
+                  <select
                     className="input"
-                    name="branch_id"
                     value={form.branch_id ?? ""}
                     onChange={(e) =>
                       setForm((p) => ({
@@ -334,9 +368,30 @@ const Users = () => {
                         branch_id: e.target.value === "" ? null : Number(e.target.value),
                       }))
                     }
-                    placeholder="e.g. 1"
-                  />
+                    required={needsBranch}
+                  >
+                    <option value="">Select branch...</option>
+                    {branches.map((b) => (
+                      <option key={b.id} value={b.id}>
+                        {b.name}
+                      </option>
+                    ))}
+                  </select>
                 </div>
+
+                {selectedBranch ? (
+                  <>
+                    <div className="field">
+                      <label>Branch Name</label>
+                      <input className="input" value={selectedBranch.name || ""} readOnly />
+                    </div>
+
+                    <div className="field">
+                      <label>Branch Address</label>
+                      <input className="input" value={selectedBranch.address || ""} readOnly />
+                    </div>
+                  </>
+                ) : null}
 
                 <div className="field full">
                   <label>Password</label>

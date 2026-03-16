@@ -9,10 +9,30 @@ const toNum = (v) => {
 };
 
 const clean = (v) => String(v ?? "").trim();
+const toStr = (v) => String(v ?? "").trim();
 
 const roleLower = (req) => String(req.user?.role || "").trim().toLowerCase();
 const isAdmin = (req) => roleLower(req) === "admin";
 const isBranchManager = (req) => roleLower(req) === "branch manager";
+const getUserBranchCode = (req) => toStr(req.user?.branch_id);
+
+async function getBranchIdFromCode(branchCode) {
+  const code = toStr(branchCode);
+  if (!code) return null;
+
+  const r = await pool.query(
+    `
+    SELECT id
+    FROM public.branches
+    WHERE LOWER(TRIM(code)) = LOWER(TRIM($1))
+    LIMIT 1
+    `,
+    [code]
+  );
+
+  if (r.rowCount === 0) return null;
+  return r.rows[0].id;
+}
 
 async function ensureBalanceRow(client, employeeNo) {
   await client.query(
@@ -80,7 +100,10 @@ router.get(
         return res.json(r.rows);
       }
 
-      const branchId = req.user?.branch_id ?? null;
+      const branchCode = getUserBranchCode(req);
+      if (!branchCode) return res.json([]);
+
+      const branchId = await getBranchIdFromCode(branchCode);
       if (!branchId) return res.json([]);
 
       const r = await pool.query(
@@ -123,7 +146,7 @@ router.get(
       }
 
       const myRole = roleLower(req);
-      const myBranchId = req.user?.branch_id ?? null;
+      const myBranchCode = getUserBranchCode(req);
 
       const s = await client.query(
         `SELECT id, employee_no, branch_id FROM public.staff WHERE employee_no = $1 LIMIT 1`,
@@ -135,7 +158,11 @@ router.get(
       }
 
       if (myRole === "branch manager") {
+        if (!myBranchCode) return res.status(403).json({ message: "Access denied" });
+
+        const myBranchId = await getBranchIdFromCode(myBranchCode);
         if (!myBranchId) return res.status(403).json({ message: "Access denied" });
+
         if (Number(s.rows[0].branch_id) !== Number(myBranchId)) {
           return res.status(403).json({ message: "Access denied" });
         }
@@ -288,7 +315,10 @@ router.put(
       if (!employeeNo) return res.status(400).json({ message: "Invalid employee no" });
 
       if (isBranchManager(req)) {
-        const myBranchId = req.user?.branch_id ?? null;
+        const myBranchCode = getUserBranchCode(req);
+        if (!myBranchCode) return res.status(403).json({ message: "Access denied" });
+
+        const myBranchId = await getBranchIdFromCode(myBranchCode);
         if (!myBranchId) return res.status(403).json({ message: "Access denied" });
 
         const s = await client.query(

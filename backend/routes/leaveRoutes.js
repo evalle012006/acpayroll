@@ -8,6 +8,8 @@ const toInt = (v) => {
   return Number.isFinite(n) ? Math.trunc(n) : null;
 };
 
+const toStr = (v) => String(v ?? "").trim();
+
 const toDateOrNull = (v) => {
   const s = String(v ?? "").trim();
   if (!s) return null;
@@ -18,7 +20,25 @@ const toDateOrNull = (v) => {
 const roleLower = (req) => String(req.user?.role || "").trim().toLowerCase();
 const isAdmin = (req) => roleLower(req) === "admin";
 const isBranchManager = (req) => roleLower(req) === "branch manager";
-const getUserBranchId = (req) => req.user?.branch_id ?? null;
+const getUserBranchCode = (req) => toStr(req.user?.branch_id);
+
+async function getBranchIdFromCode(branchCode) {
+  const code = toStr(branchCode);
+  if (!code) return null;
+
+  const r = await pool.query(
+    `
+    SELECT id
+    FROM public.branches
+    WHERE LOWER(TRIM(code)) = LOWER(TRIM($1))
+    LIMIT 1
+    `,
+    [code]
+  );
+
+  if (r.rowCount === 0) return null;
+  return r.rows[0].id;
+}
 
 const makeTxnCode = (leaveType) => {
   const d = new Date();
@@ -49,7 +69,10 @@ router.get("/leave-requests", requireAuth, async (req, res) => {
     }
 
     if (isBranchManager(req)) {
-      const bid = getUserBranchId(req);
+      const branchCode = getUserBranchCode(req);
+      if (!branchCode) return res.json([]);
+
+      const bid = await getBranchIdFromCode(branchCode);
       if (!bid) return res.json([]);
 
       const r = await pool.query(
@@ -83,11 +106,14 @@ router.get(
       if (!staffId) return res.status(400).json({ message: "Invalid staff id" });
 
       if (isBranchManager(req)) {
-        const bid = getUserBranchId(req);
+        const branchCode = getUserBranchCode(req);
+        if (!branchCode) return res.status(403).json({ message: "Access denied" });
+
+        const bid = await getBranchIdFromCode(branchCode);
         if (!bid) return res.status(403).json({ message: "Access denied" });
 
         const chk = await pool.query(
-          `SELECT id FROM public.staff WHERE id=$1 AND branch_id=$2`,
+          `SELECT id FROM public.staff WHERE id = $1 AND branch_id = $2`,
           [staffId, bid]
         );
         if (chk.rowCount === 0) return res.status(403).json({ message: "Access denied" });
@@ -126,13 +152,15 @@ router.post(
 
       if (!employee_id) return res.status(400).json({ message: "employee_id is required" });
       if (!leave_type) return res.status(400).json({ message: "leave_type is required" });
-      if (!start_date || !end_date)
+      if (!start_date || !end_date) {
         return res.status(400).json({ message: "start_date and end_date are required" });
-      if (String(start_date) > String(end_date))
+      }
+      if (String(start_date) > String(end_date)) {
         return res.status(400).json({ message: "Start date must be on or before end date" });
+      }
 
       const s = await client.query(
-        `SELECT id, fullname, branch_id FROM public.staff WHERE id=$1`,
+        `SELECT id, fullname, branch_id FROM public.staff WHERE id = $1`,
         [employee_id]
       );
       if (s.rowCount === 0) {
@@ -143,7 +171,9 @@ router.post(
       const staffRow = s.rows[0];
 
       if (isBranchManager(req)) {
-        const bid = getUserBranchId(req);
+        const branchCode = getUserBranchCode(req);
+        const bid = await getBranchIdFromCode(branchCode);
+
         if (!bid || Number(staffRow.branch_id) !== Number(bid)) {
           await client.query("ROLLBACK");
           return res.status(403).json({ message: "Access denied" });

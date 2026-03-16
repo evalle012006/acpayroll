@@ -410,38 +410,6 @@ export default function Dashboard() {
           </div>
         </div>
       </div>
-
-      <div className="dash__mini">
-        <MiniStat label="Total CBU" value={money(stats.totalCBU)} />
-        <MiniStat label="Total Cashbond" value={money(stats.totalCashbond)} />
-        <MiniStat label="Salary Advance" value={money(stats.totalSalaryAdvance)} />
-        <MiniStat label="Motorcycle Loan" value={money(stats.totalMotorcycleLoan)} />
-      </div>
-
-      <div className="dash__targetHead">
-        <div className="dash__targetTitle">Target Section</div>
-        <a className="link" href="#details">
-          View Details
-        </a>
-      </div>
-
-      <div className="dash__targets" id="details">
-        <TargetBar label="Income Target (CBU)" percent={pct(stats.totalCBU, totalReceivable)} accent="blue" />
-        <TargetBar label="Expenses Target (Cashbond)" percent={pct(stats.totalCashbond, totalReceivable)} accent="green" />
-        <TargetBar
-          label="Spendings Target (Advances)"
-          percent={pct(stats.totalSalaryAdvance + stats.totalCashAdvance + stats.totalSpecialAdvance, totalReceivable)}
-          accent="orange"
-        />
-        <TargetBar label="Totals Target (Other)" percent={pct(stats.totalOtherReceivable, totalReceivable)} accent="red" />
-      </div>
-
-      <div className="dash__grid">
-        <InfoCard title="Total Special Advance" value={money(stats.totalSpecialAdvance)} />
-        <InfoCard title="Total Cash Advance" value={money(stats.totalCashAdvance)} />
-        <InfoCard title="Total Other Receivable" value={money(stats.totalOtherReceivable)} />
-        <InfoCard title="Total Staff Accounts Payable" value={money(stats.totalStaffAccountsPayable)} strong />
-      </div>
     </div>
   );
 }

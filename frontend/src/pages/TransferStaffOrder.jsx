@@ -35,6 +35,9 @@ export default function TransferStaffOrder() {
   const canApprove = role === "admin";
 
   const [showModal, setShowModal] = useState(false);
+  const [isRedeploy, setIsRedeploy] = useState(false);
+  const [selectedOrder, setSelectedOrder] = useState(null);
+  const [search, setSearch] = useState("");
 
   const [branches, setBranches] = useState([]);
   const [staff, setStaff] = useState([]);
@@ -49,6 +52,7 @@ export default function TransferStaffOrder() {
   const [dateCreated, setDateCreated] = useState(() => new Date().toISOString().slice(0, 10));
   const [division, setDivision] = useState("");
   const [area, setArea] = useState("");
+  const [region, setRegion] = useState("");
   const [details, setDetails] = useState("");
 
   const [employeeId, setEmployeeId] = useState("");
@@ -86,12 +90,20 @@ export default function TransferStaffOrder() {
     setError("");
     try {
       const res = await api.get("/transfer-staff-orders");
-      setOrders(Array.isArray(res.data) ? res.data : []);
+      const list = Array.isArray(res.data) ? res.data : [];
+      setOrders(list);
+
+      setSelectedOrder((prev) => {
+        if (!prev) return null;
+        const updated = list.find((o) => Number(o.id) === Number(prev.id));
+        return updated || null;
+      });
     } catch (err) {
       const status = err?.response?.status;
       if (status === 401) return logout();
       setError(err?.response?.data?.message || "Failed to load transfer orders.");
       setOrders([]);
+      setSelectedOrder(null);
     } finally {
       setLoadingOrders(false);
     }
@@ -116,24 +128,51 @@ export default function TransferStaffOrder() {
     [branches, toBranchId]
   );
 
+  const filteredOrders = useMemo(() => {
+    const q = toStr(search).toLowerCase();
+    if (!q) return orders;
+
+    return orders.filter((o) => {
+      const haystack = [
+        o.order_no,
+        o.employee_name,
+        o.prev_branch_code,
+        o.prev_branch_name,
+        o.to_branch_code,
+        o.to_branch_name,
+        o.division,
+        o.area,
+        o.region,
+        o.status,
+        o.rejection_reason,
+        fmtDate(o.date_created),
+        fmtDate(o.effective_date),
+      ]
+        .map(toStr)
+        .join(" ")
+        .toLowerCase();
+
+      return haystack.includes(q);
+    });
+  }, [orders, search]);
+
   useEffect(() => {
     if (!showModal || !selectedEmployee) return;
 
     if (selectedEmployee.branch_id && !fromBranchId) {
       setFromBranchId(String(selectedEmployee.branch_id));
     }
-
-    if (!toStr(area)) {
-      setArea(toStr(selectedEmployee.area) || toStr(fromBranch?.area) || "");
-    }
-  }, [showModal, selectedEmployee, fromBranchId, area, fromBranch]);
+  }, [showModal, selectedEmployee, fromBranchId]);
 
   const approveOrder = async (id) => {
     if (!canApprove) return;
     setError("");
     try {
       const res = await api.put(`/transfer-staff-orders/${id}/approve`);
-      setOrders((prev) => prev.map((o) => (o.id === id ? res.data : o)));
+      const updatedOrder = res.data;
+
+      setOrders((prev) => prev.map((o) => (o.id === id ? updatedOrder : o)));
+      setSelectedOrder((prev) => (prev && Number(prev.id) === Number(id) ? updatedOrder : prev));
     } catch (err) {
       const status = err?.response?.status;
       if (status === 401) return logout();
@@ -150,7 +189,10 @@ export default function TransferStaffOrder() {
     setError("");
     try {
       const res = await api.put(`/transfer-staff-orders/${id}/reject`, { reason: reason.trim() });
-      setOrders((prev) => prev.map((o) => (o.id === id ? res.data : o)));
+      const updatedOrder = res.data;
+
+      setOrders((prev) => prev.map((o) => (o.id === id ? updatedOrder : o)));
+      setSelectedOrder((prev) => (prev && Number(prev.id) === Number(id) ? updatedOrder : prev));
     } catch (err) {
       const status = err?.response?.status;
       if (status === 401) return logout();
@@ -162,6 +204,7 @@ export default function TransferStaffOrder() {
     setDateCreated(new Date().toISOString().slice(0, 10));
     setDivision("");
     setArea("");
+    setRegion("");
     setDetails("");
 
     setEmployeeId("");
@@ -169,12 +212,62 @@ export default function TransferStaffOrder() {
     setToBranchId("");
     setEffectiveDate("");
 
+    setIsRedeploy(false);
     setError("");
   };
 
   const openModal = () => {
     resetForm();
+    setIsRedeploy(false);
     setShowModal(true);
+  };
+
+  const handleRedeploy = (order) => {
+    if (!order) {
+      setError("Select an approved order first.");
+      return;
+    }
+
+    if (toStr(order.status).toLowerCase() !== "approved") {
+      setError("Only approved orders can be re-deployed.");
+      return;
+    }
+
+    resetForm();
+
+    setIsRedeploy(true);
+    setShowModal(true);
+
+    setEmployeeId(String(order.employee_id || ""));
+    setFromBranchId(String(order.to_branch_id || ""));
+    setToBranchId("");
+
+    setDivision(toStr(order.division));
+    setArea("");
+    setRegion("");
+    setDateCreated(new Date().toISOString().slice(0, 10));
+    setEffectiveDate("");
+    setDetails(
+      `Re-deployment of ${toStr(order.employee_name)} from ${toStr(order.to_branch_code)} - ${toStr(
+        order.to_branch_name
+      )}.`
+    );
+  };
+
+  const openRedeployFromTop = () => {
+    setError("");
+
+    if (!selectedOrder) {
+      setError("Select an approved order from the table first.");
+      return;
+    }
+
+    if (toStr(selectedOrder.status).toLowerCase() !== "approved") {
+      setError("Only approved orders can be re-deployed.");
+      return;
+    }
+
+    handleRedeploy(selectedOrder);
   };
 
   const closeModal = () => {
@@ -202,6 +295,7 @@ export default function TransferStaffOrder() {
     if (String(fromBranchId) === String(toBranchId)) return setError("Previous and transfer branch must differ.");
     if (!toStr(division)) return setError("Division required.");
     if (!toStr(area)) return setError("Area required.");
+    if (!toStr(region)) return setError("Region required.");
     if (!dateCreated) return setError("Date Created required.");
     if (!effectiveDate) return setError("Effective date required.");
     if (!toStr(details)) return setError("Details required.");
@@ -219,6 +313,7 @@ export default function TransferStaffOrder() {
       to_branch_name: toStr(toBranch?.name),
 
       area: toStr(area),
+      region: toStr(region),
       division: toStr(division),
       date_created: dateCreated,
       effective_date: effectiveDate,
@@ -228,7 +323,9 @@ export default function TransferStaffOrder() {
     setSaving(true);
     try {
       const res = await api.post("/transfer-staff-orders", payload);
-      setOrders((prev) => [res.data, ...prev]);
+      const created = res.data;
+      setOrders((prev) => [created, ...prev]);
+      setSelectedOrder(created);
       closeModal();
     } catch (err) {
       const status = err?.response?.status;
@@ -239,7 +336,7 @@ export default function TransferStaffOrder() {
     }
   };
 
-  const colCount = canApprove ? 10 : 9;
+  const colCount = canApprove ? 11 : 10;
 
   return (
     <div className="order-page">
@@ -249,10 +346,15 @@ export default function TransferStaffOrder() {
           <p className="order-subtitle">Manage staff transfers between branches.</p>
         </div>
 
-        <div style={{ display: "flex", gap: 10 }}>
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
           <button className="btn-secondary" onClick={() => navigate("/transactions")} type="button">
             ← Back
           </button>
+
+          <button className="btn-secondary" onClick={openRedeployFromTop} type="button">
+            Re-deploy
+          </button>
+
           <button className="btn-primary" onClick={openModal} type="button">
             + Create Transfer Order
           </button>
@@ -260,15 +362,49 @@ export default function TransferStaffOrder() {
       </div>
 
       {error && (
-        <div className="card" style={{ padding: 12, border: "1px solid var(--border)" }}>
+        <div className="card" style={{ padding: 12, border: "1px solid var(--border)", marginBottom: 12 }}>
           <strong style={{ color: "#ef4444" }}>{error}</strong>
         </div>
       )}
 
+      {selectedOrder ? (
+        <div
+          className="order-selected"
+          onClick={() => {
+            setSelectedOrder(null);
+            setError("");
+          }}
+          style={{ cursor: "pointer" }}
+          title="Click to clear selected order"
+        >
+          <strong>Selected Order:</strong> {toStr(selectedOrder.order_no)} — {toStr(selectedOrder.employee_name)} (
+          {toStr(selectedOrder.status)})
+        </div>
+      ) : null}
+
       <div className="order-card">
-        <div className="order-card-head">
-          <div className="order-card-title">Transfer Orders</div>
-          <div className="order-card-meta">{orders.length} Records</div>
+        <div
+          className="order-card-head"
+          style={{ display: "flex", gap: 12, justifyContent: "space-between", flexWrap: "wrap" }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+            <div className="order-card-title">Transfer Orders</div>
+
+            <div className="order-search-wrap">
+              <input
+                type="text"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search order no, employee, branch, division, area, region..."
+                className="order-search-input"
+              />
+              <button className="btn-secondary" type="button" onClick={() => setSearch("")}>
+                Clear
+              </button>
+            </div>
+          </div>
+
+          <div className="order-card-meta">{filteredOrders.length} Records</div>
         </div>
 
         <div className="table-wrap">
@@ -281,6 +417,7 @@ export default function TransferStaffOrder() {
                 <th>To</th>
                 <th>Division</th>
                 <th>Area</th>
+                <th>Region</th>
                 <th>Date Created</th>
                 <th>Effective Date</th>
                 <th>Status</th>
@@ -295,58 +432,73 @@ export default function TransferStaffOrder() {
                     Loading orders…
                   </td>
                 </tr>
-              ) : orders.length === 0 ? (
+              ) : filteredOrders.length === 0 ? (
                 <tr>
                   <td colSpan={colCount} className="empty-state">
-                    No transfer orders found.
+                    {toStr(search) ? "No matching transfer orders found." : "No transfer orders found."}
                   </td>
                 </tr>
               ) : (
-                orders.map((o) => (
-                  <tr key={o.id}>
-                    <td className="td-strong">{o.order_no}</td>
-                    <td>{o.employee_name}</td>
+                filteredOrders.map((o) => {
+                  const isSelected = Number(selectedOrder?.id) === Number(o.id);
 
-                    <td>
-                      {toStr(o.prev_branch_code)} - {toStr(o.prev_branch_name)}
-                    </td>
-                    <td>
-                      {toStr(o.to_branch_code)} - {toStr(o.to_branch_name)}
-                    </td>
+                  return (
+                    <tr
+                      key={o.id}
+                      onClick={() => {
+                        setSelectedOrder(o);
+                        setError("");
+                      }}
+                      style={{
+                        cursor: "pointer",
+                        background: isSelected ? "rgba(59,130,246,0.12)" : "",
+                      }}
+                    >
+                      <td className="td-strong">{o.order_no}</td>
+                      <td>{o.employee_name}</td>
 
-                    <td>{o.division}</td>
-                    <td>{o.area}</td>
-
-                    <td>{fmtDate(o.date_created)}</td>
-                    <td>{fmtDate(o.effective_date)}</td>
-
-                    <td>
-                      {o.status}
-                      {o.status === "Rejected" && o.rejection_reason ? (
-                        <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 4 }}>
-                          Reason: {o.rejection_reason}
-                        </div>
-                      ) : null}
-                    </td>
-
-                    {canApprove && (
                       <td>
-                        {o.status === "Pending" ? (
-                          <div style={{ display: "flex", gap: 8 }}>
-                            <button className="btn-primary" type="button" onClick={() => approveOrder(o.id)}>
-                              Approve
-                            </button>
-                            <button className="btn-secondary" type="button" onClick={() => rejectOrder(o.id)}>
-                              Reject
-                            </button>
-                          </div>
-                        ) : (
-                          <span style={{ fontWeight: 800 }}>{o.status}</span>
-                        )}
+                        {toStr(o.prev_branch_code)} - {toStr(o.prev_branch_name)}
                       </td>
-                    )}
-                  </tr>
-                ))
+                      <td>
+                        {toStr(o.to_branch_code)} - {toStr(o.to_branch_name)}
+                      </td>
+
+                      <td>{o.division}</td>
+                      <td>{o.area}</td>
+                      <td>{o.region || "-"}</td>
+
+                      <td>{fmtDate(o.date_created)}</td>
+                      <td>{fmtDate(o.effective_date)}</td>
+
+                      <td>
+                        {o.status}
+                        {o.status === "Rejected" && o.rejection_reason ? (
+                          <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 4 }}>
+                            Reason: {o.rejection_reason}
+                          </div>
+                        ) : null}
+                      </td>
+
+                      {canApprove && (
+                        <td onClick={(e) => e.stopPropagation()}>
+                          {o.status === "Pending" ? (
+                            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                              <button className="btn-primary" type="button" onClick={() => approveOrder(o.id)}>
+                                Approve
+                              </button>
+                              <button className="btn-secondary" type="button" onClick={() => rejectOrder(o.id)}>
+                                Reject
+                              </button>
+                            </div>
+                          ) : (
+                            <span style={{ fontWeight: 800 }}>{o.status}</span>
+                          )}
+                        </td>
+                      )}
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>
@@ -364,8 +516,12 @@ export default function TransferStaffOrder() {
           <div className="modal saas-modal" onMouseDown={(e) => e.stopPropagation()}>
             <div className="modal-head">
               <div>
-                <h3 className="modal-title">Create Transfer Order</h3>
-                <p className="modal-subtitle">Order No. will be auto-generated on save.</p>
+                <h3 className="modal-title">{isRedeploy ? "Re-deploy Staff" : "Create Transfer Order"}</h3>
+                <p className="modal-subtitle">
+                  {isRedeploy
+                    ? "Create a new deployment order from the selected approved order."
+                    : "Order No. will be auto-generated on save."}
+                </p>
               </div>
 
               <button className="modal-x" onClick={closeModal} type="button">
@@ -390,7 +546,7 @@ export default function TransferStaffOrder() {
 
                   <div className="field full">
                     <label>Employee</label>
-                    <select value={employeeId} onChange={(e) => setEmployeeId(e.target.value)}>
+                    <select value={employeeId} onChange={(e) => setEmployeeId(e.target.value)} disabled={isRedeploy}>
                       <option value="">Select employee…</option>
                       {staff.map((s) => (
                         <option key={s.id} value={s.id}>
@@ -434,6 +590,11 @@ export default function TransferStaffOrder() {
                   <div className="field">
                     <label>Area</label>
                     <input value={area} onChange={(e) => setArea(e.target.value)} />
+                  </div>
+
+                  <div className="field">
+                    <label>Region</label>
+                    <input value={region} onChange={(e) => setRegion(e.target.value)} />
                   </div>
 
                   <div className="field full">

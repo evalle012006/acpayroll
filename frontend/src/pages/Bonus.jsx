@@ -9,7 +9,8 @@ const toNum = (v) => {
   return Number.isFinite(n) ? n : 0;
 };
 
-const norm = (v) => String(v ?? "").trim().toLowerCase();
+const toStr = (v) => String(v ?? "").trim();
+const norm = (v) => toStr(v).toLowerCase();
 
 const fmtMoney = (v) =>
   toNum(v).toLocaleString(undefined, {
@@ -27,7 +28,8 @@ const todayDate = () => new Date().toISOString().slice(0, 10);
 const isValidDate = (v) => /^\d{4}-\d{2}-\d{2}$/.test(String(v || "").trim());
 
 const Bonus = () => {
-  const { branchId } = useParams();
+  const params = useParams();
+  const branchParam = toStr(params.branchId ?? params.id);
   const navigate = useNavigate();
 
   const [branch, setBranch] = useState(null);
@@ -50,7 +52,6 @@ const Bonus = () => {
   const [bonusMonth, setBonusMonth] = useState(monthStartFromToday());
   const [runId, setRunId] = useState(null);
 
-  // saved by employee_id
   const [savedResults, setSavedResults] = useState({});
 
   useEffect(() => {
@@ -65,7 +66,12 @@ const Bonus = () => {
         ]);
 
         const branches = Array.isArray(branchesRes.data) ? branchesRes.data : [];
-        const found = branches.find((b) => Number(b.id) === Number(branchId));
+
+        const found = branches.find((b) => {
+          const idMatch = Number.isFinite(Number(branchParam)) && Number(b.id) === Number(branchParam);
+          const codeMatch = norm(b.code) === norm(branchParam);
+          return idMatch || codeMatch;
+        });
 
         if (!found) {
           setError("Branch not found.");
@@ -75,11 +81,15 @@ const Bonus = () => {
         setBranch(found);
 
         const allStaff = Array.isArray(staffRes.data) ? staffRes.data : [];
-        const byBranch = allStaff.filter((s) => Number(s.branch_id) === Number(branchId));
+
+        const byBranch = allStaff.filter((s) => Number(s.branch_id) === Number(found.id));
+        const byBranchCode = allStaff.filter((s) => norm(s.branch_code) === norm(found.code));
 
         const filtered =
           byBranch.length > 0
             ? byBranch
+            : byBranchCode.length > 0
+            ? byBranchCode
             : allStaff.filter((s) => norm(s.area) === norm(found.area));
 
         setStaff(filtered);
@@ -91,12 +101,14 @@ const Bonus = () => {
     };
 
     load();
-  }, [branchId]);
+  }, [branchParam]);
 
   useEffect(() => {
     const loadSavedForBranch = async () => {
       try {
-        const res = await api.get(`/bonus/branch/${branchId}`);
+        if (!branch?.id) return;
+
+        const res = await api.get(`/bonus/branch/${branch.id}`);
         const lines = Array.isArray(res.data) ? res.data : [];
 
         const mapped = {};
@@ -125,8 +137,8 @@ const Bonus = () => {
       }
     };
 
-    if (branchId) loadSavedForBranch();
-  }, [branchId]);
+    loadSavedForBranch();
+  }, [branch]);
 
   useEffect(() => {
     const onDocClick = (e) => {
@@ -206,9 +218,10 @@ const Bonus = () => {
 
   const ensureRun = async () => {
     if (runId) return runId;
+    if (!branch?.id) throw new Error("Branch not found.");
 
     const res = await api.post("/bonus/run", {
-      branch_id: Number(branchId),
+      branch_id: Number(branch.id),
       bonus_month: bonusMonth,
       notes: null,
     });

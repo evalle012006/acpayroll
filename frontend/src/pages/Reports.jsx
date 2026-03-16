@@ -333,50 +333,6 @@ export default function Reports() {
             </button>
           </div>
 
-          <div className="reports-card">
-            <div className="reports-card-head">
-              <div className="reports-card-title">Balances Summary</div>
-            </div>
-
-            <div className="reports-mini-grid">
-              <div className="reports-mini-stat">
-                <span>CBU</span>
-                <strong>{money(balanceSummary.cbu)}</strong>
-              </div>
-              <div className="reports-mini-stat">
-                <span>Cashbond</span>
-                <strong>{money(balanceSummary.cashbond)}</strong>
-              </div>
-              <div className="reports-mini-stat">
-                <span>Salary Advance</span>
-                <strong>{money(balanceSummary.salaryAdvance)}</strong>
-              </div>
-              <div className="reports-mini-stat">
-                <span>Special Advance</span>
-                <strong>{money(balanceSummary.specialAdvance)}</strong>
-              </div>
-              <div className="reports-mini-stat">
-                <span>Cash Advance</span>
-                <strong>{money(balanceSummary.cashAdvance)}</strong>
-              </div>
-              <div className="reports-mini-stat">
-                <span>Motorcycle Loan</span>
-                <strong>{money(balanceSummary.motorcycleLoan)}</strong>
-              </div>
-              <div className="reports-mini-stat">
-                <span>Pag-ibig Loan</span>
-                <strong>{money(balanceSummary.pagIbigLoan)}</strong>
-              </div>
-              <div className="reports-mini-stat">
-                <span>Other Receivable</span>
-                <strong>{money(balanceSummary.otherReceivable)}</strong>
-              </div>
-              <div className="reports-mini-stat">
-                <span>Staff Accounts Payable</span>
-                <strong>{money(balanceSummary.staffAccountsPayable)}</strong>
-              </div>
-            </div>
-          </div>
         </>
       )}
 

@@ -131,12 +131,12 @@ function AppShell() {
       <Route path="/dashboard" element={<ProtectedRoute allowedRoles={["admin"]}><ProtectedLayout><Dashboard /></ProtectedLayout></ProtectedRoute>}/>
       <Route path="/payroll" element={<ProtectedRoute allowedRoles={["admin"]}><ProtectedLayout><Payroll /></ProtectedLayout></ProtectedRoute>}/>
       <Route path="/staff" element={<ProtectedRoute allowedRoles={["admin"]}><ProtectedLayout><Staff /></ProtectedLayout></ProtectedRoute>}/>
-      <Route path="/transportation/:id" element={<ProtectedRoute allowedRoles={["admin"]}><ProtectedLayout><Transportation /></ProtectedLayout></ProtectedRoute>}/>
+      <Route path="/transportation/:id" element={<ProtectedRoute allowedRoles={["admin", "branch manager"]}><ProtectedLayout><Transportation /></ProtectedLayout></ProtectedRoute>}/>
       <Route path="/schedule-balances" element={<ProtectedRoute allowedRoles={["admin"]}><ProtectedLayout><ScheduleBalances /></ProtectedLayout></ProtectedRoute>}/>
       <Route path="/approval" element={<ProtectedRoute allowedRoles={["admin"]}><ProtectedLayout><Approval /></ProtectedLayout></ProtectedRoute>}/>
       <Route path="/branches" element={<ProtectedRoute allowedRoles={["admin"]}><ProtectedLayout><Branches /></ProtectedLayout></ProtectedRoute>}/>
       <Route path="/departments" element={<ProtectedRoute allowedRoles={["admin"]}><ProtectedLayout><Departments /></ProtectedLayout></ProtectedRoute>}/>
-      <Route path="/bonus/:branchId" element={<ProtectedRoute allowedRoles={["admin"]}><ProtectedLayout><Bonus /></ProtectedLayout></ProtectedRoute>}/>
+      <Route path="/bonus/:branchId" element={<ProtectedRoute allowedRoles={["admin", "branch manager"]}><ProtectedLayout><Bonus /></ProtectedLayout></ProtectedRoute>}/>
       <Route path="/system-update" element={<ProtectedRoute allowedRoles={["admin"]}><ProtectedLayout><SystemUpdate /></ProtectedLayout></ProtectedRoute>}/>
       <Route path="/system-update/rates" element={<ProtectedRoute allowedRoles={["admin"]}><ProtectedLayout><SystemRates /></ProtectedLayout></ProtectedRoute>}/>
       <Route path="/users"element={<ProtectedRoute allowedRoles={["admin"]}><ProtectedLayout><Users /></ProtectedLayout></ProtectedRoute>}/>

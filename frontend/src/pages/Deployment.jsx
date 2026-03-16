@@ -119,7 +119,30 @@ function StaffDetailsStep({ form, setForm }) {
     return arr.length ? arr : [{ fullname: "", date_of_birth: "", place_of_birth: "", age: "" }];
   }, [form.children]);
 
+  const employmentHistory = useMemo(() => {
+    const arr = safeJsonArray(form.employment_history);
+    return arr.length
+      ? arr
+      : [
+          {
+            company: "",
+            position: "",
+            year_started: "",
+            year_ended: "",
+            character_reference: "",
+            contact_number: "",
+          },
+        ];
+  }, [form.employment_history]);
+
+  const beneficiaries = useMemo(() => {
+    const arr = safeJsonArray(form.beneficiaries);
+    return arr.length ? arr : [{ name: "", relation: "", contact_number: "" }];
+  }, [form.beneficiaries]);
+
   const setChildren = (arr) => setField("children", JSON.stringify(arr, null, 2));
+  const setEmploymentHistory = (arr) => setField("employment_history", JSON.stringify(arr, null, 2));
+  const setBeneficiaries = (arr) => setField("beneficiaries", JSON.stringify(arr, null, 2));
 
   const setChildField = (idx, key, value) => {
     const next = [...children];
@@ -132,12 +155,79 @@ function StaffDetailsStep({ form, setForm }) {
     setChildren(next);
   };
 
-  const addChild = () => setChildren([...children, { fullname: "", date_of_birth: "", place_of_birth: "", age: "" }]);
+  const addChild = () =>
+    setChildren([...children, { fullname: "", date_of_birth: "", place_of_birth: "", age: "" }]);
 
   const removeChild = (idx) => {
     const next = [...children];
     next.splice(idx, 1);
     setChildren(next.length ? next : [{ fullname: "", date_of_birth: "", place_of_birth: "", age: "" }]);
+  };
+
+  const setEmploymentField = (idx, key, value) => {
+    const next = [...employmentHistory];
+    next[idx] = {
+      ...(next[idx] || {
+        company: "",
+        position: "",
+        year_started: "",
+        year_ended: "",
+        character_reference: "",
+        contact_number: "",
+      }),
+      [key]: value,
+    };
+    setEmploymentHistory(next);
+  };
+
+  const addEmployment = () =>
+    setEmploymentHistory([
+      ...employmentHistory,
+      {
+        company: "",
+        position: "",
+        year_started: "",
+        year_ended: "",
+        character_reference: "",
+        contact_number: "",
+      },
+    ]);
+
+  const removeEmployment = (idx) => {
+    const next = [...employmentHistory];
+    next.splice(idx, 1);
+    setEmploymentHistory(
+      next.length
+        ? next
+        : [
+            {
+              company: "",
+              position: "",
+              year_started: "",
+              year_ended: "",
+              character_reference: "",
+              contact_number: "",
+            },
+          ]
+    );
+  };
+
+  const setBeneficiaryField = (idx, key, value) => {
+    const next = [...beneficiaries];
+    next[idx] = {
+      ...(next[idx] || { name: "", relation: "", contact_number: "" }),
+      [key]: value,
+    };
+    setBeneficiaries(next);
+  };
+
+  const addBeneficiary = () =>
+    setBeneficiaries([...beneficiaries, { name: "", relation: "", contact_number: "" }]);
+
+  const removeBeneficiary = (idx) => {
+    const next = [...beneficiaries];
+    next.splice(idx, 1);
+    setBeneficiaries(next.length ? next : [{ name: "", relation: "", contact_number: "" }]);
   };
 
   return (
@@ -656,33 +746,174 @@ function StaffDetailsStep({ form, setForm }) {
 
             <tr>
               <td className="editable-section" colSpan={2}>
-                Background (JSON arrays)
+                Employment History
+              </td>
+            </tr>
+
+            {employmentHistory.map((item, idx) => (
+              <React.Fragment key={idx}>
+                <tr>
+                  <td style={{ fontWeight: 900 }}>Employment #{idx + 1}</td>
+                  <td style={{ textAlign: "right" }}>
+                    <button
+                      type="button"
+                      className="btn btn-ghost"
+                      onClick={() => removeEmployment(idx)}
+                      disabled={employmentHistory.length <= 1}
+                      style={{ padding: "6px 10px" }}
+                      title={employmentHistory.length <= 1 ? "At least one employment row is required" : "Remove employment"}
+                    >
+                      Remove
+                    </button>
+                  </td>
+                </tr>
+
+                <tr>
+                  <td>Company</td>
+                  <td>
+                    <EditableCell
+                      value={toStr(item?.company)}
+                      placeholder="Type company..."
+                      onChange={(v) => setEmploymentField(idx, "company", v)}
+                    />
+                  </td>
+                </tr>
+
+                <tr>
+                  <td>Position</td>
+                  <td>
+                    <EditableCell
+                      value={toStr(item?.position)}
+                      placeholder="Type position..."
+                      onChange={(v) => setEmploymentField(idx, "position", v)}
+                    />
+                  </td>
+                </tr>
+
+                <tr>
+                  <td>Year Started</td>
+                  <td>
+                    <EditableCell
+                      value={toStr(item?.year_started)}
+                      placeholder="e.g., 2020"
+                      onChange={(v) => setEmploymentField(idx, "year_started", v)}
+                    />
+                  </td>
+                </tr>
+
+                <tr>
+                  <td>Year Ended</td>
+                  <td>
+                    <EditableCell
+                      value={toStr(item?.year_ended)}
+                      placeholder="e.g., 2023"
+                      onChange={(v) => setEmploymentField(idx, "year_ended", v)}
+                    />
+                  </td>
+                </tr>
+
+                <tr>
+                  <td>Character Reference</td>
+                  <td>
+                    <EditableCell
+                      value={toStr(item?.character_reference)}
+                      placeholder="Type character reference..."
+                      onChange={(v) => setEmploymentField(idx, "character_reference", v)}
+                    />
+                  </td>
+                </tr>
+
+                <tr>
+                  <td>Contact Number</td>
+                  <td>
+                    <EditableCell
+                      value={toStr(item?.contact_number)}
+                      placeholder="Type contact number..."
+                      onChange={(v) => setEmploymentField(idx, "contact_number", v)}
+                    />
+                  </td>
+                </tr>
+
+                <DividerRow />
+              </React.Fragment>
+            ))}
+
+            <tr>
+              <td />
+              <td style={{ textAlign: "right" }}>
+                <button type="button" className="btn btn-outline" onClick={addEmployment}>
+                  + Add Employment
+                </button>
               </td>
             </tr>
 
             <tr>
-              <td>Employment History (JSON)</td>
-              <td>
-                <textarea
-                  className="input"
-                  style={{ width: 280, textAlign: "left" }}
-                  rows={5}
-                  value={form.employment_history}
-                  onChange={(e) => setField("employment_history", e.target.value)}
-                />
+              <td className="editable-section" colSpan={2}>
+                Beneficiaries
               </td>
             </tr>
 
+            {beneficiaries.map((item, idx) => (
+              <React.Fragment key={idx}>
+                <tr>
+                  <td style={{ fontWeight: 900 }}>Beneficiary #{idx + 1}</td>
+                  <td style={{ textAlign: "right" }}>
+                    <button
+                      type="button"
+                      className="btn btn-ghost"
+                      onClick={() => removeBeneficiary(idx)}
+                      disabled={beneficiaries.length <= 1}
+                      style={{ padding: "6px 10px" }}
+                      title={beneficiaries.length <= 1 ? "At least one beneficiary row is required" : "Remove beneficiary"}
+                    >
+                      Remove
+                    </button>
+                  </td>
+                </tr>
+
+                <tr>
+                  <td>Name</td>
+                  <td>
+                    <EditableCell
+                      value={toStr(item?.name)}
+                      placeholder="Type beneficiary name..."
+                      onChange={(v) => setBeneficiaryField(idx, "name", v)}
+                    />
+                  </td>
+                </tr>
+
+                <tr>
+                  <td>Relation</td>
+                  <td>
+                    <EditableCell
+                      value={toStr(item?.relation)}
+                      placeholder="Type relation..."
+                      onChange={(v) => setBeneficiaryField(idx, "relation", v)}
+                    />
+                  </td>
+                </tr>
+
+                <tr>
+                  <td>Contact Number</td>
+                  <td>
+                    <EditableCell
+                      value={toStr(item?.contact_number)}
+                      placeholder="Type contact number..."
+                      onChange={(v) => setBeneficiaryField(idx, "contact_number", v)}
+                    />
+                  </td>
+                </tr>
+
+                <DividerRow />
+              </React.Fragment>
+            ))}
+
             <tr>
-              <td>Beneficiaries (JSON)</td>
-              <td>
-                <textarea
-                  className="input"
-                  style={{ width: 280, textAlign: "left" }}
-                  rows={5}
-                  value={form.beneficiaries}
-                  onChange={(e) => setField("beneficiaries", e.target.value)}
-                />
+              <td />
+              <td style={{ textAlign: "right" }}>
+                <button type="button" className="btn btn-outline" onClick={addBeneficiary}>
+                  + Add Beneficiary
+                </button>
               </td>
             </tr>
 
@@ -1101,8 +1332,21 @@ function StaffCreateModal({ branches, onClose, onCreated }) {
     tertiary_year_started: "",
     tertiary_year_graduated: "",
 
-    employment_history: "[]",
-    beneficiaries: "[]",
+    employment_history: JSON.stringify(
+      [
+        {
+          company: "",
+          position: "",
+          year_started: "",
+          year_ended: "",
+          character_reference: "",
+          contact_number: "",
+        },
+      ],
+      null,
+      2
+    ),
+    beneficiaries: JSON.stringify([{ name: "", relation: "", contact_number: "" }], null, 2),
 
     sss_no: "",
     philhealth_no: "",
@@ -1403,7 +1647,7 @@ export default function Deployment() {
       last_name: "",
       first_name: "",
       middle_name: "",
-      branch_id: "",
+      branch_code: "",
       deployment_date: "",
       details: "",
     }),
@@ -1458,9 +1702,10 @@ export default function Deployment() {
   }, [showFormModal, viewRow, showAddStaff, resetAllModals]);
 
   const branchLabel = useCallback(
-    (branchId) => {
-      const b = branches.find((x) => String(x.id) === String(branchId));
-      if (!b) return String(branchId || "-");
+    (branchCode) => {
+      const code = toStr(branchCode).toLowerCase();
+      const b = branches.find((x) => toStr(x.code).toLowerCase() === code);
+      if (!b) return String(branchCode || "-");
       return `${b.code} • ${b.name}`.trim();
     },
     [branches]
@@ -1499,7 +1744,7 @@ export default function Deployment() {
       last_name: d.last_name ?? "",
       first_name: d.first_name ?? "",
       middle_name: d.middle_name ?? "",
-      branch_id: d.branch_id ?? "",
+      branch_code: d.branch_code ?? "",
       deployment_date: toDate10(d.deployment_date),
       details: toStr(d.details ?? ""),
     });
@@ -1533,17 +1778,17 @@ export default function Deployment() {
     setErr("");
 
     const employeeId = Number(form.employee_id);
-    const branchId = Number(form.branch_id);
+    const branchCode = toStr(form.branch_code);
 
     if (!employeeId) return setErr("Employee is required.");
-    if (!branchId) return setErr("Deployment branch is required.");
+    if (!branchCode) return setErr("Deployment branch is required.");
     if (!form.deployment_date) return setErr("Deployment date is required.");
 
     setSaving(true);
     try {
       const payload = {
         employee_id: employeeId,
-        branch_id: branchId,
+        branch_code: branchCode,
         deployment_date: toDate10(form.deployment_date),
         details: toStr(form.details) || null,
       };
@@ -1568,7 +1813,7 @@ export default function Deployment() {
 
     const ok = window.confirm(
       `Approve this deployment?\n\nEmployee: ${d.employee_name || displayNameParts(d)}\nTo Branch: ${
-        d.branch_code || d.branch_name ? `${d.branch_code} • ${d.branch_name}` : branchLabel(d.branch_id)
+        d.branch_code || d.branch_name ? `${d.branch_code} • ${d.branch_name}` : branchLabel(d.branch_code)
       }\nDate: ${toDate10(d.deployment_date)}\n\nThis will UPDATE staff.branch_id.`
     );
     if (!ok) return;
@@ -1594,7 +1839,7 @@ export default function Deployment() {
 
     const ok = window.confirm(
       `Delete this deployment?\n\nEmployee: ${d.employee_name || displayNameParts(d)}\nBranch: ${
-        d.branch_code || d.branch_name ? `${d.branch_code} • ${d.branch_name}` : branchLabel(d.branch_id)
+        d.branch_code || d.branch_name ? `${d.branch_code} • ${d.branch_name}` : branchLabel(d.branch_code)
       }\nDate: ${toDate10(d.deployment_date)}`
     );
     if (!ok) return;
@@ -1636,6 +1881,9 @@ export default function Deployment() {
             + Add Staff
           </button>
 
+          <button className="po-btn po-btn-primary" type="button" onClick={openCreate}>
+            + Create Deployment
+          </button>
         </div>
       </div>
 
@@ -1670,7 +1918,7 @@ export default function Deployment() {
               deployments.map((d) => {
                 const statusLower = norm(d?.status || "pending");
                 const pending = statusLower === "pending";
-                const branchText = d.branch_code || d.branch_name ? `${d.branch_code} • ${d.branch_name}` : branchLabel(d.branch_id);
+                const branchText = d.branch_code || d.branch_name ? `${d.branch_code} • ${d.branch_name}` : branchLabel(d.branch_code);
 
                 return (
                   <tr key={d.id}>
@@ -1781,10 +2029,10 @@ export default function Deployment() {
 
               <div className="po-field">
                 <label>Deployment Branch</label>
-                <select value={form.branch_id} onChange={(e) => setForm((p) => ({ ...p, branch_id: e.target.value }))}>
+                <select value={form.branch_code} onChange={(e) => setForm((p) => ({ ...p, branch_code: e.target.value }))}>
                   <option value="">Select Branch</option>
                   {branches.map((b) => (
-                    <option key={b.id} value={b.id}>
+                    <option key={b.id} value={b.code}>
                       {b.code} - {b.name}
                     </option>
                   ))}
@@ -1803,7 +2051,7 @@ export default function Deployment() {
 
               {selectedEmployee ? (
                 <div style={{ fontSize: 12, opacity: 0.85, marginTop: 6 }}>
-                  Preview: <b>{displayNameParts(selectedEmployee)}</b> → <b>{branchLabel(form.branch_id) || "—"}</b> on <b>{form.deployment_date || "—"}</b>
+                  Preview: <b>{displayNameParts(selectedEmployee)}</b> → <b>{branchLabel(form.branch_code) || "—"}</b> on <b>{form.deployment_date || "—"}</b>
                 </div>
               ) : null}
 
@@ -1858,7 +2106,7 @@ export default function Deployment() {
                   value={
                     viewRow.branch_code || viewRow.branch_name
                       ? `${viewRow.branch_code} • ${viewRow.branch_name}`
-                      : branchLabel(viewRow.branch_id)
+                      : branchLabel(viewRow.branch_code)
                   }
                   readOnly
                 />

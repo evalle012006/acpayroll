@@ -8,18 +8,24 @@ const toInt = (v) => {
   return Number.isFinite(n) ? Math.trunc(n) : null;
 };
 
+const toNumOrNull = (v) => {
+  if (v === "" || v === null || v === undefined) return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+};
+
 const toStr = (v) => String(v ?? "").trim();
 
 const roleLower = (req) => String(req.user?.role || "").trim().toLowerCase();
 const isAdmin = (req) => roleLower(req) === "admin";
 const isBranchManager = (req) => roleLower(req) === "branch manager";
-const getUserBranchId = (req) => req.user?.branch_id ?? null;
+const getUserBranchCode = (req) => toStr(req.user?.branch_id);
 
 router.get("/branches", requireAuth, async (req, res) => {
   try {
     if (isAdmin(req)) {
       const r = await pool.query(`
-        SELECT id, code, name, area
+        SELECT id, code, name, area, address, latitude, longitude
         FROM public.branches
         ORDER BY id ASC
       `);
@@ -27,17 +33,17 @@ router.get("/branches", requireAuth, async (req, res) => {
     }
 
     if (isBranchManager(req)) {
-      const bid = getUserBranchId(req);
-      if (!bid) return res.json([]);
+      const branchCode = getUserBranchCode(req);
+      if (!branchCode) return res.json([]);
 
       const r = await pool.query(
         `
-        SELECT id, code, name, area
+        SELECT id, code, name, area, address, latitude, longitude
         FROM public.branches
-        WHERE id = $1
+        WHERE LOWER(TRIM(code)) = LOWER(TRIM($1))
         ORDER BY id ASC
         `,
-        [bid]
+        [branchCode]
       );
 
       return res.json(r.rows);
@@ -58,7 +64,7 @@ router.get("/branches/:id", requireAuth, async (req, res) => {
     if (isAdmin(req)) {
       const r = await pool.query(
         `
-        SELECT id, code, name, area
+        SELECT id, code, name, area, address, latitude, longitude
         FROM public.branches
         WHERE id = $1
         `,
@@ -70,21 +76,20 @@ router.get("/branches/:id", requireAuth, async (req, res) => {
     }
 
     if (isBranchManager(req)) {
-      const bid = getUserBranchId(req);
-      if (Number(bid) !== Number(id)) {
-        return res.status(403).json({ message: "Access denied" });
-      }
+      const branchCode = getUserBranchCode(req);
+      if (!branchCode) return res.status(403).json({ message: "Access denied" });
 
       const r = await pool.query(
         `
-        SELECT id, code, name, area
+        SELECT id, code, name, area, address, latitude, longitude
         FROM public.branches
         WHERE id = $1
+          AND LOWER(TRIM(code)) = LOWER(TRIM($2))
         `,
-        [id]
+        [id, branchCode]
       );
 
-      if (r.rowCount === 0) return res.status(404).json({ message: "Branch not found" });
+      if (r.rowCount === 0) return res.status(403).json({ message: "Access denied" });
       return res.json(r.rows[0]);
     }
 
@@ -104,6 +109,9 @@ router.post(
       const code = toStr(req.body?.code);
       const name = toStr(req.body?.name);
       const area = toStr(req.body?.area);
+      const address = toStr(req.body?.address) || null;
+      const latitude = toNumOrNull(req.body?.latitude);
+      const longitude = toNumOrNull(req.body?.longitude);
 
       if (!code) return res.status(400).json({ message: "Branch code is required" });
       if (!name) return res.status(400).json({ message: "Branch name is required" });
@@ -113,8 +121,8 @@ router.post(
         `
         SELECT id
         FROM public.branches
-        WHERE LOWER(code) = LOWER($1)
-           OR LOWER(name) = LOWER($2)
+        WHERE LOWER(TRIM(code)) = LOWER(TRIM($1))
+           OR LOWER(TRIM(name)) = LOWER(TRIM($2))
         LIMIT 1
         `,
         [code, name]
@@ -126,11 +134,11 @@ router.post(
 
       const ins = await pool.query(
         `
-        INSERT INTO public.branches (code, name, area)
-        VALUES ($1, $2, $3)
-        RETURNING id, code, name, area
+        INSERT INTO public.branches (code, name, area, address, latitude, longitude)
+        VALUES ($1, $2, $3, $4, $5, $6)
+        RETURNING id, code, name, area, address, latitude, longitude
         `,
-        [code, name, area]
+        [code, name, area, address, latitude, longitude]
       );
 
       return res.json(ins.rows[0]);
@@ -153,6 +161,9 @@ router.put(
       const code = toStr(req.body?.code);
       const name = toStr(req.body?.name);
       const area = toStr(req.body?.area);
+      const address = toStr(req.body?.address) || null;
+      const latitude = toNumOrNull(req.body?.latitude);
+      const longitude = toNumOrNull(req.body?.longitude);
 
       if (!code) return res.status(400).json({ message: "Branch code is required" });
       if (!name) return res.status(400).json({ message: "Branch name is required" });
@@ -162,7 +173,7 @@ router.put(
         `
         SELECT id
         FROM public.branches
-        WHERE (LOWER(code) = LOWER($1) OR LOWER(name) = LOWER($2))
+        WHERE (LOWER(TRIM(code)) = LOWER(TRIM($1)) OR LOWER(TRIM(name)) = LOWER(TRIM($2)))
           AND id <> $3
         LIMIT 1
         `,
@@ -178,11 +189,14 @@ router.put(
         UPDATE public.branches
         SET code = $1,
             name = $2,
-            area = $3
-        WHERE id = $4
-        RETURNING id, code, name, area
+            area = $3,
+            address = $4,
+            latitude = $5,
+            longitude = $6
+        WHERE id = $7
+        RETURNING id, code, name, area, address, latitude, longitude
         `,
-        [code, name, area, id]
+        [code, name, area, address, latitude, longitude, id]
       );
 
       if (upd.rowCount === 0) return res.status(404).json({ message: "Branch not found" });

@@ -15,7 +15,7 @@ router.get("/departments", requireAuth, async (_req, res) => {
     const r = await pool.query(
       `SELECT id, code, name, description, created_at, updated_at
        FROM public.departments
-       ORDER BY id DESC`
+       ORDER BY id ASC`
     );
     return res.json(r.rows);
   } catch (e) {

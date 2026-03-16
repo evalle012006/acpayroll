@@ -13,13 +13,6 @@ const readUser = () => {
 
 const norm = (v) => String(v ?? "").trim().toLowerCase();
 
-const toDateOnly = (v) => {
-  if (!v) return "";
-  const s = String(v);
-  if (s.includes("T")) return s.split("T")[0];
-  return s.slice(0, 10);
-};
-
 const Branches = () => {
   const navigate = useNavigate();
   const user = useMemo(() => readUser(), []);
@@ -33,16 +26,18 @@ const Branches = () => {
   const [code, setCode] = useState("");
   const [name, setName] = useState("");
   const [area, setArea] = useState("");
+  const [address, setAddress] = useState("");
+  const [latitude, setLatitude] = useState("");
+  const [longitude, setLongitude] = useState("");
   const [editId, setEditId] = useState(null);
   const [saving, setSaving] = useState(false);
 
   const [showModal, setShowModal] = useState(false);
+  const [showMapModal, setShowMapModal] = useState(false);
+  const [selectedBranchMap, setSelectedBranchMap] = useState(null);
 
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
-
-  const [dateFrom, setDateFrom] = useState("");
-  const [dateTo, setDateTo] = useState("");
 
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
@@ -80,6 +75,9 @@ const Branches = () => {
     setCode("");
     setName("");
     setArea("");
+    setAddress("");
+    setLatitude("");
+    setLongitude("");
     setEditId(null);
   };
 
@@ -95,6 +93,9 @@ const Branches = () => {
     setCode(branch.code || "");
     setName(branch.name || "");
     setArea(branch.area || "");
+    setAddress(branch.address || "");
+    setLatitude(branch.latitude ?? "");
+    setLongitude(branch.longitude ?? "");
     setShowModal(true);
   };
 
@@ -103,11 +104,64 @@ const Branches = () => {
     resetForm();
   };
 
+  const openMapModal = (branch) => {
+    const lat = String(branch?.latitude ?? "").trim();
+    const lng = String(branch?.longitude ?? "").trim();
+    const addr = String(branch?.address ?? "").trim();
+
+    if ((!lat || !lng) && !addr) {
+      alert("No location available for this branch.");
+      return;
+    }
+
+    setSelectedBranchMap(branch);
+    setShowMapModal(true);
+  };
+
+  const closeMapModal = () => {
+    setShowMapModal(false);
+    setSelectedBranchMap(null);
+  };
+
+  const getMapEmbedUrl = (branch) => {
+    const lat = String(branch?.latitude ?? "").trim();
+    const lng = String(branch?.longitude ?? "").trim();
+    const addr = String(branch?.address ?? "").trim();
+
+    if (lat && lng) {
+      return `https://maps.google.com/maps?q=${encodeURIComponent(`${lat},${lng}`)}&z=16&output=embed`;
+    }
+
+    return `https://maps.google.com/maps?q=${encodeURIComponent(addr)}&z=16&output=embed`;
+  };
+
+  const openInGoogleMaps = (branch) => {
+    const lat = String(branch?.latitude ?? "").trim();
+    const lng = String(branch?.longitude ?? "").trim();
+    const addr = String(branch?.address ?? "").trim();
+
+    let url = "";
+
+    if (lat && lng) {
+      url = `https://www.google.com/maps?q=${encodeURIComponent(`${lat},${lng}`)}`;
+    } else if (addr) {
+      url = `https://www.google.com/maps?q=${encodeURIComponent(addr)}`;
+    } else {
+      alert("No location available for this branch.");
+      return;
+    }
+
+    window.open(url, "_blank", "noopener,noreferrer");
+  };
+
   useEffect(() => {
-    if (!showModal) return;
+    if (!showModal && !showMapModal) return;
 
     const onKeyDown = (e) => {
-      if (e.key === "Escape") closeFormModal();
+      if (e.key === "Escape") {
+        if (showMapModal) closeMapModal();
+        else closeFormModal();
+      }
     };
 
     document.addEventListener("keydown", onKeyDown);
@@ -117,35 +171,26 @@ const Branches = () => {
       document.removeEventListener("keydown", onKeyDown);
       document.body.style.overflow = "";
     };
-  }, [showModal]);
+  }, [showModal, showMapModal]);
 
   const filteredBranches = useMemo(() => {
     const q = search.trim().toLowerCase();
 
     return branches.filter((branch) => {
-      const matchesSearch =
+      return (
         !q ||
         String(branch.id || "").toLowerCase().includes(q) ||
         String(branch.code || "").toLowerCase().includes(q) ||
         String(branch.name || "").toLowerCase().includes(q) ||
-        String(branch.area || "").toLowerCase().includes(q);
-
-      if (!matchesSearch) return false;
-
-      const branchDate = toDateOnly(branch.updated_at || branch.created_at);
-
-      if (dateFrom && branchDate && branchDate < dateFrom) return false;
-      if (dateTo && branchDate && branchDate > dateTo) return false;
-
-      if ((dateFrom || dateTo) && !branchDate) return false;
-
-      return true;
+        String(branch.area || "").toLowerCase().includes(q) ||
+        String(branch.address || "").toLowerCase().includes(q)
+      );
     });
-  }, [branches, search, dateFrom, dateTo]);
+  }, [branches, search]);
 
   useEffect(() => {
     setPage(1);
-  }, [search, pageSize, dateFrom, dateTo]);
+  }, [search, pageSize]);
 
   const totalRows = filteredBranches.length;
   const totalPages = Math.max(1, Math.ceil(totalRows / pageSize));
@@ -171,7 +216,14 @@ const Branches = () => {
 
     setSaving(true);
     try {
-      const payload = { code, name, area };
+      const payload = {
+        code,
+        name,
+        area,
+        address,
+        latitude: latitude === "" ? null : Number(latitude),
+        longitude: longitude === "" ? null : Number(longitude),
+      };
 
       if (editId) {
         await api.put(`/branches/${editId}`, payload);
@@ -229,28 +281,12 @@ const Branches = () => {
             <input
               className="input"
               type="text"
-              placeholder="Search by ID, code, name, or area..."
+              placeholder="Search by ID, code, name, area, or address..."
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === "Enter") setSearch(searchInput);
               }}
-            />
-
-            <input
-              className="input"
-              type="date"
-              value={dateFrom}
-              onChange={(e) => setDateFrom(e.target.value)}
-              title="Date From"
-            />
-
-            <input
-              className="input"
-              type="date"
-              value={dateTo}
-              onChange={(e) => setDateTo(e.target.value)}
-              title="Date To"
             />
 
             <button className="btn btn-outline" onClick={() => setSearch(searchInput)} type="button">
@@ -263,8 +299,6 @@ const Branches = () => {
               onClick={() => {
                 setSearch("");
                 setSearchInput("");
-                setDateFrom("");
-                setDateTo("");
               }}
             >
               Clear
@@ -302,15 +336,14 @@ const Branches = () => {
                     <th style={{ width: 180 }}>Branch Code</th>
                     <th style={{ width: 260 }}>Branch Name</th>
                     <th style={{ width: 180 }}>Area</th>
-                    <th style={{ width: 140 }}>Date</th>
-                    <th style={{ width: 380 }}>Actions</th>
+                    <th style={{ width: 440 }}>Actions</th>
                   </tr>
                 </thead>
 
                 <tbody>
                   {pagedBranches.length === 0 ? (
                     <tr>
-                      <td colSpan={6} className="empty">
+                      <td colSpan={5} className="empty">
                         No branches found.
                       </td>
                     </tr>
@@ -321,13 +354,12 @@ const Branches = () => {
                         <td className="mono">{branch.code}</td>
                         <td className="strong">{branch.name}</td>
                         <td>{branch.area}</td>
-                        <td className="mono">{toDateOnly(branch.updated_at || branch.created_at) || "-"}</td>
                         <td>
                           <div className="actions">
                             <div className="action-group">
                               <button
                                 className="action-btn btn-payroll"
-                                onClick={() => navigate(`/payroll/${Number(branch.id)}`)}
+                                onClick={() => navigate(`/payroll/${branch.code}`)}
                                 type="button"
                               >
                                 Payroll
@@ -335,7 +367,7 @@ const Branches = () => {
 
                               <button
                                 className="action-btn btn-transpo"
-                                onClick={() => navigate(`/transportation/${Number(branch.id)}`)}
+                                onClick={() => navigate(`/transportation/${branch.code}`)}
                                 type="button"
                               >
                                 Transpo
@@ -343,10 +375,18 @@ const Branches = () => {
 
                               <button
                                 className="action-btn btn-bonus"
-                                onClick={() => navigate(`/bonus/${Number(branch.id)}`)}
+                                onClick={() => navigate(`/bonus/${branch.code}`)}
                                 type="button"
                               >
                                 Bonus
+                              </button>
+
+                              <button
+                                className="action-btn btn-view"
+                                onClick={() => openMapModal(branch)}
+                                type="button"
+                              >
+                                View Location
                               </button>
                             </div>
 
@@ -425,6 +465,36 @@ const Branches = () => {
                   <label>Branch Name</label>
                   <input className="input" value={name} onChange={(e) => setName(e.target.value)} required />
                 </div>
+
+                <div className="field full">
+                  <label>Branch Address</label>
+                  <input
+                    className="input"
+                    value={address}
+                    onChange={(e) => setAddress(e.target.value)}
+                    placeholder="Enter branch address"
+                  />
+                </div>
+
+                <div className="field">
+                  <label>Latitude</label>
+                  <input
+                    className="input"
+                    value={latitude}
+                    onChange={(e) => setLatitude(e.target.value)}
+                    placeholder="14.5995"
+                  />
+                </div>
+
+                <div className="field">
+                  <label>Longitude</label>
+                  <input
+                    className="input"
+                    value={longitude}
+                    onChange={(e) => setLongitude(e.target.value)}
+                    placeholder="120.9842"
+                  />
+                </div>
               </div>
 
               <div className="modal-foot">
@@ -436,6 +506,48 @@ const Branches = () => {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {showMapModal && selectedBranchMap && (
+        <div className="modal-overlay" onMouseDown={closeMapModal}>
+          <div className="modal map-modal" onMouseDown={(e) => e.stopPropagation()}>
+            <div className="modal-head">
+              <h3>Branch Location</h3>
+              <button className="icon-btn" onClick={closeMapModal} type="button">
+                ✕
+              </button>
+            </div>
+
+            <div className="modal-body">
+              <div className="branch-map-meta">
+                <div className="branch-map-title">{selectedBranchMap.name || "-"}</div>
+                <div className="branch-map-address">{selectedBranchMap.address || "No address provided"}</div>
+                <div className="branch-map-coords">
+                  Latitude: {selectedBranchMap.latitude ?? "-"} | Longitude: {selectedBranchMap.longitude ?? "-"}
+                </div>
+              </div>
+
+              <div className="branch-map-frame">
+                <iframe
+                  title="Branch Location Map"
+                  src={getMapEmbedUrl(selectedBranchMap)}
+                  loading="lazy"
+                  allowFullScreen
+                />
+              </div>
+            </div>
+
+            <div className="modal-foot">
+              <button className="btn btn-outline" type="button" onClick={() => openInGoogleMaps(selectedBranchMap)}>
+                Open in Google Maps
+              </button>
+
+              <button className="btn btn-ghost" type="button" onClick={closeMapModal}>
+                Close
+              </button>
+            </div>
           </div>
         </div>
       )}
