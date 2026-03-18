@@ -34,6 +34,7 @@ import Soa from "./pages/Soa";
 import Deployment from "./pages/Deployment";
 import SbfOrder from "./pages/SbfOrder";
 import Reports from "./pages/Reports";
+import AreaConfigurations from "./pages/AreaConfigurations";
 
 import { CompRatesProvider } from "./context/CompRatesContext";
 
@@ -153,6 +154,7 @@ function AppShell() {
       <Route path="/exit-staff-orders" element={<ProtectedRoute allowedRoles={["admin"]}><ProtectedLayout><ExitStaffOrders /></ProtectedLayout></ProtectedRoute>}/>
       <Route path="/transactions/sbf" element={<ProtectedRoute allowedRoles={["admin"]}><ProtectedLayout><SbfOrder /></ProtectedLayout></ProtectedRoute>}/>
       <Route path="/reports" element={<ProtectedRoute allowedRoles={["admin", "branch manager"]}><ProtectedLayout><Reports /></ProtectedLayout></ProtectedRoute>}/>
+      <Route path="/system-update/area-configurations" element={<ProtectedRoute allowedRoles={["admin"]}><ProtectedLayout><AreaConfigurations /></ProtectedLayout></ProtectedRoute>}/>
       <Route path="*" element={<Navigate to={homeRedirect()} replace />} />
     </Routes>
   );

@@ -1,0 +1,111 @@
+.ac-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.ac-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.ac-title {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 900;
+  color: var(--text);
+}
+
+.ac-subtitle {
+  margin: 6px 0 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.ac-card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  box-shadow: var(--shadow-soft);
+  overflow: hidden;
+}
+
+.ac-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px;
+  flex-wrap: wrap;
+}
+
+.ac-pill {
+  padding: 9px 12px;
+  border-radius: 999px;
+  font-size: 13px;
+  background: var(--panel-2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  font-weight: 800;
+}
+
+.ac-table-wrap {
+  width: 100%;
+  overflow: auto;
+}
+
+.ac-table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 760px;
+}
+
+.ac-table thead th {
+  background: var(--table-header);
+  color: #fff;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 14px 10px;
+}
+
+.ac-table th,
+.ac-table td {
+  padding: 12px 10px;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+  color: var(--text);
+}
+
+.ac-table tbody tr:hover td {
+  background: var(--row-hover);
+}
+
+.ac-empty {
+  text-align: center;
+  padding: 22px !important;
+  color: var(--muted);
+  font-weight: 800;
+}
+
+.ac-loading {
+  padding: 16px;
+  color: var(--muted);
+  font-weight: 800;
+}
+
+.ac-row-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+}
+
+.strong {
+  font-weight: 900;
+}

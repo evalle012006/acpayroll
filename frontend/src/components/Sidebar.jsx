@@ -79,22 +79,16 @@ const Sidebar = ({ collapsed }) => {
 
     const items = [
       { to: "/dashboard", label: "Dashboard", icon: MdDashboard, roles: ["admin", "branch manager"] },
-      { to: "/staff-information", label: "Staff Information", icon: FaIdBadge, roles: ["admin", "branch manager"] },
       { to: "/departments", label: "Department", icon: FaBuilding, roles: ["admin", "branch manager"] },
-      { to: "/salary", label: "Payslip", icon: BsCash, roles: ["admin", "branch manager"] },
+      { to: "/staff-information", label: "Staff Information", icon: FaIdBadge, roles: ["admin", "branch manager"] },
       { to: "/schedule-balances", label: "Schedule of Balances", icon: HiOutlineClipboardList, roles: ["admin", "branch manager"] },
       { to: "/transactions", label: "HRIS Transactions", icon: FaExchangeAlt, roles: ["admin", "branch manager"] },
       { to: "/approval", label: "Finance Approval", icon: AiOutlineCheckCircle, roles: ["admin", "branch manager"] },
       { to: "/branches", label: "Branch Payroll", icon: TbGitBranch, roles: ["admin", "branch manager"] },
-      { to: "/system-update", label: "System Update", icon: FiSettings, roles: ["admin"] },
+      { to: "/salary", label: "Payslip", icon: BsCash, roles: ["admin", "branch manager"] },
+      { to: "/reports", label: "Reports", icon: LuFiles, roles: ["admin"], badge: reportPending > 0 ? reportPending : null, },
       { to: "/exit-staff", label: "Exit Staff", icon: RxExit, roles: ["admin"] },
-      {
-        to: "/reports",
-        label: "Reports",
-        icon: LuFiles,
-        roles: ["admin"],
-        badge: reportPending > 0 ? reportPending : null,
-      },
+      { to: "/system-update", label: "System Update", icon: FiSettings, roles: ["admin"] },
       { to: "/users", label: "Users", icon: FaUserGroup, roles: ["admin"] },
     ];
 

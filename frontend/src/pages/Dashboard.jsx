@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useCallback } from "react";
+import React, { useEffect, useMemo, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import "../styles/Dashboard.css";
 import api from "../api/axiosClient";
@@ -55,6 +55,20 @@ const emptyStats = {
   totalSpecialAdvance: 0,
   totalCashAdvance: 0,
   totalOtherReceivable: 0,
+
+  totalERContribution: 0,
+  totalEEContribution: 0,
+  totalTax: 0,
+
+  totalSssEr: 0,
+  totalPhEr: 0,
+  totalHdmfEr: 0,
+
+  totalSssEe: 0,
+  totalPhEe: 0,
+  totalHdmfEe: 0,
+
+  totalManagementExpenses: 0,
 };
 
 const getStaffStatus = (s) => String(s?.status || "Active").trim().toLowerCase();
@@ -143,6 +157,31 @@ export default function Dashboard() {
 
       const totals = computeTotals(balances);
 
+      const totalSssEr = (staffData || []).reduce((sum, s) => sum + toNum(s.sss_er), 0);
+      const totalPhEr = (staffData || []).reduce((sum, s) => sum + toNum(s.ph_er), 0);
+      const totalHdmfEr = (staffData || []).reduce((sum, s) => sum + toNum(s.hdmf_er), 0);
+
+      const totalSssEe = (staffData || []).reduce((sum, s) => sum + toNum(s.sss_ee), 0);
+      const totalPhEe = (staffData || []).reduce((sum, s) => sum + toNum(s.ph_ee), 0);
+      const totalHdmfEe = (staffData || []).reduce((sum, s) => sum + toNum(s.hdmf_ee), 0);
+
+      const totalERContribution = totalSssEr + totalPhEr + totalHdmfEr;
+      const totalEEContribution = totalSssEe + totalPhEe + totalHdmfEe;
+      const totalTax = (staffData || []).reduce((sum, s) => sum + toNum(s.tax), 0);
+
+      const totalManagementExpenses = (staffData || []).reduce(
+        (sum, s) =>
+          sum +
+          toNum(s.transportation) +
+          toNum(s.repairing) +
+          toNum(s.postage) +
+          toNum(s.additional_target) +
+          toNum(s.additional_monitoring) +
+          toNum(s.motorcycle) +
+          toNum(s.other_deduction),
+        0
+      );
+
       setStats({
         activeEmployees,
         inactiveEmployees,
@@ -159,6 +198,20 @@ export default function Dashboard() {
         totalLoans: loanCounts.total,
 
         ...totals,
+
+        totalERContribution,
+        totalEEContribution,
+        totalTax,
+
+        totalSssEr,
+        totalPhEr,
+        totalHdmfEr,
+
+        totalSssEe,
+        totalPhEe,
+        totalHdmfEe,
+
+        totalManagementExpenses,
       });
     } finally {
       setLoading(false);
@@ -181,26 +234,10 @@ export default function Dashboard() {
   const leaveApprovalPct = pct(stats.approvedLeaves, stats.totalLeaves);
   const loanApprovalPct = pct(stats.approvedLoans, stats.totalLoans);
 
-  const totalReceivable =
-    toNum(stats.totalCBU) +
-    toNum(stats.totalCashbond) +
-    toNum(stats.totalSalaryAdvance) +
-    toNum(stats.totalMotorcycleLoan) +
-    toNum(stats.totalSpecialAdvance) +
-    toNum(stats.totalCashAdvance) +
-    toNum(stats.totalOtherReceivable);
-
-  const payableRatio = Math.min(
-    99,
-    Math.max(
-      1,
-      Math.round(
-        (toNum(stats.totalStaffAccountsPayable) /
-          Math.max(1, totalReceivable + toNum(stats.totalStaffAccountsPayable))) *
-          100
-      )
-    )
-  );
+  const contributionTotal =
+    toNum(stats.totalERContribution) +
+    toNum(stats.totalEEContribution) +
+    toNum(stats.totalTax);
 
   const balanceLineData = [
     { name: "CBU", value: toNum(stats.totalCBU) },
@@ -239,7 +276,7 @@ export default function Dashboard() {
       <div className="dash__head">
         <div>
           <div className="dash__title">Dashboard Overview</div>
-          <div className="dash__sub">Workforce, leaves, loans, and balances snapshot</div>
+          <div className="dash__sub">Workforce, leaves, loans, balances, and expense snapshot</div>
         </div>
         {loading && <div className="pill">Loading…</div>}
       </div>
@@ -274,13 +311,27 @@ export default function Dashboard() {
           accent="orange"
         />
 
-        <KpiCard
-          title="TOTAL PAYABLE"
-          value={money(stats.totalStaffAccountsPayable)}
-          subtitle="Staff Accounts Payable"
-          badge={payableRatio}
-          trend="up"
+        <ContributionDropdownCard
+          title="TOTAL CONTRIBUTION"
+          totalER={stats.totalERContribution}
+          totalEE={stats.totalEEContribution}
+          totalTax={stats.totalTax}
+          totalSssEr={stats.totalSssEr}
+          totalPhEr={stats.totalPhEr}
+          totalHdmfEr={stats.totalHdmfEr}
+          totalSssEe={stats.totalSssEe}
+          totalPhEe={stats.totalPhEe}
+          totalHdmfEe={stats.totalHdmfEe}
           accent="green"
+        />
+
+        <KpiCard
+          title="MANAGEMENT EXPENSES"
+          value={money(stats.totalManagementExpenses)}
+          subtitle="Transportation, repairing, postage, target, monitoring, motorcycle, others"
+          badge={Math.min(99, Math.max(1, pct(stats.totalManagementExpenses, contributionTotal || 1)))}
+          trend="up"
+          accent="violet"
         />
       </div>
 
@@ -527,6 +578,122 @@ function LoanKpiCard({ title, pending, approved, rejected, total, badge, accent 
   );
 }
 
+function ContributionDropdownCard({
+  title,
+  totalER,
+  totalEE,
+  totalTax,
+  totalSssEr,
+  totalPhEr,
+  totalHdmfEr,
+  totalSssEe,
+  totalPhEe,
+  totalHdmfEe,
+  accent,
+}) {
+  const [open, setOpen] = useState(false);
+
+  const total = toNum(totalER) + toNum(totalEE) + toNum(totalTax);
+
+  return (
+    <div className={`kpi kpi--${accent}`}>
+      <div className="kpi__top">
+        <div className="kpi__title">{title}</div>
+        <button
+          type="button"
+          onClick={() => setOpen((p) => !p)}
+          style={{
+            background: "transparent",
+            border: "none",
+            color: "inherit",
+            cursor: "pointer",
+            fontWeight: 800,
+            fontSize: 14,
+          }}
+        >
+          {open ? "▲" : "▼"}
+        </button>
+      </div>
+
+      <div className="kpi__valueRow">
+        <span className="kpi__trend kpi__trend--up">▲</span>
+        <div className="kpi__value">{money(total)}</div>
+      </div>
+
+      <div className="kpi__subtitle">ER + EE + Tax contributions</div>
+
+      {open && (
+        <div style={{ marginTop: 10 }}>
+          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+            <tbody>
+              <tr>
+                <td style={{ opacity: 0.9, fontWeight: 800 }}>ER Breakdown</td>
+                <td />
+              </tr>
+              <tr>
+                <td style={{ opacity: 0.9 }}>SSS ER</td>
+                <td style={{ textAlign: "right", fontWeight: 700 }}>{money(totalSssEr)}</td>
+              </tr>
+              <tr>
+                <td style={{ opacity: 0.9 }}>PhilHealth ER</td>
+                <td style={{ textAlign: "right", fontWeight: 700 }}>{money(totalPhEr)}</td>
+              </tr>
+              <tr>
+                <td style={{ opacity: 0.9 }}>HDMF ER</td>
+                <td style={{ textAlign: "right", fontWeight: 700 }}>{money(totalHdmfEr)}</td>
+              </tr>
+              <tr>
+                <td style={{ opacity: 0.9, fontWeight: 800 }}>Total ER</td>
+                <td style={{ textAlign: "right", fontWeight: 800 }}>{money(totalER)}</td>
+              </tr>
+
+              <tr>
+                <td colSpan={2} style={{ height: 8 }}></td>
+              </tr>
+
+              <tr>
+                <td style={{ opacity: 0.9, fontWeight: 800 }}>EE Breakdown</td>
+                <td />
+              </tr>
+              <tr>
+                <td style={{ opacity: 0.9 }}>SSS EE</td>
+                <td style={{ textAlign: "right", fontWeight: 700 }}>{money(totalSssEe)}</td>
+              </tr>
+              <tr>
+                <td style={{ opacity: 0.9 }}>PhilHealth EE</td>
+                <td style={{ textAlign: "right", fontWeight: 700 }}>{money(totalPhEe)}</td>
+              </tr>
+              <tr>
+                <td style={{ opacity: 0.9 }}>HDMF EE</td>
+                <td style={{ textAlign: "right", fontWeight: 700 }}>{money(totalHdmfEe)}</td>
+              </tr>
+              <tr>
+                <td style={{ opacity: 0.9, fontWeight: 800 }}>Total EE</td>
+                <td style={{ textAlign: "right", fontWeight: 800 }}>{money(totalEE)}</td>
+              </tr>
+
+              <tr>
+                <td colSpan={2} style={{ height: 8 }}></td>
+              </tr>
+
+              <tr>
+                <td style={{ opacity: 0.9 }}>Total Tax</td>
+                <td style={{ textAlign: "right", fontWeight: 700 }}>{money(totalTax)}</td>
+              </tr>
+              <tr>
+                <td style={{ opacity: 0.9, fontWeight: 900 }}>Grand Total</td>
+                <td style={{ textAlign: "right", fontWeight: 900 }}>{money(total)}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <div className="kpi__bar" />
+    </div>
+  );
+}
+
 function KpiCard({ title, value, subtitle, trend, badge, accent }) {
   return (
     <div className={`kpi kpi--${accent}`}>
@@ -542,41 +709,6 @@ function KpiCard({ title, value, subtitle, trend, badge, accent }) {
       </div>
       <div className="kpi__subtitle">{subtitle}</div>
       <div className="kpi__bar" />
-    </div>
-  );
-}
-
-function MiniStat({ label, value }) {
-  return (
-    <div className="mini">
-      <div className="mini__label">{label}</div>
-      <div className="mini__row">
-        <div className="mini__value">{value}</div>
-      </div>
-    </div>
-  );
-}
-
-function TargetBar({ label, percent, accent }) {
-  const p = Math.max(0, Math.min(100, toNum(percent)));
-  return (
-    <div className="target">
-      <div className="target__top">
-        <div className={`target__pct target__pct--${accent}`}>{p}%</div>
-        <div className="target__label">{label}</div>
-      </div>
-      <div className={`target__bar target__bar--${accent}`}>
-        <span style={{ width: `${p}%` }} />
-      </div>
-    </div>
-  );
-}
-
-function InfoCard({ title, value, strong }) {
-  return (
-    <div className={`infoCard ${strong ? "infoCard--strong" : ""}`}>
-      <div className="infoCard__title">{title}</div>
-      <div className="infoCard__value">{value}</div>
     </div>
   );
 }
