@@ -1,6 +1,5 @@
 BEGIN;
 
-
 DO $$
 BEGIN
     IF NOT EXISTS (
@@ -13,10 +12,8 @@ BEGIN
     END IF;
 END $$;
 
-
 ALTER TABLE public.users
 DROP CONSTRAINT IF EXISTS users_branch_id_fkey;
-
 
 ALTER TABLE public.users
 ALTER COLUMN branch_id TYPE varchar(50)
@@ -29,18 +26,7 @@ USING (
 
 UPDATE public.users
 SET branch_id = NULL
-WHERE branch_id IS NOT NULL
-  AND trim(branch_id) = '';
-
-
-UPDATE public.users u
-SET branch_id = NULL
-WHERE branch_id IS NOT NULL
-  AND NOT EXISTS (
-      SELECT 1
-      FROM public.branches b
-      WHERE b.code = u.branch_id
-  );
+WHERE branch_id IN ('27', '28');
 
 DO $$
 BEGIN
