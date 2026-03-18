@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import {FaBars, FaUser, FaCog, FaSignOutAlt, FaMoon, FaSun, FaBell, FaCheck, FaTrash,} from "react-icons/fa";
+import { GoSidebarCollapse } from "react-icons/go";
 import "../styles/Header.css";
 
 const readUser = () => {
@@ -173,7 +174,9 @@ const Header = ({ toggleSidebar }) => {
 
   return (
     <div className="header">
-      <FaBars className="menu-toggle" onClick={toggleSidebar} />
+      <button className="menu-toggle" onClick={toggleSidebar}>
+        <GoSidebarCollapse />
+      </button>
 
       <div className="header-right">
 

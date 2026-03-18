@@ -13,13 +13,26 @@ BEGIN
 END $$;
 
 ALTER TABLE public.users
-ALTER COLUMN branch_id TYPE integer
-USING (
-    CASE
-        WHEN branch_id IS NULL THEN NULL
-        WHEN trim(branch_id) ~ '^[0-9]+$' THEN trim(branch_id)::integer
-        ELSE NULL
-    END
-);
+DROP CONSTRAINT IF EXISTS users_branch_id_fkey;
+
+ALTER TABLE public.users
+ALTER COLUMN branch_id TYPE varchar(50)
+USING branch_id::varchar;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_constraint
+        WHERE conname = 'users_branch_id_fkey'
+    ) THEN
+        ALTER TABLE public.users
+        ADD CONSTRAINT users_branch_id_fkey
+        FOREIGN KEY (branch_id)
+        REFERENCES public.branches(code)
+        ON UPDATE CASCADE
+        ON DELETE SET NULL;
+    END IF;
+END $$;
 
 COMMIT;

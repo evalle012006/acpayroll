@@ -4,11 +4,9 @@ import "../styles/Dashboard.css";
 import api from "../api/axiosClient";
 import {
   ResponsiveContainer,
-  LineChart,
-  Line,
-  XAxis,
-  YAxis,
-  CartesianGrid,
+  PieChart,
+  Pie,
+  Cell,
   Tooltip,
   Legend,
 } from "recharts";
@@ -69,15 +67,45 @@ const emptyStats = {
   totalHdmfEe: 0,
 
   totalManagementExpenses: 0,
+  transportationTotal: 0,
+  repairingTotal: 0,
+  postageTotal: 0,
+  additionalTargetTotal: 0,
+  additionalMonitoringTotal: 0,
+  motorcycleExpenseTotal: 0,
+  otherDeductionTotal: 0,
 };
 
-const getStaffStatus = (s) => String(s?.status || "Active").trim().toLowerCase();
+const getStaffStatus = (s) =>
+  String(s?.status || "Active").trim().toLowerCase();
+
+const slideshowImages = [
+  "/images/slide1.jpg",
+  "/images/slide2.jpg",
+  "/images/slide3.jpg",
+  "/images/slide4.jpg",
+  "/images/slide5.jpg",
+  "/images/slide6.jpg",
+  "/images/slide7.jpg",
+];
+
+const balanceDonutColors = [
+  "#3b82f6",
+  "#22c55e",
+  "#f59e0b",
+  "#ef4444",
+  "#8b5cf6",
+  "#06b6d4",
+  "#f97316",
+  "#64748b",
+];
 
 export default function Dashboard() {
   const navigate = useNavigate();
 
   const [loading, setLoading] = useState(false);
   const [stats, setStats] = useState(emptyStats);
+  const [slideIndex, setSlideIndex] = useState(0);
 
   const token = localStorage.getItem("token");
   const user = useMemo(() => readUser(), [token]);
@@ -148,8 +176,12 @@ export default function Dashboard() {
         safeGet("/staff-balances"),
       ]);
 
-      const activeEmployees = (staffData || []).filter((s) => getStaffStatus(s) !== "inactive").length;
-      const inactiveEmployees = (staffData || []).filter((s) => getStaffStatus(s) === "inactive").length;
+      const activeEmployees = (staffData || []).filter(
+        (s) => getStaffStatus(s) !== "inactive"
+      ).length;
+      const inactiveEmployees = (staffData || []).filter(
+        (s) => getStaffStatus(s) === "inactive"
+      ).length;
       const totalEmployees = (staffData || []).length;
 
       const leaveCounts = countStatus(leaveData || [], "status");
@@ -157,30 +189,76 @@ export default function Dashboard() {
 
       const totals = computeTotals(balances);
 
-      const totalSssEr = (staffData || []).reduce((sum, s) => sum + toNum(s.sss_er), 0);
-      const totalPhEr = (staffData || []).reduce((sum, s) => sum + toNum(s.ph_er), 0);
-      const totalHdmfEr = (staffData || []).reduce((sum, s) => sum + toNum(s.hdmf_er), 0);
+      const totalSssEr = (staffData || []).reduce(
+        (sum, s) => sum + toNum(s.sss_er),
+        0
+      );
+      const totalPhEr = (staffData || []).reduce(
+        (sum, s) => sum + toNum(s.ph_er),
+        0
+      );
+      const totalHdmfEr = (staffData || []).reduce(
+        (sum, s) => sum + toNum(s.hdmf_er),
+        0
+      );
 
-      const totalSssEe = (staffData || []).reduce((sum, s) => sum + toNum(s.sss_ee), 0);
-      const totalPhEe = (staffData || []).reduce((sum, s) => sum + toNum(s.ph_ee), 0);
-      const totalHdmfEe = (staffData || []).reduce((sum, s) => sum + toNum(s.hdmf_ee), 0);
+      const totalSssEe = (staffData || []).reduce(
+        (sum, s) => sum + toNum(s.sss_ee),
+        0
+      );
+      const totalPhEe = (staffData || []).reduce(
+        (sum, s) => sum + toNum(s.ph_ee),
+        0
+      );
+      const totalHdmfEe = (staffData || []).reduce(
+        (sum, s) => sum + toNum(s.hdmf_ee),
+        0
+      );
 
       const totalERContribution = totalSssEr + totalPhEr + totalHdmfEr;
       const totalEEContribution = totalSssEe + totalPhEe + totalHdmfEe;
-      const totalTax = (staffData || []).reduce((sum, s) => sum + toNum(s.tax), 0);
-
-      const totalManagementExpenses = (staffData || []).reduce(
-        (sum, s) =>
-          sum +
-          toNum(s.transportation) +
-          toNum(s.repairing) +
-          toNum(s.postage) +
-          toNum(s.additional_target) +
-          toNum(s.additional_monitoring) +
-          toNum(s.motorcycle) +
-          toNum(s.other_deduction),
+      const totalTax = (staffData || []).reduce(
+        (sum, s) => sum + toNum(s.tax),
         0
       );
+
+      const transportationTotal = (staffData || []).reduce(
+        (sum, s) => sum + toNum(s.transportation),
+        0
+      );
+      const repairingTotal = (staffData || []).reduce(
+        (sum, s) => sum + toNum(s.repairing),
+        0
+      );
+      const postageTotal = (staffData || []).reduce(
+        (sum, s) => sum + toNum(s.postage),
+        0
+      );
+      const additionalTargetTotal = (staffData || []).reduce(
+        (sum, s) => sum + toNum(s.additional_target),
+        0
+      );
+      const additionalMonitoringTotal = (staffData || []).reduce(
+        (sum, s) => sum + toNum(s.additional_monitoring),
+        0
+      );
+      const motorcycleExpenseTotal = (staffData || []).reduce(
+        (sum, s) => sum + toNum(s.motorcycle),
+        0
+      );
+      const otherDeductionTotal = (staffData || []).reduce(
+        (sum, s) => sum + toNum(s.other_deduction),
+        0
+      );
+
+      const totalManagementExpenses =
+        transportationTotal +
+        repairingTotal +
+        postageTotal +
+        additionalTargetTotal +
+        additionalMonitoringTotal +
+        motorcycleExpenseTotal +
+        otherDeductionTotal;
 
       setStats({
         activeEmployees,
@@ -212,6 +290,13 @@ export default function Dashboard() {
         totalHdmfEe,
 
         totalManagementExpenses,
+        transportationTotal,
+        repairingTotal,
+        postageTotal,
+        additionalTargetTotal,
+        additionalMonitoringTotal,
+        motorcycleExpenseTotal,
+        otherDeductionTotal,
       });
     } finally {
       setLoading(false);
@@ -226,6 +311,14 @@ export default function Dashboard() {
     fetchDashboardData();
   }, [token, user, fetchDashboardData, navigate]);
 
+  useEffect(() => {
+    if (!slideshowImages.length) return;
+    const timer = setInterval(() => {
+      setSlideIndex((prev) => (prev + 1) % slideshowImages.length);
+    }, 4000);
+    return () => clearInterval(timer);
+  }, []);
+
   const pct = (a, b) => {
     const denom = Math.max(1, toNum(b));
     return Math.max(0, Math.min(100, Math.round((toNum(a) / denom) * 100)));
@@ -239,7 +332,7 @@ export default function Dashboard() {
     toNum(stats.totalEEContribution) +
     toNum(stats.totalTax);
 
-  const balanceLineData = [
+  const balanceDonutData = [
     { name: "CBU", value: toNum(stats.totalCBU) },
     { name: "Cashbond", value: toNum(stats.totalCashbond) },
     { name: "Salary Advance", value: toNum(stats.totalSalaryAdvance) },
@@ -248,22 +341,7 @@ export default function Dashboard() {
     { name: "Cash Advance", value: toNum(stats.totalCashAdvance) },
     { name: "Other Receivable", value: toNum(stats.totalOtherReceivable) },
     { name: "Staff Payable", value: toNum(stats.totalStaffAccountsPayable) },
-  ];
-
-  const approvalLineData = [
-    {
-      name: "Leaves",
-      Pending: toNum(stats.pendingLeaves),
-      Approved: toNum(stats.approvedLeaves),
-      Rejected: toNum(stats.rejectedLeaves),
-    },
-    {
-      name: "Loans",
-      Pending: toNum(stats.pendingLoans),
-      Approved: toNum(stats.approvedLoans),
-      Rejected: toNum(stats.rejectedLoans),
-    },
-  ];
+  ].filter((item) => item.value > 0);
 
   const chartTooltipMoney = (value) =>
     `₱ ${toNum(value).toLocaleString(undefined, {
@@ -276,7 +354,9 @@ export default function Dashboard() {
       <div className="dash__head">
         <div>
           <div className="dash__title">Dashboard Overview</div>
-          <div className="dash__sub">Workforce, leaves, loans, balances, and expense snapshot</div>
+          <div className="dash__sub">
+            Workforce, leaves, loans, balances, and expense snapshot
+          </div>
         </div>
         {loading && <div className="pill">Loading…</div>}
       </div>
@@ -325,12 +405,20 @@ export default function Dashboard() {
           accent="green"
         />
 
-        <KpiCard
+        <ManagementExpensesDropdownCard
           title="MANAGEMENT EXPENSES"
-          value={money(stats.totalManagementExpenses)}
-          subtitle="Transportation, repairing, postage, target, monitoring, motorcycle, others"
-          badge={Math.min(99, Math.max(1, pct(stats.totalManagementExpenses, contributionTotal || 1)))}
-          trend="up"
+          total={stats.totalManagementExpenses}
+          transportation={stats.transportationTotal}
+          repairing={stats.repairingTotal}
+          postage={stats.postageTotal}
+          additionalTarget={stats.additionalTargetTotal}
+          additionalMonitoring={stats.additionalMonitoringTotal}
+          motorcycle={stats.motorcycleExpenseTotal}
+          otherDeduction={stats.otherDeductionTotal}
+          badge={Math.min(
+            99,
+            Math.max(1, pct(stats.totalManagementExpenses, contributionTotal || 1))
+          )}
           accent="violet"
         />
       </div>
@@ -339,35 +427,98 @@ export default function Dashboard() {
         <div className="card card--panel">
           <div className="card__head">
             <div>
-              <div className="card__title">Balances Trend</div>
-              <div className="card__sub">Line graph of all balance totals</div>
+              <div className="card__title">Company Agenda</div>
+              <div className="card__sub">Events and Workshop Moments</div>
             </div>
-            <button className="btn btn--ghost" type="button">
-              Actions
-            </button>
+          </div>
+
+          <div
+            style={{
+              width: "100%",
+              height: 450,
+              overflow: "hidden",
+              borderRadius: 16,
+              position: "relative",
+              background: "#0f172a",
+            }}
+          >
+            <img
+              src={slideshowImages[slideIndex]}
+              alt={`Slide ${slideIndex + 1}`}
+              style={{
+                width: "100%",
+                height: "100%",
+                objectFit: "cover",
+                display: "block",
+              }}
+              onError={(e) => {
+                e.currentTarget.src =
+                  "https://via.placeholder.com/1200x500?text=Add+your+image+in+public%2Fimages";
+              }}
+            />
+
+            <div
+              style={{
+                position: "absolute",
+                left: 12,
+                bottom: 12,
+                display: "flex",
+                gap: 8,
+              }}
+            >
+              {slideshowImages.map((_, idx) => (
+                <button
+                  key={idx}
+                  type="button"
+                  onClick={() => setSlideIndex(idx)}
+                  style={{
+                    width: 10,
+                    height: 10,
+                    borderRadius: "50%",
+                    border: "none",
+                    cursor: "pointer",
+                    background:
+                      idx === slideIndex ? "#fff" : "rgba(255,255,255,0.45)",
+                  }}
+                />
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div className="card card--panel">
+          <div className="card__head">
+            <div>
+              <div className="card__title">Balance Distribution</div>
+              <div className="card__sub">
+                Balance and Personal Savings Chart
+              </div>
+            </div>
           </div>
 
           <div className="chart">
-            <ResponsiveContainer width="100%" height={280}>
-              <LineChart
-                data={balanceLineData}
-                margin={{ top: 10, right: 20, left: 0, bottom: 10 }}
-              >
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.16)" />
-                <XAxis
-                  dataKey="name"
-                  stroke="#94a3b8"
-                  tick={{ fontSize: 11 }}
-                  interval={0}
-                  angle={-15}
-                  textAnchor="end"
-                  height={60}
-                />
-                <YAxis
-                  stroke="#94a3b8"
-                  tick={{ fontSize: 11 }}
-                  tickFormatter={(v) => `₱${Math.round(v / 1000)}k`}
-                />
+            <ResponsiveContainer width="100%" height={320}>
+              <PieChart>
+                <Pie
+                  data={balanceDonutData}
+                  dataKey="value"
+                  nameKey="name"
+                  cx="50%"
+                  cy="50%"
+                  innerRadius={75}
+                  outerRadius={115}
+                  paddingAngle={3}
+                >
+                  {balanceDonutData.map((entry, index) => (
+                    <Cell
+                      key={`cell-${index}`}
+                      fill={
+                        balanceDonutColors[index % balanceDonutColors.length]
+                      }
+                    />
+                  ))}
+                </Pie>
+
                 <Tooltip
                   formatter={(value) => chartTooltipMoney(value)}
                   contentStyle={{
@@ -378,85 +529,9 @@ export default function Dashboard() {
                   }}
                   labelStyle={{ color: "#cbd5e1" }}
                 />
+
                 <Legend />
-                <Line
-                  type="monotone"
-                  dataKey="value"
-                  name="Amount"
-                  stroke="#3b82f6"
-                  strokeWidth={3}
-                  dot={{ r: 4 }}
-                  activeDot={{ r: 6 }}
-                />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-
-          <div className="legend">
-            <span className="dot dot--blue" /> Balance totals
-          </div>
-        </div>
-
-        <div className="card card--panel">
-          <div className="card__head">
-            <div>
-              <div className="card__title">Approval Trends</div>
-              <div className="card__sub">Leave and loan request status comparison</div>
-            </div>
-            <div className="icons">
-              <button className="iconBtn" aria-label="settings" type="button">
-                ⚙
-              </button>
-              <button className="iconBtn" aria-label="menu" type="button">
-                ≡
-              </button>
-            </div>
-          </div>
-
-          <div className="chart">
-            <ResponsiveContainer width="100%" height={280}>
-              <LineChart
-                data={approvalLineData}
-                margin={{ top: 10, right: 20, left: 0, bottom: 10 }}
-              >
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.16)" />
-                <XAxis dataKey="name" stroke="#94a3b8" tick={{ fontSize: 11 }} />
-                <YAxis stroke="#94a3b8" tick={{ fontSize: 11 }} />
-                <Tooltip
-                  contentStyle={{
-                    background: "#0f172a",
-                    border: "1px solid rgba(148,163,184,0.2)",
-                    borderRadius: 12,
-                    color: "#fff",
-                  }}
-                  labelStyle={{ color: "#cbd5e1" }}
-                />
-                <Legend />
-                <Line
-                  type="monotone"
-                  dataKey="Pending"
-                  stroke="#3b82f6"
-                  strokeWidth={3}
-                  dot={{ r: 4 }}
-                  activeDot={{ r: 6 }}
-                />
-                <Line
-                  type="monotone"
-                  dataKey="Approved"
-                  stroke="#22c55e"
-                  strokeWidth={3}
-                  dot={{ r: 4 }}
-                  activeDot={{ r: 6 }}
-                />
-                <Line
-                  type="monotone"
-                  dataKey="Rejected"
-                  stroke="#ef4444"
-                  strokeWidth={3}
-                  dot={{ r: 4 }}
-                  activeDot={{ r: 6 }}
-                />
-              </LineChart>
+              </PieChart>
             </ResponsiveContainer>
           </div>
         </div>
@@ -482,7 +557,9 @@ function EmployeeKpiCard({ title, active, inactive, total, badge, accent }) {
             </tr>
             <tr>
               <td style={{ opacity: 0.9 }}>Inactive</td>
-              <td style={{ textAlign: "right", fontWeight: 700 }}>{inactive}</td>
+              <td style={{ textAlign: "right", fontWeight: 700 }}>
+                {inactive}
+              </td>
             </tr>
             <tr>
               <td style={{ opacity: 0.9 }}>Total</td>
@@ -500,7 +577,15 @@ function EmployeeKpiCard({ title, active, inactive, total, badge, accent }) {
   );
 }
 
-function LeaveKpiCard({ title, pending, approved, rejected, total, badge, accent }) {
+function LeaveKpiCard({
+  title,
+  pending,
+  approved,
+  rejected,
+  total,
+  badge,
+  accent,
+}) {
   return (
     <div className={`kpi kpi--${accent}`}>
       <div className="kpi__top">
@@ -513,15 +598,21 @@ function LeaveKpiCard({ title, pending, approved, rejected, total, badge, accent
           <tbody>
             <tr>
               <td style={{ opacity: 0.9 }}>Pending</td>
-              <td style={{ textAlign: "right", fontWeight: 700 }}>{pending}</td>
+              <td style={{ textAlign: "right", fontWeight: 700 }}>
+                {pending}
+              </td>
             </tr>
             <tr>
               <td style={{ opacity: 0.9 }}>Approved</td>
-              <td style={{ textAlign: "right", fontWeight: 700 }}>{approved}</td>
+              <td style={{ textAlign: "right", fontWeight: 700 }}>
+                {approved}
+              </td>
             </tr>
             <tr>
               <td style={{ opacity: 0.9 }}>Rejected</td>
-              <td style={{ textAlign: "right", fontWeight: 700 }}>{rejected}</td>
+              <td style={{ textAlign: "right", fontWeight: 700 }}>
+                {rejected}
+              </td>
             </tr>
             <tr>
               <td style={{ opacity: 0.9 }}>Total</td>
@@ -539,7 +630,15 @@ function LeaveKpiCard({ title, pending, approved, rejected, total, badge, accent
   );
 }
 
-function LoanKpiCard({ title, pending, approved, rejected, total, badge, accent }) {
+function LoanKpiCard({
+  title,
+  pending,
+  approved,
+  rejected,
+  total,
+  badge,
+  accent,
+}) {
   return (
     <div className={`kpi kpi--${accent}`}>
       <div className="kpi__top">
@@ -552,15 +651,21 @@ function LoanKpiCard({ title, pending, approved, rejected, total, badge, accent 
           <tbody>
             <tr>
               <td style={{ opacity: 0.9 }}>Pending</td>
-              <td style={{ textAlign: "right", fontWeight: 700 }}>{pending}</td>
+              <td style={{ textAlign: "right", fontWeight: 700 }}>
+                {pending}
+              </td>
             </tr>
             <tr>
               <td style={{ opacity: 0.9 }}>Approved</td>
-              <td style={{ textAlign: "right", fontWeight: 700 }}>{approved}</td>
+              <td style={{ textAlign: "right", fontWeight: 700 }}>
+                {approved}
+              </td>
             </tr>
             <tr>
               <td style={{ opacity: 0.9 }}>Rejected</td>
-              <td style={{ textAlign: "right", fontWeight: 700 }}>{rejected}</td>
+              <td style={{ textAlign: "right", fontWeight: 700 }}>
+                {rejected}
+              </td>
             </tr>
             <tr>
               <td style={{ opacity: 0.9 }}>Total</td>
@@ -602,21 +707,13 @@ function ContributionDropdownCard({
         <button
           type="button"
           onClick={() => setOpen((p) => !p)}
-          style={{
-            background: "transparent",
-            border: "none",
-            color: "inherit",
-            cursor: "pointer",
-            fontWeight: 800,
-            fontSize: 14,
-          }}
+          className="kpi__toggle"
         >
           {open ? "▲" : "▼"}
         </button>
       </div>
 
       <div className="kpi__valueRow">
-        <span className="kpi__trend kpi__trend--up">▲</span>
         <div className="kpi__value">{money(total)}</div>
       </div>
 
@@ -624,65 +721,65 @@ function ContributionDropdownCard({
 
       {open && (
         <div style={{ marginTop: 10 }}>
-          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+          <table className="kpi__table">
             <tbody>
               <tr>
-                <td style={{ opacity: 0.9, fontWeight: 800 }}>ER Breakdown</td>
+                <td className="kpi__tableStrong">ER Breakdown</td>
                 <td />
               </tr>
               <tr>
-                <td style={{ opacity: 0.9 }}>SSS ER</td>
-                <td style={{ textAlign: "right", fontWeight: 700 }}>{money(totalSssEr)}</td>
+                <td className="kpi__tableLabel">SSS ER</td>
+                <td>{money(totalSssEr)}</td>
               </tr>
               <tr>
-                <td style={{ opacity: 0.9 }}>PhilHealth ER</td>
-                <td style={{ textAlign: "right", fontWeight: 700 }}>{money(totalPhEr)}</td>
+                <td className="kpi__tableLabel">PhilHealth ER</td>
+                <td>{money(totalPhEr)}</td>
               </tr>
               <tr>
-                <td style={{ opacity: 0.9 }}>HDMF ER</td>
-                <td style={{ textAlign: "right", fontWeight: 700 }}>{money(totalHdmfEr)}</td>
+                <td className="kpi__tableLabel">HDMF ER</td>
+                <td>{money(totalHdmfEr)}</td>
               </tr>
               <tr>
-                <td style={{ opacity: 0.9, fontWeight: 800 }}>Total ER</td>
-                <td style={{ textAlign: "right", fontWeight: 800 }}>{money(totalER)}</td>
+                <td className="kpi__tableStrong">Total ER</td>
+                <td className="kpi__tableStrong">{money(totalER)}</td>
+              </tr>
+
+              <tr className="kpi__tableSpacer">
+                <td colSpan={2}></td>
               </tr>
 
               <tr>
-                <td colSpan={2} style={{ height: 8 }}></td>
-              </tr>
-
-              <tr>
-                <td style={{ opacity: 0.9, fontWeight: 800 }}>EE Breakdown</td>
+                <td className="kpi__tableStrong">EE Breakdown</td>
                 <td />
               </tr>
               <tr>
-                <td style={{ opacity: 0.9 }}>SSS EE</td>
-                <td style={{ textAlign: "right", fontWeight: 700 }}>{money(totalSssEe)}</td>
+                <td className="kpi__tableLabel">SSS EE</td>
+                <td>{money(totalSssEe)}</td>
               </tr>
               <tr>
-                <td style={{ opacity: 0.9 }}>PhilHealth EE</td>
-                <td style={{ textAlign: "right", fontWeight: 700 }}>{money(totalPhEe)}</td>
+                <td className="kpi__tableLabel">PhilHealth EE</td>
+                <td>{money(totalPhEe)}</td>
               </tr>
               <tr>
-                <td style={{ opacity: 0.9 }}>HDMF EE</td>
-                <td style={{ textAlign: "right", fontWeight: 700 }}>{money(totalHdmfEe)}</td>
+                <td className="kpi__tableLabel">HDMF EE</td>
+                <td>{money(totalHdmfEe)}</td>
               </tr>
               <tr>
-                <td style={{ opacity: 0.9, fontWeight: 800 }}>Total EE</td>
-                <td style={{ textAlign: "right", fontWeight: 800 }}>{money(totalEE)}</td>
+                <td className="kpi__tableStrong">Total EE</td>
+                <td className="kpi__tableStrong">{money(totalEE)}</td>
+              </tr>
+
+              <tr className="kpi__tableSpacer">
+                <td colSpan={2}></td>
               </tr>
 
               <tr>
-                <td colSpan={2} style={{ height: 8 }}></td>
-              </tr>
-
-              <tr>
-                <td style={{ opacity: 0.9 }}>Total Tax</td>
-                <td style={{ textAlign: "right", fontWeight: 700 }}>{money(totalTax)}</td>
+                <td className="kpi__tableLabel">Total Tax</td>
+                <td>{money(totalTax)}</td>
               </tr>
               <tr>
-                <td style={{ opacity: 0.9, fontWeight: 900 }}>Grand Total</td>
-                <td style={{ textAlign: "right", fontWeight: 900 }}>{money(total)}</td>
+                <td className="kpi__tableStrong">Grand Total</td>
+                <td className="kpi__tableStrong">{money(total)}</td>
               </tr>
             </tbody>
           </table>
@@ -694,20 +791,87 @@ function ContributionDropdownCard({
   );
 }
 
-function KpiCard({ title, value, subtitle, trend, badge, accent }) {
+function ManagementExpensesDropdownCard({
+  title,
+  total,
+  transportation,
+  repairing,
+  postage,
+  additionalTarget,
+  additionalMonitoring,
+  motorcycle,
+  otherDeduction,
+  badge,
+  accent,
+}) {
+  const [open, setOpen] = useState(false);
+
   return (
     <div className={`kpi kpi--${accent}`}>
       <div className="kpi__top">
         <div className="kpi__title">{title}</div>
+        <button
+          type="button"
+          onClick={() => setOpen((p) => !p)}
+          className="kpi__toggle"
+        >
+          {open ? "▲" : "▼"}
+        </button>
+      </div>
+
+      <div className="kpi__valueRow">
+        <div className="kpi__value">{money(total)}</div>
         <div className="kpi__badge">{badge}</div>
       </div>
-      <div className="kpi__valueRow">
-        <span className={`kpi__trend kpi__trend--${trend}`}>
-          {trend === "up" ? "▲" : trend === "down" ? "▼" : "•"}
-        </span>
-        <div className="kpi__value">{value}</div>
+
+      <div className="kpi__subtitle">
+        Transportation, repairing, postage, target, monitoring, motorcycle, others
       </div>
-      <div className="kpi__subtitle">{subtitle}</div>
+
+      {open && (
+        <div style={{ marginTop: 10 }}>
+          <table className="kpi__table">
+            <tbody>
+              <tr>
+                <td className="kpi__tableLabel">Transportation</td>
+                <td>{money(transportation)}</td>
+              </tr>
+              <tr>
+                <td className="kpi__tableLabel">Repairing</td>
+                <td>{money(repairing)}</td>
+              </tr>
+              <tr>
+                <td className="kpi__tableLabel">Postage</td>
+                <td>{money(postage)}</td>
+              </tr>
+              <tr>
+                <td className="kpi__tableLabel">Additional Target</td>
+                <td>{money(additionalTarget)}</td>
+              </tr>
+              <tr>
+                <td className="kpi__tableLabel">Additional Monitoring</td>
+                <td>{money(additionalMonitoring)}</td>
+              </tr>
+              <tr>
+                <td className="kpi__tableLabel">Motorcycle</td>
+                <td>{money(motorcycle)}</td>
+              </tr>
+              <tr>
+                <td className="kpi__tableLabel">Other Deduction</td>
+                <td>{money(otherDeduction)}</td>
+              </tr>
+              <tr className="kpi__tableSpacer">
+                <td colSpan={2}></td>
+              </tr>
+              <tr>
+                <td className="kpi__tableStrong">Grand Total</td>
+                <td className="kpi__tableStrong">{money(total)}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      )}
+
       <div className="kpi__bar" />
     </div>
   );
