@@ -1,6 +1,10 @@
 import axios from "axios";
 
-const baseURL = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
+const baseURL = import.meta.env.VITE_API_URL;
+
+if (!baseURL) {
+  throw new Error("VITE_API_URL is not defined in .env");
+}
 
 const api = axios.create({
   baseURL,
@@ -36,7 +40,7 @@ api.interceptors.response.use(
       localStorage.removeItem("user");
 
       emitAuthChanged();
-      
+
       if (window.location.pathname !== "/login") {
         window.location.href = "/login";
       }
