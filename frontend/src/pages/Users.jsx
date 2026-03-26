@@ -4,6 +4,8 @@ import api from "../api/axiosClient";
 
 const roleOptions = [
   { label: "Admin", value: "admin" },
+  { label: "Hr", value: "hr" },
+  { label: "Accounting", value: "accounting" },
   { label: "Branch Manager", value: "branch manager" },
   { label: "Area Manager", value: "area manager" },
   { label: "Regional Manager", value: "regional manager" },
@@ -11,6 +13,8 @@ const roleOptions = [
   { label: "Vice President", value: "vice president" },
   { label: "Senior Vice President", value: "senior vice president" },
 ];
+
+const toStr = (v) => String(v ?? "").trim();
 
 const Users = () => {
   const [rows, setRows] = useState([]);
@@ -26,8 +30,21 @@ const Users = () => {
     username: "",
     password: "",
     role: "admin",
-    branch_id: null,
+    branch_id: "",
+    area: "",
+    region: "",
+    division: "",
   });
+
+  const [branchSearch, setBranchSearch] = useState("");
+  const [areaSearch, setAreaSearch] = useState("");
+  const [regionSearch, setRegionSearch] = useState("");
+  const [divisionSearch, setDivisionSearch] = useState("");
+
+  const [showBranchOptions, setShowBranchOptions] = useState(false);
+  const [showAreaOptions, setShowAreaOptions] = useState(false);
+  const [showRegionOptions, setShowRegionOptions] = useState(false);
+  const [showDivisionOptions, setShowDivisionOptions] = useState(false);
 
   const [resetId, setResetId] = useState(null);
   const [resetUser, setResetUser] = useState(null);
@@ -102,9 +119,54 @@ const Users = () => {
         String(r.role || "").toLowerCase().includes(q) ||
         String(r.branch_id || "").toLowerCase().includes(q) ||
         String(r.branch_name || "").toLowerCase().includes(q) ||
-        String(r.branch_address || "").toLowerCase().includes(q)
+        String(r.area || "").toLowerCase().includes(q) ||
+        String(r.region || "").toLowerCase().includes(q) ||
+        String(r.division || "").toLowerCase().includes(q)
     );
   }, [rows, search]);
+
+  const uniqueAreas = useMemo(() => {
+    const set = new Set(rows.map((r) => toStr(r.area)).filter(Boolean));
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [rows]);
+
+  const uniqueRegions = useMemo(() => {
+    const set = new Set(rows.map((r) => toStr(r.region)).filter(Boolean));
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [rows]);
+
+  const uniqueDivisions = useMemo(() => {
+    const set = new Set(rows.map((r) => toStr(r.division)).filter(Boolean));
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [rows]);
+
+  const filteredBranches = useMemo(() => {
+    const q = branchSearch.trim().toLowerCase();
+    if (!q) return branches;
+    return branches.filter(
+      (b) =>
+        String(b.name || "").toLowerCase().includes(q) ||
+        String(b.code || "").toLowerCase().includes(q)
+    );
+  }, [branches, branchSearch]);
+
+  const filteredAreas = useMemo(() => {
+    const q = areaSearch.trim().toLowerCase();
+    if (!q) return uniqueAreas;
+    return uniqueAreas.filter((x) => x.toLowerCase().includes(q));
+  }, [uniqueAreas, areaSearch]);
+
+  const filteredRegions = useMemo(() => {
+    const q = regionSearch.trim().toLowerCase();
+    if (!q) return uniqueRegions;
+    return uniqueRegions.filter((x) => x.toLowerCase().includes(q));
+  }, [uniqueRegions, regionSearch]);
+
+  const filteredDivisions = useMemo(() => {
+    const q = divisionSearch.trim().toLowerCase();
+    if (!q) return uniqueDivisions;
+    return uniqueDivisions.filter((x) => x.toLowerCase().includes(q));
+  }, [uniqueDivisions, divisionSearch]);
 
   const openAdd = () => {
     setEditId(null);
@@ -112,8 +174,19 @@ const Users = () => {
       username: "",
       password: "",
       role: "admin",
-      branch_id: null,
+      branch_id: "",
+      area: "",
+      region: "",
+      division: "",
     });
+    setBranchSearch("");
+    setAreaSearch("");
+    setRegionSearch("");
+    setDivisionSearch("");
+    setShowBranchOptions(false);
+    setShowAreaOptions(false);
+    setShowRegionOptions(false);
+    setShowDivisionOptions(false);
     setShowModal(true);
   };
 
@@ -123,14 +196,41 @@ const Users = () => {
       username: u.username || "",
       password: "",
       role: String(u.role || "admin").toLowerCase(),
-      branch_id: u.branch_id ?? null,
+      branch_id: String(u.branch_id || ""),
+      area: u.area || "",
+      region: u.region || "",
+      division: u.division || "",
     });
+    setBranchSearch(u.branch_name || "");
+    setAreaSearch(u.area || "");
+    setRegionSearch(u.region || "");
+    setDivisionSearch(u.division || "");
+    setShowBranchOptions(false);
+    setShowAreaOptions(false);
+    setShowRegionOptions(false);
+    setShowDivisionOptions(false);
     setShowModal(true);
   };
 
   const closeModal = () => {
     setShowModal(false);
     setEditId(null);
+    setShowBranchOptions(false);
+    setShowAreaOptions(false);
+    setShowRegionOptions(false);
+    setShowDivisionOptions(false);
+  };
+
+  const openReset = (u) => {
+    setResetId(u.id);
+    setResetUser(u);
+    setResetPw("");
+  };
+
+  const closeReset = () => {
+    setResetId(null);
+    setResetUser(null);
+    setResetPw("");
   };
 
   const onChange = (e) => {
@@ -143,10 +243,10 @@ const Users = () => {
     if (saving) return;
 
     const normalizedRole = String(form.role || "").trim().toLowerCase();
-    const requiresBranch = normalizedRole === "branch manager";
 
-    if (requiresBranch && !form.branch_id) {
-      return alert("Branch is required for Branch Manager.");
+    if (!form.branch_id) {
+      alert("Please select a valid branch from the list.");
+      return;
     }
 
     setSaving(true);
@@ -154,7 +254,10 @@ const Users = () => {
       const payload = {
         username: String(form.username || "").trim(),
         role: normalizedRole,
-        branch_id: form.branch_id === "" ? null : form.branch_id ?? null,
+        branch_id: String(form.branch_id || "").trim(),
+        area: String(form.area || "").trim(),
+        region: String(form.region || "").trim(),
+        division: String(form.division || "").trim(),
       };
 
       if (!editId) {
@@ -163,8 +266,13 @@ const Users = () => {
         payload.password = String(form.password || "");
       }
 
-      if (editId) await api.put(`/users/${editId}`, payload);
-      else await api.post("/users", payload);
+      console.log("USER PAYLOAD:", payload);
+
+      if (editId) {
+        await api.put(`/users/${editId}`, payload);
+      } else {
+        await api.post("/users", payload);
+      }
 
       await fetchUsers();
       closeModal();
@@ -191,18 +299,6 @@ const Users = () => {
     }
   };
 
-  const openReset = (u) => {
-    setResetId(u.id);
-    setResetUser(u);
-    setResetPw("");
-  };
-
-  const closeReset = () => {
-    setResetId(null);
-    setResetUser(null);
-    setResetPw("");
-  };
-
   const submitReset = async (e) => {
     e.preventDefault();
     if (resetSaving) return;
@@ -226,12 +322,11 @@ const Users = () => {
   };
 
   const roleLabel = (value) => {
-    const found = roleOptions.find((r) => r.value === String(value || "").toLowerCase());
+    const found = roleOptions.find(
+      (r) => r.value === String(value || "").toLowerCase()
+    );
     return found ? found.label : String(value || "");
   };
-
-  const selectedBranch = branches.find((b) => Number(b.id) === Number(form.branch_id)) || null;
-  const needsBranch = form.role === "branch manager";
 
   return (
     <div className="users-page">
@@ -240,6 +335,7 @@ const Users = () => {
           <h2 className="users-title">Users</h2>
           <p className="users-subtitle">Add, edit, and manage user accounts</p>
         </div>
+
         <div style={{ display: "flex", gap: 10 }}>
           <button className="btn-secondary" onClick={fetchUsers} type="button">
             Refresh
@@ -254,7 +350,7 @@ const Users = () => {
         <div className="users-controls">
           <input
             className="input"
-            placeholder="Search by id, username, role, branch, or address..."
+            placeholder="Search by id, username, role, branch, area, region, division..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
@@ -274,7 +370,9 @@ const Users = () => {
                   <th>Username</th>
                   <th style={{ width: 220 }}>Role</th>
                   <th style={{ width: 180 }}>Branch</th>
-                  <th style={{ width: 260 }}>Branch Address</th>
+                  <th style={{ width: 160 }}>Area</th>
+                  <th style={{ width: 160 }}>Region</th>
+                  <th style={{ width: 180 }}>Division</th>
                   <th style={{ width: 140 }}>Created</th>
                   <th style={{ width: 320 }}>Actions</th>
                 </tr>
@@ -283,7 +381,7 @@ const Users = () => {
               <tbody>
                 {filtered.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="empty">
+                    <td colSpan={9} className="empty">
                       No users found.
                     </td>
                   </tr>
@@ -294,20 +392,34 @@ const Users = () => {
                       <td className="strong">{u.username}</td>
                       <td>{roleLabel(u.role)}</td>
                       <td>{u.branch_name ?? "-"}</td>
-                      <td>{u.branch_address ?? "-"}</td>
+                      <td>{u.area ?? "-"}</td>
+                      <td>{u.region ?? "-"}</td>
+                      <td>{u.division ?? "-"}</td>
                       <td>{u.created_at ? String(u.created_at).split("T")[0] : "-"}</td>
 
                       <td>
                         <div className="row-actions">
-                          <button className="btn-secondary" type="button" onClick={() => openEdit(u)}>
+                          <button
+                            className="btn-secondary"
+                            type="button"
+                            onClick={() => openEdit(u)}
+                          >
                             Edit
                           </button>
 
-                          <button className="btn-secondary" type="button" onClick={() => openReset(u)}>
+                          <button
+                            className="btn-secondary"
+                            type="button"
+                            onClick={() => openReset(u)}
+                          >
                             Reset Password
                           </button>
 
-                          <button className="btn-danger" type="button" onClick={() => onDelete(u.id)}>
+                          <button
+                            className="btn-danger"
+                            type="button"
+                            onClick={() => onDelete(u.id)}
+                          >
                             Delete
                           </button>
                         </div>
@@ -334,6 +446,7 @@ const Users = () => {
                   {editId ? "Leave password blank to keep current password." : "Create a new account."}
                 </p>
               </div>
+
               <button className="modal-x" type="button" onClick={closeModal}>
                 ✕
               </button>
@@ -343,12 +456,24 @@ const Users = () => {
               <div className="grid">
                 <div className="field">
                   <label>Username</label>
-                  <input className="input" name="username" value={form.username} onChange={onChange} required />
+                  <input
+                    className="input"
+                    name="username"
+                    value={form.username}
+                    onChange={onChange}
+                    required
+                  />
                 </div>
 
                 <div className="field">
                   <label>Role</label>
-                  <select className="input" name="role" value={form.role} onChange={onChange} required>
+                  <select
+                    className="input"
+                    name="role"
+                    value={form.role}
+                    onChange={onChange}
+                    required
+                  >
                     {roleOptions.map((r) => (
                       <option key={r.value} value={r.value}>
                         {r.label}
@@ -357,41 +482,143 @@ const Users = () => {
                   </select>
                 </div>
 
-                <div className="field full">
-                  <label>Branch {needsBranch ? "*" : ""}</label>
-                  <select
+                <div className="field full" style={{ position: "relative" }}>
+                  <label>Branch</label>
+                  <input
                     className="input"
-                    value={form.branch_id ?? ""}
-                    onChange={(e) =>
-                      setForm((p) => ({
-                        ...p,
-                        branch_id: e.target.value === "" ? null : Number(e.target.value),
-                      }))
-                    }
-                    required={needsBranch}
-                  >
-                    <option value="">Select branch...</option>
-                    {branches.map((b) => (
-                      <option key={b.id} value={b.id}>
-                        {b.name}
-                      </option>
-                    ))}
-                  </select>
+                    value={branchSearch}
+                    onChange={(e) => {
+                      setBranchSearch(e.target.value);
+                      setShowBranchOptions(true);
+                    }}
+                    onFocus={() => setShowBranchOptions(true)}
+                    placeholder="Search branch..."
+                  />
+
+                  {showBranchOptions && filteredBranches.length > 0 && (
+                    <div className="users-search-dropdown">
+                      {filteredBranches.map((b) => (
+                        <button
+                          key={b.id}
+                          type="button"
+                          className="users-search-option"
+                          onClick={() => {
+                            setForm((p) => ({
+                              ...p,
+                              branch_id: String(b.code || ""),
+                            }));
+                            setBranchSearch(b.name || "");
+                            setShowBranchOptions(false);
+                          }}
+                        >
+                          {b.name}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
 
-                {selectedBranch ? (
-                  <>
-                    <div className="field">
-                      <label>Branch Name</label>
-                      <input className="input" value={selectedBranch.name || ""} readOnly />
-                    </div>
+                <div className="field" style={{ position: "relative" }}>
+                  <label>Area</label>
+                  <input
+                    className="input"
+                    value={areaSearch}
+                    onChange={(e) => {
+                      setAreaSearch(e.target.value);
+                      setForm((p) => ({ ...p, area: e.target.value }));
+                      setShowAreaOptions(true);
+                    }}
+                    onFocus={() => setShowAreaOptions(true)}
+                    placeholder="Search area..."
+                  />
 
-                    <div className="field">
-                      <label>Branch Address</label>
-                      <input className="input" value={selectedBranch.address || ""} readOnly />
+                  {showAreaOptions && filteredAreas.length > 0 && (
+                    <div className="users-search-dropdown">
+                      {filteredAreas.map((item) => (
+                        <button
+                          key={item}
+                          type="button"
+                          className="users-search-option"
+                          onClick={() => {
+                            setForm((p) => ({ ...p, area: item }));
+                            setAreaSearch(item);
+                            setShowAreaOptions(false);
+                          }}
+                        >
+                          {item}
+                        </button>
+                      ))}
                     </div>
-                  </>
-                ) : null}
+                  )}
+                </div>
+
+                <div className="field" style={{ position: "relative" }}>
+                  <label>Region</label>
+                  <input
+                    className="input"
+                    value={regionSearch}
+                    onChange={(e) => {
+                      setRegionSearch(e.target.value);
+                      setForm((p) => ({ ...p, region: e.target.value }));
+                      setShowRegionOptions(true);
+                    }}
+                    onFocus={() => setShowRegionOptions(true)}
+                    placeholder="Search region..."
+                  />
+
+                  {showRegionOptions && filteredRegions.length > 0 && (
+                    <div className="users-search-dropdown">
+                      {filteredRegions.map((item) => (
+                        <button
+                          key={item}
+                          type="button"
+                          className="users-search-option"
+                          onClick={() => {
+                            setForm((p) => ({ ...p, region: item }));
+                            setRegionSearch(item);
+                            setShowRegionOptions(false);
+                          }}
+                        >
+                          {item}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div className="field" style={{ position: "relative" }}>
+                  <label>Division</label>
+                  <input
+                    className="input"
+                    value={divisionSearch}
+                    onChange={(e) => {
+                      setDivisionSearch(e.target.value);
+                      setForm((p) => ({ ...p, division: e.target.value }));
+                      setShowDivisionOptions(true);
+                    }}
+                    onFocus={() => setShowDivisionOptions(true)}
+                    placeholder="Search division..."
+                  />
+
+                  {showDivisionOptions && filteredDivisions.length > 0 && (
+                    <div className="users-search-dropdown">
+                      {filteredDivisions.map((item) => (
+                        <button
+                          key={item}
+                          type="button"
+                          className="users-search-option"
+                          onClick={() => {
+                            setForm((p) => ({ ...p, division: item }));
+                            setDivisionSearch(item);
+                            setShowDivisionOptions(false);
+                          }}
+                        >
+                          {item}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
 
                 <div className="field full">
                   <label>Password</label>
@@ -433,6 +660,7 @@ const Users = () => {
                   Set a new password for <b>{resetUser?.username}</b>
                 </p>
               </div>
+
               <button className="modal-x" type="button" onClick={closeReset}>
                 ✕
               </button>
@@ -454,7 +682,12 @@ const Users = () => {
               </div>
 
               <div className="modal-actions">
-                <button className="btn-secondary" type="button" onClick={closeReset} disabled={resetSaving}>
+                <button
+                  className="btn-secondary"
+                  type="button"
+                  onClick={closeReset}
+                  disabled={resetSaving}
+                >
                   Cancel
                 </button>
                 <button className="btn-primary" type="submit" disabled={resetSaving}>

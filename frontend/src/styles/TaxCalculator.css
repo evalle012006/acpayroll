@@ -1,0 +1,114 @@
+.tax-grid {
+  display: grid;
+  gap: 18px;
+}
+
+.tax-card {
+  cursor: default;
+}
+
+.tax-form-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.tax-span-3 {
+  grid-column: span 3;
+}
+
+.tax-label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--muted);
+}
+
+.tax-input {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--text);
+  outline: none;
+}
+
+.tax-input:focus {
+  border-color: var(--blue);
+  box-shadow: 0 0 0 2px rgba(45, 127, 249, 0.14);
+}
+
+.tax-result-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.tax-result-item {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px;
+  background: var(--card);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.tax-result-label {
+  font-size: 12px;
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.tax-result-highlight {
+  border-color: var(--blue);
+}
+
+.tax-result-tax {
+  border-color: var(--green);
+}
+
+.tax-reference ul {
+  margin: 10px 0 0 18px;
+}
+
+.tax-btn {
+  border: none;
+  padding: 10px 14px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 600;
+  transition: 0.2s ease;
+}
+
+.tax-btn-secondary {
+  background: var(--card);
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+
+.tax-btn-secondary:hover {
+  background: rgba(0, 0, 0, 0.04);
+}
+
+.dash[data-theme="dark"] .tax-btn-secondary:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+@media (max-width: 900px) {
+  .tax-form-grid,
+  .tax-result-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .tax-span-3 {
+    grid-column: span 1;
+  }
+}
+
+.tax-input:disabled {
+  opacity: 0.8;
+  cursor: not-allowed;
+}

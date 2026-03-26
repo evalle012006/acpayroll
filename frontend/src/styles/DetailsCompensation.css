@@ -1,0 +1,69 @@
+.dc-block {
+  margin-bottom: 18px;
+}
+
+.dc-section-title {
+  margin: 18px 0 10px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: #f5ea00;
+  color: #111827;
+  font-size: 16px;
+  font-weight: 900;
+  text-align: center;
+}
+
+.dc-table-wrap {
+  width: 100%;
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+}
+
+.dc-table {
+  width: 100%;
+  min-width: 920px;
+  border-collapse: collapse;
+  background: var(--panel);
+}
+
+.dc-table.dc-table-small {
+  min-width: 640px;
+}
+
+.dc-table th {
+  background: var(--table-header);
+  color: #fff;
+  padding: 12px 10px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+  text-align: center;
+}
+
+.dc-table td {
+  padding: 11px 10px;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+  text-align: center;
+}
+
+.dc-table tbody tr:nth-child(even) {
+  background: var(--panel-2);
+}
+
+.dc-table tbody tr:hover {
+  background: var(--row-hover);
+}
+
+.dc-strong {
+  font-weight: 900;
+}
+
+.dc-total {
+  color: #ef4444;
+  font-weight: 900;
+}

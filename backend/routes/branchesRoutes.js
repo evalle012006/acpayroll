@@ -18,12 +18,14 @@ const toStr = (v) => String(v ?? "").trim();
 
 const roleLower = (req) => String(req.user?.role || "").trim().toLowerCase();
 const isAdmin = (req) => roleLower(req) === "admin";
+const isHr = (req) => roleLower(req) === "hr";
+const isAccounting = (req) => roleLower(req) === "accounting";
 const isBranchManager = (req) => roleLower(req) === "branch manager";
 const getUserBranchCode = (req) => toStr(req.user?.branch_id);
 
 router.get("/branches", requireAuth, async (req, res) => {
   try {
-    if (isAdmin(req)) {
+    if (isAdmin(req) || isHr(req) || isAccounting(req)) {
       const r = await pool.query(`
         SELECT id, code, name, area, address, latitude, longitude
         FROM public.branches
@@ -61,7 +63,7 @@ router.get("/branches/:id", requireAuth, async (req, res) => {
     const id = toInt(req.params.id);
     if (!id) return res.status(400).json({ message: "Invalid branch id" });
 
-    if (isAdmin(req)) {
+    if (isAdmin(req) || isHr(req) || isAccounting(req)) {
       const r = await pool.query(
         `
         SELECT id, code, name, area, address, latitude, longitude
@@ -152,7 +154,7 @@ router.post(
 router.put(
   "/branches/:id",
   requireAuth,
-  requireRole(["admin"]),
+  requireRole(["admin","hr","accounting"]),
   async (req, res) => {
     try {
       const id = toInt(req.params.id);
@@ -212,7 +214,7 @@ router.put(
 router.delete(
   "/branches/:id",
   requireAuth,
-  requireRole(["admin"]),
+  requireRole(["admin","hr","accounting"]),
   async (req, res) => {
     try {
       const id = toInt(req.params.id);

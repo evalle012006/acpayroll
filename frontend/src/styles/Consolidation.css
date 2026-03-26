@@ -1,0 +1,125 @@
+.conso-input {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  font-size: 14px;
+  outline: none;
+  transition: 0.2s ease;
+  background: var(--panel-2, var(--card));
+  color: var(--text);
+}
+
+.conso-input:focus {
+  border-color: var(--blue);
+  box-shadow: 0 0 0 2px rgba(45, 127, 249, 0.15);
+}
+
+.conso-btn {
+  border: none;
+  padding: 10px 14px;
+  border-radius: 10px;
+  cursor: pointer;
+  font-weight: 700;
+  transition: 0.2s ease;
+}
+
+.conso-btn-secondary {
+  background: transparent;
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+
+.conso-btn-secondary:hover {
+  background: var(--border);
+}
+
+.conso-card {
+  margin-bottom: 16px;
+}
+
+.conso-payroll-card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: var(--shadow-soft);
+}
+
+.conso-payroll-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.conso-payroll-title {
+  font-size: 16px;
+  font-weight: 900;
+  color: var(--text);
+}
+
+.conso-payroll-sub {
+  margin-top: 4px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--muted);
+}
+
+.conso-payroll-wrap {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.conso-payroll-table {
+  width: 100%;
+  min-width: 1080px;
+  border-collapse: collapse;
+}
+
+.conso-payroll-table thead th {
+  background: var(--table-header);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+  padding: 10px 8px;
+  border-bottom: 1px solid var(--border);
+  text-align: center;
+  white-space: nowrap;
+}
+
+.conso-payroll-table tbody td {
+  padding: 11px 8px;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+  text-align: center;
+  white-space: nowrap;
+}
+
+.conso-payroll-table tbody tr:nth-child(even) td {
+  background: var(--panel-2);
+}
+
+.conso-payroll-table tbody tr:hover td {
+  background: var(--row-hover);
+}
+
+.conso-payroll-table .td-strong {
+  font-weight: 900;
+}
+
+.conso-total-row td {
+  background: var(--panel-2);
+  font-weight: 900;
+}
+
+.conso-payroll-tip {
+  padding: 10px 14px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--muted);
+}

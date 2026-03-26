@@ -19,6 +19,8 @@ const toDateOrNull = (v) => {
 
 const roleLower = (req) => String(req.user?.role || "").trim().toLowerCase();
 const isAdmin = (req) => roleLower(req) === "admin";
+const isHr = (req) => roleLower(req) === "hr";
+const isAccounting = (req) => roleLower(req) === "accounting";
 const isBranchManager = (req) => roleLower(req) === "branch manager";
 const getUserBranchCode = (req) => toStr(req.user?.branch_id);
 
@@ -59,7 +61,7 @@ const makeTxnCode = (leaveType) => {
 
 router.get("/leave-requests", requireAuth, async (req, res) => {
   try {
-    if (isAdmin(req)) {
+    if (isAdmin(req) || isHr(req) || isAccounting(req)) {
       const r = await pool.query(
         `SELECT id, staff_name, leave_type, start_date, end_date, status, transaction_code, entry_date, employee_id
          FROM public.leave_requests
@@ -99,7 +101,7 @@ router.get("/leave-requests", requireAuth, async (req, res) => {
 router.get(
   "/leave-requests/staff/:staffId",
   requireAuth,
-  requireRole(["admin", "branch manager"]),
+  requireRole(["admin", "branch manager", "hr", "accounting"]),
   async (req, res) => {
     try {
       const staffId = toInt(req.params.staffId);
@@ -138,7 +140,7 @@ router.get(
 router.post(
   "/leave-requests",
   requireAuth,
-  requireRole(["admin", "branch manager"]),
+  requireRole(["admin", "branch manager", "hr", "accounting"]),
   async (req, res) => {
     const client = await pool.connect();
     try {
@@ -206,7 +208,7 @@ router.post(
   }
 );
 
-router.put("/leave-requests/:id", requireAuth, requireRole(["admin"]), async (req, res) => {
+router.put("/leave-requests/:id", requireAuth, requireRole(["admin", "hr", "accounting"]), async (req, res) => {
   try {
     const id = String(req.params.id || "").trim();
     if (!id) return res.status(400).json({ message: "Invalid id" });

@@ -68,7 +68,8 @@ const Bonus = () => {
         const branches = Array.isArray(branchesRes.data) ? branchesRes.data : [];
 
         const found = branches.find((b) => {
-          const idMatch = Number.isFinite(Number(branchParam)) && Number(b.id) === Number(branchParam);
+          const idMatch =
+            Number.isFinite(Number(branchParam)) && Number(b.id) === Number(branchParam);
           const codeMatch = norm(b.code) === norm(branchParam);
           return idMatch || codeMatch;
         });
@@ -296,17 +297,25 @@ const Bonus = () => {
 
       await api.post(`/bonus/run/${currentRunId}/lines`, payload);
 
-      setSavedResults((prev) => ({
-        ...prev,
-        [String(selectedRow.employee_id)]: {
-          ...prev[String(selectedRow.employee_id)],
-          bonus_run_id: currentRunId,
-          percentage: percentageValue,
-          result: toNum(result),
-          is_released: prev[String(selectedRow.employee_id)]?.is_released || false,
-          release_date: prev[String(selectedRow.employee_id)]?.release_date || null,
-        },
-      }));
+      const lineRefresh = await api.get(`/bonus/branch/${branch.id}`);
+      const lines = Array.isArray(lineRefresh.data) ? lineRefresh.data : [];
+
+      const mapped = {};
+      lines.forEach((line) => {
+        const key = String(line.employee_id ?? "");
+        if (!key) return;
+
+        mapped[key] = {
+          line_id: line.id,
+          bonus_run_id: line.bonus_run_id,
+          percentage: toNum(line.percentage),
+          result: toNum(line.result),
+          is_released: !!line.is_released,
+          release_date: line.release_date || null,
+        };
+      });
+
+      setSavedResults(mapped);
 
       closeCalculateModal();
       alert("15th month result saved.");
@@ -401,7 +410,7 @@ const Bonus = () => {
           </thead>
 
           <tbody>
-            {computed.map((s) => (
+            {computed.map((s, index) => (
               <tr key={s.id}>
                 <td>{s.id}</td>
                 <td>{s.employee_no ?? "-"}</td>
@@ -417,10 +426,9 @@ const Bonus = () => {
                     <div className="bonus-result-note">{s.saved_percentage}%</div>
                   ) : null}
                 </td>
-                <td>
-                  {s.saved_is_released && s.saved_release_date ? s.saved_release_date : "-"}
-                </td>
-                <td>
+                <td>{s.saved_is_released && s.saved_release_date ? s.saved_release_date : "-"}</td>
+
+                <td className="bonus-action-cell">
                   <div className="bonus-action-wrap" ref={openMenuId === s.id ? menuRef : null}>
                     <button
                       type="button"
@@ -431,7 +439,7 @@ const Bonus = () => {
                     </button>
 
                     {openMenuId === s.id && (
-                      <div className="bonus-menu">
+                      <div className={`bonus-menu ${index >= computed.length - 2 ? "open-up" : ""}`}>
                         <button
                           type="button"
                           className="bonus-menu-item"
@@ -444,7 +452,6 @@ const Bonus = () => {
                           type="button"
                           className="bonus-menu-item"
                           onClick={() => openReleaseModal(s)}
-                          disabled={!s.saved_result || s.saved_is_released}
                         >
                           {s.saved_is_released ? "Released" : "Release"}
                         </button>
@@ -471,7 +478,9 @@ const Bonus = () => {
       {showCalcModal && selectedRow && (
         <div
           className="modal-overlay"
-          onMouseDown={(e) => e.target.classList.contains("modal-overlay") && closeCalculateModal()}
+          onMouseDown={(e) =>
+            e.target.classList.contains("modal-overlay") && closeCalculateModal()
+          }
         >
           <div className="modal bonus-calc-modal" onMouseDown={(e) => e.stopPropagation()}>
             <div className="modal-head">
@@ -515,10 +524,20 @@ const Bonus = () => {
               </div>
 
               <div className="modal-actions">
-                <button className="btn-secondary" type="button" onClick={closeCalculateModal} disabled={saving}>
+                <button
+                  className="btn-secondary"
+                  type="button"
+                  onClick={closeCalculateModal}
+                  disabled={saving}
+                >
                   Cancel
                 </button>
-                <button className="btn-primary" type="button" onClick={handleSaveCalculation} disabled={saving}>
+                <button
+                  className="btn-primary"
+                  type="button"
+                  onClick={handleSaveCalculation}
+                  disabled={saving}
+                >
                   {saving ? "Saving..." : "Save"}
                 </button>
               </div>
@@ -530,7 +549,9 @@ const Bonus = () => {
       {showReleaseModal && selectedRow && (
         <div
           className="modal-overlay"
-          onMouseDown={(e) => e.target.classList.contains("modal-overlay") && closeReleaseModal()}
+          onMouseDown={(e) =>
+            e.target.classList.contains("modal-overlay") && closeReleaseModal()
+          }
         >
           <div className="modal bonus-calc-modal" onMouseDown={(e) => e.stopPropagation()}>
             <div className="modal-head">
@@ -570,10 +591,20 @@ const Bonus = () => {
               </div>
 
               <div className="modal-actions">
-                <button className="btn-secondary" type="button" onClick={closeReleaseModal} disabled={saving}>
+                <button
+                  className="btn-secondary"
+                  type="button"
+                  onClick={closeReleaseModal}
+                  disabled={saving}
+                >
                   Cancel
                 </button>
-                <button className="btn-primary" type="button" onClick={handleReleaseBonus} disabled={saving}>
+                <button
+                  className="btn-primary"
+                  type="button"
+                  onClick={handleReleaseBonus}
+                  disabled={saving}
+                >
                   {saving ? "Releasing..." : "Release"}
                 </button>
               </div>

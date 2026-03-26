@@ -18,7 +18,13 @@ const Branches = () => {
   const user = useMemo(() => readUser(), []);
   const token = useMemo(() => localStorage.getItem("token"), []);
 
-  const isAdmin = norm(user?.role) === "admin";
+  const role = norm(user?.role);
+  const isAdmin = role === "admin";
+  const isHR = role === "hr";
+  const isAccounting = role === "accounting";
+  const isBranchManager = role === "branch manager";
+
+  const canManageBranches = isAdmin || isHR || isAccounting;
 
   const [branches, setBranches] = useState([]);
   const [loadingTable, setLoadingTable] = useState(false);
@@ -82,13 +88,13 @@ const Branches = () => {
   };
 
   const openAdd = () => {
-    if (!isAdmin) return;
+    if (!canManageBranches) return;
     resetForm();
     setShowModal(true);
   };
 
   const openEdit = (branch) => {
-    if (!isAdmin) return;
+    if (!canManageBranches) return;
     setEditId(branch.id);
     setCode(branch.code || "");
     setName(branch.name || "");
@@ -212,7 +218,7 @@ const Branches = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!isAdmin) return;
+    if (!canManageBranches) return;
 
     setSaving(true);
     try {
@@ -244,7 +250,7 @@ const Branches = () => {
   };
 
   const deleteBranch = async (id) => {
-    if (!isAdmin) return;
+    if (!canManageBranches) return;
     if (!window.confirm("Delete this branch?")) return;
 
     try {
@@ -263,10 +269,14 @@ const Branches = () => {
       <div className="saas-header">
         <div className="saas-title">
           <h2>Branches</h2>
-          <p>Manage branch codes, names, and areas.</p>
+          <p>
+            {isBranchManager
+              ? "Open payroll, transpo, or map view for your branch."
+              : "Manage branch codes, names, and areas."}
+          </p>
         </div>
 
-        {isAdmin && (
+        {canManageBranches && (
           <div className="saas-actions">
             <button className="btn btn-primary" onClick={openAdd} type="button">
               + Add Branch
@@ -354,6 +364,7 @@ const Branches = () => {
                         <td className="mono">{branch.code}</td>
                         <td className="strong">{branch.name}</td>
                         <td>{branch.area}</td>
+
                         <td>
                           <div className="actions">
                             <div className="action-group">
@@ -374,29 +385,39 @@ const Branches = () => {
                               </button>
 
                               <button
-                                className="action-btn btn-bonus"
-                                onClick={() => navigate(`/bonus/${branch.code}`)}
-                                type="button"
-                              >
-                                Bonus
-                              </button>
-
-                              <button
                                 className="action-btn btn-view"
                                 onClick={() => openMapModal(branch)}
                                 type="button"
                               >
                                 View Location
                               </button>
+
+                              {canManageBranches && (
+                                <button
+                                  className="action-btn btn-bonus"
+                                  onClick={() => navigate(`/bonus/${branch.code}`)}
+                                  type="button"
+                                >
+                                  Bonus
+                                </button>
+                              )}
                             </div>
 
-                            {isAdmin && (
+                            {canManageBranches && (
                               <div className="action-group">
-                                <button className="action-btn btn-edit" onClick={() => openEdit(branch)} type="button">
+                                <button
+                                  className="action-btn btn-edit"
+                                  onClick={() => openEdit(branch)}
+                                  type="button"
+                                >
                                   Edit
                                 </button>
 
-                                <button className="action-btn btn-delete" onClick={() => deleteBranch(branch.id)} type="button">
+                                <button
+                                  className="action-btn btn-delete"
+                                  onClick={() => deleteBranch(branch.id)}
+                                  type="button"
+                                >
                                   Delete
                                 </button>
                               </div>
@@ -430,7 +451,12 @@ const Branches = () => {
                   Next ▶
                 </button>
 
-                <button className="btn btn-outline btn-sm" onClick={() => setPage(totalPages)} disabled={page === totalPages} type="button">
+                <button
+                  className="btn btn-outline btn-sm"
+                  onClick={() => setPage(totalPages)}
+                  disabled={page === totalPages}
+                  type="button"
+                >
                   Last ⏭
                 </button>
               </div>
@@ -439,7 +465,7 @@ const Branches = () => {
         )}
       </div>
 
-      {isAdmin && showModal && (
+      {canManageBranches && showModal && (
         <div className="modal-overlay" onMouseDown={closeFormModal}>
           <div className="modal" onMouseDown={(e) => e.stopPropagation()}>
             <div className="modal-head">

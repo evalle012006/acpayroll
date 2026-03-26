@@ -35,12 +35,13 @@
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: 14px;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .bonus-table {
   width: 100%;
   border-collapse: collapse;
+  overflow: visible;
 }
 
 .bonus-table th {
@@ -55,6 +56,7 @@
   padding: 10px;
   border-bottom: 1px solid var(--border);
   font-size: 13px;
+  overflow: visible;
 }
 
 .bonus-table tbody tr:hover td {
@@ -70,9 +72,15 @@
   font-weight: 900;
 }
 
+.bonus-action-cell {
+  position: relative;
+  overflow: visible !important;
+}
+
 .bonus-action-wrap {
   position: relative;
   display: inline-block;
+  overflow: visible !important;
 }
 
 .bonus-kebab-btn {
@@ -102,7 +110,12 @@
   border-radius: 12px;
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.12);
   padding: 6px;
-  z-index: 20;
+  z-index: 9999;
+}
+
+.bonus-menu.open-up {
+  top: auto;
+  bottom: calc(100% + 6px);
 }
 
 .bonus-menu-item {
@@ -122,56 +135,9 @@
   background: var(--row-hover, #f3f4f6);
 }
 
-.bonus-action-wrap {
-  position: relative;
-  display: inline-block;
-}
-
-.bonus-kebab-btn {
-  width: 34px;
-  height: 34px;
-  border-radius: 10px;
-  border: 1px solid var(--border, #d1d5db);
-  background: var(--panel, #fff);
-  color: var(--text, #111827);
-  font-size: 18px;
-  font-weight: 700;
-  line-height: 1;
-  cursor: pointer;
-}
-
-.bonus-kebab-btn:hover {
-  background: var(--row-hover, #f3f4f6);
-}
-
-.bonus-menu {
-  position: absolute;
-  top: calc(100% + 6px);
-  right: 0;
-  min-width: 140px;
-  background: var(--panel, #fff);
-  border: 1px solid var(--border, #d1d5db);
-  border-radius: 12px;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.12);
-  padding: 6px;
-  z-index: 20;
-}
-
-.bonus-menu-item {
-  width: 100%;
-  border: 0;
-  background: transparent;
-  color: var(--text, #111827);
-  text-align: left;
-  padding: 10px 12px;
-  border-radius: 8px;
-  font-size: 13px;
-  font-weight: 700;
-  cursor: pointer;
-}
-
-.bonus-menu-item:hover {
-  background: var(--row-hover, #f3f4f6);
+.bonus-menu-item:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .bonus-calc-modal {
@@ -193,12 +159,12 @@
   border: 1px solid var(--border, #d1d5db);
   font-size: 22px;
   font-weight: 800;
-  color: #34C759;
+  color: #34c759;
 }
 
 .bonus-result-note {
   font-size: 11px;
   opacity: 0.75;
   margin-top: 4px;
-  color: #34C759;
+  color: #34c759;
 }

@@ -1,175 +1,141 @@
-import React from "react";
+import React, { useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import "../styles/Transactions.css";
 
+/* ---------------- Helpers ---------------- */
+const readUser = () => {
+  try {
+    return JSON.parse(localStorage.getItem("user") || "null");
+  } catch {
+    return null;
+  }
+};
+
+const norm = (v) => String(v ?? "").trim().toLowerCase();
+
 export default function Transactions() {
   const navigate = useNavigate();
+
+  const user = useMemo(() => readUser(), []);
+  const role = norm(user?.role);
+
+  const isAdmin = role === "admin";
+  const isBranchManager = role === "branch manager";
+
   const go = (path) => navigate(path);
+
+  /* ---------------- ROLE-BASED FILTER ---------------- */
+
+  const cards = [
+    {
+      title: "Transfer Staff Order",
+      desc: "Move staff to another branch/area.",
+      path: "/transactions/transfer",
+      roles: ["admin", "hr", "accounting"],
+    },
+    {
+      title: "Leave Requests",
+      desc: "Create and manage leave requests.",
+      path: "/transactions/leave",
+      roles: ["admin", "hr", "accounting", "branch manager"],
+    },
+    {
+      title: "Promotion Order",
+      desc: "Change position and/or salary upward.",
+      path: "/transactions/promotion",
+      roles: ["admin", "hr", "accounting"],
+    },
+    {
+      title: "Demotion Order",
+      desc: "Adjust role/position downward.",
+      path: "/transactions/demotion",
+      roles: ["admin", "hr", "accounting"],
+    },
+    {
+      title: "Deployment Order",
+      desc: "Staff newly hired / service recommence.",
+      path: "/transactions/deployment",
+      roles: ["admin", "hr", "accounting", "branch manager"],
+    },
+    {
+      title: "Suspension Order",
+      desc: "Temporarily suspend staff work.",
+      path: "/transactions/suspension",
+      roles: ["admin", "hr", "accounting"],
+    },
+    {
+      title: "Statement of Accounts",
+      desc: "Exit staff last pay / liabilities.",
+      path: "/transactions/soa",
+      roles: ["admin", "hr", "accounting"],
+    },
+    {
+      title: "Exit Staff",
+      desc: "Process resignation or termination.",
+      path: "/transactions/exit",
+      roles: ["admin", "hr", "accounting"],
+    },
+    {
+      title: "SBF Order",
+      desc: "Staff Benevolent Fund request.",
+      path: "/transactions/sbf",
+      roles: ["admin", "hr", "accounting"],
+    },
+  ];
+
+  const filteredCards = cards.filter((c) => c.roles.includes(role));
 
   return (
     <div className="transactions-page">
       <div className="transactions-page-header">
         <div>
-          <h2 className="transactions-title">Admin Orders</h2>
+          <h2 className="transactions-title">
+            {isBranchManager ? "Branch Transactions" : "Admin Transactions"}
+          </h2>
           <p className="transactions-subtitle">
-            Choose an order type to create and manage transactions.
+            {isBranchManager
+              ? "View and manage branch-level transactions."
+              : "Create and manage all HRIS transactions."}
           </p>
         </div>
       </div>
 
       <div className="transactions-grid">
-        <button type="button" className="transactions-card" onClick={() => go("/transactions/transfer")}>
-          <div className="transactions-card-head">
-            <div>
-              <div className="transactions-card-title">Transfer Staff Order</div>
-              <div className="transactions-card-meta">Move staff to another branch/area.</div>
-            </div>
-            <span className="transactions-pill">Open</span>
-          </div>
+        {filteredCards.map((card, i) => (
+          <button
+            key={i}
+            type="button"
+            className="transactions-card"
+            onClick={() => go(card.path)}
+          >
+            <div className="transactions-card-head">
+              <div>
+                <div className="transactions-card-title">
+                  {card.title}
+                </div>
+                <div className="transactions-card-meta">
+                  {card.desc}
+                </div>
+              </div>
 
-          <div className="transactions-card-body">
-            <p className="transactions-mini">Create transfer orders with effective date and remarks.</p>
-            <div className="transactions-actions">
-              <span className="transactions-link">Proceed →</span>
+              <span className="transactions-pill">
+                {isAdmin ? "Manage" : "Open"}
+              </span>
             </div>
-          </div>
-        </button>
 
-        <button type="button" className="transactions-card" onClick={() => go("/transactions/leave")}>
-          <div className="transactions-card-head">
-            <div>
-              <div className="transactions-card-title">Leave Requests</div>
-              <div className="transactions-card-meta">Create and manage leave requests.</div>
-            </div>
-            <span className="transactions-pill">Open</span>
-          </div>
+            <div className="transactions-card-body">
+              <p className="transactions-mini">
+                {isBranchManager
+                  ? "Limited access (no approvals)."
+                  : "Full access including approvals."}
+              </p>
 
-          <div className="transactions-card-body">
-            <p className="transactions-mini">Submit leave requests (pending/approved/rejected).</p>
-            <div className="transactions-actions">
-              <span className="transactions-link">Proceed →</span>
+              <div className="transactions-actions">
+                <span className="transactions-link">Proceed →</span>
+              </div>
             </div>
-          </div>
-        </button>
-
-        <button type="button" className="transactions-card" onClick={() => go("/transactions/promotion")}>
-          <div className="transactions-card-head">
-            <div>
-              <div className="transactions-card-title">Promotion Order</div>
-              <div className="transactions-card-meta">Change position and/or salary upward.</div>
-            </div>
-            <span className="transactions-pill">Open</span>
-          </div>
-
-          <div className="transactions-card-body">
-            <p className="transactions-mini">Record promotions, new role/position, and approvals.</p>
-            <div className="transactions-actions">
-              <span className="transactions-link">Proceed →</span>
-            </div>
-          </div>
-        </button>
-
-        <button type="button" className="transactions-card" onClick={() => go("/transactions/demotion")}>
-          <div className="transactions-card-head">
-            <div>
-              <div className="transactions-card-title">Demotion Order</div>
-              <div className="transactions-card-meta">Adjust role/position downward.</div>
-            </div>
-            <span className="transactions-pill">Open</span>
-          </div>
-
-          <div className="transactions-card-body">
-            <p className="transactions-mini">Create demotion orders with reason and effective date.</p>
-            <div className="transactions-actions">
-              <span className="transactions-link">Proceed →</span>
-            </div>
-          </div>
-        </button>
-
-        <button type="button" className="transactions-card" onClick={() => go("/transactions/deployment")}>
-          <div className="transactions-card-head">
-            <div>
-              <div className="transactions-card-title">Deployment Order</div>
-              <div className="transactions-card-meta">Staff newly Hired and Service Recommence.</div>
-            </div>
-            <span className="transactions-pill">Open</span>
-          </div>
-
-          <div className="transactions-card-body">
-            <p className="transactions-mini">Deploy Staff to other Branches.</p>
-            <div className="transactions-actions">
-              <span className="transactions-link">Proceed →</span>
-            </div>
-          </div>
-        </button>
-
-        <button type="button" className="transactions-card" onClick={() => go("/transactions/suspension")}>
-          <div className="transactions-card-head">
-            <div>
-              <div className="transactions-card-title">Suspension Order</div>
-              <div className="transactions-card-meta">Temporarily suspend staff work status.</div>
-            </div>
-            <span className="transactions-pill">Open</span>
-          </div>
-
-          <div className="transactions-card-body">
-            <p className="transactions-mini">Record suspension duration, reason, and status.</p>
-            <div className="transactions-actions">
-              <span className="transactions-link">Proceed →</span>
-            </div>
-          </div>
-        </button>
-
-        <button type="button" className="transactions-card" onClick={() => go("/transactions/soa")}>
-          <div className="transactions-card-head">
-            <div>
-              <div className="transactions-card-title">Statement of Accounts</div>
-              <div className="transactions-card-meta">Register Exit Staff Last Pay / Liabilities.</div>
-            </div>
-            <span className="transactions-pill">Open</span>
-          </div>
-
-          <div className="transactions-card-body">
-            <p className="transactions-mini">Calculate staff account liabilities, last pay, and other income.</p>
-            <div className="transactions-actions">
-              <span className="transactions-link">Proceed →</span>
-            </div>
-          </div>
-        </button>
-
-        <button type="button" className="transactions-card" onClick={() => go("/transactions/exit")}>
-          <div className="transactions-card-head">
-            <div>
-              <div className="transactions-card-title">Exit Staff</div>
-              <div className="transactions-card-meta">Process employee resignation or termination.</div>
-            </div>
-            <span className="transactions-pill">Open</span>
-          </div>
-
-          <div className="transactions-card-body">
-            <p className="transactions-mini">Record exit date, clearance status, and final remarks.</p>
-            <div className="transactions-actions">
-              <span className="transactions-link">Proceed →</span>
-            </div>
-          </div>
-        </button>
-
-        <button type="button" className="transactions-card" onClick={() => go("/transactions/sbf")}>
-          <div className="transactions-card-head">
-            <div>
-              <div className="transactions-card-title">SBF Order</div>
-              <div className="transactions-card-meta">Staff Benevolent Fund assistance request.</div>
-            </div>
-            <span className="transactions-pill">Open</span>
-          </div>
-
-          <div className="transactions-card-body">
-            <p className="transactions-mini">Create and manage Staff Benevolent Fund orders and approvals.</p>
-            <div className="transactions-actions">
-              <span className="transactions-link">Proceed →</span>
-            </div>
-          </div>
-        </button>
+          </button>
+        ))}
       </div>
     </div>
   );

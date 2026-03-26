@@ -1,0 +1,160 @@
+.logistic-history-modal {
+  max-width: 900px;
+  width: min(900px, 96vw);
+}
+
+.tracking-timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 10px 2px;
+}
+
+.tracking-item {
+  display: grid;
+  grid-template-columns: 160px 34px 1fr;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.tracking-left {
+  padding-top: 1px;
+}
+
+.tracking-time {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--muted);
+}
+
+.tracking-center {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-height: 64px;
+}
+
+.tracking-dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  background: var(--primary);
+  flex: 0 0 auto;
+}
+
+.tracking-line {
+  width: 2px;
+  flex: 1;
+  background: var(--border);
+  margin-top: 4px;
+}
+
+.tracking-right {
+  padding-bottom: 6px;
+}
+
+.tracking-status {
+  font-size: 14px;
+  font-weight: 900;
+  color: var(--text);
+}
+
+.tracking-location,
+.tracking-remarks,
+.tracking-updated-by {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.logistic-history-modal {
+  max-width: 900px;
+  width: min(900px, 96vw);
+}
+
+.logistic-summary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 16px;
+  margin-bottom: 16px;
+  font-size: 13px;
+  color: var(--text);
+}
+
+.tracking-timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 10px 2px;
+}
+
+.tracking-item {
+  display: grid;
+  grid-template-columns: 160px 34px 1fr;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.tracking-left {
+  padding-top: 1px;
+}
+
+.tracking-time {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--muted);
+}
+
+.tracking-center {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-height: 64px;
+}
+
+.tracking-dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  background: var(--primary);
+  flex: 0 0 auto;
+}
+
+.tracking-line {
+  width: 2px;
+  flex: 1;
+  background: var(--border);
+  margin-top: 4px;
+}
+
+.tracking-right {
+  padding-bottom: 6px;
+}
+
+.tracking-status {
+  font-size: 14px;
+  font-weight: 900;
+  color: var(--text);
+}
+
+.tracking-location,
+.tracking-remarks,
+.tracking-updated-by {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+@media (max-width: 700px) {
+  .logistic-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .tracking-item {
+    grid-template-columns: 1fr 24px 1fr;
+  }
+
+  .tracking-time {
+    font-size: 11px;
+  }
+}

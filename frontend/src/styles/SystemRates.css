@@ -131,7 +131,7 @@
 .sys-row.sys-row-head,
 .sys-row {
   display: grid;
-  grid-template-columns: 2.4fr 1fr 1fr 1.15fr 0.9fr 1fr 0.9fr 1.45fr;
+  grid-template-columns: 2.6fr 1fr 1fr 1.2fr 1.5fr;
   gap: 12px;
   align-items: center;
 }
@@ -146,12 +146,9 @@
   letter-spacing: 0.4px;
 }
 
-.sys-row {
+.sys-row:not(.sys-row-head) {
   padding: 14px 18px;
-  border-bottom: 1px solid var(--border);
-  background: var(--panel);
-  color: var(--text);
-  min-width: 1180px;
+  border-top: 1px solid var(--border);
 }
 
 .sys-row:nth-child(even):not(.sys-row-head) {
@@ -364,6 +361,39 @@
   border-top: 1px solid var(--border);
 }
 
+.sys-view-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.sys-view-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.sys-view-field.full {
+  grid-column: 1 / -1;
+}
+
+.sys-view-field label {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--muted);
+}
+
+.sys-view-box {
+  min-height: 44px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  font-weight: 600;
+}
 
 [data-theme="dark"] .sys-card {
   background: #0f1f3d;
@@ -386,8 +416,91 @@
   }
 }
 
+@media (max-width: 860px) {
+  .sys-row.sys-row-head,
+  .sys-row {
+    grid-template-columns: 2.2fr 1fr 1fr 1.1fr 1.4fr;
+  }
+}
+
 @media (max-width: 720px) {
-  .sys-form-grid {
+  .sys-form-grid,
+  .sys-view-grid {
     grid-template-columns: 1fr;
   }
+}
+
+@media (max-width: 640px) {
+  .sys-row.sys-row-head,
+  .sys-row {
+    min-width: 720px;
+  }
+}
+
+/* ===============================
+   PAYROLL STYLE TABLE (NEW)
+================================= */
+
+.sr-payroll-wrap {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.sr-payroll-table {
+  width: 100%;
+  min-width: 1200px;
+  border-collapse: collapse;
+}
+
+.sr-payroll-table thead th {
+  background: var(--table-header);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+  padding: 10px 8px;
+  border-bottom: 1px solid var(--border);
+  text-align: center;
+  white-space: nowrap;
+}
+
+/* second header row */
+.sr-payroll-table thead tr:nth-child(2) th {
+  background: color-mix(in srgb, var(--table-header) 85%, black);
+  font-size: 11px;
+}
+
+.sr-payroll-table tbody td {
+  padding: 12px 8px;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+  text-align: center;
+  white-space: nowrap;
+}
+
+.sr-payroll-table tbody tr:nth-child(even) td {
+  background: var(--panel-2);
+}
+
+.sr-payroll-table tbody tr:hover td {
+  background: var(--row-hover);
+}
+
+/* strong text (Position column) */
+.sr-strong {
+  font-weight: 900;
+  text-align: left !important;
+}
+
+/* totals row */
+.sr-total-row td {
+  background: var(--panel-2);
+  font-weight: 900;
+}
+
+/* fix actions column spacing */
+.sr-payroll-table .sys-actions {
+  justify-content: center;
 }

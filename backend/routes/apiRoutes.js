@@ -42,7 +42,6 @@ const buildFullname = (b) => {
     .replace(/\s+/g, " ")
     .trim();
 
-  // fallback to legacy fullname if present
   return built || toStr(b?.fullname);
 };
 

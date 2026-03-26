@@ -8,6 +8,13 @@ const toNum = (v) => {
   return Number.isFinite(n) ? n : 0;
 };
 
+const toInt = (v) => {
+  const n = Number(v);
+  return Number.isFinite(n) ? Math.trunc(n) : null;
+};
+
+const toStr = (v) => String(v ?? "").trim();
+
 const monthToDate = (monthStr) => {
   const m = String(monthStr || "").trim();
   if (!/^\d{4}-\d{2}$/.test(m)) return null;
@@ -17,17 +24,81 @@ const monthToDate = (monthStr) => {
 const monthEndExpr = (paramRef) =>
   `((DATE_TRUNC('month', ${paramRef}::date) + INTERVAL '1 month - 1 day')::date)`;
 
+const normRole = (v) => String(v || "").trim().toLowerCase();
+const norm = (v) => String(v ?? "").trim().toLowerCase();
+
+const resolveRequestedBranchId = async (rawBranchValue) => {
+  const raw = toStr(rawBranchValue);
+  if (!raw) return null;
+
+  const asInt = toInt(raw);
+  if (asInt) return asInt;
+
+  const byCode = await pool.query(
+    `
+    SELECT id
+    FROM public.branches
+    WHERE LOWER(TRIM(code)) = LOWER(TRIM($1))
+    LIMIT 1
+    `,
+    [raw]
+  );
+
+  if (byCode.rowCount > 0) return Number(byCode.rows[0].id);
+  return null;
+};
+
+const resolveBranchScope = async (req) => {
+  const role = normRole(req.user?.role);
+  const requestedRaw = toStr(req.query.branchId);
+  const userBranchRaw = toStr(req.user?.branch_id);
+
+  const requestedBranchId = await resolveRequestedBranchId(requestedRaw);
+
+  if (role === "branch manager") {
+    if (!userBranchRaw) {
+      return {
+        error: { status: 403, message: "Access denied: no branch assigned to this account." },
+      };
+    }
+
+    const userBranchId = await resolveRequestedBranchId(userBranchRaw);
+
+    if (!userBranchId) {
+      return {
+        error: { status: 403, message: "Access denied: invalid branch mapping for this account." },
+      };
+    }
+
+    if (requestedRaw && requestedBranchId && requestedBranchId !== userBranchId) {
+      return {
+        error: { status: 403, message: "Access denied: invalid branch." },
+      };
+    }
+
+    return { branchId: userBranchId };
+  }
+
+  return { branchId: requestedBranchId };
+};
+
 /* =========================================================
    GET SNAPSHOT
 ========================================================= */
 router.get("/", requireAuth, async (req, res) => {
   try {
     const snapshotMonth = monthToDate(req.query.month);
-    const branchId = req.query.branchId ? Number(req.query.branchId) : null;
 
     if (!snapshotMonth) {
       return res.status(400).json({ message: "month is required in YYYY-MM format" });
     }
+
+    const scope = await resolveBranchScope(req);
+    if (scope.error) {
+      return res.status(scope.error.status).json({ message: scope.error.message });
+    }
+
+    const branchId = scope.branchId;
 
     const params = [snapshotMonth];
     let sql = `
@@ -79,11 +150,17 @@ router.get("/", requireAuth, async (req, res) => {
 router.get("/live", requireAuth, async (req, res) => {
   try {
     const snapshotMonth = monthToDate(req.query.month);
-    const branchId = req.query.branchId ? Number(req.query.branchId) : null;
 
     if (!snapshotMonth) {
       return res.status(400).json({ message: "month is required in YYYY-MM format" });
     }
+
+    const scope = await resolveBranchScope(req);
+    if (scope.error) {
+      return res.status(scope.error.status).json({ message: scope.error.message });
+    }
+
+    const branchId = scope.branchId;
 
     const params = [snapshotMonth];
     let whereSql = "";

@@ -21,6 +21,14 @@ const monthlyFromWhole = (v) => {
   return n / 12;
 };
 
+const readUser = () => {
+  try {
+    return JSON.parse(localStorage.getItem("user") || "null");
+  } catch {
+    return null;
+  }
+};
+
 const overrideKey = (branchKey) => `payroll_manual_overrides::branch_${branchKey}`;
 
 const OVERRIDE_FIELDS = [
@@ -73,6 +81,14 @@ function Payroll() {
   const branchParam = toStr(rawBranchParam);
 
   const navigate = useNavigate();
+
+  const user = useMemo(() => readUser(), []);
+  const role = norm(user?.role);
+
+  const canManualEdit =
+    role === "admin" ||
+    role === "hr" ||
+    role === "accounting";
 
   const [staff, setStaff] = useState([]);
   const [branch, setBranch] = useState(null);
@@ -148,12 +164,17 @@ function Payroll() {
       setError("");
 
       try {
-        const [branchesRes, staffRes] = await Promise.all([api.get("/branches"), api.get("/staff")]);
+        const [branchesRes, staffRes] = await Promise.all([
+          api.get("/branches"),
+          api.get("/staff"),
+        ]);
 
         const branches = Array.isArray(branchesRes.data) ? branchesRes.data : [];
 
         const foundBranch = branches.find((x) => {
-          const idMatch = Number.isFinite(Number(branchParam)) && Number(x.id) === Number(branchParam);
+          const idMatch =
+            Number.isFinite(Number(branchParam)) &&
+            Number(x.id) === Number(branchParam);
           const codeMatch = norm(x.code) === norm(branchParam);
           return idMatch || codeMatch;
         });
@@ -168,9 +189,13 @@ function Payroll() {
 
         const allStaff = Array.isArray(staffRes.data) ? staffRes.data : [];
 
-        const byBranchId = allStaff.filter((s) => Number(s.branch_id) === Number(foundBranch.id));
+        const byBranchId = allStaff.filter(
+          (s) => Number(s.branch_id) === Number(foundBranch.id)
+        );
 
-        const byBranchCode = allStaff.filter((s) => norm(s.branch_code) === norm(foundBranch.code));
+        const byBranchCode = allStaff.filter(
+          (s) => norm(s.branch_code) === norm(foundBranch.code)
+        );
 
         const filtered =
           byBranchId.length > 0
@@ -320,21 +345,18 @@ function Payroll() {
         totalComp,
         total_er,
         total_ee,
-
         salary_advance,
         motorcycle_loan,
         special_advance,
         cash_advance,
         other_receivable,
         staff_accounts_payable,
-
         whole_salary_advance: toNum(balance.salary_advance),
         whole_motorcycle_loan: toNum(balance.motorcycle_loan),
         whole_special_advance: toNum(balance.special_advance),
         whole_cash_advance: toNum(balance.cash_advance),
         whole_other_receivable: toNum(balance.other_receivable),
         whole_staff_accounts_payable: toNum(balance.staff_accounts_payable),
-
         total_deduction,
         netPay,
         netPayHalf: netPay / 2,
@@ -357,6 +379,11 @@ function Payroll() {
   }, [menuOpenFor, closeMenu]);
 
   const openManualEdit = (row) => {
+    if (!canManualEdit) {
+      alert("Only Admin, HR, and Accounting can edit manually.");
+      return;
+    }
+
     closeMenu();
     setEditModalStaff(row);
 
@@ -369,6 +396,11 @@ function Payroll() {
   };
 
   const saveManualEdit = () => {
+    if (!canManualEdit) {
+      alert("Only Admin, HR, and Accounting can edit manually.");
+      return;
+    }
+
     if (!editModalStaff?.id) return;
 
     const until = toDate10(editUntil);
@@ -388,6 +420,11 @@ function Payroll() {
   };
 
   const clearOverrideForStaff = (staffId) => {
+    if (!canManualEdit) {
+      alert("Only Admin, HR, and Accounting can remove manual edits.");
+      return;
+    }
+
     const next = { ...(overrides || {}) };
     delete next[String(staffId)];
     persistOverrides(next);
@@ -427,7 +464,9 @@ function Payroll() {
       <div className="payroll-page-header no-print">
         <div>
           <h2 className="payroll-title">Payroll Report</h2>
-          <p className="payroll-subtitle">{branch ? `${branch.code} • ${branch.name} • ${branch.area}` : ""}</p>
+          <p className="payroll-subtitle">
+            {branch ? `${branch.code} • ${branch.name} • ${branch.area}` : ""}
+          </p>
         </div>
 
         <div className="payroll-actions">
@@ -500,6 +539,7 @@ function Payroll() {
             <tbody>
               {computedRows.map((s) => {
                 const hasOverride = !!overrides?.[String(s.id)];
+
                 return (
                   <tr key={s.id}>
                     <td className="mono">{s.id}</td>
@@ -547,7 +587,10 @@ function Payroll() {
                     <td className={`num td-strong ${s.netPayHalf < 0 ? "neg" : "pos"}`}>{fmt(s.netPayHalf)}</td>
 
                     <td style={{ position: "relative" }}>
-                      <div ref={menuOpenFor === s.id ? menuWrapRef : null} style={{ display: "inline-block" }}>
+                      <div
+                        ref={menuOpenFor === s.id ? menuWrapRef : null}
+                        style={{ display: "inline-block" }}
+                      >
                         <button
                           type="button"
                           className="payroll-dots-btn"
@@ -559,17 +602,25 @@ function Payroll() {
 
                         {menuOpenFor === s.id ? (
                           <div className="payroll-action-menu">
-                            <button type="button" className="payroll-action-item" onClick={() => openManualEdit(s)}>
-                              Edit manually
-                            </button>
+                            {canManualEdit ? (
+                              <button
+                                type="button"
+                                className="payroll-action-item"
+                                onClick={() => openManualEdit(s)}
+                              >
+                                Edit manually
+                              </button>
+                            ) : null}
 
-                            {overrides?.[String(s.id)] ? (
+                            {canManualEdit && overrides?.[String(s.id)] ? (
                               <button
                                 type="button"
                                 className="payroll-action-item danger"
                                 onClick={() => {
                                   closeMenu();
-                                  const ok = window.confirm("Remove manual override and revert to normal?");
+                                  const ok = window.confirm(
+                                    "Remove manual override and revert to normal?"
+                                  );
                                   if (ok) clearOverrideForStaff(s.id);
                                 }}
                               >
@@ -591,7 +642,9 @@ function Payroll() {
 
                 <td className="num">{sumColumn("salary").toLocaleString()}</td>
                 <td className="num">{sumColumn("ecola").toLocaleString()}</td>
-                <td className="num td-strong">{(sumColumn("salary") + sumColumn("ecola")).toLocaleString()}</td>
+                <td className="num td-strong">
+                  {(sumColumn("salary") + sumColumn("ecola")).toLocaleString()}
+                </td>
 
                 <td className="num">{sumColumn("hdmf_er").toLocaleString()}</td>
                 <td className="num">{sumColumn("sss_er").toLocaleString()}</td>
@@ -628,17 +681,20 @@ function Payroll() {
         <div className="payroll-hint">Tip: scroll horizontally to view all columns.</div>
       </div>
 
-      {editModalStaff ? (
+      {editModalStaff && canManualEdit ? (
         <div
           className="payroll-modal-overlay"
-          onMouseDown={(e) => e.target.classList.contains("payroll-modal-overlay") && closeModal()}
+          onMouseDown={(e) =>
+            e.target.classList.contains("payroll-modal-overlay") && closeModal()
+          }
         >
           <div className="payroll-modal" onMouseDown={(e) => e.stopPropagation()}>
             <div className="payroll-modal-head">
               <div>
                 <div className="payroll-modal-title">Edit manually</div>
                 <div className="payroll-modal-sub">
-                  Employee: <b>{editModalStaff.fullname}</b> (ID: <span className="mono">{editModalStaff.id}</span>)
+                  Employee: <b>{editModalStaff.fullname}</b> (ID:{" "}
+                  <span className="mono">{editModalStaff.id}</span>)
                 </div>
                 <div style={{ fontSize: 12, opacity: 0.85, marginTop: 6 }}>
                   Note: Values start at <b>0</b>. This is a temporary override.
@@ -652,7 +708,11 @@ function Payroll() {
             <div className="payroll-modal-body">
               <div className="payroll-modal-row">
                 <label>Effective date until</label>
-                <input type="date" value={editUntil} onChange={(e) => setEditUntil(e.target.value)} />
+                <input
+                  type="date"
+                  value={editUntil}
+                  onChange={(e) => setEditUntil(e.target.value)}
+                />
               </div>
 
               <div className="payroll-modal-grid">

@@ -2,7 +2,17 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useNavigate } from "react-router-dom";
 import api from "../api/axiosClient";
 import "../styles/Deployments.css";
-import "../styles/StaffInformation.css";
+
+const DEPARTMENT_OPTIONS = [
+  "IT DEPARTMENT",
+  "AUDIT DEPARTMENT",
+  "ACCOUNTING & FINANCE DEPARTMENT",
+  "HUMAN RESOURCE DEPARTMENT",
+  "OPERATION DEPARTMENT",
+  "OFFICE OF THE PRESIDENT",
+  "PRODUCTION AND LOGISTIC DEPARTMENT",
+  "TRAINING RESEARCH AND EXTERNAL AFFAIRS DEPARTMENT",
+];
 
 const toStr = (v) => String(v ?? "").trim();
 const toDate10 = (v) => (v ? String(v).slice(0, 10) : "");
@@ -91,10 +101,14 @@ function EditableCell({ value, placeholder, align = "right", onChange }) {
   );
 }
 
-function StepTabs({ step, onSelectStep, canGoContract }) {
+function StepTabs({ step, onSelectStep }) {
   return (
     <div className="step-tabs">
-      <button type="button" className={`step-tab ${step === 1 ? "active" : ""}`} onClick={() => onSelectStep(1)}>
+      <button
+        type="button"
+        className={`step-tab ${step === 1 ? "active" : ""}`}
+        onClick={() => onSelectStep(1)}
+      >
         Staff Details
       </button>
 
@@ -102,8 +116,6 @@ function StepTabs({ step, onSelectStep, canGoContract }) {
         type="button"
         className={`step-tab ${step === 2 ? "active" : ""}`}
         onClick={() => onSelectStep(2)}
-        disabled={!canGoContract}
-        title={!canGoContract ? "Complete Staff Details first" : ""}
       >
         Contract Details
       </button>
@@ -967,7 +979,6 @@ function ContractDetailsStep({ form, branches, setForm }) {
     toNum(form.other_deduction) +
     toNum(form.additional_target) +
     toNum(form.additional_monitoring) +
-    toNum(form.motorcycle) +
     toNum(form.motorcycle_loan);
 
   const erTotal = toNum(form.sss_er) + toNum(form.ph_er) + toNum(form.hdmf_er);
@@ -987,14 +998,30 @@ function ContractDetailsStep({ form, branches, setForm }) {
             <tr>
               <td>Position *</td>
               <td>
-                <EditableCell value={form.position} placeholder="Type position..." onChange={(v) => setField("position", v)} />
+                <EditableCell
+                  value={form.position}
+                  placeholder="Type position..."
+                  onChange={(v) => setField("position", v)}
+                />
               </td>
             </tr>
 
             <tr>
               <td>Department</td>
-              <td>
-                <EditableCell value={form.department} placeholder="Type department..." onChange={(v) => setField("department", v)} />
+              <td style={{ textAlign: "right" }}>
+                <select
+                  className="input"
+                  style={{ width: 280, textAlignLast: "right" }}
+                  value={form.department}
+                  onChange={(e) => setField("department", e.target.value)}
+                >
+                  <option value="">Select department...</option>
+                  {DEPARTMENT_OPTIONS.map((dept) => (
+                    <option key={dept} value={dept}>
+                      {dept}
+                    </option>
+                  ))}
+                </select>
               </td>
             </tr>
 
@@ -1159,13 +1186,6 @@ function ContractDetailsStep({ form, branches, setForm }) {
               <td>Additional Monitoring</td>
               <td>
                 <EditableCell value={form.additional_monitoring} placeholder="0" onChange={(v) => setField("additional_monitoring", v)} />
-              </td>
-            </tr>
-
-            <tr>
-              <td>Motorcycle</td>
-              <td>
-                <EditableCell value={form.motorcycle} placeholder="0" onChange={(v) => setField("motorcycle", v)} />
               </td>
             </tr>
 
@@ -1377,7 +1397,6 @@ function StaffCreateModal({ branches, onClose, onCreated }) {
     additional_target: "",
     repairing: "",
     additional_monitoring: "",
-    motorcycle: "",
     other_deduction: "",
 
     sss_er: "",
@@ -1407,10 +1426,6 @@ function StaffCreateModal({ branches, onClose, onCreated }) {
   const isContractValid = useMemo(() => !!toStr(form.position), [form.position]);
 
   const setStepGuarded = (next) => {
-    if (next === 2 && !canGoContract) {
-      alert("Please complete required fields in Staff Details (Last Name, First Name).");
-      return;
-    }
     setStep(next);
   };
 
@@ -1442,7 +1457,6 @@ function StaffCreateModal({ branches, onClose, onCreated }) {
       additional_target: toNum(form.additional_target),
       repairing: toNum(form.repairing),
       additional_monitoring: toNum(form.additional_monitoring),
-      motorcycle: toNum(form.motorcycle),
       other_deduction: toNum(form.other_deduction),
 
       sss_er: toNum(form.sss_er),
@@ -1513,21 +1527,17 @@ function StaffCreateModal({ branches, onClose, onCreated }) {
     if (!isContractValid) return alert("Position is required.");
 
     setSaving(true);
+    
     try {
       const payload = buildPayload();
-      const res = await api.post("/staff", payload);
-      const newId = res.data?.id;
+      const res = await api.post("/pending-staff", payload);
+      const requestId = res.data?.request?.id;
 
-      if (photoFile && newId) {
-        const fd = new FormData();
-        fd.append("photo", photoFile);
-        await api.post(`/staff/${newId}/photo`, fd);
-      }
-
-      await onCreated?.(newId);
+      await onCreated?.();
       onClose?.();
-      alert("Staff created.");
-    } catch (err) {
+
+      alert("Submitted for approval.");
+    } catch (err) { 
       alert(err?.response?.data?.message || err.message || "Failed to create staff.");
     } finally {
       setSaving(false);
@@ -1571,7 +1581,7 @@ function StaffCreateModal({ branches, onClose, onCreated }) {
               </label>
             </div>
 
-            <StepTabs step={step} onSelectStep={setStepGuarded} canGoContract={canGoContract} />
+            <StepTabs step={step} onSelectStep={setStepGuarded} />
             <br />
 
             {step === 1 ? (
@@ -1584,7 +1594,7 @@ function StaffCreateModal({ branches, onClose, onCreated }) {
           <div className="modal-foot">
             {step === 1 ? (
               <>
-                <button className="btn btn-primary" type="button" onClick={() => setStepGuarded(2)} disabled={!canGoContract}>
+                <button className="btn btn-primary" type="button" onClick={() => setStepGuarded(2)}>
                   Next
                 </button>
                 <button className="btn btn-ghost" type="button" onClick={onClose}>
@@ -1597,7 +1607,7 @@ function StaffCreateModal({ branches, onClose, onCreated }) {
                   Back
                 </button>
                 <button className="btn btn-primary" type="submit" disabled={saving}>
-                  {saving ? "Saving..." : "Save Staff"}
+                  {saving ? "Submitting..." : "Submit for Approval"}
                 </button>
                 <button className="btn btn-ghost" type="button" onClick={onClose}>
                   Cancel
@@ -1613,6 +1623,11 @@ function StaffCreateModal({ branches, onClose, onCreated }) {
 
 export default function Deployment() {
   const navigate = useNavigate();
+
+  const onStaffCreated = async () => {
+    await loadData();
+    setShowAddStaff(false);
+  };
 
   const user = useMemo(() => {
     try {
@@ -1639,6 +1654,10 @@ export default function Deployment() {
   const [editingId, setEditingId] = useState(null);
   const [viewRow, setViewRow] = useState(null);
 
+  const [pendingStaff, setPendingStaff] = useState([]);
+  const [approvingPendingId, setApprovingPendingId] = useState(null);
+  const [rejectingPendingId, setRejectingPendingId] = useState(null);
+
   const [showAddStaff, setShowAddStaff] = useState(false);
 
   const makeEmptyDeploymentForm = useCallback(
@@ -1654,16 +1673,66 @@ export default function Deployment() {
     []
   );
 
+  const approvePendingStaff = async (id) => {
+    if (!isAdmin) return alert("Admin only.");
+
+    const ok = window.confirm("Approve this pending staff request?");
+    if (!ok) return;
+
+    setApprovingPendingId(id);
+    setErr("");
+
+    try {
+      await api.put(`/pending-staff/${id}/approve`);
+      await loadData();
+      alert("Pending staff approved.");
+    } catch (e) {
+      setErr(e?.response?.data?.message || "Failed to approve pending staff.");
+    } finally {
+      setApprovingPendingId(null);
+    }
+  };
+
+  const rejectPendingStaff = async (id) => {
+    if (!isAdmin) return alert("Admin only.");
+
+    const ok = window.confirm("Reject this pending staff request?");
+    if (!ok) return;
+
+    setRejectingPendingId(id);
+    setErr("");
+
+    try {
+      await api.put(`/pending-staff/${id}/reject`, {
+        rejection_reason: "",
+      });
+      await loadData();
+      alert("Pending staff rejected.");
+    } catch (e) {
+      setErr(e?.response?.data?.message || "Failed to reject pending staff.");
+    } finally {
+      setRejectingPendingId(null);
+    }
+  };
+
   const [form, setForm] = useState(() => makeEmptyDeploymentForm());
 
   const loadData = useCallback(async () => {
     setLoading(true);
     setErr("");
     try {
-      const [d, s, b] = await Promise.all([api.get("/deployments"), api.get("/staff"), api.get("/branches")]);
-      setDeployments(Array.isArray(d.data) ? d.data : []);
-      setStaff(Array.isArray(s.data) ? s.data : []);
-      setBranches(Array.isArray(b.data) ? b.data : []);
+      const [d, s, b, p] = await Promise.all([
+        api.get("/deployments"),
+        api.get("/staff"),
+        api.get("/branches"),
+        api.get("/pending-staff"),
+      ]);
+
+        setDeployments(d.data || []);
+        setStaff(s.data || []);
+        setBranches(b.data || []);
+        setPendingStaff(p.data || []);
+
     } catch (e) {
       setErr(e?.response?.data?.message || "Failed to load deployment data.");
     } finally {
@@ -1858,11 +1927,6 @@ export default function Deployment() {
 
   const modalTitle = editingId ? "Edit Deployment" : "Create Deployment";
 
-  const onStaffCreated = async (newStaffId) => {
-    await loadData();
-    if (newStaffId) setForm((p) => ({ ...p, employee_id: String(newStaffId) }));
-  };
-
   return (
     <div className="po-page">
       <div className="po-topbar">
@@ -1881,9 +1945,6 @@ export default function Deployment() {
             + Add Staff
           </button>
 
-          <button className="po-btn po-btn-primary" type="button" onClick={openCreate}>
-            + Create Deployment
-          </button>
         </div>
       </div>
 
@@ -2136,6 +2197,119 @@ export default function Deployment() {
           </div>
         </div>
       )}
+
+      <div className="po-card" style={{ marginTop: 16 }}>
+        <div style={{ padding: "14px 16px", borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
+          <div className="po-title" style={{ fontSize: 18, margin: 0 }}>
+            Pending Staff Approval
+          </div>
+          <div style={{ fontSize: 12, opacity: 0.8, marginTop: 4 }}>
+            Review staff requests before they move into Staff Information.
+          </div>
+        </div>
+
+        <table className="po-table">
+          <thead>
+            <tr>
+              <th>Employee</th>
+              <th>Position</th>
+              <th>Branch</th>
+              <th>Status</th>
+              <th>Date Submitted</th>
+              <th style={{ width: 320 }}>Actions</th>
+            </tr>
+          </thead>
+
+          <tbody>
+            {loading ? (
+              <tr>
+                <td colSpan={6} style={{ padding: 16, opacity: 0.8 }}>
+                  Loading...
+                </td>
+              </tr>
+            ) : pendingStaff.length === 0 ? (
+              <tr>
+                <td colSpan={6} style={{ padding: 16, opacity: 0.8 }}>
+                  No pending staff requests found.
+                </td>
+              </tr>
+            ) : (
+              pendingStaff.map((item) => {
+                const payload =
+                  typeof item.payload === "string"
+                    ? JSON.parse(item.payload || "{}")
+                    : item.payload || {};
+
+                const branch = branches.find(
+                  (b) => String(b.id) === String(payload.branch_id)
+                );
+
+                const employeeName =
+                  `${toStr(payload.last_name)}${payload.last_name && payload.first_name ? ", " : ""}${toStr(payload.first_name)}${payload.middle_name ? ` ${payload.middle_name}` : ""}`
+                    .replace(/\s+/g, " ")
+                    .trim() || "-";
+
+                const pending = norm(item.status) === "pending";
+
+                return (
+                  <tr key={item.id}>
+                    <td>
+                      <div className="td-strong">{employeeName}</div>
+                      <div style={{ fontSize: 12, opacity: 0.8 }}>
+                        {payload.employee_no || "No employee no"}
+                      </div>
+                    </td>
+
+                    <td>{payload.position || "-"}</td>
+
+                    <td>{branch ? `${branch.code} • ${branch.name}` : "-"}</td>
+
+                    <td>
+                      <span className="mono">{item.status || "Pending"}</span>
+                    </td>
+
+                    <td className="mono">{toDate10(item.created_at) || "-"}</td>
+
+                    <td>
+                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                        <button
+                          className="po-mini-btn"
+                          type="button"
+                          onClick={() => alert(JSON.stringify(payload, null, 2))}
+                        >
+                          View
+                        </button>
+
+                        {isAdmin && (
+                          <>
+                            <button
+                              className="po-mini-btn"
+                              type="button"
+                              onClick={() => approvePendingStaff(item.id)}
+                              disabled={!pending || approvingPendingId === item.id}
+                            >
+                              {approvingPendingId === item.id ? "Approving..." : "Approve"}
+                            </button>
+
+                            <button
+                              className="po-mini-btn"
+                              type="button"
+                              onClick={() => rejectPendingStaff(item.id)}
+                              disabled={!pending || rejectingPendingId === item.id}
+                            >
+                              {rejectingPendingId === item.id ? "Rejecting..." : "Reject"}
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })
+            )}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

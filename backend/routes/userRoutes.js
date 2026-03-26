@@ -9,7 +9,7 @@ const clean = (v) => String(v ?? "").trim();
 router.get("/", requireAuth, requireRole(["admin"]), async (_req, res) => {
   try {
     const result = await pool.query(
-      `SELECT id, username, role, created_at, branch_id
+      `SELECT id, username, role, created_at, branch_id, area, region, division
        FROM public.users
        ORDER BY id DESC`
     );
@@ -26,6 +26,9 @@ router.post("/", requireAuth, requireRole(["admin"]), async (req, res) => {
     const password = clean(req.body?.password);
     const role = clean(req.body?.role);
     const branch_id = req.body?.branch_id ?? null;
+    const area = clean(req.body?.area) || null;
+    const region = clean(req.body?.region) || null;
+    const division = clean(req.body?.division) || null;
 
     if (!username || !password || !role) {
       return res.status(400).json({ message: "username, password, role are required" });
@@ -43,11 +46,11 @@ router.post("/", requireAuth, requireRole(["admin"]), async (req, res) => {
 
     const result = await pool.query(
       `
-      INSERT INTO public.users (username, password, role, branch_id, created_at)
-      VALUES ($1,$2,$3,$4,NOW())
-      RETURNING id, username, role, created_at, branch_id
+      INSERT INTO public.users (username, password, role, branch_id, area, region, division, created_at)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,NOW())
+      RETURNING id, username, role, created_at, branch_id, area, region, division
       `,
-      [username, hashed, role, branch_id]
+      [username, hashed, role, branch_id, area, region, division]
     );
 
     return res.json({ message: "User created", user: result.rows[0] });
@@ -67,6 +70,9 @@ router.put("/:id", requireAuth, requireRole(["admin"]), async (req, res) => {
     const username = clean(req.body?.username);
     const role = clean(req.body?.role);
     const branch_id = req.body?.branch_id ?? null;
+    const area = clean(req.body?.area) || null;
+    const region = clean(req.body?.region) || null;
+    const division = clean(req.body?.division) || null;
 
     if (!username || !role) {
       return res.status(400).json({ message: "username and role are required" });
@@ -93,15 +99,20 @@ router.put("/:id", requireAuth, requireRole(["admin"]), async (req, res) => {
         username = $1,
         role = $2,
         branch_id = $3,
-        password = COALESCE($4, password),
+        area = $4,
+        region = $5,
+        division = $6,
+        password = COALESCE($7, password),
         updated_at = NOW()
-      WHERE id = $5
-      RETURNING id, username, role, created_at, branch_id
+      WHERE id = $8
+      RETURNING id, username, role, created_at, branch_id, area, region, division
       `,
-      [username, role, branch_id, hashed, id]
+      [username, role, branch_id, area, region, division, hashed, id]
     );
 
-    if (result.rows.length === 0) return res.status(404).json({ message: "User not found" });
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: "User not found" });
+    }
 
     return res.json({ message: "User updated", user: result.rows[0] });
   } catch (e) {
@@ -130,12 +141,14 @@ router.put("/:id/reset-password", requireAuth, requireRole(["admin"]), async (re
       SET password = $1,
           updated_at = NOW()
       WHERE id = $2
-      RETURNING id, username, role, created_at, branch_id
+      RETURNING id, username, role, created_at, branch_id, area, region, division
       `,
       [hashed, id]
     );
 
-    if (result.rows.length === 0) return res.status(404).json({ message: "User not found" });
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: "User not found" });
+    }
 
     return res.json({ message: "Password reset", user: result.rows[0] });
   } catch (e) {
@@ -151,8 +164,14 @@ router.delete("/:id", requireAuth, requireRole(["admin"]), async (req, res) => {
       return res.status(400).json({ message: "Invalid user id" });
     }
 
-    const result = await pool.query("DELETE FROM public.users WHERE id=$1 RETURNING id", [id]);
-    if (result.rows.length === 0) return res.status(404).json({ message: "User not found" });
+    const result = await pool.query(
+      "DELETE FROM public.users WHERE id=$1 RETURNING id",
+      [id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: "User not found" });
+    }
 
     return res.json({ message: "User deleted" });
   } catch (e) {

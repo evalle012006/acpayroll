@@ -11,6 +11,7 @@ import { FiSettings } from "react-icons/fi";
 import { FaUserGroup, FaIdBadge } from "react-icons/fa6";
 import { RxExit } from "react-icons/rx";
 import { LuFiles } from "react-icons/lu";
+import { BiPackage } from "react-icons/bi";
 
 import amber from "../assets/amber.jpg";
 import api from "../api/axiosClient";
@@ -28,9 +29,7 @@ const readUser = () => {
 const norm = (v) => String(v ?? "").trim().toLowerCase();
 
 const countPending = (rows) =>
-  (Array.isArray(rows) ? rows : []).filter(
-    (x) => norm(x?.status) === "pending"
-  ).length;
+  (Array.isArray(rows) ? rows : []).filter((x) => norm(x?.status) === "pending").length;
 
 const Sidebar = ({ collapsed }) => {
   const { pathname } = useLocation();
@@ -65,35 +64,24 @@ const Sidebar = ({ collapsed }) => {
   }, []);
 
   const navItems = useMemo(() => {
-    if (role === "branch manager") {
-      return [
-        { to: "/staff-information", label: "Staff Information", icon: FaIdBadge },
-        { to: "/salary", label: "Payslip", icon: BsCash },
-        {
-          to: user?.branch_id ? `/payroll/${user.branch_id}` : "/payroll",
-          label: "Branch Payroll",
-          icon: TbGitBranch,
-        },
-      ];
-    }
-
     const items = [
-      { to: "/dashboard", label: "Dashboard", icon: MdDashboard, roles: ["admin", "branch manager"] },
-      { to: "/departments", label: "Department", icon: FaBuilding, roles: ["admin", "branch manager"] },
-      { to: "/staff-information", label: "Staff Information", icon: FaIdBadge, roles: ["admin", "branch manager"] },
-      { to: "/schedule-balances", label: "Schedule of Balances", icon: HiOutlineClipboardList, roles: ["admin", "branch manager"] },
-      { to: "/transactions", label: "HRIS Transactions", icon: FaExchangeAlt, roles: ["admin", "branch manager"] },
-      { to: "/approval", label: "Finance Approval", icon: AiOutlineCheckCircle, roles: ["admin", "branch manager"] },
-      { to: "/branches", label: "Branch Payroll", icon: TbGitBranch, roles: ["admin", "branch manager"] },
-      { to: "/salary", label: "Payslip", icon: BsCash, roles: ["admin", "branch manager"] },
-      { to: "/reports", label: "Reports", icon: LuFiles, roles: ["admin"], badge: reportPending > 0 ? reportPending : null, },
-      { to: "/exit-staff", label: "Exit Staff", icon: RxExit, roles: ["admin"] },
-      { to: "/system-update", label: "System Update", icon: FiSettings, roles: ["admin"] },
-      { to: "/users", label: "Users", icon: FaUserGroup, roles: ["admin"] },
+      { to: "/dashboard", label: "Dashboard", icon: MdDashboard, roles: ["admin", "hr", "accounting", "branch manager"], },
+      { to: "/departments", label: "Department", icon: FaBuilding, roles: ["admin", "hr", "accounting"], },
+      { to: "/staff-information", label: "Staff Information", icon: FaIdBadge, roles: ["admin", "hr", "accounting", "branch manager"], },
+      { to: "/schedule-balances", label: "Schedule of Balances", icon: HiOutlineClipboardList, roles: ["admin", "hr", "accounting", "branch manager"], },
+      { to: "/transactions", label: "HRIS Transactions", icon: FaExchangeAlt, roles: ["admin", "hr", "accounting", "branch manager"], },
+      { to: "/approval", label: "Finance Approval", icon: AiOutlineCheckCircle, roles: ["admin", "hr", "accounting"], },
+      { to: "/branches", label: "Branch Payroll", icon: TbGitBranch, roles: ["admin", "hr", "accounting", "branch manager"], },
+      { to: "/logistic", label: "Logistic", icon: BiPackage, roles: ["admin", "hr", "accounting"], },
+      { to: "/salary", label: "Payslip", icon: BsCash, roles: ["admin", "hr", "accounting"], },
+      { to: "/reports", label: "Reports", icon: LuFiles, roles: ["admin", "hr", "accounting"], badge: reportPending > 0 ? reportPending : null, },
+      { to: "/exit-staff", label: "Exit Staff", icon: RxExit, roles: ["admin", "hr", "accounting"], },
+      { to: "/system-update", label: "System Update", icon: FiSettings, roles: ["admin"], },
+      { to: "/users", label: "Users", icon: FaUserGroup, roles: ["admin"], },
     ];
 
     return items.filter((x) => !x.roles || x.roles.includes(role));
-  }, [role, user?.branch_id, reportPending]);
+  }, [role, reportPending]);
 
   const isPathActive = (basePath) =>
     pathname === basePath || pathname.startsWith(basePath + "/");

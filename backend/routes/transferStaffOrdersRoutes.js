@@ -15,12 +15,14 @@ const toDateOrNull = (v) => {
   return /^\d{4}-\d{2}-\d{2}$/.test(d) ? d : null;
 };
 
+const toStr = (v) => String(v ?? "").trim();
+
 const roleLower = (req) => String(req.user?.role || "").trim().toLowerCase();
 const isAdmin = (req) => roleLower(req) === "admin";
+const isHr = (req) => roleLower(req) === "hr";
+const isAccounting = (req) => roleLower(req) === "accounting";
 const isBranchManager = (req) => roleLower(req) === "branch manager";
 const getUserBranchId = (req) => req.user?.branch_id ?? null;
-
-const toStr = (v) => String(v ?? "").trim();
 
 const displayName = (row) => {
   const ln = toStr(row?.last_name);
@@ -75,18 +77,18 @@ async function generateTransferOrderNo(client) {
 
 router.get("/transfer-staff-orders", requireAuth, async (req, res) => {
   try {
-    const role = roleLower(req);
     const branchId = getUserBranchId(req);
 
-    if (role === "admin") {
+    if (isAdmin(req) || isHr(req) || isAccounting(req)) {
       const r = await pool.query(
         `SELECT * FROM public.transfer_staff_orders ORDER BY created_at DESC`
       );
       return res.json(r.rows);
     }
 
-    if (role === "branch manager") {
+    if (isBranchManager(req)) {
       if (!branchId) return res.json([]);
+
       const r = await pool.query(
         `
         SELECT *
@@ -128,15 +130,42 @@ router.post(
       const date_created = toDateOrNull(b.date_created);
       const effective_date = toDateOrNull(b.effective_date);
 
-      if (!employee_id) return res.status(400).json({ message: "Employee required" });
-      if (!prev_branch_id || !to_branch_id) return res.status(400).json({ message: "Branches required" });
-      if (prev_branch_id === to_branch_id) return res.status(400).json({ message: "Branches must differ" });
-      if (!division) return res.status(400).json({ message: "Division required" });
-      if (!area) return res.status(400).json({ message: "Area required" });
-      if (!region) return res.status(400).json({ message: "Region required" });
-      if (!date_created) return res.status(400).json({ message: "Date created required" });
-      if (!effective_date) return res.status(400).json({ message: "Effective date required" });
-      if (!details) return res.status(400).json({ message: "Details required" });
+      if (!employee_id) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({ message: "Employee required" });
+      }
+      if (!prev_branch_id || !to_branch_id) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({ message: "Branches required" });
+      }
+      if (prev_branch_id === to_branch_id) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({ message: "Branches must differ" });
+      }
+      if (!division) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({ message: "Division required" });
+      }
+      if (!area) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({ message: "Area required" });
+      }
+      if (!region) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({ message: "Region required" });
+      }
+      if (!date_created) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({ message: "Date created required" });
+      }
+      if (!effective_date) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({ message: "Effective date required" });
+      }
+      if (!details) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({ message: "Details required" });
+      }
 
       if (isBranchManager(req)) {
         const myBranch = getUserBranchId(req);
@@ -154,6 +183,7 @@ router.post(
         `,
         [employee_id]
       );
+
       if (s.rowCount === 0) {
         await client.query("ROLLBACK");
         return res.status(404).json({ message: "Staff not found" });
@@ -161,49 +191,61 @@ router.post(
 
       const staffRow = s.rows[0];
       const employee_name = displayName(staffRow);
-
       const orderNo = await generateTransferOrderNo(client);
 
       const ins = await client.query(
         `
         INSERT INTO public.transfer_staff_orders
-          (order_no, employee_id, employee_name,
-           prev_branch_id, prev_branch_code, prev_branch_name,
-           to_branch_id, to_branch_code, to_branch_name,
-           area, region, division, date_created, effective_date, details,
-           status, created_by,
-           last_name, first_name, middle_name)
+          (
+            order_no,
+            employee_id,
+            employee_name,
+            prev_branch_id,
+            prev_branch_code,
+            prev_branch_name,
+            to_branch_id,
+            to_branch_code,
+            to_branch_name,
+            area,
+            region,
+            division,
+            date_created,
+            effective_date,
+            details,
+            status,
+            created_by,
+            last_name,
+            first_name,
+            middle_name
+          )
         VALUES
-          ($1,$2,$3,
-           $4,$5,$6,
-           $7,$8,$9,
-           $10,$11,$12,$13::date,$14::date,$15,
-           'Pending',$16,
-           $17,$18,$19)
+          (
+            $1,$2,$3,
+            $4,$5,$6,
+            $7,$8,$9,
+            $10,$11,$12,$13::date,$14::date,$15,
+            'Pending',$16,
+            $17,$18,$19
+          )
         RETURNING *;
         `,
         [
           orderNo,
           employee_id,
           employee_name,
-
           prev_branch_id,
           toStr(b.prev_branch_code),
           toStr(b.prev_branch_name),
-
           to_branch_id,
           toStr(b.to_branch_code),
           toStr(b.to_branch_name),
-
           area,
           region,
           division,
           date_created,
           effective_date,
           details,
-
           req.user?.id ?? null,
-
           toStr(staffRow.last_name) || null,
           toStr(staffRow.first_name) || null,
           toStr(staffRow.middle_name) || null,
@@ -247,9 +289,12 @@ router.put(
         [id, req.user?.id ?? null]
       );
 
-      if (r.rowCount === 0) return res.status(400).json({ message: "Order not found or not Pending" });
+      if (r.rowCount === 0) {
+        return res.status(400).json({ message: "Order not found or not Pending" });
+      }
 
       const order = r.rows[0];
+
       await pool.query(
         `
         UPDATE public.staff
@@ -281,7 +326,9 @@ router.put(
       if (!id) return res.status(400).json({ message: "Invalid id" });
 
       const reason = toStr(req.body?.reason);
-      if (!reason) return res.status(400).json({ message: "Rejection reason is required" });
+      if (!reason) {
+        return res.status(400).json({ message: "Rejection reason is required" });
+      }
 
       const r = await pool.query(
         `
@@ -299,7 +346,10 @@ router.put(
         [id, req.user?.id ?? null, reason]
       );
 
-      if (r.rowCount === 0) return res.status(400).json({ message: "Order not found or not Pending" });
+      if (r.rowCount === 0) {
+        return res.status(400).json({ message: "Order not found or not Pending" });
+      }
+
       return res.json(r.rows[0]);
     } catch (e) {
       console.error("PUT /api/transfer-staff-orders/:id/reject ERROR:", e.message);

@@ -35,8 +35,11 @@ import Deployment from "./pages/Deployment";
 import SbfOrder from "./pages/SbfOrder";
 import Reports from "./pages/Reports";
 import AreaConfigurations from "./pages/AreaConfigurations";
-
+import Consolidation from "./pages/Consolidation";
+import TaxCalculator from "./pages/TaxCalculator";
 import { CompRatesProvider } from "./context/CompRatesContext";
+import Logistic from "./pages/Logistic";
+import DetailsCompensation from "./pages/DetailsCompensation";
 
 const readUser = () => {
   try {
@@ -124,39 +127,42 @@ function AppShell() {
     <Routes>
       <Route path="/" element={<Navigate to={homeRedirect()} replace />} />
       <Route path="/login" element={hasAuth() ? <Navigate to={homeRedirect()} replace /> : <Login />} />
-      <Route path="/staff-information" element={<ProtectedRoute allowedRoles={["admin", "branch manager"]}><ProtectedLayout><StaffInformation /></ProtectedLayout></ProtectedRoute>}/>
-      <Route path="/salary" element={<ProtectedRoute allowedRoles={["admin", "branch manager"]}><ProtectedLayout><Salary /></ProtectedLayout></ProtectedRoute>}/>
-      <Route path="/payroll/:branchId" element={<ProtectedRoute allowedRoles={["admin", "branch manager"]}><ProtectedLayout><Payroll /></ProtectedLayout></ProtectedRoute>}/>
-      <Route path="/profile" element={<ProtectedRoute allowedRoles={["admin", "branch manager"]}><ProtectedLayout><Profile /></ProtectedLayout></ProtectedRoute>}/>
-      <Route path="/settings" element={<ProtectedRoute allowedRoles={["admin", "branch manager"]}><ProtectedLayout><Settings /></ProtectedLayout></ProtectedRoute>}/>
-      <Route path="/dashboard" element={<ProtectedRoute allowedRoles={["admin"]}><ProtectedLayout><Dashboard /></ProtectedLayout></ProtectedRoute>}/>
-      <Route path="/payroll" element={<ProtectedRoute allowedRoles={["admin"]}><ProtectedLayout><Payroll /></ProtectedLayout></ProtectedRoute>}/>
-      <Route path="/staff" element={<ProtectedRoute allowedRoles={["admin"]}><ProtectedLayout><Staff /></ProtectedLayout></ProtectedRoute>}/>
-      <Route path="/transportation/:id" element={<ProtectedRoute allowedRoles={["admin", "branch manager"]}><ProtectedLayout><Transportation /></ProtectedLayout></ProtectedRoute>}/>
-      <Route path="/schedule-balances" element={<ProtectedRoute allowedRoles={["admin"]}><ProtectedLayout><ScheduleBalances /></ProtectedLayout></ProtectedRoute>}/>
-      <Route path="/approval" element={<ProtectedRoute allowedRoles={["admin"]}><ProtectedLayout><Approval /></ProtectedLayout></ProtectedRoute>}/>
-      <Route path="/branches" element={<ProtectedRoute allowedRoles={["admin"]}><ProtectedLayout><Branches /></ProtectedLayout></ProtectedRoute>}/>
-      <Route path="/departments" element={<ProtectedRoute allowedRoles={["admin"]}><ProtectedLayout><Departments /></ProtectedLayout></ProtectedRoute>}/>
-      <Route path="/bonus/:branchId" element={<ProtectedRoute allowedRoles={["admin", "branch manager"]}><ProtectedLayout><Bonus /></ProtectedLayout></ProtectedRoute>}/>
-      <Route path="/system-update" element={<ProtectedRoute allowedRoles={["admin"]}><ProtectedLayout><SystemUpdate /></ProtectedLayout></ProtectedRoute>}/>
-      <Route path="/system-update/rates" element={<ProtectedRoute allowedRoles={["admin"]}><ProtectedLayout><SystemRates /></ProtectedLayout></ProtectedRoute>}/>
+      <Route path="/staff-information" element={<ProtectedRoute allowedRoles={["admin", "branch manager","accounting","hr"]}><ProtectedLayout><StaffInformation /></ProtectedLayout></ProtectedRoute>}/>
+      <Route path="/salary" element={<ProtectedRoute allowedRoles={["admin","accounting","hr"]}><ProtectedLayout><Salary /></ProtectedLayout></ProtectedRoute>}/>
+      <Route path="/payroll/:branchId" element={<ProtectedRoute allowedRoles={["admin", "branch manager","accounting","hr"]}><ProtectedLayout><Payroll /></ProtectedLayout></ProtectedRoute>}/>
+      <Route path="/profile" element={<ProtectedRoute allowedRoles={["admin", "branch manager","accounting","hr"]}><ProtectedLayout><Profile /></ProtectedLayout></ProtectedRoute>}/>
+      <Route path="/settings" element={<ProtectedRoute allowedRoles={["admin", "branch manager","accounting","hr"]}><ProtectedLayout><Settings /></ProtectedLayout></ProtectedRoute>}/>
+      <Route path="/dashboard" element={<ProtectedRoute allowedRoles={["admin","branch manager","accounting","hr"]}><ProtectedLayout><Dashboard /></ProtectedLayout></ProtectedRoute>}/>
+      <Route path="/payroll" element={<ProtectedRoute allowedRoles={["admin","accounting","hr","branch manager"]}><ProtectedLayout><Payroll /></ProtectedLayout></ProtectedRoute>}/>
+      <Route path="/staff" element={<ProtectedRoute allowedRoles={["admin","accounting","hr"]}><ProtectedLayout><Staff /></ProtectedLayout></ProtectedRoute>}/>
+      <Route path="/transportation/:id" element={<ProtectedRoute allowedRoles={["admin", "branch manager","accounting","hr"]}><ProtectedLayout><Transportation /></ProtectedLayout></ProtectedRoute>}/>
+      <Route path="/schedule-balances" element={<ProtectedRoute allowedRoles={["admin","accounting","hr","branch manager"]}><ProtectedLayout><ScheduleBalances /></ProtectedLayout></ProtectedRoute>}/>
+      <Route path="/approval" element={<ProtectedRoute allowedRoles={["admin","accounting","hr"]}><ProtectedLayout><Approval /></ProtectedLayout></ProtectedRoute>}/>
+      <Route path="/branches" element={<ProtectedRoute allowedRoles={["admin","accounting","hr", "branch manager"]}><ProtectedLayout><Branches /></ProtectedLayout></ProtectedRoute>}/>
+      <Route path="/departments" element={<ProtectedRoute allowedRoles={["admin","accounting","hr"]}><ProtectedLayout><Departments /></ProtectedLayout></ProtectedRoute>}/>
+      <Route path="/bonus/:branchId" element={<ProtectedRoute allowedRoles={["admin", "branch manager","accounting","hr"]}><ProtectedLayout><Bonus /></ProtectedLayout></ProtectedRoute>}/>
+      <Route path="/system-update" element={<ProtectedRoute allowedRoles={["admin","accounting","hr"]}><ProtectedLayout><SystemUpdate /></ProtectedLayout></ProtectedRoute>}/>
+      <Route path="/system-update/rates" element={<ProtectedRoute allowedRoles={["admin","accounting","hr"]}><ProtectedLayout><SystemRates /></ProtectedLayout></ProtectedRoute>}/>
       <Route path="/users"element={<ProtectedRoute allowedRoles={["admin"]}><ProtectedLayout><Users /></ProtectedLayout></ProtectedRoute>}/>
-      <Route path="/transactions" element={<ProtectedRoute allowedRoles={["admin"]}><ProtectedLayout><Transactions /></ProtectedLayout></ProtectedRoute>}/>
-      <Route path="/transactions/promotion" element={<ProtectedRoute allowedRoles={["admin"]}><ProtectedLayout><PromotionOrder /></ProtectedLayout></ProtectedRoute>}/>
-      <Route path="/transactions/transfer" element={<ProtectedRoute allowedRoles={["admin"]}><ProtectedLayout><TransferStaffOrder /></ProtectedLayout></ProtectedRoute>}/>
-      <Route path="/transactions/demotion" element={<ProtectedRoute allowedRoles={["admin"]}><ProtectedLayout><DemotionOrder /></ProtectedLayout></ProtectedRoute>}/>
-      <Route path="/transactions/suspension" element={<ProtectedRoute allowedRoles={["admin"]}><ProtectedLayout><SuspensionOrder /></ProtectedLayout></ProtectedRoute>}/>
-      <Route path="/transactions/exit" element={<ProtectedRoute allowedRoles={["admin"]}><ProtectedLayout><ExitStaffOrders /></ProtectedLayout></ProtectedRoute>}/>
-      <Route path="/transactions/leave" element={<ProtectedRoute allowedRoles={["admin"]}><ProtectedLayout><LeaveTransactions /></ProtectedLayout></ProtectedRoute>}/>
-      <Route path="/transactions/soa" element={<ProtectedRoute allowedRoles={["admin"]}><ProtectedLayout><Soa /></ProtectedLayout></ProtectedRoute>}/>
-      <Route path="/transactions/deployment" element={<ProtectedRoute allowedRoles={["admin"]}><ProtectedLayout><Deployment /></ProtectedLayout></ProtectedRoute>}/>
-      <Route path="/exit-staff" element={<ProtectedRoute allowedRoles={["admin"]}><ProtectedLayout><ExitStaff /></ProtectedLayout></ProtectedRoute>}/>
-      <Route path="/exit-staff-orders" element={<ProtectedRoute allowedRoles={["admin"]}><ProtectedLayout><ExitStaffOrders /></ProtectedLayout></ProtectedRoute>}/>
-      <Route path="/transactions/sbf" element={<ProtectedRoute allowedRoles={["admin"]}><ProtectedLayout><SbfOrder /></ProtectedLayout></ProtectedRoute>}/>
-      <Route path="/reports" element={<ProtectedRoute allowedRoles={["admin", "branch manager"]}><ProtectedLayout><Reports /></ProtectedLayout></ProtectedRoute>}/>
-      <Route path="/system-update/area-configurations" element={<ProtectedRoute allowedRoles={["admin"]}><ProtectedLayout><AreaConfigurations /></ProtectedLayout></ProtectedRoute>}/>
-      <Route path="*" element={<Navigate to={homeRedirect()} replace />} />
-    </Routes>
+      <Route path="/transactions" element={<ProtectedRoute allowedRoles={["admin","accounting","hr", "branch manager"]}><ProtectedLayout><Transactions /></ProtectedLayout></ProtectedRoute>}/>
+      <Route path="/transactions/promotion" element={<ProtectedRoute allowedRoles={["admin","accounting","hr"]}><ProtectedLayout><PromotionOrder /></ProtectedLayout></ProtectedRoute>}/>
+      <Route path="/transactions/transfer" element={<ProtectedRoute allowedRoles={["admin","accounting","hr"]}><ProtectedLayout><TransferStaffOrder /></ProtectedLayout></ProtectedRoute>}/>
+      <Route path="/transactions/demotion" element={<ProtectedRoute allowedRoles={["admin","accounting","hr"]}><ProtectedLayout><DemotionOrder /></ProtectedLayout></ProtectedRoute>}/>
+      <Route path="/transactions/suspension" element={<ProtectedRoute allowedRoles={["admin","accounting","hr"]}><ProtectedLayout><SuspensionOrder /></ProtectedLayout></ProtectedRoute>}/>
+      <Route path="/transactions/exit" element={<ProtectedRoute allowedRoles={["admin","accounting","hr"]}><ProtectedLayout><ExitStaffOrders /></ProtectedLayout></ProtectedRoute>}/>
+      <Route path="/transactions/leave" element={<ProtectedRoute allowedRoles={["admin","accounting","hr","branch manager"]}><ProtectedLayout><LeaveTransactions /></ProtectedLayout></ProtectedRoute>}/>
+      <Route path="/transactions/soa" element={<ProtectedRoute allowedRoles={["admin","accounting","hr"]}><ProtectedLayout><Soa /></ProtectedLayout></ProtectedRoute>}/>
+      <Route path="/transactions/deployment" element={<ProtectedRoute allowedRoles={["admin","accounting","hr","branch manager"]}><ProtectedLayout><Deployment /></ProtectedLayout></ProtectedRoute>}/>
+      <Route path="/exit-staff" element={<ProtectedRoute allowedRoles={["admin","accounting","hr"]}><ProtectedLayout><ExitStaff /></ProtectedLayout></ProtectedRoute>}/>
+      <Route path="/exit-staff-orders" element={<ProtectedRoute allowedRoles={["admin","accounting","hr"]}><ProtectedLayout><ExitStaffOrders /></ProtectedLayout></ProtectedRoute>}/>
+      <Route path="/transactions/sbf" element={<ProtectedRoute allowedRoles={["admin","accounting","hr"]}><ProtectedLayout><SbfOrder /></ProtectedLayout></ProtectedRoute>}/>
+      <Route path="/reports" element={<ProtectedRoute allowedRoles={["admin", "branch manager","accounting","hr"]}><ProtectedLayout><Reports /></ProtectedLayout></ProtectedRoute>}/>
+      <Route path="/system-update/area-configurations" element={<ProtectedRoute allowedRoles={["admin","accounting","hr"]}><ProtectedLayout><AreaConfigurations /></ProtectedLayout></ProtectedRoute>}/>
+      <Route path="/system-update/consolidation" element={<ProtectedRoute allowedRoles={["admin","accounting","hr"]}><ProtectedLayout><Consolidation /></ProtectedLayout></ProtectedRoute>}/>
+      <Route path="/system-update/tax-calculator" element={<ProtectedRoute allowedRoles={["admin","accounting","hr"]}><ProtectedLayout><TaxCalculator /></ProtectedLayout></ProtectedRoute>}/>
+      <Route path="/logistic" element={<ProtectedRoute allowedRoles={["admin","accounting","hr"]}><ProtectedLayout><Logistic /></ProtectedLayout></ProtectedRoute>} />
+      <Route path="/system-update/details-compensation" element={<ProtectedRoute allowedRoles={["admin","accounting","hr"]}><ProtectedLayout><DetailsCompensation /></ProtectedLayout></ProtectedRoute>}/>
+      <Route path="*" element={<Navigate to={homeRedirect()} replace />} /></Routes>
   );
 }
 

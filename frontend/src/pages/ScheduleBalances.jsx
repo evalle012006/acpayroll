@@ -47,13 +47,25 @@ const displayName = (r) => {
   const ln = toStr(r?.last_name);
   const fn = toStr(r?.first_name);
   const mn = toStr(r?.middle_name);
-  const built = `${ln}${ln && fn ? ", " : ""}${fn}${mn ? ` ${mn}` : ""}`.replace(/\s+/g, " ").trim();
+
+  const built = `${ln}${ln && fn ? ", " : ""}${fn}${mn ? ` ${mn}` : ""}`
+    .replace(/\s+/g, " ")
+    .trim();
+
   return built || toStr(r?.fullname) || "-";
 };
 
 export default function ScheduleBalances() {
   const user = useMemo(() => readUser(), []);
-  const isAdmin = String(user?.role || "").trim().toLowerCase() === "admin";
+
+  const role = String(user?.role || "").trim().toLowerCase();
+  const isAdmin = role === "admin";
+  const isBranchManager = role === "branch manager";
+
+  const userBranchRaw = useMemo(() => {
+    const raw = user?.branch_id;
+    return raw === null || raw === undefined || raw === "" ? "" : String(raw).trim();
+  }, [user]);
 
   const [rows, setRows] = useState([]);
   const [branches, setBranches] = useState([]);
@@ -77,7 +89,8 @@ export default function ScheduleBalances() {
   const fetchBranches = useCallback(async () => {
     try {
       const res = await api.get("/branches");
-      setBranches(Array.isArray(res.data) ? res.data : []);
+      const list = Array.isArray(res.data) ? res.data : [];
+      setBranches(list);
     } catch (err) {
       if (err?.response?.status === 401) logout();
       setBranches([]);
@@ -98,28 +111,63 @@ export default function ScheduleBalances() {
     [branchMap]
   );
 
+  const resolvedUserBranchId = useMemo(() => {
+    if (!userBranchRaw) return "";
+
+    const exactId = branches.find((b) => String(b.id) === String(userBranchRaw));
+    if (exactId) return String(exactId.id);
+
+    const byCode = branches.find(
+      (b) => String(b.code || "").trim().toLowerCase() === userBranchRaw.toLowerCase()
+    );
+    if (byCode) return String(byCode.id);
+
+    return "";
+  }, [branches, userBranchRaw]);
+
+  const visibleBranches = useMemo(() => {
+    if (!isBranchManager) return branches;
+    return branches.filter((b) => String(b.id) === String(resolvedUserBranchId));
+  }, [branches, isBranchManager, resolvedUserBranchId]);
+
+  const effectiveBranchId = useMemo(() => {
+    if (isBranchManager) return resolvedUserBranchId;
+    return selectedBranch;
+  }, [isBranchManager, resolvedUserBranchId, selectedBranch]);
+
   const fetchLiveBalances = useCallback(
-    async (branchId = selectedBranch, m = month) => {
+    async (branchId = effectiveBranchId, m = month) => {
       if (!m) return;
 
       setLoading(true);
       try {
+        const finalBranchId = isBranchManager ? resolvedUserBranchId : branchId;
+
         const res = await api.get("/schedule-balances/live", {
           params: {
             month: m,
-            ...(branchId ? { branchId } : {}),
+            ...(finalBranchId ? { branchId: finalBranchId } : {}),
           },
         });
 
-        setRows(Array.isArray(res.data) ? res.data : []);
+        let data = Array.isArray(res.data) ? res.data : [];
+
+        if (isBranchManager && finalBranchId) {
+          data = data.filter((r) => String(r.branch_id) === String(finalBranchId));
+        }
+
+        setRows(data);
       } catch (err) {
-        if (err?.response?.status === 401) logout();
+        if (err?.response?.status === 401) {
+          logout();
+          return;
+        }
         setRows([]);
       } finally {
         setLoading(false);
       }
     },
-    [logout, selectedBranch, month]
+    [logout, effectiveBranchId, month, isBranchManager, resolvedUserBranchId]
   );
 
   useEffect(() => {
@@ -127,8 +175,18 @@ export default function ScheduleBalances() {
   }, [fetchBranches]);
 
   useEffect(() => {
-    fetchLiveBalances(selectedBranch, month);
-  }, [selectedBranch, month, fetchLiveBalances]);
+    if (isBranchManager) {
+      setSelectedBranch(resolvedUserBranchId);
+    }
+  }, [isBranchManager, resolvedUserBranchId]);
+
+  useEffect(() => {
+    if (isBranchManager && !resolvedUserBranchId && branches.length > 0) {
+      setRows([]);
+      return;
+    }
+    fetchLiveBalances(effectiveBranchId, month);
+  }, [effectiveBranchId, month, fetchLiveBalances, isBranchManager, resolvedUserBranchId, branches.length]);
 
   useEffect(() => {
     if (!viewBranch) return;
@@ -151,10 +209,10 @@ export default function ScheduleBalances() {
   const handleClear = () => {
     setSearch("");
     setSearchInput("");
-    setSelectedBranch("");
+    setSelectedBranch(isBranchManager ? resolvedUserBranchId : "");
   };
 
-  const handleRefresh = () => fetchLiveBalances(selectedBranch, month);
+  const handleRefresh = () => fetchLiveBalances(effectiveBranchId, month);
 
   const saveSnapshotFromCurrent = async () => {
     if (!isAdmin) return alert("Admin only.");
@@ -197,6 +255,8 @@ export default function ScheduleBalances() {
     const map = new Map();
 
     for (const r of filteredEmployeeRows) {
+      if (isBranchManager && String(r.branch_id) !== String(resolvedUserBranchId)) continue;
+
       const key = String(r.branch_id || "unassigned");
 
       const existing = map.get(key) || {
@@ -225,8 +285,10 @@ export default function ScheduleBalances() {
       map.set(key, existing);
     }
 
-    return Array.from(map.values()).sort((a, b) => a.branch_label.localeCompare(b.branch_label));
-  }, [filteredEmployeeRows, branchLabel]);
+    return Array.from(map.values()).sort((a, b) =>
+      a.branch_label.localeCompare(b.branch_label)
+    );
+  }, [filteredEmployeeRows, branchLabel, isBranchManager, resolvedUserBranchId]);
 
   const totals = useMemo(() => {
     const t = Object.fromEntries(MONEY_COLS.map((c) => [c.key, 0]));
@@ -282,16 +344,29 @@ export default function ScheduleBalances() {
     XLSX.writeFile(wb, `ScheduleBalances_ByBranch_${month}.xlsx`);
   };
 
+  const currentBranchText = useMemo(() => {
+    if (effectiveBranchId) return branchLabel(effectiveBranchId);
+    if (isBranchManager && userBranchRaw) return userBranchRaw;
+    return "All";
+  }, [effectiveBranchId, branchLabel, isBranchManager, userBranchRaw]);
+
   return (
     <div className="balances-page">
       <div className="balances-page-header">
         <div>
           <h2 className="balances-title">Schedule of Balances</h2>
-          <p className="balances-subtitle">Per-branch balances from current transactions and staff balances.</p>
+          <p className="balances-subtitle">
+            Per-branch balances from current transactions and staff balances.
+          </p>
         </div>
 
         <div className="balances-actions">
-          <input className="search-input" type="month" value={month} onChange={(e) => setMonth(e.target.value)} />
+          <input
+            className="search-input"
+            type="month"
+            value={month}
+            onChange={(e) => setMonth(e.target.value)}
+          />
 
           <input
             className="search-input"
@@ -302,9 +377,17 @@ export default function ScheduleBalances() {
             onKeyDown={(e) => e.key === "Enter" && handleSearch()}
           />
 
-          <select className="branch-select" value={selectedBranch} onChange={(e) => setSelectedBranch(e.target.value)}>
-            <option value="">All Branches</option>
-            {branches.map((b) => (
+          <select
+            className="branch-select"
+            value={effectiveBranchId}
+            onChange={(e) => {
+              if (isBranchManager) return;
+              setSelectedBranch(e.target.value);
+            }}
+            disabled={isBranchManager}
+          >
+            {!isBranchManager && <option value="">All Branches</option>}
+            {visibleBranches.map((b) => (
               <option key={b.id} value={b.id}>
                 {b.code} - {b.name}
               </option>
@@ -319,17 +402,32 @@ export default function ScheduleBalances() {
             Clear
           </button>
 
-          <button className="btn-secondary" onClick={handleRefresh} type="button" disabled={loading}>
+          <button
+            className="btn-secondary"
+            onClick={handleRefresh}
+            type="button"
+            disabled={loading}
+          >
             {loading ? "Refreshing..." : "Refresh"}
           </button>
 
           {isAdmin && (
-            <button className="btn-primary" onClick={saveSnapshotFromCurrent} type="button" disabled={savingSnap}>
+            <button
+              className="btn-primary"
+              onClick={saveSnapshotFromCurrent}
+              type="button"
+              disabled={savingSnap}
+            >
               {savingSnap ? "Saving..." : "Save Snapshot"}
             </button>
           )}
 
-          <button className="btn-primary" onClick={exportToExcel} type="button" disabled={groupedBranches.length === 0}>
+          <button
+            className="btn-primary"
+            onClick={exportToExcel}
+            type="button"
+            disabled={groupedBranches.length === 0}
+          >
             Export Excel
           </button>
         </div>
@@ -340,7 +438,7 @@ export default function ScheduleBalances() {
           <div className="balances-card-title">
             Branch Records <span className="balances-count">{groupedBranches.length}</span>
             <span style={{ marginLeft: 10, fontSize: 12, opacity: 0.8 }}>
-              Month Label: <b>{month || "-"}</b> • Branch: <b>{selectedBranch ? branchLabel(selectedBranch) : "All"}</b>
+              Month Label: <b>{month || "-"}</b> • Branch: <b>{currentBranchText}</b>
             </span>
           </div>
           {loading && <div className="balances-loading">Loading…</div>}
@@ -394,7 +492,11 @@ export default function ScheduleBalances() {
                     ))}
 
                     <td>
-                      <button className="btn-secondary" type="button" onClick={() => setViewBranch(item)}>
+                      <button
+                        className="btn-secondary"
+                        type="button"
+                        onClick={() => setViewBranch(item)}
+                      >
                         View
                       </button>
                     </td>
@@ -409,7 +511,9 @@ export default function ScheduleBalances() {
       {viewBranch && (
         <div
           className="modal-overlay"
-          onMouseDown={(e) => e.target.classList.contains("modal-overlay") && setViewBranch(null)}
+          onMouseDown={(e) =>
+            e.target.classList.contains("modal-overlay") && setViewBranch(null)
+          }
         >
           <div
             className="modal saas-modal"

@@ -14,6 +14,14 @@ const toStr = (v) => String(v ?? "").trim();
 const norm = (v) => toStr(v).toLowerCase();
 const toDate10 = (v) => (v ? String(v).slice(0, 10) : "");
 
+const readUser = () => {
+  try {
+    return JSON.parse(localStorage.getItem("user") || "null");
+  } catch {
+    return null;
+  }
+};
+
 const OVERRIDE_FIELDS = [
   "postage",
   "transportation",
@@ -52,6 +60,14 @@ export default function Transportation() {
   const params = useParams();
   const branchParam = toStr(params.branchId ?? params.id);
   const navigate = useNavigate();
+
+  const user = useMemo(() => readUser(), []);
+  const role = norm(user?.role);
+
+  const canManualEdit =
+    role === "admin" ||
+    role === "hr" ||
+    role === "accounting";
 
   const [branch, setBranch] = useState(null);
   const [staff, setStaff] = useState([]);
@@ -130,7 +146,8 @@ export default function Transportation() {
         const branches = Array.isArray(branchesRes.data) ? branchesRes.data : [];
 
         const foundBranch = branches.find((x) => {
-          const idMatch = Number.isFinite(Number(branchParam)) && Number(x.id) === Number(branchParam);
+          const idMatch =
+            Number.isFinite(Number(branchParam)) && Number(x.id) === Number(branchParam);
           const codeMatch = norm(x.code) === norm(branchParam);
           return idMatch || codeMatch;
         });
@@ -204,6 +221,11 @@ export default function Transportation() {
       const motorcycle = toNum(s.motorcycle_loan);
       const other = toNum(s.other_deduction);
 
+      const noOfClients =
+        toNum(s.no_of_clients) ||
+        toNum(s.client_count) ||
+        toNum(s.number_of_clients);
+
       const totalAllowance =
         postage + transportation + additionalTarget + repairing + additionalMonitoring;
       const totalDeduction = motorcycle + other;
@@ -215,6 +237,7 @@ export default function Transportation() {
         fullname: s.fullname,
         position: s.position,
         regularization_date: s.regularization_date,
+        noOfClients,
 
         postage,
         transportation,
@@ -237,6 +260,7 @@ export default function Transportation() {
   const totals = useMemo(() => {
     return rows.reduce(
       (t, r) => {
+        t.noOfClients += r.noOfClients;
         t.postage += r.postage;
         t.transportation += r.transportation;
         t.additionalTarget += r.additionalTarget;
@@ -252,6 +276,7 @@ export default function Transportation() {
         return t;
       },
       {
+        noOfClients: 0,
         postage: 0,
         transportation: 0,
         additionalTarget: 0,
@@ -270,6 +295,11 @@ export default function Transportation() {
 
   /* ---------------- Modal actions ---------------- */
   const openManualEdit = (row) => {
+    if (!canManualEdit) {
+      alert("Only Admin, HR, and Accounting can edit manually.");
+      return;
+    }
+
     setMenuOpenFor(null);
     setEditModalStaff(row);
 
@@ -287,6 +317,11 @@ export default function Transportation() {
   };
 
   const saveManualEdit = async () => {
+    if (!canManualEdit) {
+      alert("Only Admin, HR, and Accounting can edit manually.");
+      return;
+    }
+
     if (!editModalStaff?.id || !branch?.id) return;
 
     const until = toDate10(editUntil);
@@ -315,6 +350,11 @@ export default function Transportation() {
   };
 
   const clearOverrideForStaff = async (staffId) => {
+    if (!canManualEdit) {
+      alert("Only Admin, HR, and Accounting can remove manual edits.");
+      return;
+    }
+
     if (!branch?.id) return;
 
     try {
@@ -383,6 +423,7 @@ export default function Transportation() {
                 <th rowSpan={2}>Staff Name</th>
                 <th rowSpan={2}>Position</th>
                 <th rowSpan={2}>Date Regularized</th>
+                <th rowSpan={2}>No. of Clients</th>
 
                 <th colSpan={6}>Allowances & Incentives</th>
                 <th colSpan={3}>Deductions</th>
@@ -412,7 +453,7 @@ export default function Transportation() {
             <tbody>
               {rows.length === 0 ? (
                 <tr>
-                  <td colSpan={18} className="empty-state">
+                  <td colSpan={19} className="empty-state">
                     No staff found for this branch.
                   </td>
                 </tr>
@@ -436,6 +477,7 @@ export default function Transportation() {
                       </td>
                       <td>{r.position || "-"}</td>
                       <td>{r.regularization_date ? String(r.regularization_date).split("T")[0] : "-"}</td>
+                      <td>{r.noOfClients || 0}</td>
 
                       <td>₱ {money(r.postage)}</td>
                       <td>₱ {money(r.transportation)}</td>
@@ -470,15 +512,17 @@ export default function Transportation() {
 
                           {menuOpenFor === r.id ? (
                             <div className="transpo-action-menu">
-                              <button
-                                type="button"
-                                className="transpo-action-item"
-                                onClick={() => openManualEdit(r)}
-                              >
-                                Edit manually
-                              </button>
+                              {canManualEdit ? (
+                                <button
+                                  type="button"
+                                  className="transpo-action-item"
+                                  onClick={() => openManualEdit(r)}
+                                >
+                                  Edit manually
+                                </button>
+                              ) : null}
 
-                              {hasOverride ? (
+                              {canManualEdit && hasOverride ? (
                                 <button
                                   type="button"
                                   className="transpo-action-item danger"
@@ -508,6 +552,8 @@ export default function Transportation() {
                     Total
                   </td>
 
+                  <td>{totals.noOfClients}</td>
+
                   <td>₱ {money(totals.postage)}</td>
                   <td>₱ {money(totals.transportation)}</td>
                   <td>₱ {money(totals.additionalTarget)}</td>
@@ -533,7 +579,7 @@ export default function Transportation() {
         <div className="transpo-hint">Tip: scroll horizontally to view all columns.</div>
       </div>
 
-      {editModalStaff ? (
+      {editModalStaff && canManualEdit ? (
         <div
           className="transpo-modal-overlay"
           onMouseDown={(e) =>

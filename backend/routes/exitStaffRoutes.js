@@ -19,6 +19,8 @@ const norm = (v) => clean(v).toLowerCase();
 
 const roleLower = (req) => norm(req.user?.role);
 const isAdmin = (req) => roleLower(req) === "admin";
+const isHr = (req) => roleLower(req) === "hr";
+const isAccounting = (req) => roleLower(req) === "accounting";
 const isBranchManager = (req) => roleLower(req) === "branch manager";
 const getUserBranchId = (req) => req.user?.branch_id ?? null;
 
@@ -34,7 +36,7 @@ const normalizeExitType = (v) => {
 
 router.get("/exit-staff", requireAuth, async (req, res) => {
   try {
-    if (!isAdmin(req) && !isBranchManager(req)) {
+    if (!isAdmin(req) && !isBranchManager(req) && !isHr(req) && !isAccounting(req)) {
       return res.status(403).json({ message: "Access denied" });
     }
 
@@ -89,7 +91,7 @@ router.get("/exit-staff", requireAuth, async (req, res) => {
 ========================================================= */
 router.get("/exit-staff-orders", requireAuth, async (req, res) => {
   try {
-    if (isAdmin(req)) {
+    if (isAdmin(req) || isHr(req) || isAccounting(req)) {
       const r = await pool.query(`
         SELECT *
         FROM public.exit_staff_orders

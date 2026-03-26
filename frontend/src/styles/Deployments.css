@@ -36,7 +36,6 @@
   color: var(--muted);
 }
 
-/* header buttons (keep your variants, but align base look) */
 .po-actions {
   display: flex;
   gap: 10px;
@@ -124,7 +123,7 @@
 .po-table {
   width: 100%;
   border-collapse: collapse;
-  min-width: 980px; /* keep your wide table behavior */
+  min-width: 980px;
 }
 
 .po-table th {

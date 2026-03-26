@@ -1,11 +1,4 @@
-import React, {
-  createContext,
-  useCallback,
-  useContext,
-  useEffect,
-  useMemo,
-  useState,
-} from "react";
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState, } from "react";
 import api from "../api/axiosClient";
 
 const toNum = (v) => {
@@ -48,7 +41,7 @@ export const CompRatesProvider = ({ children }) => {
     } catch (e) {
       const status = e?.response?.status;
 
-      if (status === 401) {
+      if (status === 401 || status === 403) {
         setRates([]);
         setError("");
         return;
@@ -107,7 +100,11 @@ export const CompRatesProvider = ({ children }) => {
     [rates, loading, error, refresh, ratesByPosition, getCompByPosition]
   );
 
-  return <CompRatesContext.Provider value={value}>{children}</CompRatesContext.Provider>;
+  return (
+    <CompRatesContext.Provider value={value}>
+      {children}
+    </CompRatesContext.Provider>
+  );
 };
 
 export const useCompRates = () => {

@@ -67,6 +67,85 @@ const displayFormName = (form) => {
 const loanDisplayDate = (l) =>
   l?.entry_date || l?.approved_at || l?.disbursement_date || l?.created_at || l?.updated_at || null;
 
+const MONTH_NAMES = [
+  "January",
+  "February",
+  "March",
+  "April",
+  "May",
+  "June",
+  "July",
+  "August",
+  "September",
+  "October",
+  "November",
+  "December",
+];
+
+const compute13thMonthBreakdown = (staff) => {
+  const basicSalary = toNum(staff?.salary);
+  const startDateRaw = staff?.start_date;
+  const now = new Date();
+  const currentYear = now.getFullYear();
+
+  if (!basicSalary) {
+    return {
+      year: currentYear,
+      rows: MONTH_NAMES.map((month) => ({
+        month,
+        amount: 0,
+        eligible: false,
+      })),
+      totalBasicEarned: 0,
+      thirteenthMonth: 0,
+      monthlyEquivalent: 0,
+    };
+  }
+
+  let startDate = null;
+  if (startDateRaw) {
+    const d = new Date(startDateRaw);
+    if (!Number.isNaN(d.getTime())) startDate = d;
+  }
+
+  const monthlyEquivalent = basicSalary / 12;
+
+  const rows = MONTH_NAMES.map((month, index) => {
+    let eligible = true;
+
+    if (startDate) {
+      const startYear = startDate.getFullYear();
+      const startMonth = startDate.getMonth();
+
+      if (startYear > currentYear) {
+        eligible = false;
+      } else if (startYear === currentYear && index < startMonth) {
+        eligible = false;
+      }
+    }
+
+    return {
+      month,
+      amount: eligible ? monthlyEquivalent : 0,
+      eligible,
+    };
+  });
+
+  const totalBasicEarned = rows.reduce((sum, row) => {
+    return sum + (row.eligible ? basicSalary : 0);
+  }, 0);
+
+  const thirteenthMonth = totalBasicEarned / 12;
+
+  return {
+    year: currentYear,
+    rows,
+    totalBasicEarned,
+    thirteenthMonth,
+    monthlyEquivalent,
+  };
+};
+
 function StepTabs({ step, onSelectStep, canGoContract, canGoBalances }) {
   return (
     <div className="step-tabs">
@@ -608,6 +687,10 @@ function StaffProfileModal({ staff, avatarUrl, onClose, branchNameById }) {
   const employmentArr = useMemo(() => safeJsonArray(staff?.employment_history), [staff?.employment_history]);
   const beneficiariesArr = useMemo(() => safeJsonArray(staff?.beneficiaries), [staff?.beneficiaries]);
 
+  const thirteenthMonthData = useMemo(() => {
+    return compute13thMonthBreakdown(staff);
+  }, [staff]);
+
   const Chip = ({ label, active, onClick }) => (
     <button type="button" className={`chip ${active ? "active" : ""}`} onClick={onClick}>
       {label}
@@ -719,7 +802,7 @@ function StaffProfileModal({ staff, avatarUrl, onClose, branchNameById }) {
     } finally {
       setLoadingBal(false);
     }
-  }, [staff?.id]);
+  }, [staff?.id, staff?.employee_no]);
 
   useEffect(() => {
     if (tab === "leave") loadLeaves();
@@ -1137,6 +1220,34 @@ function StaffProfileModal({ staff, avatarUrl, onClose, branchNameById }) {
                         )}
                       </td>
                     </tr>
+
+                    <tr><td colSpan="2"><h2>Tax Contribution (2316)</h2></td></tr>
+                    <tr><td>Basic Salary</td><td>{money(staff.salary)}</td></tr>
+                    <tr><td>Ecola</td><td>{money(staff.ecola)}</td></tr>
+                    <tr><td><strong>Total Contribution</strong></td><td>{money(toNum(staff.salary) + toNum(staff.ecola))}</td></tr>
+
+                    <tr><td colSpan="2"><h2>Remittances (EE)</h2></td></tr>
+                    <tr><td>SSS</td><td>{money(staff.sss_ee)}</td></tr>
+                    <tr><td>Philhealth</td><td>{money(staff.ph_ee)}</td></tr>
+                    <tr><td>Pag-ibig</td><td>{money(staff.hdmf_ee)}</td></tr>
+                    <tr><td><strong>Total (EE)</strong></td><td>{money(toNum(staff.sss_ee) + toNum(staff.ph_ee) + toNum(staff.hdmf_ee))}</td></tr>
+
+                    <tr><td colSpan="2"><h2>Tax</h2></td></tr>
+                    <tr><td>Tax</td><td>{money(staff.tax)}</td></tr>
+                    <tr><td><strong>Total Tax</strong></td><td>{money(toNum(staff.tax))}</td></tr>
+
+                    <tr><td colSpan="2"><h2>13th Month Computation ({thirteenthMonthData.year})</h2></td></tr>
+                    <tr><td>Basic Salary</td><td>{money(staff.salary)}</td></tr>
+
+                    {thirteenthMonthData.rows.map((row) => (
+                      <tr key={row.month}>
+                        <td>{row.month}</td>
+                        <td>{money(row.amount)}</td>
+                      </tr>
+                    ))}
+
+                    <tr><td><strong>Total Basic Salary Earned</strong></td><td>{money(thirteenthMonthData.totalBasicEarned)}</td></tr>
+                    <tr><td><strong>13th Month Pay</strong></td><td>{money(thirteenthMonthData.thirteenthMonth)}</td></tr>
                   </tbody>
                 </table>
               ) : null}
@@ -1155,6 +1266,22 @@ function StaffProfileModal({ staff, avatarUrl, onClose, branchNameById }) {
 }
 
 export default function StaffInformation() {
+  const readUser = () => {
+    try {
+      return JSON.parse(localStorage.getItem("user") || "null");
+    } catch {
+      return null;
+    }
+  };
+
+  const user = useMemo(() => readUser(), []);
+  const role = useMemo(() => norm(user?.role), [user]);
+
+  const canEditStaff =
+    role === "admin" ||
+    role === "hr" ||
+    role === "accounting";
+
   const [staff, setStaff] = useState([]);
   const [branches, setBranches] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -1280,8 +1407,11 @@ export default function StaffInformation() {
   const avatarUrl = (s) => {
     const p = s?.photo_url;
     if (!p) return "";
+
     if (String(p).startsWith("http")) return p;
-    return `${base}${p}`;
+
+    const cleanPath = p.startsWith("/") ? p : `/${p}`;
+    return `${base}${cleanPath}`;
   };
 
   const resetForm = () => {
@@ -1465,6 +1595,7 @@ export default function StaffInformation() {
     () => !!toStr(form.last_name) && !!toStr(form.first_name),
     [form.last_name, form.first_name]
   );
+
   const isContractStepValid = useMemo(
     () => !!toStr(form.position),
     [form.position]
@@ -1483,6 +1614,10 @@ export default function StaffInformation() {
   };
 
   const openEdit = async (s) => {
+      if (!canEditStaff) {
+      alert("Only Admin, HR, and Accounting can edit staff.");
+      return;
+    }
     setEditStaff(s);
 
     setForm({
@@ -1672,6 +1807,12 @@ export default function StaffInformation() {
 
   const updateStaff = async (e) => {
     e.preventDefault();
+
+    if (!canEditStaff) {
+      alert("Only Admin, HR, and Accounting can edit staff.");
+      return;
+    }
+
     if (!editStaff) return;
 
     if (!isStaffStepValid) {
@@ -1787,7 +1928,7 @@ export default function StaffInformation() {
               <thead>
                 <tr>
                   <th style={{ width: 70 }}></th>
-                  <th style={{ width: 90 }}>No</th>
+                  <th style={{ width: 90 }}>Slot</th>
                   <th style={{ width: 120 }}>Emp No</th>
                   <th>Name</th>
                   <th style={{ width: 180 }}>Position</th>

@@ -13,6 +13,8 @@ const toStr = (v) => String(v ?? "").trim();
 
 const roleLower = (req) => String(req.user?.role || "").trim().toLowerCase();
 const isAdmin = (req) => roleLower(req) === "admin";
+const isHr = (req) => roleLower(req) === "hr";
+const isAccounting = (req) => roleLower(req) === "accounting";
 const isBranchManager = (req) => roleLower(req) === "branch manager";
 const getUserBranchCode = (req) => toStr(req.user?.branch_id);
 
@@ -79,10 +81,10 @@ async function ensureBalanceRow(client, employeeNo) {
 router.get(
   "/staff-balances",
   requireAuth,
-  requireRole(["admin", "branch manager"]),
+  requireRole(["admin", "branch manager", "hr", "accounting"]),
   async (req, res) => {
     try {
-      if (isAdmin(req)) {
+      if (isAdmin(req) || isHr(req) || isAccounting(req)) {
         const r = await pool.query(`
           SELECT
             sb.*,
@@ -100,32 +102,36 @@ router.get(
         return res.json(r.rows);
       }
 
-      const branchCode = getUserBranchCode(req);
-      if (!branchCode) return res.json([]);
+      if (isBranchManager(req)) {
+        const branchCode = getUserBranchCode(req);
+        if (!branchCode) return res.json([]);
 
-      const branchId = await getBranchIdFromCode(branchCode);
-      if (!branchId) return res.json([]);
+        const branchId = await getBranchIdFromCode(branchCode);
+        if (!branchId) return res.json([]);
 
-      const r = await pool.query(
-        `
-        SELECT
-          sb.*,
-          s.id AS staff_id,
-          s.branch_id,
-          COALESCE(sb."position", s."position") AS "position",
-          COALESCE(sb.fullname, s.fullname) AS fullname,
-          COALESCE(sb.last_name, s.last_name) AS last_name,
-          COALESCE(sb.first_name, s.first_name) AS first_name,
-          COALESCE(sb.middle_name, s.middle_name) AS middle_name
-        FROM public.staff_balances sb
-        JOIN public.staff s ON s.employee_no = sb.employee_no
-        WHERE s.branch_id = $1
-        ORDER BY sb.id DESC
-        `,
-        [branchId]
-      );
+        const r = await pool.query(
+          `
+          SELECT
+            sb.*,
+            s.id AS staff_id,
+            s.branch_id,
+            COALESCE(sb."position", s."position") AS "position",
+            COALESCE(sb.fullname, s.fullname) AS fullname,
+            COALESCE(sb.last_name, s.last_name) AS last_name,
+            COALESCE(sb.first_name, s.first_name) AS first_name,
+            COALESCE(sb.middle_name, s.middle_name) AS middle_name
+          FROM public.staff_balances sb
+          JOIN public.staff s ON s.employee_no = sb.employee_no
+          WHERE s.branch_id = $1
+          ORDER BY sb.id DESC
+          `,
+          [branchId]
+        );
 
-      return res.json(r.rows);
+        return res.json(r.rows);
+      }
+
+      return res.status(403).json({ message: "Access denied" });
     } catch (e) {
       console.error("GET /api/staff-balances ERROR:", e);
       return res.status(500).json({ message: e.message || "Server error" });
@@ -136,7 +142,7 @@ router.get(
 router.get(
   "/staff-balances/:employeeNo",
   requireAuth,
-  requireRole(["admin", "branch manager"]),
+  requireRole(["admin", "branch manager", "hr", "accounting"]),
   async (req, res) => {
     const client = await pool.connect();
     try {
@@ -312,7 +318,9 @@ router.put(
     const client = await pool.connect();
     try {
       const employeeNo = clean(req.params.employeeNo);
-      if (!employeeNo) return res.status(400).json({ message: "Invalid employee no" });
+      if (!employeeNo) {
+        return res.status(400).json({ message: "Invalid employee no" });
+      }
 
       if (isBranchManager(req)) {
         const myBranchCode = getUserBranchCode(req);
@@ -326,7 +334,10 @@ router.put(
           [employeeNo]
         );
 
-        if (s.rowCount === 0) return res.status(404).json({ message: "Staff not found" });
+        if (s.rowCount === 0) {
+          return res.status(404).json({ message: "Staff not found" });
+        }
+
         if (Number(s.rows[0].branch_id) !== Number(myBranchId)) {
           return res.status(403).json({ message: "Access denied" });
         }

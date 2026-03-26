@@ -15,10 +15,34 @@ const toDateOrNull = (v) => {
   return /^\d{4}-\d{2}-\d{2}$/.test(d) ? d : null;
 };
 
+const toStr = (v) => String(v ?? "").trim();
+
 const roleLower = (req) => String(req.user?.role || "").trim().toLowerCase();
 const isAdmin = (req) => roleLower(req) === "admin";
+const isHr = (req) => roleLower(req) === "hr";
+const isAccounting = (req) => roleLower(req) === "accounting";
 const isBranchManager = (req) => roleLower(req) === "branch manager";
-const getUserBranchId = (req) => req.user?.branch_id ?? null;
+
+async function getUserBranchIdResolved(req) {
+  const raw = String(req.user?.branch_id || "").trim();
+  if (!raw) return null;
+
+  const n = Number(raw);
+  if (Number.isFinite(n)) return n;
+
+  const r = await pool.query(
+    `
+    SELECT id
+    FROM public.branches
+    WHERE LOWER(TRIM(code)) = LOWER(TRIM($1))
+    LIMIT 1
+    `,
+    [raw]
+  );
+
+  if (r.rowCount > 0) return Number(r.rows[0].id);
+  return null;
+}
 
 async function generateOrderNo(client, prefix) {
   const now = new Date();
@@ -60,275 +84,364 @@ async function generateOrderNo(client, prefix) {
   return `${prefix}-${year}-${mm}-${nnnn}`;
 }
 
-router.get(
-  "/demotion-orders/staff/:id",
-  requireAuth,
-  requireRole(["admin", "branch manager"]),
-  async (req, res) => {
-    try {
-      const employeeId = toInt(req.params.id);
-      if (!employeeId) return res.status(400).json({ message: "Invalid staff id" });
-
-      const s = await pool.query(`SELECT id, branch_id FROM public.staff WHERE id=$1`, [employeeId]);
-      if (s.rowCount === 0) return res.status(404).json({ message: "Staff not found" });
-
-      if (isBranchManager(req)) {
-        const myBid = getUserBranchId(req);
-        if (!myBid || Number(s.rows[0].branch_id) !== Number(myBid)) {
-          return res.status(403).json({ message: "Access denied" });
-        }
-      }
-
-      const r = await pool.query(
-        `
-        SELECT *
-        FROM public.demotion_orders
-        WHERE employee_id = $1
-        ORDER BY created_at DESC
-        `,
-        [employeeId]
-      );
-
-      return res.json(r.rows);
-    } catch (e) {
-      console.error("GET /api/demotion-orders/staff/:id ERROR:", e.message);
-      return res.status(500).json({ message: "Server error" });
-    }
-  }
-);
-
-router.get("/demotion-orders", requireAuth, async (req, res) => {
+/* =========================================================
+   GET DEMOTION ORDERS BY STAFF
+========================================================= */
+router.get("/demotion-orders/staff/:id", requireAuth, async (req, res) => {
   try {
-    const role = roleLower(req);
+    const employeeId = toInt(req.params.id);
+    if (!employeeId) {
+      return res.status(400).json({ message: "Invalid staff id" });
+    }
 
-    if (role !== "admin" && role !== "branch manager") {
+    const s = await pool.query(
+      `SELECT id, branch_id FROM public.staff WHERE id=$1`,
+      [employeeId]
+    );
+
+    if (s.rowCount === 0) {
+      return res.status(404).json({ message: "Staff not found" });
+    }
+
+    if (isBranchManager(req)) {
+      const myBid = await getUserBranchIdResolved(req);
+      if (!myBid || Number(s.rows[0].branch_id) !== Number(myBid)) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+    } else if (!isAdmin(req) && !isHr(req) && !isAccounting(req)) {
       return res.status(403).json({ message: "Access denied" });
     }
 
-    if (isAdmin(req)) {
-      const r = await pool.query(`SELECT * FROM public.demotion_orders ORDER BY created_at DESC`);
-      return res.json(r.rows);
-    }
-
-    const branchId = getUserBranchId(req);
-    if (!branchId) return res.json([]);
-
     const r = await pool.query(
       `
-      SELECT dmo.*
-      FROM public.demotion_orders dmo
-      JOIN public.staff s ON s.id = dmo.employee_id
-      WHERE s.branch_id = $1
-      ORDER BY dmo.created_at DESC
+      SELECT *
+      FROM public.demotion_orders
+      WHERE employee_id = $1
+      ORDER BY created_at DESC
       `,
-      [branchId]
+      [employeeId]
     );
 
     return res.json(r.rows);
+  } catch (e) {
+    console.error("GET /api/demotion-orders/staff/:id ERROR:", e.message);
+    return res.status(500).json({ message: "Server error" });
+  }
+});
+
+/* =========================================================
+   GET ALL DEMOTION ORDERS
+========================================================= */
+router.get("/demotion-orders", requireAuth, async (req, res) => {
+  try {
+    if (isAdmin(req) || isHr(req) || isAccounting(req)) {
+      const r = await pool.query(
+        `SELECT * FROM public.demotion_orders ORDER BY created_at DESC`
+      );
+      return res.json(r.rows);
+    }
+
+    if (isBranchManager(req)) {
+      const branchId = await getUserBranchIdResolved(req);
+      if (!branchId) return res.json([]);
+
+      const r = await pool.query(
+        `
+        SELECT dmo.*
+        FROM public.demotion_orders dmo
+        JOIN public.staff s ON s.id = dmo.employee_id
+        WHERE s.branch_id = $1
+        ORDER BY dmo.created_at DESC
+        `,
+        [branchId]
+      );
+
+      return res.json(r.rows);
+    }
+
+    return res.status(403).json({ message: "Access denied" });
   } catch (e) {
     console.error("GET /api/demotion-orders ERROR:", e.message);
     return res.status(500).json({ message: "Server error" });
   }
 });
 
-router.post("/demotion-orders", requireAuth, requireRole(["admin", "branch manager"]), async (req, res) => {
-  const client = await pool.connect();
-  try {
-    await client.query("BEGIN");
+/* =========================================================
+   CREATE DEMOTION ORDER
+========================================================= */
+router.post(
+  "/demotion-orders",
+  requireAuth,
+  requireRole(["admin", "branch manager"]),
+  async (req, res) => {
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
 
-    const b = req.body || {};
-    const employee_id = toInt(b.employee_id);
-    const new_position = String(b.new_position || "").trim();
-    const effective_date = toDateOrNull(b.effective_date);
-    const details = String(b.details || "").trim();
+      const b = req.body || {};
+      const employee_id = toInt(b.employee_id);
+      const new_position = toStr(b.new_position);
+      const effective_date = toDateOrNull(b.effective_date);
+      const details = toStr(b.details);
 
-    const to_branch_id = toInt(b.to_branch_id);
+      const to_branch_id = toInt(b.to_branch_id);
 
-    if (!employee_id) return res.status(400).json({ message: "Employee required" });
-    if (!new_position) return res.status(400).json({ message: "New position required" });
-    if (!effective_date) return res.status(400).json({ message: "Effective date required" });
-    if (!to_branch_id) return res.status(400).json({ message: "Destination branch required" });
-
-    const s = await client.query(
-      `SELECT id, first_name, last_name, middle_name, fullname, "position", branch_id FROM public.staff WHERE id=$1`,
-      [employee_id]
-    );
-    if (s.rowCount === 0) return res.status(404).json({ message: "Staff not found" });
-    const staffRow = s.rows[0];
-
-    if (isBranchManager(req)) {
-      const bid = getUserBranchId(req);
-      if (!bid || Number(staffRow.branch_id) !== Number(bid)) {
+      if (!employee_id) {
         await client.query("ROLLBACK");
-        return res.status(403).json({ message: "Access denied" });
+        return res.status(400).json({ message: "Employee required" });
       }
-    }
+      if (!new_position) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({ message: "New position required" });
+      }
+      if (!effective_date) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({ message: "Effective date required" });
+      }
+      if (!to_branch_id) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({ message: "Destination branch required" });
+      }
 
-    const prevBranchId = staffRow.branch_id ? Number(staffRow.branch_id) : null;
-    const prevBr = prevBranchId
-      ? await client.query(`SELECT id, code, name FROM public.branches WHERE id=$1`, [prevBranchId])
-      : { rowCount: 0, rows: [] };
+      const s = await client.query(
+        `SELECT id, first_name, last_name, middle_name, fullname, "position", branch_id FROM public.staff WHERE id=$1`,
+        [employee_id]
+      );
 
-    const toBr = await client.query(`SELECT id, code, name FROM public.branches WHERE id=$1`, [to_branch_id]);
-    if (toBr.rowCount === 0) return res.status(400).json({ message: "Destination branch not found" });
+      if (s.rowCount === 0) {
+        await client.query("ROLLBACK");
+        return res.status(404).json({ message: "Staff not found" });
+      }
 
-    const employee_name =
-      String(staffRow.fullname || "").trim() ||
-      `${String(staffRow.last_name || "").trim()}, ${String(staffRow.first_name || "").trim()} ${String(staffRow.middle_name || "").trim()}`
-        .replace(/\s+/g, " ")
-        .trim();
+      const staffRow = s.rows[0];
 
-    const old_position = String(staffRow.position || "").trim();
+      if (isBranchManager(req)) {
+        const bid = await getUserBranchIdResolved(req);
+        if (!bid || Number(staffRow.branch_id) !== Number(bid)) {
+          await client.query("ROLLBACK");
+          return res.status(403).json({ message: "Access denied" });
+        }
+      }
 
-    const orderNo = await generateOrderNo(client, "DMO");
+      const prevBranchId = staffRow.branch_id ? Number(staffRow.branch_id) : null;
 
-    const ins = await client.query(
-      `
-      INSERT INTO public.demotion_orders
-        (order_no, employee_id, employee_name, old_position, new_position,
-         prev_branch_id, prev_branch_code, prev_branch_name,
-         to_branch_id, to_branch_code, to_branch_name,
-         effective_date, details, status, created_by)
-      VALUES
-        ($1,$2,$3,$4,$5,
-         $6,$7,$8,
-         $9,$10,$11,
-         $12::date,$13,'Pending',$14)
-      RETURNING *;
-      `,
-      [
-        orderNo,
-        employee_id,
-        employee_name,
-        old_position || null,
-        new_position,
+      const prevBr = prevBranchId
+        ? await client.query(
+            `SELECT id, code, name FROM public.branches WHERE id=$1`,
+            [prevBranchId]
+          )
+        : { rowCount: 0, rows: [] };
 
-        prevBranchId,
-        prevBr.rowCount ? String(prevBr.rows[0].code || "") : "",
-        prevBr.rowCount ? String(prevBr.rows[0].name || "") : "",
+      const toBr = await client.query(
+        `SELECT id, code, name FROM public.branches WHERE id=$1`,
+        [to_branch_id]
+      );
 
-        Number(to_branch_id),
-        String(toBr.rows[0].code || ""),
-        String(toBr.rows[0].name || ""),
+      if (toBr.rowCount === 0) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({ message: "Destination branch not found" });
+      }
 
-        effective_date,
-        details || null,
-        req.user?.id ?? null,
-      ]
-    );
+      const employee_name =
+        toStr(staffRow.fullname) ||
+        `${toStr(staffRow.last_name)}, ${toStr(staffRow.first_name)} ${toStr(staffRow.middle_name)}`
+          .replace(/\s+/g, " ")
+          .trim();
 
-    await client.query("COMMIT");
-    return res.json(ins.rows[0]);
-  } catch (e) {
-    await client.query("ROLLBACK");
-    console.error("POST /api/demotion-orders ERROR:", e.message);
-    return res.status(500).json({ message: "Server error" });
-  } finally {
-    client.release();
-  }
-});
+      const old_position = toStr(staffRow.position);
+      const orderNo = await generateOrderNo(client, "DMO");
 
-router.put("/demotion-orders/:id/approve", requireAuth, requireRole(["admin"]), async (req, res) => {
-  const client = await pool.connect();
-  try {
-    await client.query("BEGIN");
+      const ins = await client.query(
+        `
+        INSERT INTO public.demotion_orders
+          (
+            order_no,
+            employee_id,
+            employee_name,
+            old_position,
+            new_position,
+            prev_branch_id,
+            prev_branch_code,
+            prev_branch_name,
+            to_branch_id,
+            to_branch_code,
+            to_branch_name,
+            effective_date,
+            details,
+            status,
+            created_by
+          )
+        VALUES
+          (
+            $1,$2,$3,$4,$5,
+            $6,$7,$8,
+            $9,$10,$11,
+            $12::date,$13,'Pending',$14
+          )
+        RETURNING *;
+        `,
+        [
+          orderNo,
+          employee_id,
+          employee_name,
+          old_position || null,
+          new_position,
+          prevBranchId,
+          prevBr.rowCount ? toStr(prevBr.rows[0].code) : "",
+          prevBr.rowCount ? toStr(prevBr.rows[0].name) : "",
+          Number(to_branch_id),
+          toStr(toBr.rows[0].code),
+          toStr(toBr.rows[0].name),
+          effective_date,
+          details || null,
+          req.user?.id ?? null,
+        ]
+      );
 
-    const id = toInt(req.params.id);
-    if (!id) return res.status(400).json({ message: "Invalid id" });
-
-    const r = await client.query(
-      `
-      UPDATE public.demotion_orders
-      SET
-        status='Approved',
-        approved_by=$2,
-        approved_at=COALESCE(approved_at, NOW()),
-        rejected_by=NULL,
-        rejected_at=NULL,
-        rejection_reason=NULL
-      WHERE id=$1 AND status='Pending'
-      RETURNING *;
-      `,
-      [id, req.user?.id ?? null]
-    );
-
-    if (r.rowCount === 0) {
+      await client.query("COMMIT");
+      return res.json(ins.rows[0]);
+    } catch (e) {
       await client.query("ROLLBACK");
-      return res.status(400).json({ message: "Order not found or not Pending" });
+      console.error("POST /api/demotion-orders ERROR:", e.message);
+      return res.status(500).json({ message: "Server error" });
+    } finally {
+      client.release();
     }
+  }
+);
 
-    const order = r.rows[0];
+/* =========================================================
+   APPROVE DEMOTION ORDER
+========================================================= */
+router.put(
+  "/demotion-orders/:id/approve",
+  requireAuth,
+  requireRole(["admin"]),
+  async (req, res) => {
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
 
-    const toBranchId = toInt(order.to_branch_id);
-    if (!toBranchId) {
+      const id = toInt(req.params.id);
+      if (!id) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({ message: "Invalid id" });
+      }
+
+      const r = await client.query(
+        `
+        UPDATE public.demotion_orders
+        SET
+          status='Approved',
+          approved_by=$2,
+          approved_at=COALESCE(approved_at, NOW()),
+          rejected_by=NULL,
+          rejected_at=NULL,
+          rejection_reason=NULL
+        WHERE id=$1 AND status='Pending'
+        RETURNING *;
+        `,
+        [id, req.user?.id ?? null]
+      );
+
+      if (r.rowCount === 0) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({ message: "Order not found or not Pending" });
+      }
+
+      const order = r.rows[0];
+      const toBranchId = toInt(order.to_branch_id);
+
+      if (!toBranchId) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({ message: "Destination branch missing in order" });
+      }
+
+      await client.query(
+        `
+        UPDATE public.staff
+        SET
+          "position" = $1,
+          branch_id = $2
+        WHERE id = $3
+        `,
+        [toStr(order.new_position), toBranchId, Number(order.employee_id)]
+      );
+
+      await client.query(
+        `
+        UPDATE public.staff_balances
+        SET
+          fullname = $1,
+          "position" = $2,
+          updated_at = NOW()
+        WHERE employee_no = (
+          SELECT employee_no
+          FROM public.staff
+          WHERE id = $3
+          LIMIT 1
+        )
+        `,
+        [toStr(order.employee_name), toStr(order.new_position), Number(order.employee_id)]
+      );
+
+      await client.query("COMMIT");
+      return res.json(order);
+    } catch (e) {
       await client.query("ROLLBACK");
-      return res.status(400).json({ message: "Destination branch missing in order" });
+      console.error("PUT /api/demotion-orders/:id/approve ERROR:", e.message);
+      return res.status(500).json({ message: "Server error" });
+    } finally {
+      client.release();
     }
-
-    await client.query(
-      `
-      UPDATE public.staff
-      SET
-        "position" = $1,
-        branch_id = $2
-      WHERE id = $3
-      `,
-      [String(order.new_position || ""), toBranchId, Number(order.employee_id)]
-    );
-
-    await client.query(
-      `
-      UPDATE public.staff_balances
-      SET
-        fullname = $1,
-        "position" = $2,
-        updated_at = NOW()
-      WHERE employee_id = $3
-      `,
-      [String(order.employee_name || ""), String(order.new_position || ""), Number(order.employee_id)]
-    );
-
-    await client.query("COMMIT");
-    return res.json(order);
-  } catch (e) {
-    await client.query("ROLLBACK");
-    console.error("PUT /api/demotion-orders/:id/approve ERROR:", e.message);
-    return res.status(500).json({ message: "Server error" });
-  } finally {
-    client.release();
   }
-});
+);
 
-router.put("/demotion-orders/:id/reject", requireAuth, requireRole(["admin"]), async (req, res) => {
-  try {
-    const id = toInt(req.params.id);
-    if (!id) return res.status(400).json({ message: "Invalid id" });
+/* =========================================================
+   REJECT DEMOTION ORDER
+========================================================= */
+router.put(
+  "/demotion-orders/:id/reject",
+  requireAuth,
+  requireRole(["admin"]),
+  async (req, res) => {
+    try {
+      const id = toInt(req.params.id);
+      if (!id) {
+        return res.status(400).json({ message: "Invalid id" });
+      }
 
-    const reason = String(req.body?.reason || "").trim();
-    if (!reason) return res.status(400).json({ message: "Rejection reason is required" });
+      const reason = toStr(req.body?.reason);
+      if (!reason) {
+        return res.status(400).json({ message: "Rejection reason is required" });
+      }
 
-    const r = await pool.query(
-      `
-      UPDATE public.demotion_orders
-      SET
-        status='Rejected',
-        rejected_by=$2,
-        rejected_at=COALESCE(rejected_at, NOW()),
-        rejection_reason=$3,
-        approved_by=NULL,
-        approved_at=NULL
-      WHERE id=$1 AND status='Pending'
-      RETURNING *;
-      `,
-      [id, req.user?.id ?? null, reason]
-    );
+      const r = await pool.query(
+        `
+        UPDATE public.demotion_orders
+        SET
+          status='Rejected',
+          rejected_by=$2,
+          rejected_at=COALESCE(rejected_at, NOW()),
+          rejection_reason=$3,
+          approved_by=NULL,
+          approved_at=NULL
+        WHERE id=$1 AND status='Pending'
+        RETURNING *;
+        `,
+        [id, req.user?.id ?? null, reason]
+      );
 
-    if (r.rowCount === 0) return res.status(400).json({ message: "Order not found or not Pending" });
-    return res.json(r.rows[0]);
-  } catch (e) {
-    console.error("PUT /api/demotion-orders/:id/reject ERROR:", e.message);
-    return res.status(500).json({ message: "Server error" });
+      if (r.rowCount === 0) {
+        return res.status(400).json({ message: "Order not found or not Pending" });
+      }
+
+      return res.json(r.rows[0]);
+    } catch (e) {
+      console.error("PUT /api/demotion-orders/:id/reject ERROR:", e.message);
+      return res.status(500).json({ message: "Server error" });
+    }
   }
-});
+);
 
 module.exports = router;

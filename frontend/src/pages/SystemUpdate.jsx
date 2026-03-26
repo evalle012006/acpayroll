@@ -26,7 +26,7 @@ export default function SystemUpdate() {
             <div>
               <div className="sys-card-title">Salary & Allowance Rates</div>
               <div className="sys-card-meta">
-                Configure salary, ECOLA, and transportation defaults.
+                Configure salary, ECOLA, and allowance defaults.
               </div>
             </div>
             <span className="sys-pill">Manage</span>
@@ -60,6 +60,56 @@ export default function SystemUpdate() {
           <div className="sys-card-body">
             <p className="sys-mini">
               Create and maintain area, region, and division setup used by the system.
+            </p>
+            <div className="sys-actions">
+              <span className="sys-link">Open →</span>
+            </div>
+          </div>
+        </button>
+
+        <button
+          type="button"
+          className="sys-card"
+          onClick={() => navigate("/system-update/consolidation")}
+        >
+          <div className="sys-card-head">
+            <div>
+              <div className="sys-card-title">2316 Consolidation</div>
+              <div className="sys-card-meta">
+                Manage annual 2316 setup and consolidation records.
+              </div>
+            </div>
+            <span className="sys-pill">Manage</span>
+          </div>
+
+          <div className="sys-card-body">
+            <p className="sys-mini">
+              Create, update, and maintain 2316 consolidation data used for annual tax reporting.
+            </p>
+            <div className="sys-actions">
+              <span className="sys-link">Open →</span>
+            </div>
+          </div>
+        </button>
+
+        <button
+          type="button"
+          className="sys-card"
+          onClick={() => navigate("/system-update/details-compensation")}
+        >
+          <div className="sys-card-head">
+            <div>
+              <div className="sys-card-title">Details & Compensation</div>
+              <div className="sys-card-meta">
+                Transportation Computations
+              </div>
+            </div>
+            <span className="sys-pill">Manage</span>
+          </div>
+
+          <div className="sys-card-body">
+            <p className="sys-mini">
+              Computations of Loan Officer and Branch Manager transportation based on number of clients.
             </p>
             <div className="sys-actions">
               <span className="sys-link">Open →</span>
