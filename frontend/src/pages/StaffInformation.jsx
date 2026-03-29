@@ -177,6 +177,160 @@ function StepTabs({ step, onSelectStep, canGoContract, canGoBalances }) {
 }
 
 function StaffDetailsStep({ form, onChange }) {
+
+    const childrenFormRows = useMemo(() => safeJsonArray(form.children), [form.children]);
+      const educationRows = useMemo(() => safeJsonArray(form.education), [form.education]);
+      const employmentRows = useMemo(() => safeJsonArray(form.employment_history), [form.employment_history]);
+      const beneficiaryRows = useMemo(() => safeJsonArray(form.beneficiaries), [form.beneficiaries]);
+
+      const setJsonField = (name, rows) => {
+        onChange({
+          target: {
+            name,
+            value: JSON.stringify(Array.isArray(rows) ? rows : [], null, 2),
+          },
+        });
+      };
+
+      const addEducationRow = () => {
+        setJsonField("education", [
+          ...educationRows,
+          {
+            school: "",
+            level: "",
+            course: "",
+            year_graduated: "",
+            remarks: "",
+          },
+        ]);
+      };
+
+      const removeEducationRow = (index) => {
+        setJsonField(
+          "education",
+          educationRows.filter((_, i) => i !== index)
+        );
+      };
+
+      const updateEducationRow = (index, key, value) => {
+        const next = [...educationRows];
+        next[index] = {
+          ...next[index],
+          [key]: value,
+        };
+        setJsonField("education", next);
+      };
+
+      const addEmploymentRow = () => {
+        setJsonField("employment_history", [
+          ...employmentRows,
+          {
+            company: "",
+            position: "",
+            year_started: "",
+            year_ended: "",
+            contact_number: "",
+            character_reference: "",
+          },
+        ]);
+      };
+
+      const removeEmploymentRow = (index) => {
+        setJsonField(
+          "employment_history",
+          employmentRows.filter((_, i) => i !== index)
+        );
+      };
+
+      const updateEmploymentRow = (index, key, value) => {
+        const next = [...employmentRows];
+        next[index] = {
+          ...next[index],
+          [key]: value,
+        };
+        setJsonField("employment_history", next);
+      };
+
+      const addBeneficiaryRow = () => {
+        setJsonField("beneficiaries", [
+          ...beneficiaryRows,
+          {
+            name: "",
+            relation: "",
+            contact_number: "",
+          },
+        ]);
+      };
+
+      const removeBeneficiaryRow = (index) => {
+        setJsonField(
+          "beneficiaries",
+          beneficiaryRows.filter((_, i) => i !== index)
+        );
+      };
+
+      const updateBeneficiaryRow = (index, key, value) => {
+        const next = [...beneficiaryRows];
+        next[index] = {
+          ...next[index],
+          [key]: value,
+        };
+        setJsonField("beneficiaries", next);
+      };
+
+    const setChildrenFormRows = (rows) => {
+      onChange({
+        target: {
+          name: "children",
+          value: JSON.stringify(Array.isArray(rows) ? rows : [], null, 2),
+        },
+      });
+    };
+
+    const addChildRow = () => {
+      setChildrenFormRows([
+        ...childrenFormRows,
+        {
+          fullname: "",
+          age: "",
+          date_of_birth: "",
+          place_of_birth: "",
+        },
+      ]);
+    };
+
+    const removeChildRow = (index) => {
+      setChildrenFormRows(childrenFormRows.filter((_, i) => i !== index));
+    };
+
+    const getAgeFromDob = (dob) => {
+      if (!dob) return "";
+      const birth = new Date(dob);
+      if (Number.isNaN(birth.getTime())) return "";
+
+      const today = new Date();
+      let age = today.getFullYear() - birth.getFullYear();
+      const m = today.getMonth() - birth.getMonth();
+
+      if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) {
+        age--;
+      }
+
+      return age >= 0 ? String(age) : "";
+    };
+
+    const updateChildRow = (index, key, value) => {
+      const next = [...childrenFormRows];
+      const row = { ...next[index], [key]: value };
+
+      if (key === "date_of_birth") {
+        row.age = getAgeFromDob(value);
+      }
+
+      next[index] = row;
+      setChildrenFormRows(next);
+    };
+
   return (
     <div className="modal-body staff-add-grid">
       <div className="staff-add-left" style={{ width: "100%" }}>
@@ -305,9 +459,91 @@ function StaffDetailsStep({ form, onChange }) {
           <input className="input" name="spouse_employer" value={form.spouse_employer} onChange={onChange} />
         </div>
 
-        <div className="field">
-          <label>Children (JSON array)</label>
-          <textarea className="input" name="children" value={form.children} onChange={onChange} rows={5} />
+        <div className="field" style={{ gridColumn: "1 / -1" }}>
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              marginBottom: 10,
+            }}
+          >
+            <label style={{ margin: 0 }}>Children</label>
+            <button type="button" className="btn" onClick={addChildRow}>
+              + Add Child
+            </button>
+          </div>
+
+          {!childrenFormRows.length ? (
+            <div
+              style={{
+                padding: "14px",
+                border: "1px dashed rgba(255,255,255,0.2)",
+                borderRadius: 12,
+                opacity: 0.8,
+              }}
+            >
+              No children added yet.
+            </div>
+          ) : (
+            childrenFormRows.map((child, index) => (
+              <div
+                key={index}
+                style={{
+                  border: "1px solid rgba(255,255,255,0.12)",
+                  borderRadius: 14,
+                  padding: 14,
+                  marginBottom: 12,
+                }}
+              >
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 10 }}>
+                  <strong>Child #{index + 1}</strong>
+                  <button type="button" className="btn" onClick={() => removeChildRow(index)}>
+                    Remove
+                  </button>
+                </div>
+
+                <div className="form-grid">
+                  <div className="field">
+                    <label>Fullname</label>
+                    <input
+                      className="input"
+                      value={child.fullname || ""}
+                      onChange={(e) => updateChildRow(index, "fullname", e.target.value)}
+                    />
+                  </div>
+
+                  <div className="field">
+                    <label>Age</label>
+                    <input
+                      className="input"
+                      value={child.age || ""}
+                      onChange={(e) => updateChildRow(index, "age", e.target.value)}
+                    />
+                  </div>
+
+                  <div className="field">
+                    <label>Date of Birth</label>
+                    <input
+                      type="date"
+                      className="input"
+                      value={child.date_of_birth || ""}
+                      onChange={(e) => updateChildRow(index, "date_of_birth", e.target.value)}
+                    />
+                  </div>
+
+                  <div className="field">
+                    <label>Place of Birth</label>
+                    <input
+                      className="input"
+                      value={child.place_of_birth || ""}
+                      onChange={(e) => updateChildRow(index, "place_of_birth", e.target.value)}
+                    />
+                  </div>
+                </div>
+              </div>
+            ))
+          )}
         </div>
 
         <div className="field" style={{ marginTop: 14 }}>
@@ -377,23 +613,284 @@ function StaffDetailsStep({ form, onChange }) {
           <input className="input" name="guardian_contact" value={form.guardian_contact} onChange={onChange} />
         </div>
 
-        <div className="field" style={{ marginTop: 14 }}>
-          <h3 style={{ margin: 0 }}>Background (JSON arrays)</h3>
+        <div className="field full" style={{ marginTop: 14 }}>
+          <h3 style={{ margin: 0 }}>Background</h3>
         </div>
 
-        <div className="field">
-          <label>Education (JSON array)</label>
-          <textarea className="input" name="education" value={form.education} onChange={onChange} rows={5} />
+        <div className="field" style={{ gridColumn: "1 / -1" }}>
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              marginBottom: 10,
+            }}
+          >
+            <label style={{ margin: 0 }}>Education</label>
+            <button type="button" className="btn" onClick={addEducationRow}>
+              + Add Education
+            </button>
+          </div>
+
+          {!educationRows.length ? (
+            <div
+              style={{
+                padding: "14px",
+                border: "1px dashed rgba(255,255,255,0.2)",
+                borderRadius: 12,
+                opacity: 0.8,
+              }}
+            >
+              No education added yet.
+            </div>
+          ) : (
+            educationRows.map((row, index) => (
+              <div
+                key={index}
+                style={{
+                  border: "1px solid rgba(255,255,255,0.12)",
+                  borderRadius: 14,
+                  padding: 14,
+                  marginBottom: 12,
+                }}
+              >
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 10 }}>
+                  <strong>Education #{index + 1}</strong>
+                  <button type="button" className="btn" onClick={() => removeEducationRow(index)}>
+                    Remove
+                  </button>
+                </div>
+
+                <div className="form-grid">
+                  <div className="field">
+                    <label>School</label>
+                    <input
+                      className="input"
+                      value={row.school || ""}
+                      onChange={(e) => updateEducationRow(index, "school", e.target.value)}
+                    />
+                  </div>
+
+                  <div className="field">
+                    <label>Level</label>
+                    <input
+                      className="input"
+                      value={row.level || ""}
+                      onChange={(e) => updateEducationRow(index, "level", e.target.value)}
+                    />
+                  </div>
+
+                  <div className="field">
+                    <label>Course</label>
+                    <input
+                      className="input"
+                      value={row.course || ""}
+                      onChange={(e) => updateEducationRow(index, "course", e.target.value)}
+                    />
+                  </div>
+
+                  <div className="field">
+                    <label>Year Graduated</label>
+                    <input
+                      className="input"
+                      value={row.year_graduated || ""}
+                      onChange={(e) => updateEducationRow(index, "year_graduated", e.target.value)}
+                    />
+                  </div>
+
+                  <div className="field" style={{ gridColumn: "1 / -1" }}>
+                    <label>Remarks</label>
+                    <input
+                      className="input"
+                      value={row.remarks || ""}
+                      onChange={(e) => updateEducationRow(index, "remarks", e.target.value)}
+                    />
+                  </div>
+                </div>
+              </div>
+            ))
+          )}
         </div>
 
-        <div className="field">
-          <label>Employment History (JSON array)</label>
-          <textarea className="input" name="employment_history" value={form.employment_history} onChange={onChange} rows={5} />
+        <div className="field" style={{ gridColumn: "1 / -1" }}>
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              marginBottom: 10,
+            }}
+          >
+            <label style={{ margin: 0 }}>Employment History</label>
+            <button type="button" className="btn" onClick={addEmploymentRow}>
+              + Add Employment
+            </button>
+          </div>
+
+          {!employmentRows.length ? (
+            <div
+              style={{
+                padding: "14px",
+                border: "1px dashed rgba(255,255,255,0.2)",
+                borderRadius: 12,
+                opacity: 0.8,
+              }}
+            >
+              No employment history added yet.
+            </div>
+          ) : (
+            employmentRows.map((row, index) => (
+              <div
+                key={index}
+                style={{
+                  border: "1px solid rgba(255,255,255,0.12)",
+                  borderRadius: 14,
+                  padding: 14,
+                  marginBottom: 12,
+                }}
+              >
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 10 }}>
+                  <strong>Employment #{index + 1}</strong>
+                  <button type="button" className="btn" onClick={() => removeEmploymentRow(index)}>
+                    Remove
+                  </button>
+                </div>
+
+                <div className="form-grid">
+                  <div className="field">
+                    <label>Company</label>
+                    <input
+                      className="input"
+                      value={row.company || ""}
+                      onChange={(e) => updateEmploymentRow(index, "company", e.target.value)}
+                    />
+                  </div>
+
+                  <div className="field">
+                    <label>Position</label>
+                    <input
+                      className="input"
+                      value={row.position || ""}
+                      onChange={(e) => updateEmploymentRow(index, "position", e.target.value)}
+                    />
+                  </div>
+
+                  <div className="field">
+                    <label>Year Started</label>
+                    <input
+                      className="input"
+                      value={row.year_started || ""}
+                      onChange={(e) => updateEmploymentRow(index, "year_started", e.target.value)}
+                    />
+                  </div>
+
+                  <div className="field">
+                    <label>Year Ended</label>
+                    <input
+                      className="input"
+                      value={row.year_ended || ""}
+                      onChange={(e) => updateEmploymentRow(index, "year_ended", e.target.value)}
+                    />
+                  </div>
+
+                  <div className="field">
+                    <label>Contact Number</label>
+                    <input
+                      className="input"
+                      value={row.contact_number || ""}
+                      onChange={(e) => updateEmploymentRow(index, "contact_number", e.target.value)}
+                    />
+                  </div>
+
+                  <div className="field">
+                    <label>Character Reference</label>
+                    <input
+                      className="input"
+                      value={row.character_reference || ""}
+                      onChange={(e) => updateEmploymentRow(index, "character_reference", e.target.value)}
+                    />
+                  </div>
+                </div>
+              </div>
+            ))
+          )}
         </div>
 
-        <div className="field">
-          <label>Beneficiaries (JSON array)</label>
-          <textarea className="input" name="beneficiaries" value={form.beneficiaries} onChange={onChange} rows={5} />
+        <div className="field" style={{ gridColumn: "1 / -1" }}>
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              marginBottom: 10,
+            }}
+          >
+            <label style={{ margin: 0 }}>Beneficiaries</label>
+            <button type="button" className="btn" onClick={addBeneficiaryRow}>
+              + Add Beneficiary
+            </button>
+          </div>
+
+          {!beneficiaryRows.length ? (
+            <div
+              style={{
+                padding: "14px",
+                border: "1px dashed rgba(255,255,255,0.2)",
+                borderRadius: 12,
+                opacity: 0.8,
+              }}
+            >
+              No beneficiaries added yet.
+            </div>
+          ) : (
+            beneficiaryRows.map((row, index) => (
+              <div
+                key={index}
+                style={{
+                  border: "1px solid rgba(255,255,255,0.12)",
+                  borderRadius: 14,
+                  padding: 14,
+                  marginBottom: 12,
+                }}
+              >
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 10 }}>
+                  <strong>Beneficiary #{index + 1}</strong>
+                  <button type="button" className="btn" onClick={() => removeBeneficiaryRow(index)}>
+                    Remove
+                  </button>
+                </div>
+
+                <div className="form-grid">
+                  <div className="field">
+                    <label>Name</label>
+                    <input
+                      className="input"
+                      value={row.name || ""}
+                      onChange={(e) => updateBeneficiaryRow(index, "name", e.target.value)}
+                    />
+                  </div>
+
+                  <div className="field">
+                    <label>Relation</label>
+                    <input
+                      className="input"
+                      value={row.relation || ""}
+                      onChange={(e) => updateBeneficiaryRow(index, "relation", e.target.value)}
+                    />
+                  </div>
+
+                  <div className="field">
+                    <label>Contact Number</label>
+                    <input
+                      className="input"
+                      value={row.contact_number || ""}
+                      onChange={(e) => updateBeneficiaryRow(index, "contact_number", e.target.value)}
+                    />
+                  </div>
+                </div>
+              </div>
+            ))
+          )}
         </div>
 
         <div className="field" style={{ marginTop: 14 }}>
@@ -909,6 +1406,62 @@ function StaffProfileModal({ staff, avatarUrl, onClose, branchNameById }) {
   const headerPosition = toStr(staff?.position) || "-";
   const headerStatus = toStr(staff?.status) || "Active";
 
+    const renderEducation = () => {
+      if (!educationArr.length) {
+        return <tr><td colSpan="2">-</td></tr>;
+      }
+
+      return educationArr.map((e, idx) => (
+        <React.Fragment key={`edu-${idx}`}>
+          <tr><td style={{ fontWeight: 800 }}>School</td><td>{e?.school || e?.school_name || "-"}</td></tr>
+          <tr><td>Level</td><td>{e?.level || "-"}</td></tr>
+          <tr><td>Course</td><td>{e?.course || "-"}</td></tr>
+          <tr><td>Year Graduated</td><td>{e?.year_graduated || e?.year_completed || "-"}</td></tr>
+          <tr><td>Remarks</td><td>{e?.remarks || "-"}</td></tr>
+          {idx !== educationArr.length - 1 && (
+            <tr><td colSpan="2"><hr /></td></tr>
+          )}
+        </React.Fragment>
+      ));
+    };
+
+    const renderEmployment = () => {
+      if (!employmentArr.length) {
+        return <tr><td colSpan="2">-</td></tr>;
+      }
+
+      return employmentArr.map((e, idx) => (
+        <React.Fragment key={`emp-${idx}`}>
+          <tr><td style={{ fontWeight: 800 }}>Company</td><td>{e?.company || "-"}</td></tr>
+          <tr><td>Position</td><td>{e?.position || "-"}</td></tr>
+          <tr><td>Year Started</td><td>{e?.year_started || "-"}</td></tr>
+          <tr><td>Year Ended</td><td>{e?.year_ended || "-"}</td></tr>
+          <tr><td>Contact Number</td><td>{e?.contact_number || "-"}</td></tr>
+          <tr><td>Character Reference</td><td>{e?.character_reference || "-"}</td></tr>
+          {idx !== employmentArr.length - 1 && (
+            <tr><td colSpan="2"><hr /></td></tr>
+          )}
+        </React.Fragment>
+      ));
+    };
+
+    const renderBeneficiaries = () => {
+      if (!beneficiariesArr.length) {
+        return <tr><td colSpan="2">-</td></tr>;
+      }
+
+      return beneficiariesArr.map((b, idx) => (
+        <React.Fragment key={`ben-${idx}`}>
+          <tr><td style={{ fontWeight: 800 }}>Name</td><td>{b?.name || "-"}</td></tr>
+          <tr><td>Relation</td><td>{b?.relation || "-"}</td></tr>
+          <tr><td>Contact Number</td><td>{b?.contact_number || "-"}</td></tr>
+          {idx !== beneficiariesArr.length - 1 && (
+            <tr><td colSpan="2"><hr /></td></tr>
+          )}
+        </React.Fragment>
+      ));
+    };
+
   return (
     <div className="modal-overlay" onMouseDown={onClose}>
       <div className="modal staff-profile-modal" onMouseDown={(e) => e.stopPropagation()} style={{ maxWidth: 1200 }}>
@@ -1031,26 +1584,14 @@ function StaffProfileModal({ staff, avatarUrl, onClose, branchNameById }) {
                 <tr><td>Guardian Employer</td><td>{staff.guardian_employer || "-"}</td></tr>
                 <tr><td>Guardian Contact</td><td>{staff.guardian_contact || "-"}</td></tr>
 
-                <tr><td><h2>Education</h2></td></tr>
-                <tr>
-                  <td colSpan="2" className="mono" style={{ whiteSpace: "pre-wrap" }}>
-                    {educationArr.length ? JSON.stringify(educationArr, null, 2) : "-"}
-                  </td>
-                </tr>
+                <tr><td colSpan="2"><h2>Education</h2></td></tr>
+                  {renderEducation()}
 
-                <tr><td><h2>Employment</h2></td></tr>
-                <tr>
-                  <td colSpan="2" className="mono" style={{ whiteSpace: "pre-wrap" }}>
-                    {employmentArr.length ? JSON.stringify(employmentArr, null, 2) : "-"}
-                  </td>
-                </tr>
+                <tr><td colSpan="2"><h2>Employment</h2></td></tr>
+                  {renderEmployment()}
 
-                <tr><td><h2>Beneficiaries</h2></td></tr>
-                <tr>
-                  <td colSpan="2" className="mono" style={{ whiteSpace: "pre-wrap" }}>
-                    {beneficiariesArr.length ? JSON.stringify(beneficiariesArr, null, 2) : "-"}
-                  </td>
-                </tr>
+                <tr><td colSpan="2"><h2>Beneficiaries</h2></td></tr>
+                  {renderBeneficiaries()}
 
                 <tr><td><h2>Remittances</h2></td></tr>
                 <tr><td>SSS No.</td><td>{staff.sss_no || "-"}</td></tr>
@@ -1280,7 +1821,8 @@ export default function StaffInformation() {
   const canEditStaff =
     role === "admin" ||
     role === "hr" ||
-    role === "accounting";
+    role === "accounting" ||
+    role === "branch manager";
 
   const [staff, setStaff] = useState([]);
   const [branches, setBranches] = useState([]);
@@ -1615,9 +2157,9 @@ export default function StaffInformation() {
 
   const openEdit = async (s) => {
       if (!canEditStaff) {
-      alert("Only Admin, HR, and Accounting can edit staff.");
-      return;
-    }
+        alert("Only Admin, HR, Accounting, and Branch Manager can edit staff.");
+        return;
+      }
     setEditStaff(s);
 
     setForm({

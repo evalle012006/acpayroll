@@ -649,7 +649,7 @@ router.put(
   }
 );
 
-router.put("/staff/:id", requireAuth, requireRole(["admin"]), async (req, res) => {
+router.put("/staff/:id", requireAuth, requireRole(["admin", "hr", "accounting", "branch manager"]), async (req, res) => {
   const client = await pool.connect();
   try {
     await client.query("BEGIN");

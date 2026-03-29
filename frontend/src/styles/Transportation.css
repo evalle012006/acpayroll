@@ -1,129 +1,33 @@
-.back-btn {
-  background-color: #3498db;
-  color: white;
-  border: none;
-  padding: 8px 16px;
-  border-radius: 5px;
-  cursor: pointer;
-  font-weight: bold;
-  margin-bottom: 15px;
-  transition: all 0.2s;
-  box-shadow: 0 2px 5px rgba(0,0,0,0.2);
-}
-
-.back-btn:hover {
-  background-color: #2980b9;
-  transform: translateY(-2px); /* Lift effect on hover */
-}
-
-.print-btn {
-  background-color: #27ae60;   /* green */
-  color: white;
-  border: none;
-  padding: 8px 16px;
-  border-radius: 5px;
-  cursor: pointer;
-  font-weight: bold;
-  margin-top: 10px;
-  transition: all 0.2s ease;
-  box-shadow: 0 2px 5px rgba(0,0,0,0.2);
-}
-
-.print-btn:hover {
-  background-color: #1e8449;
-  transform: translateY(-2px);
-}
-
-.print-btn.clicked {
-  transform: scale(0.95);
-  background-color: #2ecc71;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
-}
-
-.table-wrapper {
-  width: 100%;
-  overflow-x: auto;
-  padding-bottom: 10px;
-}
-
-.transportation-table {
-  width: max-content;
-  min-width: 900px;
-  border-collapse: collapse;
-}
-
-.transportation-table th,
-.transportation-table td {
-  white-space: nowrap;
-  border: 1px solid #444;
-  padding: 6px 8px;
-  font-size: 12px;
-  text-align: center;
-}
-
-.totals-row td {
-  background: #f2f2f2;
-  font-weight: bold;
-  border-top: 2px solid #000;
-  text-align: center;
-}
-
-.transportation-table th {
-  background-color: #c9d1fe;
-  font-weight: bold;
-  text-align: center;
-  vertical-align: middle;
-}
-
-.transportation-table tbody tr:nth-child(even) {
-  background-color: #f2f2f2;
-}
-
-@media print {
-  body {
-    print-color-adjust: exact;
-  }
-
-  .back-btn,
-  .print-btn {
-    display: none;
-  }
-}
-
-.report-container {
-  padding: 20px;
-  font-family: Arial, sans-serif;
-}
-
-.report-container h3 {
-  font-style: italic;
-  text-align: center;
-  margin: 15px 0;
-  color: #333;
-}
-
-.branch-info p {
-  margin: 3px 0;
-  font-weight: bold;
-}
-
-.totals-row {
-  background-color: #fff3cd;
-  font-weight: bold;
-}
-
-
-/* ===============================
-   TRANSPORTATION (SaaS + Dark Mode)
-================================= */
-
 .transpo-page {
   display: flex;
   flex-direction: column;
   gap: 14px;
 }
 
-/* Header */
+.no-print {
+  display: block;
+}
+
+.print-only {
+  display: none;
+}
+
+.num {
+  text-align: right;
+}
+
+.mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+}
+
+.td-strong {
+  font-weight: 1000;
+}
+
+.td-left {
+  text-align: left !important;
+}
+
 .transpo-page-header {
   display: flex;
   align-items: flex-end;
@@ -152,16 +56,16 @@
   flex-wrap: wrap;
 }
 
-/* Buttons */
 .btn-primary {
   background: var(--primary);
-  color: white;
+  color: #fff;
   border: none;
   padding: 10px 16px;
   border-radius: 12px;
   font-weight: 900;
   cursor: pointer;
 }
+
 .btn-primary:hover {
   background: var(--primary-hover);
 }
@@ -176,7 +80,6 @@
   cursor: pointer;
 }
 
-/* Card */
 .transpo-card {
   background: var(--panel);
   border: 1px solid var(--border);
@@ -192,8 +95,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  flex-wrap: wrap;
+  gap: 10px;
 }
 
 .transpo-card-title {
@@ -202,40 +104,10 @@
   color: var(--text-2);
 }
 
-/* Month input */
-.transpo-controls {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.month-label {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
+.transpo-meta {
   font-size: 12px;
-  font-weight: 900;
-  color: var(--muted);
-}
-
-.month-input {
-  padding: 10px 12px;
-  border-radius: 12px;
-  border: 1px solid var(--border);
-  background: var(--panel);
-  color: var(--text);
   font-weight: 800;
-}
-
-.month-input:focus {
-  outline: none;
-  border-color: var(--primary);
-  box-shadow: 0 0 0 4px color-mix(in srgb, var(--primary) 20%, transparent);
-}
-
-/* Make month picker icon readable in dark */
-[data-theme="dark"] .month-input {
-  color-scheme: dark;
+  color: var(--muted);
 }
 
 /* Loading/Error */
@@ -245,11 +117,11 @@
   font-weight: 800;
   color: var(--muted);
 }
+
 .transpo-error {
   color: #ef4444;
 }
 
-/* Table wrapper */
 .transpo-table-wrap {
   width: 100%;
   overflow: auto;
@@ -259,7 +131,7 @@
 /* Table */
 .transpo-table {
   width: 100%;
-  min-width: 1250px;
+  min-width: 1750px;
   border-collapse: collapse;
   table-layout: auto;
   color: var(--text);
@@ -274,12 +146,11 @@
   text-align: center;
 }
 
-/* Sticky 2-row header */
 .transpo-table thead th {
   position: sticky;
+  z-index: 2;
   background: var(--table-header);
   color: #fff;
-  z-index: 2;
   font-weight: 900;
   text-transform: uppercase;
   letter-spacing: 0.4px;
@@ -295,37 +166,14 @@
   z-index: 2;
 }
 
-/* zebra + hover */
 .transpo-table tbody tr:nth-child(even) td {
-  background: color-mix(in srgb, var(--panel) 90%, var(--panel-2));
+  background: color-mix(in srgb, var(--panel) 88%, var(--panel-2));
 }
 
 .transpo-table tbody tr:hover td {
-  background: var(--row-hover);
+  background: color-mix(in srgb, var(--panel-2) 95%, transparent);
 }
 
-/* helpers */
-.mono {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
-}
-
-.td-strong {
-  font-weight: 1000;
-}
-
-.td-left {
-  text-align: left !important;
-}
-
-.pos {
-  color: #10b981;
-}
-
-.neg {
-  color: #ef4444;
-}
-
-/* totals */
 .totals-row td {
   background: color-mix(in srgb, var(--panel-2) 85%, transparent);
   border-top: 2px solid color-mix(in srgb, var(--border) 70%, transparent);
@@ -336,7 +184,14 @@
   text-align: right !important;
 }
 
-/* empty */
+.pos {
+  color: #10b981;
+}
+
+.neg {
+  color: #ef4444;
+}
+
 .empty-state {
   padding: 22px;
   text-align: center;
@@ -344,7 +199,6 @@
   font-weight: 900;
 }
 
-/* hint */
 .transpo-hint {
   padding: 10px 14px;
   border-top: 1px solid var(--border);
@@ -353,48 +207,8 @@
   color: var(--muted);
 }
 
-/* Print */
-@media print {
-  body {
-    print-color-adjust: exact;
-  }
-
-  .transpo-actions,
-  .transpo-hint {
-    display: none !important;
-  }
-
-  @page {
-    size: landscape;
-    margin: 10mm;
-  }
-
-  .transpo-table-wrap {
-    overflow: visible !important;
-    max-height: none !important;
-  }
-
-  .transpo-table {
-    min-width: 100% !important;
-  }
-
-  .transpo-table th,
-  .transpo-table td {
-    padding: 4px 5px;
-    font-size: 10px;
-  }
-}
-
-/* Responsive */
-@media (max-width: 768px) {
-  .transpo-page-header {
-    flex-direction: column;
-    align-items: stretch;
-  }
-}
-
-/* ===== Action (⋯) menu ===== */
-.transpo-dots-btn{
+/* action button */
+.transpo-dots-btn {
   background: transparent;
   border: 1px solid var(--border);
   color: var(--text);
@@ -404,11 +218,12 @@
   font-weight: 900;
   cursor: pointer;
 }
-.transpo-dots-btn:hover{
-  background: color-mix(in srgb, var(--panel-2) 90%, transparent);
+
+.transpo-dots-btn:hover {
+  background: color-mix(in srgb, var(--panel-2) 70%, transparent);
 }
 
-.transpo-action-menu{
+.transpo-action-menu {
   position: absolute;
   right: 6px;
   top: 38px;
@@ -421,7 +236,7 @@
   z-index: 10;
 }
 
-.transpo-action-item{
+.transpo-action-item {
   width: 100%;
   text-align: left;
   padding: 10px 12px;
@@ -431,33 +246,37 @@
   font-weight: 800;
   cursor: pointer;
 }
-.transpo-action-item:hover{
+
+.transpo-action-item:hover {
   background: color-mix(in srgb, var(--panel-2) 70%, transparent);
 }
-.transpo-action-item.danger{
+
+.transpo-action-item.danger {
   color: #ef4444;
 }
 
-/* ===== Modal ===== */
-.transpo-modal-overlay{
+/* modal */
+.transpo-modal-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0,0,0,0.6);
+  background: rgba(0, 0, 0, 0.6);
   z-index: 50;
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 18px;
 }
-.transpo-modal{
-  width: min(900px, 100%);
+
+.transpo-modal {
+  width: min(980px, 100%);
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: 16px;
   box-shadow: var(--shadow-soft);
   overflow: hidden;
 }
-.transpo-modal-head{
+
+.transpo-modal-head {
   padding: 14px 16px;
   border-bottom: 1px solid var(--border);
   display: flex;
@@ -465,17 +284,20 @@
   justify-content: space-between;
   gap: 12px;
 }
-.transpo-modal-title{
+
+.transpo-modal-title {
   font-size: 14px;
   font-weight: 1000;
   color: var(--text);
 }
-.transpo-modal-sub{
+
+.transpo-modal-sub {
   font-size: 12px;
   color: var(--muted);
   margin-top: 4px;
 }
-.transpo-modal-x{
+
+.transpo-modal-x {
   background: transparent;
   border: 1px solid var(--border);
   color: var(--text);
@@ -485,21 +307,25 @@
   cursor: pointer;
   font-weight: 900;
 }
-.transpo-modal-body{
+
+.transpo-modal-body {
   padding: 14px 16px;
 }
-.transpo-modal-row{
+
+.transpo-modal-row {
   display: flex;
   align-items: center;
   gap: 12px;
   margin-bottom: 12px;
 }
-.transpo-modal-row label{
+
+.transpo-modal-row label {
   font-size: 12px;
   font-weight: 900;
   color: var(--muted);
 }
-.transpo-modal-row input{
+
+.transpo-modal-row input {
   background: var(--panel-2);
   color: var(--text);
   border: 1px solid var(--border);
@@ -508,26 +334,21 @@
   font-weight: 800;
 }
 
-.transpo-modal-grid{
+.transpo-modal-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 10px;
 }
-@media (max-width: 900px){
-  .transpo-modal-grid{ grid-template-columns: repeat(2, minmax(0, 1fr)); }
-}
-@media (max-width: 640px){
-  .transpo-modal-grid{ grid-template-columns: 1fr; }
-}
 
-.transpo-modal-field label{
+.transpo-modal-field label {
   display: block;
   font-size: 11px;
   font-weight: 900;
   color: var(--muted);
   margin-bottom: 6px;
 }
-.transpo-modal-field input{
+
+.transpo-modal-field input {
   width: 100%;
   background: var(--panel-2);
   color: var(--text);
@@ -537,10 +358,177 @@
   font-weight: 800;
 }
 
-.transpo-modal-actions{
+.transpo-modal-actions {
   padding: 14px 16px;
   border-top: 1px solid var(--border);
   display: flex;
   justify-content: flex-end;
   gap: 10px;
+}
+
+/* print layout block */
+.branch-transpo-print {
+  display: none;
+}
+
+@page {
+  size: legal landscape;
+  margin: 8mm;
+}
+
+@media print {
+  html,
+  body {
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #fff !important;
+    color: #000 !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  body * {
+    visibility: hidden !important;
+  }
+
+  .print-only,
+  .print-only * {
+    visibility: visible !important;
+  }
+
+  .no-print,
+  .transpo-page-header,
+  .transpo-card,
+  .sidebar,
+  .header {
+    display: none !important;
+  }
+
+  .print-only {
+    display: block !important;
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    background: #fff !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  .branch-transpo-print {
+    display: block !important;
+    width: 100%;
+    background: #fff !important;
+    color: #000 !important;
+    font-family: Arial, Helvetica, sans-serif;
+    font-size: 9px;
+    box-sizing: border-box;
+    padding: 2mm;
+  }
+
+  .branch-transpo-print__title {
+    text-align: center;
+    font-size: 20px;
+    font-weight: 700;
+    margin-bottom: 2px;
+  }
+
+  .branch-transpo-print__subtitle {
+    text-align: center;
+    font-size: 12px;
+    font-weight: 700;
+    margin-bottom: 2px;
+  }
+
+  .branch-transpo-print__branch {
+    text-align: center;
+    font-size: 14px;
+    font-weight: 700;
+    margin-bottom: 2px;
+  }
+
+  .branch-transpo-print__period {
+    text-align: center;
+    font-size: 11px;
+    margin-bottom: 8px;
+  }
+
+  .branch-transpo-print__meta {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 8px;
+    font-size: 9px;
+  }
+
+  .branch-transpo-print-table {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
+    font-size: 7px;
+  }
+
+  .branch-transpo-print-table th,
+  .branch-transpo-print-table td {
+    border: 1px solid #666;
+    padding: 2px 3px;
+    text-align: center;
+    vertical-align: middle;
+    word-break: break-word;
+  }
+
+  .branch-transpo-print-table thead th {
+    background: #ececec !important;
+    color: #000 !important;
+    font-weight: 700;
+  }
+
+  .branch-transpo-print-total td {
+    font-weight: 700;
+    color: #c00000 !important;
+    background: #fff8dc !important;
+  }
+
+  .branch-transpo-print__signatures {
+    display: flex;
+    justify-content: space-between;
+    gap: 24px;
+    margin-top: 22px;
+  }
+
+  .branch-transpo-print__sign-box {
+    flex: 1;
+    text-align: center;
+    font-size: 9px;
+  }
+
+  .branch-transpo-print__sign-line {
+    border-top: 1px solid #000;
+    height: 20px;
+    margin-bottom: 4px;
+  }
+
+  .transpo-page {
+    display: block !important;
+    background: #fff !important;
+  }
+}
+
+@media (max-width: 900px) {
+  .transpo-modal-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 768px) {
+  .transpo-page-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
+
+@media (max-width: 640px) {
+  .transpo-modal-grid {
+    grid-template-columns: 1fr;
+  }
 }

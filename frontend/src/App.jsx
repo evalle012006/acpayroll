@@ -156,7 +156,7 @@ function AppShell() {
       <Route path="/exit-staff" element={<ProtectedRoute allowedRoles={["admin","accounting","hr"]}><ProtectedLayout><ExitStaff /></ProtectedLayout></ProtectedRoute>}/>
       <Route path="/exit-staff-orders" element={<ProtectedRoute allowedRoles={["admin","accounting","hr"]}><ProtectedLayout><ExitStaffOrders /></ProtectedLayout></ProtectedRoute>}/>
       <Route path="/transactions/sbf" element={<ProtectedRoute allowedRoles={["admin","accounting","hr"]}><ProtectedLayout><SbfOrder /></ProtectedLayout></ProtectedRoute>}/>
-      <Route path="/reports" element={<ProtectedRoute allowedRoles={["admin", "branch manager","accounting","hr"]}><ProtectedLayout><Reports /></ProtectedLayout></ProtectedRoute>}/>
+      <Route path="/reports" element={<ProtectedRoute allowedRoles={["admin","accounting","hr"]}><ProtectedLayout><Reports /></ProtectedLayout></ProtectedRoute>}/>
       <Route path="/system-update/area-configurations" element={<ProtectedRoute allowedRoles={["admin","accounting","hr"]}><ProtectedLayout><AreaConfigurations /></ProtectedLayout></ProtectedRoute>}/>
       <Route path="/system-update/consolidation" element={<ProtectedRoute allowedRoles={["admin","accounting","hr"]}><ProtectedLayout><Consolidation /></ProtectedLayout></ProtectedRoute>}/>
       <Route path="/system-update/tax-calculator" element={<ProtectedRoute allowedRoles={["admin","accounting","hr"]}><ProtectedLayout><TaxCalculator /></ProtectedLayout></ProtectedRoute>}/>

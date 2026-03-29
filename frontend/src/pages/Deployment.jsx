@@ -547,21 +547,17 @@ function StaffDetailsStep({ form, setForm }) {
             </tr>
             <tr>
               <td>Father Occupation</td>
-              <td>
-                <EditableCell value={form.father_occupation} placeholder="Type father occupation..." onChange={(v) => setField("father_occupation", v)} />
-              </td>
+                <td>
+                  <EditableCell value={form.father_occupation} placeholder="Type father occupation..." onChange={(v) => setField("father_occupation", v)} /></td>
             </tr>
             <tr>
               <td>Father Employer</td>
-              <td>
-                <EditableCell value={form.father_employer} placeholder="Type father employer..." onChange={(v) => setField("father_employer", v)} />
-              </td>
+                <td>
+                  <EditableCell value={form.father_employer} placeholder="Type father employer..." onChange={(v) => setField("father_employer", v)} /></td>
             </tr>
             <tr>
               <td>Father Contact</td>
-              <td>
-                <EditableCell value={form.father_contact} placeholder="Type father contact..." onChange={(v) => setField("father_contact", v)} />
-              </td>
+                <td><EditableCell value={form.father_contact} placeholder="Type father contact..." onChange={(v) => setField("father_contact", v)} /></td>
             </tr>
 
             <tr>
@@ -966,8 +962,36 @@ function StaffDetailsStep({ form, setForm }) {
   );
 }
 
-function ContractDetailsStep({ form, branches, setForm }) {
+function ContractDetailsStep({ form, branches, compRates = [], setForm }) {
   const setField = (name, v) => setForm((p) => ({ ...p, [name]: v }));
+
+  const applyRateByPosition = (positionValue) => {
+    const pos = toStr(positionValue);
+    if (!pos) return;
+
+    const matched = (compRates || []).find(
+      (r) => toStr(r.position).toLowerCase() === pos.toLowerCase()
+    );
+
+    if (!matched) return;
+
+    setForm((prev) => ({
+      ...prev,
+      position: pos,
+      salary: matched.salary ?? prev.salary ?? "",
+      ecola: matched.ecola ?? prev.ecola ?? "",
+      cbu: matched.cbu ?? prev.cbu ?? "",
+      cashbond: matched.cashbond ?? prev.cashbond ?? "",
+      utility: matched.utility ?? prev.utility ?? "",
+      sss_er: matched.sss_er ?? prev.sss_er ?? "",
+      ph_er: matched.philhealth_er ?? prev.ph_er ?? "",
+      hdmf_er: matched.pagibig_er ?? prev.hdmf_er ?? "",
+      sss_ee: matched.sss_ee ?? prev.sss_ee ?? "",
+      ph_ee: matched.philhealth_ee ?? prev.ph_ee ?? "",
+      hdmf_ee: matched.pagibig_ee ?? prev.hdmf_ee ?? "",
+      tax: matched.tax ?? prev.tax ?? "",
+    }));
+  };
 
   const salaryTotal = toNum(form.salary) + toNum(form.ecola);
   const personalTotal = toNum(form.cbu) + toNum(form.cashbond) + toNum(form.utility);
@@ -997,12 +1021,20 @@ function ContractDetailsStep({ form, branches, setForm }) {
 
             <tr>
               <td>Position *</td>
-              <td>
-                <EditableCell
+              <td style={{ textAlign: "right" }}>
+                <select
+                  className="input"
+                  style={{ width: 280, textAlignLast: "right" }}
                   value={form.position}
-                  placeholder="Type position..."
-                  onChange={(v) => setField("position", v)}
-                />
+                  onChange={(e) => applyRateByPosition(e.target.value)}
+                >
+                  <option value="">Select position...</option>
+                  {(compRates || []).map((r) => (
+                    <option key={r.id} value={r.position}>
+                      {r.position}
+                    </option>
+                  ))}
+                </select>
               </td>
             </tr>
 
@@ -1200,82 +1232,50 @@ function ContractDetailsStep({ form, branches, setForm }) {
               <td style={{ fontWeight: 900 }}>Total</td>
               <td style={{ fontWeight: 900 }}>{transpoTotal.toLocaleString()}</td>
             </tr>
-
             <tr>
-              <td className="editable-section" colSpan={2}>
-                Remittances: ER
-              </td>
+              <td className="editable-section" colSpan={2}>Remittances: ER</td>
             </tr>
-
             <tr>
               <td>SSS ER</td>
-              <td>
-                <EditableCell value={form.sss_er} placeholder="0" onChange={(v) => setField("sss_er", v)} />
-              </td>
+              <td><EditableCell value={form.sss_er} placeholder="0" onChange={(v) => setField("sss_er", v)} /></td>
             </tr>
-
             <tr>
               <td>PhilHealth ER</td>
-              <td>
-                <EditableCell value={form.ph_er} placeholder="0" onChange={(v) => setField("ph_er", v)} />
-              </td>
+              <td><EditableCell value={form.ph_er} placeholder="0" onChange={(v) => setField("ph_er", v)} /></td>
             </tr>
-
             <tr>
               <td>HDMF ER</td>
-              <td>
-                <EditableCell value={form.hdmf_er} placeholder="0" onChange={(v) => setField("hdmf_er", v)} />
-              </td>
+              <td><EditableCell value={form.hdmf_er} placeholder="0" onChange={(v) => setField("hdmf_er", v)} /></td>
             </tr>
-
             <tr>
               <td style={{ fontWeight: 900 }}>Total ER</td>
               <td style={{ fontWeight: 900 }}>{erTotal.toLocaleString()}</td>
             </tr>
-
             <tr>
-              <td className="editable-section" colSpan={2}>
-                Remittances: EE
-              </td>
+              <td className="editable-section" colSpan={2}>Remittances: EE</td>
             </tr>
-
             <tr>
               <td>SSS EE</td>
-              <td>
-                <EditableCell value={form.sss_ee} placeholder="0" onChange={(v) => setField("sss_ee", v)} />
-              </td>
+              <td><EditableCell value={form.sss_ee} placeholder="0" onChange={(v) => setField("sss_ee", v)} /></td>
             </tr>
-
             <tr>
               <td>PhilHealth EE</td>
-              <td>
-                <EditableCell value={form.ph_ee} placeholder="0" onChange={(v) => setField("ph_ee", v)} />
-              </td>
+              <td><EditableCell value={form.ph_ee} placeholder="0" onChange={(v) => setField("ph_ee", v)} /></td>
             </tr>
-
             <tr>
               <td>HDMF EE</td>
-              <td>
-                <EditableCell value={form.hdmf_ee} placeholder="0" onChange={(v) => setField("hdmf_ee", v)} />
-              </td>
+              <td><EditableCell value={form.hdmf_ee} placeholder="0" onChange={(v) => setField("hdmf_ee", v)} /></td>
             </tr>
-
             <tr>
               <td style={{ fontWeight: 900 }}>Total EE</td>
               <td style={{ fontWeight: 900 }}>{eeTotal.toLocaleString()}</td>
             </tr>
-
             <tr>
-              <td className="editable-section" colSpan={2}>
-                Remittances: Tax
-              </td>
+              <td className="editable-section" colSpan={2}>Remittances: Tax</td>
             </tr>
-
             <tr>
               <td>Withheld Tax</td>
-              <td>
-                <EditableCell value={form.tax} placeholder="0" onChange={(v) => setField("tax", v)} />
-              </td>
+              <td><EditableCell value={form.tax} placeholder="0" onChange={(v) => setField("tax", v)} /></td>
             </tr>
           </tbody>
         </table>
@@ -1284,7 +1284,7 @@ function ContractDetailsStep({ form, branches, setForm }) {
   );
 }
 
-function StaffCreateModal({ branches, onClose, onCreated }) {
+function StaffCreateModal({ branches, compRates = [], onClose, onCreated }) {
   useMemo(() => getBase(), []);
   const [step, setStep] = useState(1);
 
@@ -1587,7 +1587,12 @@ function StaffCreateModal({ branches, onClose, onCreated }) {
             {step === 1 ? (
               <StaffDetailsStep form={form} setForm={setForm} />
             ) : (
-              <ContractDetailsStep form={form} branches={branches} setForm={setForm} />
+              <ContractDetailsStep
+                form={form}
+                branches={branches}
+                compRates={compRates}
+                setForm={setForm}
+              />
             )}
           </div>
 
@@ -1644,6 +1649,8 @@ export default function Deployment() {
   const [staff, setStaff] = useState([]);
   const [branches, setBranches] = useState([]);
 
+  const [compRates, setCompRates] = useState([]);
+
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [approvingId, setApprovingId] = useState(null);
@@ -1658,9 +1665,445 @@ export default function Deployment() {
   const [approvingPendingId, setApprovingPendingId] = useState(null);
   const [rejectingPendingId, setRejectingPendingId] = useState(null);
 
-  const [showAddStaff, setShowAddStaff] = useState(false);
+  const [editingPending, setEditingPending] = useState(null);
+  const makeEmptyPendingForm = () => ({
+    employee_no: "",
+    last_name: "",
+    first_name: "",
+    middle_name: "",
 
-  const makeEmptyDeploymentForm = useCallback(
+    address: "",
+    municipality: "",
+    province: "",
+    contact: "",
+    email: "",
+    date_of_birth: "",
+    place_of_birth: "",
+    gender: "",
+    civil_status: "",
+    citizenship: "",
+    height: "",
+    weight: "",
+    religion: "",
+    blood_type: "",
+
+    spouse_fullname: "",
+    spouse_address: "",
+    spouse_occupation: "",
+    spouse_employer: "",
+
+    children: JSON.stringify(
+      [{ fullname: "", date_of_birth: "", place_of_birth: "", age: "" }],
+      null,
+      2
+    ),
+
+    father_fullname: "",
+    father_address: "",
+    father_occupation: "",
+    father_employer: "",
+    father_contact: "",
+
+    mother_fullname: "",
+    mother_address: "",
+    mother_occupation: "",
+    mother_employer: "",
+    mother_contact: "",
+
+    guardian_fullname: "",
+    guardian_address: "",
+    guardian_occupation: "",
+    guardian_employer: "",
+    guardian_contact: "",
+
+    primary_school_name: "",
+    primary_year_started: "",
+    primary_year_graduated: "",
+
+    secondary_school_name: "",
+    secondary_year_started: "",
+    secondary_year_graduated: "",
+
+    tertiary_school_name: "",
+    tertiary_course: "",
+    tertiary_major: "",
+    tertiary_year_started: "",
+    tertiary_year_graduated: "",
+
+    employment_history: JSON.stringify(
+      [
+        {
+          company: "",
+          position: "",
+          year_started: "",
+          year_ended: "",
+          character_reference: "",
+          contact_number: "",
+        },
+      ],
+      null,
+      2
+    ),
+
+    beneficiaries: JSON.stringify(
+      [{ name: "", relation: "", contact_number: "" }],
+      null,
+      2
+    ),
+
+    sss_no: "",
+    philhealth_no: "",
+    pagibig_no: "",
+    tin_no: "",
+
+    position: "",
+    department: "",
+    area: "",
+    region: "",
+    division: "",
+    branch_id: "",
+    status: "Active",
+
+    start_date: "",
+    regularization_date: "",
+
+    salary: "",
+    ecola: "",
+
+    cbu: "",
+    cashbond: "",
+    utility: "",
+
+    transportation: "",
+    postage: "",
+    motorcycle_loan: "",
+    additional_target: "",
+    repairing: "",
+    additional_monitoring: "",
+    other_deduction: "",
+
+    sss_er: "",
+    ph_er: "",
+    hdmf_er: "",
+    total_er: "",
+
+    sss_ee: "",
+    ph_ee: "",
+    hdmf_ee: "",
+    total_ee: "",
+
+    tax: "",
+  });
+
+  const [pendingEditStep, setPendingEditStep] = useState(1);
+  const [pendingSaving, setPendingSaving] = useState(false);
+  const [pendingForm, setPendingForm] = useState(makeEmptyPendingForm);
+
+  const openEditPending = (item) => {
+    const payload =
+      typeof item.payload === "string"
+        ? JSON.parse(item.payload || "{}")
+        : item.payload || {};
+
+    setEditingPending(item);
+    setPendingEditStep(1);
+
+    setPendingForm({
+      employee_no: payload.employee_no || "",
+      last_name: payload.last_name || "",
+      first_name: payload.first_name || "",
+      middle_name: payload.middle_name || "",
+
+      address: payload.address || "",
+      municipality: payload.municipality || "",
+      province: payload.province || "",
+      contact: payload.contact || "",
+      email: payload.email || "",
+      date_of_birth: toDate10(payload.date_of_birth),
+      place_of_birth: payload.place_of_birth || "",
+      gender: payload.gender || "",
+      civil_status: payload.civil_status || "",
+      citizenship: payload.citizenship || "",
+      height: payload.height ?? "",
+      weight: payload.weight ?? "",
+      religion: payload.religion || "",
+      blood_type: payload.blood_type || "",
+
+      spouse_fullname: payload.spouse_fullname || "",
+      spouse_address: payload.spouse_address || "",
+      spouse_occupation: payload.spouse_occupation || "",
+      spouse_employer: payload.spouse_employer || "",
+
+      children: JSON.stringify(
+        Array.isArray(payload.children) && payload.children.length
+          ? payload.children
+          : [{ fullname: "", date_of_birth: "", place_of_birth: "", age: "" }],
+        null,
+        2
+      ),
+
+      father_fullname: payload.father_fullname || "",
+      father_address: payload.father_address || "",
+      father_occupation: payload.father_occupation || "",
+      father_employer: payload.father_employer || "",
+      father_contact: payload.father_contact || "",
+
+      mother_fullname: payload.mother_fullname || "",
+      mother_address: payload.mother_address || "",
+      mother_occupation: payload.mother_occupation || "",
+      mother_employer: payload.mother_employer || "",
+      mother_contact: payload.mother_contact || "",
+
+      guardian_fullname: payload.guardian_fullname || "",
+      guardian_address: payload.guardian_address || "",
+      guardian_occupation: payload.guardian_occupation || "",
+      guardian_employer: payload.guardian_employer || "",
+      guardian_contact: payload.guardian_contact || "",
+
+      primary_school_name: payload.primary_school_name || "",
+      primary_year_started: payload.primary_year_started || "",
+      primary_year_graduated: payload.primary_year_graduated || "",
+
+      secondary_school_name: payload.secondary_school_name || "",
+      secondary_year_started: payload.secondary_year_started || "",
+      secondary_year_graduated: payload.secondary_year_graduated || "",
+
+      tertiary_school_name: payload.tertiary_school_name || "",
+      tertiary_course: payload.tertiary_course || "",
+      tertiary_major: payload.tertiary_major || "",
+      tertiary_year_started: payload.tertiary_year_started || "",
+      tertiary_year_graduated: payload.tertiary_year_graduated || "",
+
+      employment_history: JSON.stringify(
+        Array.isArray(payload.employment_history) && payload.employment_history.length
+          ? payload.employment_history
+          : [
+              {
+                company: "",
+                position: "",
+                year_started: "",
+                year_ended: "",
+                character_reference: "",
+                contact_number: "",
+              },
+            ],
+        null,
+        2
+      ),
+
+      beneficiaries: JSON.stringify(
+        Array.isArray(payload.beneficiaries) && payload.beneficiaries.length
+          ? payload.beneficiaries
+          : [{ name: "", relation: "", contact_number: "" }],
+        null,
+        2
+      ),
+
+      sss_no: payload.sss_no || "",
+      philhealth_no: payload.philhealth_no || "",
+      pagibig_no: payload.pagibig_no || "",
+      tin_no: payload.tin_no || "",
+
+      position: payload.position || "",
+      department: payload.department || "",
+      area: payload.area || "",
+      region: payload.region || "",
+      division: payload.division || "",
+      branch_id: payload.branch_id ? String(payload.branch_id) : "",
+      status: payload.status || "Active",
+
+      start_date: toDate10(payload.start_date),
+      regularization_date: toDate10(payload.regularization_date),
+
+      salary: payload.salary ?? "",
+      ecola: payload.ecola ?? "",
+
+      cbu: payload.cbu ?? "",
+      cashbond: payload.cashbond ?? "",
+      utility: payload.utility ?? "",
+
+      transportation: payload.transportation ?? "",
+      postage: payload.postage ?? "",
+      motorcycle_loan: payload.motorcycle_loan ?? "",
+      additional_target: payload.additional_target ?? "",
+      repairing: payload.repairing ?? "",
+      additional_monitoring: payload.additional_monitoring ?? "",
+      other_deduction: payload.other_deduction ?? "",
+
+      sss_er: payload.sss_er ?? "",
+      ph_er: payload.ph_er ?? "",
+      hdmf_er: payload.hdmf_er ?? "",
+      total_er: payload.total_er ?? "",
+
+      sss_ee: payload.sss_ee ?? "",
+      ph_ee: payload.ph_ee ?? "",
+      hdmf_ee: payload.hdmf_ee ?? "",
+      total_ee: payload.total_ee ?? "",
+
+      tax: payload.tax ?? "",
+    });
+  };
+
+  const closeEditPending = () => {
+    setEditingPending(null);
+    setPendingEditStep(1);
+    setPendingForm(makeEmptyPendingForm());
+  };
+
+  const onPendingFormChange = (e) => {
+    const { name, value } = e.target;
+    setPendingForm((prev) => ({ ...prev, [name]: value }));
+  };
+
+  const buildPendingPayload = () => {
+    const total_er =
+      toNum(pendingForm.sss_er) +
+      toNum(pendingForm.ph_er) +
+      toNum(pendingForm.hdmf_er);
+
+    const total_ee =
+      toNum(pendingForm.sss_ee) +
+      toNum(pendingForm.ph_ee) +
+      toNum(pendingForm.hdmf_ee);
+
+    return {
+      ...pendingForm,
+      branch_id: pendingForm.branch_id ? Number(pendingForm.branch_id) : null,
+
+      date_of_birth: pendingForm.date_of_birth || null,
+      start_date: pendingForm.start_date || null,
+      regularization_date: pendingForm.regularization_date || null,
+
+      height: pendingForm.height === "" ? null : Number(pendingForm.height),
+      weight: pendingForm.weight === "" ? null : Number(pendingForm.weight),
+
+      salary: pendingForm.salary === "" ? null : Number(pendingForm.salary),
+      ecola: pendingForm.ecola === "" ? null : Number(pendingForm.ecola),
+
+      cbu: toNum(pendingForm.cbu),
+      cashbond: toNum(pendingForm.cashbond),
+      utility: toNum(pendingForm.utility),
+
+      transportation: toNum(pendingForm.transportation),
+      postage: toNum(pendingForm.postage),
+      motorcycle_loan: toNum(pendingForm.motorcycle_loan),
+      additional_target: toNum(pendingForm.additional_target),
+      repairing: toNum(pendingForm.repairing),
+      additional_monitoring: toNum(pendingForm.additional_monitoring),
+      other_deduction: toNum(pendingForm.other_deduction),
+
+      sss_er: toNum(pendingForm.sss_er),
+      ph_er: toNum(pendingForm.ph_er),
+      hdmf_er: toNum(pendingForm.hdmf_er),
+      total_er,
+
+      sss_ee: toNum(pendingForm.sss_ee),
+      ph_ee: toNum(pendingForm.ph_ee),
+      hdmf_ee: toNum(pendingForm.hdmf_ee),
+      total_ee,
+
+      tax: toNum(pendingForm.tax),
+
+      children: safeJsonArray(pendingForm.children),
+      employment_history: safeJsonArray(pendingForm.employment_history),
+      beneficiaries: safeJsonArray(pendingForm.beneficiaries),
+
+      spouse_fullname: toStr(pendingForm.spouse_fullname) || null,
+      spouse_address: toStr(pendingForm.spouse_address) || null,
+      spouse_occupation: toStr(pendingForm.spouse_occupation) || null,
+      spouse_employer: toStr(pendingForm.spouse_employer) || null,
+
+      sss_no: toStr(pendingForm.sss_no) || null,
+      philhealth_no: toStr(pendingForm.philhealth_no) || null,
+      pagibig_no: toStr(pendingForm.pagibig_no) || null,
+      tin_no: toStr(pendingForm.tin_no) || null,
+
+      father_fullname: toStr(pendingForm.father_fullname) || null,
+      father_address: toStr(pendingForm.father_address) || null,
+      father_occupation: toStr(pendingForm.father_occupation) || null,
+      father_employer: toStr(pendingForm.father_employer) || null,
+      father_contact: toStr(pendingForm.father_contact) || null,
+
+      mother_fullname: toStr(pendingForm.mother_fullname) || null,
+      mother_address: toStr(pendingForm.mother_address) || null,
+      mother_occupation: toStr(pendingForm.mother_occupation) || null,
+      mother_employer: toStr(pendingForm.mother_employer) || null,
+      mother_contact: toStr(pendingForm.mother_contact) || null,
+
+      guardian_fullname: toStr(pendingForm.guardian_fullname) || null,
+      guardian_address: toStr(pendingForm.guardian_address) || null,
+      guardian_occupation: toStr(pendingForm.guardian_occupation) || null,
+      guardian_employer: toStr(pendingForm.guardian_employer) || null,
+      guardian_contact: toStr(pendingForm.guardian_contact) || null,
+
+      primary_school_name: toStr(pendingForm.primary_school_name) || null,
+      primary_year_started: toStr(pendingForm.primary_year_started) || null,
+      primary_year_graduated: toStr(pendingForm.primary_year_graduated) || null,
+
+      secondary_school_name: toStr(pendingForm.secondary_school_name) || null,
+      secondary_year_started: toStr(pendingForm.secondary_year_started) || null,
+      secondary_year_graduated: toStr(pendingForm.secondary_year_graduated) || null,
+
+      tertiary_school_name: toStr(pendingForm.tertiary_school_name) || null,
+      tertiary_course: toStr(pendingForm.tertiary_course) || null,
+      tertiary_major: toStr(pendingForm.tertiary_major) || null,
+      tertiary_year_started: toStr(pendingForm.tertiary_year_started) || null,
+      tertiary_year_graduated: toStr(pendingForm.tertiary_year_graduated) || null,
+    };
+  };
+
+  const updatePendingStaff = async (e) => {
+    e.preventDefault();
+
+    if (!editingPending?.id) return;
+
+    if (!toStr(pendingForm.last_name) || !toStr(pendingForm.first_name)) {
+      alert("Last Name and First Name are required.");
+      setPendingEditStep(1);
+      return;
+    }
+
+    if (!toStr(pendingForm.position)) {
+      alert("Position is required.");
+      setPendingEditStep(2);
+      return;
+    }
+
+    setPendingSaving(true);
+
+    try {
+      const payload = buildPendingPayload();
+
+      const res = await api.put(`/pending-staff/${editingPending.id}`, {
+        payload,
+      });
+
+      setPendingStaff((prev) =>
+        prev.map((row) =>
+          row.id === editingPending.id
+            ? { ...row, ...res.data.request }
+            : row
+        )
+      );
+
+      closeEditPending();
+      alert("Pending staff request updated.");
+    } catch (err) {
+      alert(err?.response?.data?.message || "Failed to update pending staff request.");
+    } finally {
+      setPendingSaving(false);
+    }
+  };
+
+    const [showAddStaff, setShowAddStaff] = useState(false);
+
+    const visiblePendingStaff = useMemo(() => {
+    return (pendingStaff || []).filter(
+      (item) => norm(item.status) === "pending"
+    );
+    }, [pendingStaff]);
+
+    const makeEmptyDeploymentForm = useCallback(
     () => ({
       employee_id: "",
       last_name: "",
@@ -1671,9 +2114,9 @@ export default function Deployment() {
       details: "",
     }),
     []
-  );
+    );
 
-  const approvePendingStaff = async (id) => {
+    const approvePendingStaff = async (id) => {
     if (!isAdmin) return alert("Admin only.");
 
     const ok = window.confirm("Approve this pending staff request?");
@@ -1684,16 +2127,19 @@ export default function Deployment() {
 
     try {
       await api.put(`/pending-staff/${id}/approve`);
+
+      setPendingStaff((prev) => prev.filter((row) => row.id !== id));
       await loadData();
+
       alert("Pending staff approved.");
     } catch (e) {
       setErr(e?.response?.data?.message || "Failed to approve pending staff.");
     } finally {
       setApprovingPendingId(null);
     }
-  };
+    };
 
-  const rejectPendingStaff = async (id) => {
+    const rejectPendingStaff = async (id) => {
     if (!isAdmin) return alert("Admin only.");
 
     const ok = window.confirm("Reject this pending staff request?");
@@ -1706,45 +2152,50 @@ export default function Deployment() {
       await api.put(`/pending-staff/${id}/reject`, {
         rejection_reason: "",
       });
+
+      setPendingStaff((prev) => prev.filter((row) => row.id !== id));
       await loadData();
+
       alert("Pending staff rejected.");
     } catch (e) {
       setErr(e?.response?.data?.message || "Failed to reject pending staff.");
     } finally {
       setRejectingPendingId(null);
     }
-  };
+    };
 
-  const [form, setForm] = useState(() => makeEmptyDeploymentForm());
+    const [form, setForm] = useState(() => makeEmptyDeploymentForm());
 
-  const loadData = useCallback(async () => {
+    const loadData = useCallback(async () => {
     setLoading(true);
     setErr("");
     try {
-      const [d, s, b, p] = await Promise.all([
+      const [d, s, b, p, r] = await Promise.all([
         api.get("/deployments"),
         api.get("/staff"),
         api.get("/branches"),
         api.get("/pending-staff"),
+        api.get("/comp-rates"),
       ]);
 
         setDeployments(d.data || []);
         setStaff(s.data || []);
         setBranches(b.data || []);
         setPendingStaff(p.data || []);
+        setCompRates(Array.isArray(r.data) ? r.data : []);
 
     } catch (e) {
       setErr(e?.response?.data?.message || "Failed to load deployment data.");
     } finally {
       setLoading(false);
     }
-  }, []);
+    }, []);
 
-  useEffect(() => {
+    useEffect(() => {
     loadData();
-  }, [loadData]);
+    }, [loadData]);
 
-  const resetAllModals = useCallback(() => {
+    const resetAllModals = useCallback(() => {
     setShowFormModal(false);
     setEditingId(null);
     setForm(makeEmptyDeploymentForm());
@@ -1752,10 +2203,21 @@ export default function Deployment() {
     setShowAddStaff(false);
     setErr("");
     setSaving(false);
-  }, [makeEmptyDeploymentForm]);
 
-  useEffect(() => {
-    const anyOpen = showFormModal || !!viewRow || showAddStaff;
+    setEditingPending(null);
+    setPendingForm({
+      employee_no: "",
+      last_name: "",
+      first_name: "",
+      middle_name: "",
+      position: "",
+      branch_id: "",
+    }); 
+
+    }, [makeEmptyDeploymentForm]);
+
+    useEffect(() => {
+      const anyOpen = showFormModal || !!viewRow || showAddStaff || !!editingPending;
     if (!anyOpen) return;
 
     const onKeyDown = (e) => {
@@ -1768,9 +2230,9 @@ export default function Deployment() {
       document.removeEventListener("keydown", onKeyDown);
       document.body.style.overflow = "";
     };
-  }, [showFormModal, viewRow, showAddStaff, resetAllModals]);
+    }, [showFormModal, viewRow, showAddStaff, editingPending, resetAllModals]);
 
-  const branchLabel = useCallback(
+    const branchLabel = useCallback(
     (branchCode) => {
       const code = toStr(branchCode).toLowerCase();
       const b = branches.find((x) => toStr(x.code).toLowerCase() === code);
@@ -1778,13 +2240,13 @@ export default function Deployment() {
       return `${b.code} • ${b.name}`.trim();
     },
     [branches]
-  );
+    );
 
-  const selectedEmployee = useMemo(() => {
+    const selectedEmployee = useMemo(() => {
     return staff.find((x) => String(x.id) === String(form.employee_id)) || null;
-  }, [staff, form.employee_id]);
+    }, [staff, form.employee_id]);
 
-  const onSelectEmployee = (id) => {
+    const onSelectEmployee = (id) => {
     const emp = staff.find((x) => String(x.id) === String(id));
     setForm((p) => ({
       ...p,
@@ -1948,103 +2410,16 @@ export default function Deployment() {
         </div>
       </div>
 
-      {err ? <div style={{ marginBottom: 12, color: "#ef4444", fontWeight: 800 }}>{err}</div> : null}
+    {err ? <div style={{ marginBottom: 12, color: "#ef4444", fontWeight: 800 }}>{err}</div> : null}
 
-      <div className="po-card">
-        <table className="po-table">
-          <thead>
-            <tr>
-              <th>Employee</th>
-              <th>Deployment Branch</th>
-              <th>Date</th>
-              <th style={{ width: 320 }}>Details / Remarks</th>
-              <th style={{ width: 320 }}>Actions</th>
-            </tr>
-          </thead>
-
-          <tbody>
-            {loading ? (
-              <tr>
-                <td colSpan={5} style={{ padding: 16, opacity: 0.8 }}>
-                  Loading...
-                </td>
-              </tr>
-            ) : deployments.length === 0 ? (
-              <tr>
-                <td colSpan={5} style={{ padding: 16, opacity: 0.8 }}>
-                  No deployment orders found.
-                </td>
-              </tr>
-            ) : (
-              deployments.map((d) => {
-                const statusLower = norm(d?.status || "pending");
-                const pending = statusLower === "pending";
-                const branchText = d.branch_code || d.branch_name ? `${d.branch_code} • ${d.branch_name}` : branchLabel(d.branch_code);
-
-                return (
-                  <tr key={d.id}>
-                    <td>
-                      <div className="td-strong">{d.employee_name || displayNameParts(d)}</div>
-                      <div style={{ fontSize: 12, opacity: 0.8 }}>
-                        ID: <span className="mono">{d.employee_id}</span>
-                        {d.status ? (
-                          <>
-                            {" "}
-                            • <span className="mono">{d.status}</span>
-                          </>
-                        ) : null}
-                      </div>
-                    </td>
-
-                    <td>{branchText}</td>
-                    <td className="mono">{toDate10(d.deployment_date) || "-"}</td>
-
-                    <td title={toStr(d.details)}>{toStr(d.details) ? toStr(d.details) : <span style={{ opacity: 0.75 }}>-</span>}</td>
-
-                    <td>
-                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                        <button className="po-mini-btn" type="button" onClick={() => openEdit(d)} disabled={!pending}>
-                          Edit
-                        </button>
-
-                        <button className="po-mini-btn" type="button" onClick={() => openViewModal(d)}>
-                          View
-                        </button>
-
-                        {isAdmin && (
-                          <>
-                            <button
-                              className="po-mini-btn"
-                              type="button"
-                              onClick={() => approveDeployment(d)}
-                              disabled={!pending || approvingId === d.id}
-                              title={!pending ? "Only pending can be approved" : "Approve"}
-                            >
-                              {approvingId === d.id ? "Approving..." : "Approve"}
-                            </button>
-
-                            <button
-                              className="po-mini-btn"
-                              type="button"
-                              onClick={() => deleteDeployment(d)}
-                              disabled={!pending || deletingId === d.id}
-                              title={!pending ? "Only pending can be deleted" : "Delete"}
-                            >
-                              {deletingId === d.id ? "Deleting..." : "Delete"}
-                            </button>
-                          </>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })
-            )}
-          </tbody>
-        </table>
-      </div>
-
-      {showAddStaff && <StaffCreateModal branches={branches} onClose={() => setShowAddStaff(false)} onCreated={onStaffCreated} />}
+    {showAddStaff && (
+      <StaffCreateModal
+        branches={branches}
+        compRates={compRates}
+        onClose={() => setShowAddStaff(false)}
+        onCreated={onStaffCreated}
+      />
+    )}
 
       {showFormModal && (
         <div className="po-modal-overlay" onMouseDown={(e) => e.target.classList.contains("po-modal-overlay") && closeFormModal()}>
@@ -2131,69 +2506,78 @@ export default function Deployment() {
         </div>
       )}
 
-      {viewRow && (
-        <div className="po-modal-overlay" onMouseDown={(e) => e.target.classList.contains("po-modal-overlay") && closeViewModal()}>
-          <div className="po-modal" onMouseDown={(e) => e.stopPropagation()}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <h3 style={{ margin: 0 }}>View Deployment</h3>
-              <button className="po-x" type="button" onClick={closeViewModal}>
+      {editingPending && (
+        <div className="modal-overlay" onMouseDown={closeEditPending}>
+          <div
+            className="modal staff-profile-modal"
+            onMouseDown={(e) => e.stopPropagation()}
+            style={{ maxWidth: 1200 }}
+          >
+            <div className="modal-head">
+              <div>
+                <h3>Edit Pending Staff</h3>
+                <div className="mini">
+                  {`${toStr(pendingForm.last_name)}${pendingForm.last_name && pendingForm.first_name ? ", " : ""}${toStr(pendingForm.first_name)}`.trim() || "Pending staff"}
+                  {" • "}
+                  {pendingForm.position || "-"}
+                  {" • "}
+                  {pendingForm.status || "Active"}
+                </div>
+              </div>
+              <button className="icon-btn" onClick={closeEditPending} type="button">
                 ✕
               </button>
             </div>
 
-            <div className="po-form">
-              <div className="po-grid">
-                <div className="po-field">
-                  <label>Employee ID</label>
-                  <input value={viewRow.employee_id ?? ""} readOnly />
-                </div>
-                <div className="po-field">
-                  <label>Last Name</label>
-                  <input value={toStr(viewRow.last_name)} readOnly />
-                </div>
-                <div className="po-field">
-                  <label>First Name</label>
-                  <input value={toStr(viewRow.first_name)} readOnly />
-                </div>
-                <div className="po-field">
-                  <label>Middle Name</label>
-                  <input value={toStr(viewRow.middle_name)} readOnly />
-                </div>
+            <form onSubmit={updatePendingStaff}>
+              <div className="modal-body staff-profile-scroll">
+                <StepTabs step={pendingEditStep} onSelectStep={setPendingEditStep} />
+                <br />
+
+                {pendingEditStep === 1 ? (
+                  <StaffDetailsStep form={pendingForm} setForm={setPendingForm} />
+                ) : (
+                  <ContractDetailsStep
+                    form={pendingForm}
+                    branches={branches}
+                    setForm={setPendingForm}
+                  />
+                )}
               </div>
 
-              <div className="po-field">
-                <label>Deployment Branch</label>
-                <input
-                  value={
-                    viewRow.branch_code || viewRow.branch_name
-                      ? `${viewRow.branch_code} • ${viewRow.branch_name}`
-                      : branchLabel(viewRow.branch_code)
-                  }
-                  readOnly
-                />
+              <div className="modal-foot">
+                {pendingEditStep === 1 ? (
+                  <>
+                    <button
+                      className="btn btn-primary"
+                      type="button"
+                      onClick={() => setPendingEditStep(2)}
+                    >
+                      Next
+                    </button>
+                    <button className="btn btn-ghost" type="button" onClick={closeEditPending}>
+                      Cancel
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button
+                      className="btn btn-outline"
+                      type="button"
+                      onClick={() => setPendingEditStep(1)}
+                    >
+                      Back
+                    </button>
+                    <button className="btn btn-primary" type="submit" disabled={pendingSaving}>
+                      {pendingSaving ? "Saving..." : "Save Changes"}
+                    </button>
+                    <button className="btn btn-ghost" type="button" onClick={closeEditPending}>
+                      Cancel
+                    </button>
+                  </>
+                )}
               </div>
-
-              <div className="po-field">
-                <label>Date of Deployment</label>
-                <input value={toDate10(viewRow.deployment_date) || "-"} readOnly />
-              </div>
-
-              <div className="po-field">
-                <label>Status</label>
-                <input value={toStr(viewRow.status || "Pending")} readOnly />
-              </div>
-
-              <div className="po-field">
-                <label>Details / Remarks</label>
-                <input value={toStr(viewRow.details || "-")} readOnly />
-              </div>
-
-              <div className="po-modal-actions">
-                <button className="po-btn po-btn-primary" type="button" onClick={closeViewModal}>
-                  Close
-                </button>
-              </div>
-            </div>
+            </form>
           </div>
         </div>
       )}
@@ -2227,14 +2611,14 @@ export default function Deployment() {
                   Loading...
                 </td>
               </tr>
-            ) : pendingStaff.length === 0 ? (
+            ) : visiblePendingStaff.length === 0 ? (
               <tr>
                 <td colSpan={6} style={{ padding: 16, opacity: 0.8 }}>
                   No pending staff requests found.
                 </td>
               </tr>
             ) : (
-              pendingStaff.map((item) => {
+              visiblePendingStaff.map((item) => {
                 const payload =
                   typeof item.payload === "string"
                     ? JSON.parse(item.payload || "{}")
@@ -2259,44 +2643,23 @@ export default function Deployment() {
                         {payload.employee_no || "No employee no"}
                       </div>
                     </td>
-
                     <td>{payload.position || "-"}</td>
-
                     <td>{branch ? `${branch.code} • ${branch.name}` : "-"}</td>
-
-                    <td>
-                      <span className="mono">{item.status || "Pending"}</span>
-                    </td>
-
+                    <td><span className="mono">{item.status || "Pending"}</span></td>
                     <td className="mono">{toDate10(item.created_at) || "-"}</td>
-
-                    <td>
-                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                        <button
-                          className="po-mini-btn"
-                          type="button"
-                          onClick={() => alert(JSON.stringify(payload, null, 2))}
-                        >
-                          View
+                    
+                    <td><div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                        <button className="po-mini-btn" type="button" onClick={() => openEditPending(item)} disabled={norm(item.status) !== "pending"}>
+                          Edit
                         </button>
 
                         {isAdmin && (
                           <>
-                            <button
-                              className="po-mini-btn"
-                              type="button"
-                              onClick={() => approvePendingStaff(item.id)}
-                              disabled={!pending || approvingPendingId === item.id}
-                            >
+                            <button className="po-mini-btn" type="button" onClick={() => approvePendingStaff(item.id)} disabled={!pending || approvingPendingId === item.id}>
                               {approvingPendingId === item.id ? "Approving..." : "Approve"}
                             </button>
 
-                            <button
-                              className="po-mini-btn"
-                              type="button"
-                              onClick={() => rejectPendingStaff(item.id)}
-                              disabled={!pending || rejectingPendingId === item.id}
-                            >
+                            <button className="po-mini-btn" type="button" onClick={() => rejectPendingStaff(item.id)} disabled={!pending || rejectingPendingId === item.id}>
                               {rejectingPendingId === item.id ? "Rejecting..." : "Reject"}
                             </button>
                           </>
