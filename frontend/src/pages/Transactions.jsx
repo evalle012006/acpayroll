@@ -90,7 +90,7 @@ export default function Transactions() {
       <div className="transactions-page-header">
         <div>
           <h2 className="transactions-title">
-            {isBranchManager ? "Branch Transactions" : "Admin Transactions"}
+            {isBranchManager ? "Branch Transactions" : "Transactions"}
           </h2>
           <p className="transactions-subtitle">
             {isBranchManager

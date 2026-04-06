@@ -23,6 +23,8 @@ const isHr = (req) => roleLower(req) === "hr";
 const isAccounting = (req) => roleLower(req) === "accounting";
 const isBranchManager = (req) => roleLower(req) === "branch manager";
 const isAreaManager = (req) => roleLower(req) === "area manager";
+const isRegionalManager = (req) => roleLower(req) === "regional manager";
+const isAssistantVicePresident = (req) => roleLower(req) === "assistant vice president";
 const getUserBranchCode = (req) => toStr(req.user?.branch_id);
 const getUserArea = (req) => toStr(req.user?.area);
 
@@ -63,7 +65,7 @@ const makeTxnCode = (leaveType) => {
 
 router.get("/leave-requests", requireAuth, async (req, res) => {
   try {
-    if (isAdmin(req) || isHr(req) || isAccounting(req)) {
+    if (isAdmin(req) || isHr(req) || isAccounting(req) || isBranchManager(req) || isAreaManager(req) || isRegionalManager(req) || isAssistantVicePresident(req)) {
       const r = await pool.query(
         `SELECT id, staff_name, leave_type, start_date, end_date, status, transaction_code, entry_date, employee_id
          FROM public.leave_requests
@@ -121,7 +123,7 @@ router.get("/leave-requests", requireAuth, async (req, res) => {
 router.get(
   "/leave-requests/staff/:staffId",
   requireAuth,
-  requireRole(["admin", "branch manager", "hr", "accounting", "area manager"]),
+  requireRole(["admin", "branch manager", "hr", "accounting", "area manager", "regional manager", "assistant vice president"]),
   async (req, res) => {
     try {
       const staffId = toInt(req.params.staffId);
@@ -176,7 +178,7 @@ router.get(
 router.post(
   "/leave-requests",
   requireAuth,
-  requireRole(["admin", "branch manager", "hr", "accounting", "area manager"]),
+  requireRole(["admin", "branch manager", "hr", "accounting", "area manager", "regional manager", "assistant vice president"]),
   async (req, res) => {
     const client = await pool.connect();
     try {

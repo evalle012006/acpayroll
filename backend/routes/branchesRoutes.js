@@ -22,12 +22,14 @@ const isHr = (req) => roleLower(req) === "hr";
 const isAccounting = (req) => roleLower(req) === "accounting";
 const isBranchManager = (req) => roleLower(req) === "branch manager";
 const isAreaManager = (req) => roleLower(req) === "area manager";
+const isRegionalManager = (req) => roleLower(req) === "regional manager";
+const isAssistantVicePresident = (req) => roleLower(req) === "assistant vice president";
 const getUserBranchCode = (req) => toStr(req.user?.branch_id);
 const getUserArea = (req) => toStr(req.user?.area);
 
 router.get("/branches", requireAuth, async (req, res) => {
   try {
-    if (isAdmin(req) || isHr(req) || isAccounting(req)) {
+    if (isAdmin(req) || isHr(req) || isAccounting(req) || isBranchManager(req) || isAreaManager(req) || isRegionalManager(req) || isAssistantVicePresident(req)) {
       const r = await pool.query(`
         SELECT id, code, name, area, address, latitude, longitude
         FROM public.branches

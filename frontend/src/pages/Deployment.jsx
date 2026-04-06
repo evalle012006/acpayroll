@@ -125,6 +125,13 @@ function StepTabs({ step, onSelectStep }) {
 
 function StaffDetailsStep({ form, setForm }) {
 
+  const setField = (name, v) => {
+    setForm ((p) =>({
+      ...p,
+      [name]: v,
+    }));
+  };
+
   const children = useMemo(() => {
     const arr = safeJsonArray(form.children);
     return arr.length ? arr : [{ fullname: "", date_of_birth: "", place_of_birth: "", age: "" }];

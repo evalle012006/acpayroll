@@ -57,6 +57,8 @@ const isBranchManager = (req) => roleLower(req) === "branch manager";
 const isHr = (req) => roleLower(req) === "hr";
 const isAccounting = (req) => roleLower(req) === "accounting";
 const isAreaManager = (req) => roleLower(req) === "area manager";
+const isRegionalManager = (req) => roleLower(req) === "regional manager";
+const isAssistantVicePresident = (req) => roleLower(req) === "assistant vice president";
 const getUserArea = (req) => toStr(req.user?.area);
 const getUserBranchCode = (req) => toStr(req.user?.branch_id);
 
@@ -388,7 +390,7 @@ async function insertStaffFromBody(client, body, options = {}) {
 
 router.get("/staff", requireAuth, async (req, res) => {
   try {
-    if (isAdmin(req) || isHr(req) || isAccounting(req)) {
+    if (isAdmin(req) || isHr(req) || isAccounting(req) || isAreaManager(req) || isRegionalManager(req) || isAssistantVicePresident(req)) {
       const r = await pool.query(`
         SELECT s.*,
                b.name AS branch_name,
@@ -472,7 +474,7 @@ router.post(
 router.get(
   "/pending-staff",
   requireAuth,
-  requireRole(["admin", "hr", "accounting", "branch manager", "area manager"]),
+  requireRole(["admin", "hr", "accounting", "branch manager", "area manager", "regional manager", "assistant vice president"]),
   async (_req, res) => {
     try {
       const r = await pool.query(`
@@ -501,7 +503,7 @@ router.get(
 router.post(
   "/pending-staff",
   requireAuth,
-  requireRole(["admin", "hr", "accounting", "branch manager", "area manager"]),
+  requireRole(["admin", "hr", "accounting", "branch manager", "area manager", "regional manager", "assistant vice president"]),
   async (req, res) => {
     try {
       const body = req.body || {};
@@ -558,7 +560,7 @@ router.post(
 router.put(
   "/pending-staff/:id/approve",
   requireAuth,
-  requireRole(["admin"]),
+  requireRole(["admin", "hr", "accounting"]),
   async (req, res) => {
     const client = await pool.connect();
     try {
@@ -631,7 +633,7 @@ router.put(
 router.put(
   "/pending-staff/:id/reject",
   requireAuth,
-  requireRole(["admin"]),
+  requireRole(["admin", "hr", "accounting"]),
   async (req, res) => {
     try {
       const id = toInt(req.params.id);
@@ -672,7 +674,7 @@ router.put(
 router.put(
   "/staff/:id",
   requireAuth,
-  requireRole(["admin", "hr", "accounting", "branch manager", "area manager"]),
+  requireRole(["admin", "hr", "accounting", "branch manager", "area manager", "regional manager", "assistant vice president"]),
   async (req, res) => {
     const client = await pool.connect();
     try {
@@ -903,7 +905,7 @@ router.delete("/staff/:id", requireAuth, requireRole(["admin"]), async (req, res
 router.post(
   "/staff/:id/photo",
   requireAuth,
-  requireRole(["admin", "branch manager", "area manager"]),
+  requireRole(["admin","hr", "accounting", "branch manager", "area manager", "regional manager", "assistant vice president"]),
   upload.single("photo"),
   async (req, res) => {
     try {

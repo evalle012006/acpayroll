@@ -69,7 +69,7 @@ const Sidebar = ({ collapsed }) => {
         to: "/dashboard",
         label: "Dashboard",
         icon: MdDashboard,
-        roles: ["admin", "hr", "accounting", "branch manager", "area manager"],
+        roles: ["admin", "hr", "accounting", "branch manager", "area manager", "regional manager", "assistant vice president"],
       },
       {
         to: "/departments",
@@ -81,19 +81,19 @@ const Sidebar = ({ collapsed }) => {
         to: "/staff-information",
         label: "Staff Information",
         icon: FaIdBadge,
-        roles: ["admin", "hr", "accounting", "branch manager", "area manager"],
+        roles: ["admin", "hr", "accounting", "branch manager", "area manager", "regional manager", "assistant vice president"],
       },
       {
         to: "/schedule-balances",
         label: "Schedule of Balances",
         icon: HiOutlineClipboardList,
-        roles: ["admin", "hr", "accounting", "branch manager", "area manager"],
+        roles: ["admin", "hr", "accounting", "branch manager", "area manager", "regional manager", "assistant vice president"],
       },
       {
         to: "/transactions",
         label: "HRIS Transactions",
         icon: FaExchangeAlt,
-        roles: ["admin", "hr", "accounting", "branch manager", "area manager"],
+        roles: ["admin", "hr", "accounting", "branch manager", "area manager", "regional manager", "assistant vice president"],
       },
       {
         to: "/approval",
@@ -105,7 +105,7 @@ const Sidebar = ({ collapsed }) => {
         to: "/branches",
         label: "Branch Payroll",
         icon: TbGitBranch,
-        roles: ["admin", "hr", "accounting", "branch manager", "area manager"],
+        roles: ["admin", "hr", "accounting", "branch manager", "area manager", "regional manager", "assistant vice president"],
       },
       {
         to: "/logistic",

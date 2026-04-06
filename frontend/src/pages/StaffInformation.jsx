@@ -1822,7 +1822,10 @@ export default function StaffInformation() {
     role === "admin" ||
     role === "hr" ||
     role === "accounting" ||
-    role === "branch manager";
+    role === "branch manager" ||
+    role === "area manager" ||
+    role === "regional manager" ||
+    role === "assistant vice president";
 
   const [staff, setStaff] = useState([]);
   const [branches, setBranches] = useState([]);
