@@ -65,19 +65,85 @@ const Sidebar = ({ collapsed }) => {
 
   const navItems = useMemo(() => {
     const items = [
-      { to: "/dashboard", label: "Dashboard", icon: MdDashboard, roles: ["admin", "hr", "accounting", "branch manager"], },
-      { to: "/departments", label: "Department", icon: FaBuilding, roles: ["admin", "hr", "accounting"], },
-      { to: "/staff-information", label: "Staff Information", icon: FaIdBadge, roles: ["admin", "hr", "accounting", "branch manager"], },
-      { to: "/schedule-balances", label: "Schedule of Balances", icon: HiOutlineClipboardList, roles: ["admin", "hr", "accounting", "branch manager"], },
-      { to: "/transactions", label: "HRIS Transactions", icon: FaExchangeAlt, roles: ["admin", "hr", "accounting", "branch manager"], },
-      { to: "/approval", label: "Finance Approval", icon: AiOutlineCheckCircle, roles: ["admin", "hr", "accounting"], },
-      { to: "/branches", label: "Branch Payroll", icon: TbGitBranch, roles: ["admin", "hr", "accounting", "branch manager"], },
-      { to: "/logistic", label: "Logistic", icon: BiPackage, roles: ["admin", "hr", "accounting"], },
-      { to: "/salary", label: "Payslip", icon: BsCash, roles: ["admin", "hr", "accounting"], },
-      { to: "/reports", label: "Reports", icon: LuFiles, roles: ["admin", "hr", "accounting"], badge: reportPending > 0 ? reportPending : null, },
-      { to: "/exit-staff", label: "Exit Staff", icon: RxExit, roles: ["admin", "hr", "accounting"], },
-      { to: "/system-update", label: "System Update", icon: FiSettings, roles: ["admin"], },
-      { to: "/users", label: "Users", icon: FaUserGroup, roles: ["admin"], },
+      {
+        to: "/dashboard",
+        label: "Dashboard",
+        icon: MdDashboard,
+        roles: ["admin", "hr", "accounting", "branch manager", "area manager"],
+      },
+      {
+        to: "/departments",
+        label: "Department",
+        icon: FaBuilding,
+        roles: ["admin", "hr", "accounting"],
+      },
+      {
+        to: "/staff-information",
+        label: "Staff Information",
+        icon: FaIdBadge,
+        roles: ["admin", "hr", "accounting", "branch manager", "area manager"],
+      },
+      {
+        to: "/schedule-balances",
+        label: "Schedule of Balances",
+        icon: HiOutlineClipboardList,
+        roles: ["admin", "hr", "accounting", "branch manager", "area manager"],
+      },
+      {
+        to: "/transactions",
+        label: "HRIS Transactions",
+        icon: FaExchangeAlt,
+        roles: ["admin", "hr", "accounting", "branch manager", "area manager"],
+      },
+      {
+        to: "/approval",
+        label: "Finance Approval",
+        icon: AiOutlineCheckCircle,
+        roles: ["admin", "hr", "accounting"],
+      },
+      {
+        to: "/branches",
+        label: "Branch Payroll",
+        icon: TbGitBranch,
+        roles: ["admin", "hr", "accounting", "branch manager", "area manager"],
+      },
+      {
+        to: "/logistic",
+        label: "Logistic",
+        icon: BiPackage,
+        roles: ["admin", "hr", "accounting"],
+      },
+      {
+        to: "/salary",
+        label: "Payslip",
+        icon: BsCash,
+        roles: ["admin", "hr", "accounting"],
+      },
+      {
+        to: "/reports",
+        label: "Reports",
+        icon: LuFiles,
+        roles: ["admin", "hr", "accounting"],
+        badge: reportPending > 0 ? reportPending : null,
+      },
+      {
+        to: "/exit-staff",
+        label: "Exit Staff",
+        icon: RxExit,
+        roles: ["admin", "hr", "accounting"],
+      },
+      {
+        to: "/system-update",
+        label: "System Update",
+        icon: FiSettings,
+        roles: ["admin"],
+      },
+      {
+        to: "/users",
+        label: "Users",
+        icon: FaUserGroup,
+        roles: ["admin"],
+      },
     ];
 
     return items.filter((x) => !x.roles || x.roles.includes(role));

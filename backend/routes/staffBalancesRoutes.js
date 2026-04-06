@@ -16,7 +16,9 @@ const isAdmin = (req) => roleLower(req) === "admin";
 const isHr = (req) => roleLower(req) === "hr";
 const isAccounting = (req) => roleLower(req) === "accounting";
 const isBranchManager = (req) => roleLower(req) === "branch manager";
+const isAreaManager = (req) => roleLower(req) === "area manager";
 const getUserBranchCode = (req) => toStr(req.user?.branch_id);
+const getUserArea = (req) => toStr(req.user?.area);
 
 async function getBranchIdFromCode(branchCode) {
   const code = toStr(branchCode);
@@ -81,7 +83,7 @@ async function ensureBalanceRow(client, employeeNo) {
 router.get(
   "/staff-balances",
   requireAuth,
-  requireRole(["admin", "branch manager", "hr", "accounting"]),
+  requireRole(["admin", "branch manager", "hr", "accounting", "area manager"]),
   async (req, res) => {
     try {
       if (isAdmin(req) || isHr(req) || isAccounting(req)) {
@@ -131,6 +133,32 @@ router.get(
         return res.json(r.rows);
       }
 
+      if (isAreaManager(req)) {
+        const area = getUserArea(req);
+        if (!area) return res.json([]);
+
+        const r = await pool.query(
+          `
+          SELECT
+            sb.*,
+            s.id AS staff_id,
+            s.branch_id,
+            COALESCE(sb."position", s."position") AS "position",
+            COALESCE(sb.fullname, s.fullname) AS fullname,
+            COALESCE(sb.last_name, s.last_name) AS last_name,
+            COALESCE(sb.first_name, s.first_name) AS first_name,
+            COALESCE(sb.middle_name, s.middle_name) AS middle_name
+          FROM public.staff_balances sb
+          JOIN public.staff s ON s.employee_no = sb.employee_no
+          WHERE LOWER(TRIM(COALESCE(s.area, ''))) = LOWER(TRIM($1))
+          ORDER BY sb.id DESC
+          `,
+          [area]
+        );
+
+        return res.json(r.rows);
+      }
+
       return res.status(403).json({ message: "Access denied" });
     } catch (e) {
       console.error("GET /api/staff-balances ERROR:", e);
@@ -139,10 +167,10 @@ router.get(
   }
 );
 
-router.get(
+router.put(
   "/staff-balances/:employeeNo",
   requireAuth,
-  requireRole(["admin", "branch manager", "hr", "accounting"]),
+  requireRole(["admin", "branch manager", "hr", "accounting", "area manager"]),
   async (req, res) => {
     const client = await pool.connect();
     try {
@@ -153,9 +181,102 @@ router.get(
 
       const myRole = roleLower(req);
       const myBranchCode = getUserBranchCode(req);
+      const myArea = getUserArea(req);
 
       const s = await client.query(
-        `SELECT id, employee_no, branch_id FROM public.staff WHERE employee_no = $1 LIMIT 1`,
+        `SELECT employee_no, branch_id, area FROM public.staff WHERE employee_no = $1 LIMIT 1`,
+        [employeeNo]
+      );
+
+      if (s.rowCount === 0) {
+        return res.status(404).json({ message: "Staff not found" });
+      }
+
+      // 🔒 Branch restriction
+      if (myRole === "branch manager") {
+        const myBranchId = await getBranchIdFromCode(myBranchCode);
+        if (!myBranchId || Number(s.rows[0].branch_id) !== Number(myBranchId)) {
+          return res.status(403).json({ message: "Access denied" });
+        }
+      }
+
+      // 🔒 Area restriction
+      if (myRole === "area manager") {
+        if (!myArea || clean(s.rows[0].area).toLowerCase() !== myArea.toLowerCase()) {
+          return res.status(403).json({ message: "Access denied" });
+        }
+      }
+
+      await client.query("BEGIN");
+
+      await ensureBalanceRow(client, employeeNo);
+
+      await client.query(
+        `
+        UPDATE public.staff_balances
+        SET
+          cbu = $1,
+          cashbond = $2,
+          utility = $3,
+          salary_advance = $4,
+          special_advance = $5,
+          cash_advance = $6,
+          motorcycle_loan = $7,
+          other_receivable = $8,
+          staff_accounts_payable = $9,
+          updated_at = NOW()
+        WHERE employee_no = $10
+        `,
+        [
+          toNum(req.body?.cbu),
+          toNum(req.body?.cashbond),
+          toNum(req.body?.utility),
+          toNum(req.body?.salary_advance),
+          toNum(req.body?.special_advance),
+          toNum(req.body?.cash_advance),
+          toNum(req.body?.motorcycle_loan),
+          toNum(req.body?.other_receivable),
+          toNum(req.body?.staff_accounts_payable),
+          employeeNo,
+        ]
+      );
+
+      const r = await client.query(
+        `SELECT * FROM public.staff_balances WHERE employee_no = $1 LIMIT 1`,
+        [employeeNo]
+      );
+
+      await client.query("COMMIT");
+
+      return res.json(r.rows[0]);
+    } catch (e) {
+      try { await client.query("ROLLBACK"); } catch {}
+      console.error("PUT /api/staff-balances/:employeeNo ERROR:", e);
+      return res.status(500).json({ message: e.message || "Server error" });
+    } finally {
+      client.release();
+    }
+  }
+);
+
+router.get(
+  "/staff-balances/:employeeNo",
+  requireAuth,
+  requireRole(["admin", "branch manager", "hr", "accounting", "area manager"]),
+  async (req, res) => {
+    const client = await pool.connect();
+    try {
+      const employeeNo = clean(req.params.employeeNo);
+      if (!employeeNo) {
+        return res.status(400).json({ message: "Invalid employee no" });
+      }
+
+      const myRole = roleLower(req);
+      const myBranchCode = getUserBranchCode(req);
+      const myArea = getUserArea(req);
+
+      const s = await client.query(
+        `SELECT id, employee_no, branch_id, area FROM public.staff WHERE employee_no = $1 LIMIT 1`,
         [employeeNo]
       );
 
@@ -170,6 +291,14 @@ router.get(
         if (!myBranchId) return res.status(403).json({ message: "Access denied" });
 
         if (Number(s.rows[0].branch_id) !== Number(myBranchId)) {
+          return res.status(403).json({ message: "Access denied" });
+        }
+      }
+
+      if (myRole === "area manager") {
+        if (!myArea) return res.status(403).json({ message: "Access denied" });
+
+        if (toStr(s.rows[0].area).toLowerCase() !== myArea.toLowerCase()) {
           return res.status(403).json({ message: "Access denied" });
         }
       }
@@ -303,92 +432,6 @@ router.post(
         await client.query("ROLLBACK");
       } catch {}
       console.error("POST /api/staff-balances/bootstrap ERROR:", e);
-      return res.status(500).json({ message: e.message || "Server error" });
-    } finally {
-      client.release();
-    }
-  }
-);
-
-router.put(
-  "/staff-balances/:employeeNo",
-  requireAuth,
-  requireRole(["admin", "branch manager"]),
-  async (req, res) => {
-    const client = await pool.connect();
-    try {
-      const employeeNo = clean(req.params.employeeNo);
-      if (!employeeNo) {
-        return res.status(400).json({ message: "Invalid employee no" });
-      }
-
-      if (isBranchManager(req)) {
-        const myBranchCode = getUserBranchCode(req);
-        if (!myBranchCode) return res.status(403).json({ message: "Access denied" });
-
-        const myBranchId = await getBranchIdFromCode(myBranchCode);
-        if (!myBranchId) return res.status(403).json({ message: "Access denied" });
-
-        const s = await client.query(
-          `SELECT employee_no, branch_id FROM public.staff WHERE employee_no = $1 LIMIT 1`,
-          [employeeNo]
-        );
-
-        if (s.rowCount === 0) {
-          return res.status(404).json({ message: "Staff not found" });
-        }
-
-        if (Number(s.rows[0].branch_id) !== Number(myBranchId)) {
-          return res.status(403).json({ message: "Access denied" });
-        }
-      }
-
-      await client.query("BEGIN");
-
-      await ensureBalanceRow(client, employeeNo);
-
-      await client.query(
-        `
-        UPDATE public.staff_balances
-        SET
-          cbu = $1,
-          cashbond = $2,
-          utility = $3,
-          salary_advance = $4,
-          special_advance = $5,
-          cash_advance = $6,
-          motorcycle_loan = $7,
-          other_receivable = $8,
-          staff_accounts_payable = $9,
-          updated_at = NOW()
-        WHERE employee_no = $10
-        `,
-        [
-          toNum(req.body?.cbu),
-          toNum(req.body?.cashbond),
-          toNum(req.body?.utility),
-          toNum(req.body?.salary_advance),
-          toNum(req.body?.special_advance),
-          toNum(req.body?.cash_advance),
-          toNum(req.body?.motorcycle_loan),
-          toNum(req.body?.other_receivable),
-          toNum(req.body?.staff_accounts_payable),
-          employeeNo,
-        ]
-      );
-
-      const r = await client.query(
-        `SELECT * FROM public.staff_balances WHERE employee_no = $1 LIMIT 1`,
-        [employeeNo]
-      );
-
-      await client.query("COMMIT");
-      return res.json(r.rows[0] || null);
-    } catch (e) {
-      try {
-        await client.query("ROLLBACK");
-      } catch {}
-      console.error("PUT /api/staff-balances/:employeeNo ERROR:", e);
       return res.status(500).json({ message: e.message || "Server error" });
     } finally {
       client.release();

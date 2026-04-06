@@ -270,6 +270,7 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
+  position: relative;
 }
 
 .exit-field label {
@@ -359,4 +360,41 @@
 
 .exit-filter-select {
   width: 200px;
+}
+
+/* employee search dropdown */
+.employee-dropdown {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  width: 100%;
+  max-height: 220px;
+  overflow-y: auto;
+  z-index: 30;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: var(--shadow-soft);
+}
+
+.employee-item {
+  padding: 10px 12px;
+  cursor: pointer;
+  color: var(--text);
+  background: transparent;
+  border-bottom: 1px solid var(--border);
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.employee-item:last-child {
+  border-bottom: none;
+}
+
+.employee-item:hover {
+  background: var(--hover);
+}
+
+.employee-item.empty {
+  color: var(--muted);
+  cursor: default;
 }

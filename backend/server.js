@@ -29,6 +29,7 @@ const sbfRoutes = require("./routes/sbfRoutes");
 const areaConfigurationsRoutes = require("./routes/areaConfigurationsRoutes");
 const consolidationRoutes = require("./routes/consolidationRoutes");
 const logisticRoutes = require("./routes/logisticRoutes");
+const pendingStaffRoutes = require("./routes/pendingStaffRoutes");
 
 const app = express();
 
@@ -54,6 +55,9 @@ app.use("/api/transport-overrides", transportOverrideRoutes);
 
 app.use("/api", compRatesRoutes);
 app.use("/api", staffRoutes);
+
+app.use("/api", pendingStaffRoutes);
+
 app.use("/api", reportRoutes);
 app.use("/api", settlementsRoutes);
 app.use("/api", leaveRoutes);
@@ -71,6 +75,7 @@ app.use("/api", branchesRoutes);
 app.use("/api", sbfRoutes);
 app.use("/api", areaConfigurationsRoutes);
 app.use("/api", consolidationRoutes);
+
 app.use("/api/logistic", logisticRoutes);
 
 app.get("/test", (_req, res) => {
@@ -93,5 +98,5 @@ app.use((err, req, res, next) => {
 const PORT = Number(process.env.PORT || 5000);
 
 app.listen(PORT, () => {
-  console.log(` Server running on http://localhost:${PORT}`);
+  console.log(`🚀 Server running on http://localhost:${PORT}`);
 });

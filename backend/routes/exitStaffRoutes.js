@@ -133,7 +133,8 @@ router.post(
     try {
       await client.query("BEGIN");
 
-      const employee_no = clean(req.body?.employee_no);
+      // frontend currently sends staff.id in employee_no field
+      const employee_id = toInt(req.body?.employee_no);
       const exit_type = normalizeExitType(req.body?.exit_type);
       const date_created = toDate(req.body?.date_created) || toDate(new Date().toISOString());
       const effective_date = toDate(req.body?.effective_date);
@@ -142,7 +143,7 @@ router.post(
       const settlement_branch_id = toInt(req.body?.settlement_branch_id);
       const remarks = clean(req.body?.remarks);
 
-      if (!employee_no) {
+      if (!employee_id) {
         await client.query("ROLLBACK");
         return res.status(400).json({ message: "Employee required" });
       }
@@ -173,9 +174,9 @@ router.post(
           middle_name,
           branch_id
         FROM public.staff
-        WHERE employee_no = $1
+        WHERE id = $1
         `,
-        [employee_no]
+        [employee_id]
       );
 
       if (s.rowCount === 0) {
@@ -291,7 +292,7 @@ router.post(
         [
           n,
           order_no,
-          employee_no,
+          clean(staff.employee_no),
           employee_name,
           clean(staff.last_name),
           clean(staff.first_name),
@@ -368,10 +369,10 @@ router.put(
           exit_type = $2,
           exit_date = $3::date,
           exit_remarks = $4
-        WHERE id = $1
+        WHERE employee_no = $1
         `,
         [
-          order.employee_no,
+          clean(order.employee_no),
           normalizeExitType(order.exit_type),
           toDate(order.effective_date),
           clean(order.remarks) || null,

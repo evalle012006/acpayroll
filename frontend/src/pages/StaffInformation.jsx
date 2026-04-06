@@ -2070,12 +2070,32 @@ export default function StaffInformation() {
   const loadAll = useCallback(async () => {
     setLoading(true);
     setError("");
+
     try {
-      const [staffRes, branchesRes] = await Promise.all([api.get("/staff"), api.get("/branches")]);
-      setStaff(Array.isArray(staffRes.data) ? staffRes.data : []);
-      setBranches(Array.isArray(branchesRes.data) ? branchesRes.data : []);
-    } catch (err) {
-      setError(err?.response?.data?.message || err.message || "Failed to load data.");
+      const [staffRes, branchesRes] = await Promise.allSettled([
+        api.get("/staff"),
+        api.get("/branches"),
+      ]);
+
+      if (staffRes.status === "fulfilled") {
+        setStaff(Array.isArray(staffRes.value.data) ? staffRes.value.data : []);
+      } else {
+        setStaff([]);
+      }
+
+      if (branchesRes.status === "fulfilled") {
+        setBranches(Array.isArray(branchesRes.value.data) ? branchesRes.value.data : []);
+      } else {
+        setBranches([]);
+      }
+
+      if (staffRes.status === "rejected") {
+        setError(
+          staffRes.reason?.response?.data?.message ||
+            staffRes.reason?.message ||
+            "Failed to load staff data."
+        );
+      }
     } finally {
       setLoading(false);
     }

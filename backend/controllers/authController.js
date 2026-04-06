@@ -19,7 +19,15 @@ const login = async (req, res) => {
   try {
     const result = await pool.query(
       `
-      SELECT id, username, password, role, branch_id
+      SELECT
+        id,
+        username,
+        password,
+        role,
+        branch_id,
+        area,
+        region,
+        division
       FROM public.users
       WHERE lower(trim(username)) = lower(trim($1))
       LIMIT 1
@@ -43,11 +51,18 @@ const login = async (req, res) => {
       username: user.username,
       role: String(user.role || "").trim(),
       branch_id: user.branch_id ?? null,
+      area: user.area ?? null,
+      region: user.region ?? null,
+      division: user.division ?? null,
     };
 
     const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: "8h" });
 
-    return res.json({ message: "Login successful", token, user: payload });
+    return res.json({
+      message: "Login successful",
+      token,
+      user: payload,
+    });
   } catch (err) {
     console.error("LOGIN ERROR:", err.message);
     return res.status(500).json({ message: "Server error" });

@@ -9,6 +9,19 @@ const norm = (v) => toStr(v).toLowerCase();
 const toDate10 = (v) => (v ? String(v).slice(0, 10) : "");
 const today10 = () => new Date().toISOString().slice(0, 10);
 
+const toNum = (v) => {
+  const s = String(v ?? "").trim();
+  if (!s) return 0;
+  const n = Number(s);
+  return Number.isFinite(n) ? n : 0;
+};
+
+const money = (v) =>
+  toNum(v).toLocaleString(undefined, {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  });
+
 const readUser = () => {
   try {
     return JSON.parse(localStorage.getItem("user") || "null");
@@ -46,6 +59,9 @@ export default function ExitStaffOrders() {
   const [rejectingId, setRejectingId] = useState(null);
   const [deletingId, setDeletingId] = useState(null);
 
+  const [employeeSearch, setEmployeeSearch] = useState("");
+  const [showEmployeeDropdown, setShowEmployeeDropdown] = useState(false);
+
   const [err, setErr] = useState("");
 
   const emptyForm = useMemo(
@@ -69,6 +85,19 @@ export default function ExitStaffOrders() {
 
   const [form, setForm] = useState(emptyForm);
 
+  const filteredStaff = useMemo(() => {
+    const q = norm(employeeSearch);
+
+    if (!q) return staff;
+
+    return staff.filter((s) => {
+      const name = norm(displayNameParts(s));
+      const empNo = norm(s.employee_no);
+      const id = String(s.id || "");
+      return name.includes(q) || empNo.includes(q) || id.includes(q);
+    });
+  }, [staff, employeeSearch]);
+
   const branchMap = useMemo(() => {
     const m = new Map();
     (branches || []).forEach((b) => m.set(String(b.id), b));
@@ -86,6 +115,8 @@ export default function ExitStaffOrders() {
     setErr("");
     setSaving(false);
     setForm(emptyForm);
+    setEmployeeSearch("");
+    setShowEmployeeDropdown(false);
   }, [emptyForm]);
 
   const loadStaff = useCallback(async () => {
@@ -135,12 +166,30 @@ export default function ExitStaffOrders() {
   useEffect(() => {
     if (!showCreate) return;
 
-    const onKey = (e) => e.key === "Escape" && closeModal();
+    const onKey = (e) => {
+      if (e.key === "Escape") closeModal();
+    };
+
+    const onClickOutside = (e) => {
+      const dropdown = document.querySelector(".employee-dropdown");
+      const searchInput = document.querySelector(".employee-search-input");
+      if (
+        dropdown &&
+        !dropdown.contains(e.target) &&
+        searchInput &&
+        !searchInput.contains(e.target)
+      ) {
+        setShowEmployeeDropdown(false);
+      }
+    };
+
     document.addEventListener("keydown", onKey);
+    document.addEventListener("mousedown", onClickOutside);
     document.body.style.overflow = "hidden";
 
     return () => {
       document.removeEventListener("keydown", onKey);
+      document.removeEventListener("mousedown", onClickOutside);
       document.body.style.overflow = "";
     };
   }, [showCreate, closeModal]);
@@ -149,6 +198,64 @@ export default function ExitStaffOrders() {
     return staff.find((x) => String(x.id) === String(form.employee_no)) || null;
   }, [staff, form.employee_no]);
 
+  const selectedSavings = useMemo(() => {
+    if (!selectedStaff) {
+      return {
+        cbu: 0,
+        cashbond: 0,
+        utility: 0,
+        totalSavings: 0,
+        salaryAdvance: 0,
+        specialAdvance: 0,
+        cashAdvance: 0,
+        motorcycleLoan: 0,
+        pagIbigLoan: 0,
+        otherReceivable: 0,
+        staffAccountsPayable: 0,
+        totalBalances: 0,
+        netPersonal: 0,
+      };
+    }
+
+    const cbu = toNum(selectedStaff.cbu);
+    const cashbond = toNum(selectedStaff.cashbond);
+    const utility = toNum(selectedStaff.utility ?? selectedStaff.utility_charge);
+
+    const salaryAdvance = toNum(selectedStaff.salary_advance);
+    const specialAdvance = toNum(selectedStaff.special_advance);
+    const cashAdvance = toNum(selectedStaff.cash_advance);
+    const motorcycleLoan = toNum(selectedStaff.motorcycle_loan);
+    const pagIbigLoan = toNum(selectedStaff.pag_ibig_loan);
+    const otherReceivable = toNum(selectedStaff.other_receivable);
+    const staffAccountsPayable = toNum(selectedStaff.staff_accounts_payable);
+
+    const totalSavings = cbu + cashbond + utility;
+    const totalBalances =
+      salaryAdvance +
+      specialAdvance +
+      cashAdvance +
+      motorcycleLoan +
+      pagIbigLoan +
+      otherReceivable +
+      staffAccountsPayable;
+
+    return {
+      cbu,
+      cashbond,
+      utility,
+      totalSavings,
+      salaryAdvance,
+      specialAdvance,
+      cashAdvance,
+      motorcycleLoan,
+      pagIbigLoan,
+      otherReceivable,
+      staffAccountsPayable,
+      totalBalances,
+      netPersonal: totalSavings - totalBalances,
+    };
+  }, [selectedStaff]);
+
   const onSelectEmployee = (id) => {
     const s = staff.find((x) => String(x.id) === String(id));
     const prevBid = s?.branch_id != null ? String(s.branch_id) : "";
@@ -156,7 +263,7 @@ export default function ExitStaffOrders() {
 
     setForm((p) => ({
       ...p,
-      employee_no,
+      employee_no: id,
       last_name: toStr(s?.last_name),
       first_name: toStr(s?.first_name),
       middle_name: toStr(s?.middle_name),
@@ -242,6 +349,7 @@ export default function ExitStaffOrders() {
   const del = async (o) => {
     if (!isAdmin) return alert("Admin only.");
     if (!o?.id) return;
+    if (String(o.status || "").toLowerCase() === "approved") return;
 
     const ok = window.confirm(
       `Delete this Exit Staff Order?\n\nOrder: ${o.order_no || o.id}\nEmployee: ${o.employee_name}\nStatus: ${o.status}`
@@ -316,7 +424,7 @@ export default function ExitStaffOrders() {
                 <th>EFFECTIVE DATE</th>
                 <th>SETTLEMENT</th>
                 <th>STATUS</th>
-                <th style={{ width: 240 }}>ACTIONS</th>
+                <th style={{ width: 260 }}>ACTIONS</th>
               </tr>
             </thead>
 
@@ -336,6 +444,7 @@ export default function ExitStaffOrders() {
               ) : (
                 orders.map((o) => {
                   const pending = String(o.status || "").toLowerCase() === "pending";
+                  const approved = String(o.status || "").toLowerCase() === "approved";
                   const canAct = isAdmin && pending;
 
                   const settlementText =
@@ -391,9 +500,13 @@ export default function ExitStaffOrders() {
                               className="po-mini-btn"
                               type="button"
                               onClick={() => del(o)}
-                              disabled={deletingId === o.id}
-                              title="Delete (not allowed if Approved)"
-                              style={{ marginLeft: 8, opacity: deletingId === o.id ? 0.7 : 1 }}
+                              disabled={approved || deletingId === o.id}
+                              title={approved ? "Approved records cannot be deleted" : "Delete"}
+                              style={{
+                                marginLeft: 8,
+                                opacity: approved || deletingId === o.id ? 0.5 : 1,
+                                cursor: approved ? "not-allowed" : "pointer",
+                              }}
                             >
                               {deletingId === o.id ? "Deleting..." : "Delete"}
                             </button>
@@ -431,14 +544,40 @@ export default function ExitStaffOrders() {
               <div className="exit-grid">
                 <div className="exit-field">
                   <label>Employee</label>
-                  <select value={form.employee_no} onChange={(e) => onSelectEmployee(e.target.value)} required>
-                    <option value="">{loadingStaff ? "Loading staff..." : "Select Employee"}</option>
-                    {staff.map((s) => (
-                      <option key={s.id} value={s.id}>
-                        {s.id} - {displayNameParts(s)} {s.employee_no ? `(${s.employee_no})` : ""}
-                      </option>
-                    ))}
-                  </select>
+
+                  <input
+                    className="employee-search-input"
+                    type="text"
+                    placeholder={loadingStaff ? "Loading staff..." : "Search employee..."}
+                    value={employeeSearch}
+                    onChange={(e) => {
+                      setEmployeeSearch(e.target.value);
+                      setShowEmployeeDropdown(true);
+                    }}
+                    onFocus={() => setShowEmployeeDropdown(true)}
+                  />
+
+                  {showEmployeeDropdown && (
+                    <div className="employee-dropdown">
+                      {filteredStaff.length === 0 ? (
+                        <div className="employee-item empty">No results</div>
+                      ) : (
+                        filteredStaff.slice(0, 20).map((s) => (
+                          <div
+                            key={s.id}
+                            className="employee-item"
+                            onClick={() => {
+                              onSelectEmployee(s.id);
+                              setEmployeeSearch(`${displayNameParts(s)} (${s.employee_no || s.id})`);
+                              setShowEmployeeDropdown(false);
+                            }}
+                          >
+                            {displayNameParts(s)} ({s.employee_no || s.id})
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 <div className="exit-field">
@@ -549,9 +688,133 @@ export default function ExitStaffOrders() {
                 </div>
 
                 {selectedStaff && (
-                  <div className="exit-field full" style={{ fontSize: 12, opacity: 0.85 }}>
-                    Preview: <b>{displayNameParts(selectedStaff)}</b> • Exit: <b>{form.exit_type || "—"}</b> •
-                    Effective: <b>{form.effective_date || "—"}</b>
+                  <div className="exit-field full" style={{ marginTop: 8 }}>
+                    <div style={{ fontSize: 12, opacity: 0.9, marginBottom: 12 }}>
+                      <div>
+                        Preview: <b>{displayNameParts(selectedStaff)}</b>
+                      </div>
+                      <div style={{ marginTop: 4 }}>
+                        Exit: <b>{form.exit_type || "—"}</b>
+                      </div>
+                      <div style={{ marginTop: 4 }}>
+                        Effective: <b>{form.effective_date || "—"}</b>
+                      </div>
+                    </div>
+
+                    {/* SCROLLABLE BALANCE BOX */}
+                    <div
+                      style={{
+                        border: "1px solid var(--border)",
+                        borderRadius: 12,
+                        background: "var(--panel-2)",
+                        overflow: "hidden",
+                      }}
+                    >
+                      {/* Sticky Header */}
+                      <div
+                        style={{
+                          padding: "12px 14px",
+                          borderBottom: "1px solid var(--border)",
+                          fontWeight: 900,
+                          position: "sticky",
+                          top: 0,
+                          background: "var(--panel-2)",
+                          zIndex: 2,
+                        }}
+                      >
+                        Personal Savings & Balances
+                      </div>
+
+                      {/* Scroll Area */}
+                      <div
+                        style={{
+                          maxHeight: 320,
+                          overflowY: "auto",
+                          padding: "10px 14px",
+                          display: "grid",
+                          gridTemplateColumns: "1fr auto",
+                          rowGap: 8,
+                        }}
+                      >
+                        {/* ===== SAVINGS ===== */}
+                        <div style={{ gridColumn: "1 / -1", fontWeight: 900, marginTop: 4 }}>
+                          Personal Savings
+                        </div>
+
+                        <div>CBU</div>
+                        <div>{money(selectedSavings.cbu)}</div>
+
+                        <div>Cashbond</div>
+                        <div>{money(selectedSavings.cashbond)}</div>
+
+                        <div>Utility</div>
+                        <div>{money(selectedSavings.utility)}</div>
+
+                        <div style={{ fontWeight: 900, paddingTop: 6 }}>
+                          Total Personal Savings
+                        </div>
+                        <div style={{ fontWeight: 900, paddingTop: 6 }}>
+                          {money(selectedSavings.totalSavings)}
+                        </div>
+
+                        {/* ===== BALANCES ===== */}
+                        <div
+                          style={{
+                            gridColumn: "1 / -1",
+                            fontWeight: 900,
+                            marginTop: 12,
+                            borderTop: "1px solid var(--border)",
+                            paddingTop: 10,
+                          }}
+                        >
+                          Personal Balances
+                        </div>
+
+                        <div>Salary Advance</div>
+                        <div>{money(selectedSavings.salaryAdvance)}</div>
+
+                        <div>Special Advance</div>
+                        <div>{money(selectedSavings.specialAdvance)}</div>
+
+                        <div>Cash Advance</div>
+                        <div>{money(selectedSavings.cashAdvance)}</div>
+
+                        <div>Motorcycle Loan</div>
+                        <div>{money(selectedSavings.motorcycleLoan)}</div>
+
+                        <div>Pag-ibig Loan</div>
+                        <div>{money(selectedSavings.pagIbigLoan)}</div>
+
+                        <div>Other Receivable</div>
+                        <div>{money(selectedSavings.otherReceivable)}</div>
+
+                        <div>Staff Accounts Payable</div>
+                        <div>{money(selectedSavings.staffAccountsPayable)}</div>
+
+                        <div style={{ fontWeight: 900, paddingTop: 6 }}>
+                          Total Personal Balance
+                        </div>
+                        <div style={{ fontWeight: 900, paddingTop: 6 }}>
+                          {money(selectedSavings.totalBalances)}
+                        </div>
+
+                        {/* ===== NET ===== */}
+                        <div
+                          style={{
+                            gridColumn: "1 / -1",
+                            borderTop: "1px solid var(--border)",
+                            marginTop: 12,
+                            paddingTop: 10,
+                            fontWeight: 900,
+                            display: "grid",
+                            gridTemplateColumns: "1fr auto",
+                          }}
+                        >
+                          <div>Total Savings less Balances</div>
+                          <div>{money(selectedSavings.netPersonal)}</div>
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 )}
               </div>

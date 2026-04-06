@@ -1,10 +1,10 @@
 import axios from "axios";
 
-const baseURL = import.meta.env.VITE_API_URL;
+const rawBase =
+  import.meta.env.VITE_API_URL ||
+  "http://localhost:5000/api";
 
-if (!baseURL) {
-  throw new Error("VITE_API_URL is not defined in .env");
-}
+const baseURL = String(rawBase).trim().replace(/\/+$/, "");
 
 const api = axios.create({
   baseURL,
@@ -49,5 +49,31 @@ api.interceptors.response.use(
     return Promise.reject(error);
   }
 );
+
+export const getApiBase = () => {
+  return baseURL.endsWith("/api") ? baseURL.slice(0, -4) : baseURL;
+};
+
+export const buildUploadUrl = (photoUrl) => {
+  const raw = String(photoUrl || "").trim();
+  if (!raw) return "";
+
+  if (/^https?:\/\//i.test(raw)) {
+    return raw;
+  }
+
+  const apiBase = getApiBase();
+  const cleaned = raw.replace(/^\/+/, "");
+
+  if (cleaned.startsWith("uploads/")) {
+    return `${apiBase}/${cleaned}`;
+  }
+
+  if (cleaned.startsWith("staff/")) {
+    return `${apiBase}/uploads/${cleaned}`;
+  }
+
+  return `${apiBase}/uploads/staff/${cleaned}`;
+};
 
 export default api;

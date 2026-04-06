@@ -61,10 +61,15 @@ export default function ScheduleBalances() {
   const role = String(user?.role || "").trim().toLowerCase();
   const isAdmin = role === "admin";
   const isBranchManager = role === "branch manager";
+  const isAreaManager = role === "area manager";
 
   const userBranchRaw = useMemo(() => {
     const raw = user?.branch_id;
     return raw === null || raw === undefined || raw === "" ? "" : String(raw).trim();
+  }, [user]);
+
+  const userArea = useMemo(() => {
+    return String(user?.area || "").trim();
   }, [user]);
 
   const [rows, setRows] = useState([]);
@@ -126,14 +131,25 @@ export default function ScheduleBalances() {
   }, [branches, userBranchRaw]);
 
   const visibleBranches = useMemo(() => {
-    if (!isBranchManager) return branches;
-    return branches.filter((b) => String(b.id) === String(resolvedUserBranchId));
-  }, [branches, isBranchManager, resolvedUserBranchId]);
+    if (isBranchManager) {
+      return branches.filter((b) => String(b.id) === String(resolvedUserBranchId));
+    }
+
+    if (isAreaManager) {
+      return branches.filter(
+        (b) =>
+          String(b.area || "").trim().toLowerCase() === userArea.toLowerCase()
+      );
+    }
+
+    return branches;
+  }, [branches, isBranchManager, isAreaManager, resolvedUserBranchId, userArea]);
 
   const effectiveBranchId = useMemo(() => {
     if (isBranchManager) return resolvedUserBranchId;
+    if (isAreaManager) return "";
     return selectedBranch;
-  }, [isBranchManager, resolvedUserBranchId, selectedBranch]);
+  }, [isBranchManager, isAreaManager, resolvedUserBranchId, selectedBranch]);
 
   const fetchLiveBalances = useCallback(
     async (branchId = effectiveBranchId, m = month) => {
@@ -156,6 +172,11 @@ export default function ScheduleBalances() {
           data = data.filter((r) => String(r.branch_id) === String(finalBranchId));
         }
 
+        if (isAreaManager) {
+          const allowedIds = new Set(visibleBranches.map((b) => String(b.id)));
+          data = data.filter((r) => allowedIds.has(String(r.branch_id)));
+        }
+
         setRows(data);
       } catch (err) {
         if (err?.response?.status === 401) {
@@ -167,7 +188,15 @@ export default function ScheduleBalances() {
         setLoading(false);
       }
     },
-    [logout, effectiveBranchId, month, isBranchManager, resolvedUserBranchId]
+    [
+      logout,
+      effectiveBranchId,
+      month,
+      isBranchManager,
+      isAreaManager,
+      resolvedUserBranchId,
+      visibleBranches,
+    ]
   );
 
   useEffect(() => {
@@ -177,16 +206,26 @@ export default function ScheduleBalances() {
   useEffect(() => {
     if (isBranchManager) {
       setSelectedBranch(resolvedUserBranchId);
+    } else if (isAreaManager) {
+      setSelectedBranch("");
     }
-  }, [isBranchManager, resolvedUserBranchId]);
+  }, [isBranchManager, isAreaManager, resolvedUserBranchId]);
 
   useEffect(() => {
     if (isBranchManager && !resolvedUserBranchId && branches.length > 0) {
       setRows([]);
       return;
     }
+
     fetchLiveBalances(effectiveBranchId, month);
-  }, [effectiveBranchId, month, fetchLiveBalances, isBranchManager, resolvedUserBranchId, branches.length]);
+  }, [
+    effectiveBranchId,
+    month,
+    fetchLiveBalances,
+    isBranchManager,
+    resolvedUserBranchId,
+    branches.length,
+  ]);
 
   useEffect(() => {
     if (!viewBranch) return;
@@ -209,7 +248,12 @@ export default function ScheduleBalances() {
   const handleClear = () => {
     setSearch("");
     setSearchInput("");
-    setSelectedBranch(isBranchManager ? resolvedUserBranchId : "");
+
+    if (isBranchManager) {
+      setSelectedBranch(resolvedUserBranchId);
+    } else {
+      setSelectedBranch("");
+    }
   };
 
   const handleRefresh = () => fetchLiveBalances(effectiveBranchId, month);
@@ -257,6 +301,12 @@ export default function ScheduleBalances() {
     for (const r of filteredEmployeeRows) {
       if (isBranchManager && String(r.branch_id) !== String(resolvedUserBranchId)) continue;
 
+      if (isAreaManager) {
+        const branch = branchMap.get(String(r.branch_id));
+        const branchArea = String(branch?.area || "").trim().toLowerCase();
+        if (branchArea !== userArea.toLowerCase()) continue;
+      }
+
       const key = String(r.branch_id || "unassigned");
 
       const existing = map.get(key) || {
@@ -288,7 +338,15 @@ export default function ScheduleBalances() {
     return Array.from(map.values()).sort((a, b) =>
       a.branch_label.localeCompare(b.branch_label)
     );
-  }, [filteredEmployeeRows, branchLabel, isBranchManager, resolvedUserBranchId]);
+  }, [
+    filteredEmployeeRows,
+    branchLabel,
+    isBranchManager,
+    isAreaManager,
+    resolvedUserBranchId,
+    branchMap,
+    userArea,
+  ]);
 
   const totals = useMemo(() => {
     const t = Object.fromEntries(MONEY_COLS.map((c) => [c.key, 0]));
@@ -345,10 +403,13 @@ export default function ScheduleBalances() {
   };
 
   const currentBranchText = useMemo(() => {
+    if (isAreaManager) {
+      return userArea || "My Area";
+    }
     if (effectiveBranchId) return branchLabel(effectiveBranchId);
     if (isBranchManager && userBranchRaw) return userBranchRaw;
     return "All";
-  }, [effectiveBranchId, branchLabel, isBranchManager, userBranchRaw]);
+  }, [effectiveBranchId, branchLabel, isBranchManager, isAreaManager, userBranchRaw, userArea]);
 
   return (
     <div className="balances-page">
@@ -381,12 +442,12 @@ export default function ScheduleBalances() {
             className="branch-select"
             value={effectiveBranchId}
             onChange={(e) => {
-              if (isBranchManager) return;
+              if (isBranchManager || isAreaManager) return;
               setSelectedBranch(e.target.value);
             }}
-            disabled={isBranchManager}
+            disabled={isBranchManager || isAreaManager}
           >
-            {!isBranchManager && <option value="">All Branches</option>}
+            {!isBranchManager && !isAreaManager && <option value="">All Branches</option>}
             {visibleBranches.map((b) => (
               <option key={b.id} value={b.id}>
                 {b.code} - {b.name}
@@ -438,7 +499,7 @@ export default function ScheduleBalances() {
           <div className="balances-card-title">
             Branch Records <span className="balances-count">{groupedBranches.length}</span>
             <span style={{ marginLeft: 10, fontSize: 12, opacity: 0.8 }}>
-              Month Label: <b>{month || "-"}</b> • Branch: <b>{currentBranchText}</b>
+              Month Label: <b>{month || "-"}</b> • Branch/Area: <b>{currentBranchText}</b>
             </span>
           </div>
           {loading && <div className="balances-loading">Loading…</div>}

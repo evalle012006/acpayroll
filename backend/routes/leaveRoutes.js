@@ -22,7 +22,9 @@ const isAdmin = (req) => roleLower(req) === "admin";
 const isHr = (req) => roleLower(req) === "hr";
 const isAccounting = (req) => roleLower(req) === "accounting";
 const isBranchManager = (req) => roleLower(req) === "branch manager";
+const isAreaManager = (req) => roleLower(req) === "area manager";
 const getUserBranchCode = (req) => toStr(req.user?.branch_id);
+const getUserArea = (req) => toStr(req.user?.area);
 
 async function getBranchIdFromCode(branchCode) {
   const code = toStr(branchCode);
@@ -91,6 +93,24 @@ router.get("/leave-requests", requireAuth, async (req, res) => {
       return res.json(r.rows);
     }
 
+    if (isAreaManager(req)) {
+      const area = getUserArea(req);
+      if (!area) return res.json([]);
+
+      const r = await pool.query(
+        `
+        SELECT lr.id, lr.staff_name, lr.leave_type, lr.start_date, lr.end_date, lr.status, lr.transaction_code, lr.entry_date, lr.employee_id
+        FROM public.leave_requests lr
+        JOIN public.staff s ON s.id = lr.employee_id
+        WHERE LOWER(TRIM(COALESCE(s.area, ''))) = LOWER(TRIM($1))
+        ORDER BY lr.entry_date DESC NULLS LAST, lr.id DESC
+        `,
+        [area]
+      );
+
+      return res.json(r.rows);
+    }
+
     return res.status(403).json({ message: "Access denied" });
   } catch (e) {
     console.error("GET /api/leave-requests ERROR:", e.message);
@@ -101,7 +121,7 @@ router.get("/leave-requests", requireAuth, async (req, res) => {
 router.get(
   "/leave-requests/staff/:staffId",
   requireAuth,
-  requireRole(["admin", "branch manager", "hr", "accounting"]),
+  requireRole(["admin", "branch manager", "hr", "accounting", "area manager"]),
   async (req, res) => {
     try {
       const staffId = toInt(req.params.staffId);
@@ -117,6 +137,22 @@ router.get(
         const chk = await pool.query(
           `SELECT id FROM public.staff WHERE id = $1 AND branch_id = $2`,
           [staffId, bid]
+        );
+        if (chk.rowCount === 0) return res.status(403).json({ message: "Access denied" });
+      }
+
+      if (isAreaManager(req)) {
+        const area = getUserArea(req);
+        if (!area) return res.status(403).json({ message: "Access denied" });
+
+        const chk = await pool.query(
+          `
+          SELECT id
+          FROM public.staff
+          WHERE id = $1
+            AND LOWER(TRIM(COALESCE(area, ''))) = LOWER(TRIM($2))
+          `,
+          [staffId, area]
         );
         if (chk.rowCount === 0) return res.status(403).json({ message: "Access denied" });
       }
@@ -140,7 +176,7 @@ router.get(
 router.post(
   "/leave-requests",
   requireAuth,
-  requireRole(["admin", "branch manager", "hr", "accounting"]),
+  requireRole(["admin", "branch manager", "hr", "accounting", "area manager"]),
   async (req, res) => {
     const client = await pool.connect();
     try {
@@ -162,7 +198,7 @@ router.post(
       }
 
       const s = await client.query(
-        `SELECT id, fullname, branch_id FROM public.staff WHERE id = $1`,
+        `SELECT id, fullname, branch_id, area FROM public.staff WHERE id = $1`,
         [employee_id]
       );
       if (s.rowCount === 0) {
@@ -177,6 +213,14 @@ router.post(
         const bid = await getBranchIdFromCode(branchCode);
 
         if (!bid || Number(staffRow.branch_id) !== Number(bid)) {
+          await client.query("ROLLBACK");
+          return res.status(403).json({ message: "Access denied" });
+        }
+      }
+
+      if (isAreaManager(req)) {
+        const area = getUserArea(req);
+        if (!area || toStr(staffRow.area).toLowerCase() !== area.toLowerCase()) {
           await client.query("ROLLBACK");
           return res.status(403).json({ message: "Access denied" });
         }
@@ -208,32 +252,37 @@ router.post(
   }
 );
 
-router.put("/leave-requests/:id", requireAuth, requireRole(["admin", "hr", "accounting"]), async (req, res) => {
-  try {
-    const id = String(req.params.id || "").trim();
-    if (!id) return res.status(400).json({ message: "Invalid id" });
+router.put(
+  "/leave-requests/:id",
+  requireAuth,
+  requireRole(["admin", "hr", "accounting"]),
+  async (req, res) => {
+    try {
+      const id = String(req.params.id || "").trim();
+      if (!id) return res.status(400).json({ message: "Invalid id" });
 
-    const status = String(req.body?.status || "").trim();
-    if (!["Approved", "Rejected"].includes(status)) {
-      return res.status(400).json({ message: "Status must be Approved or Rejected" });
+      const status = String(req.body?.status || "").trim();
+      if (!["Approved", "Rejected"].includes(status)) {
+        return res.status(400).json({ message: "Status must be Approved or Rejected" });
+      }
+
+      const r = await pool.query(
+        `
+        UPDATE public.leave_requests
+        SET status = $2
+        WHERE id = $1
+        RETURNING id, staff_name, leave_type, start_date, end_date, status, transaction_code, entry_date, employee_id
+        `,
+        [id, status]
+      );
+
+      if (r.rowCount === 0) return res.status(404).json({ message: "Not found" });
+      return res.json(r.rows[0]);
+    } catch (e) {
+      console.error("PUT /api/leave-requests/:id ERROR:", e.message);
+      return res.status(500).json({ message: "Server error" });
     }
-
-    const r = await pool.query(
-      `
-      UPDATE public.leave_requests
-      SET status = $2
-      WHERE id = $1
-      RETURNING id, staff_name, leave_type, start_date, end_date, status, transaction_code, entry_date, employee_id
-      `,
-      [id, status]
-    );
-
-    if (r.rowCount === 0) return res.status(404).json({ message: "Not found" });
-    return res.json(r.rows[0]);
-  } catch (e) {
-    console.error("PUT /api/leave-requests/:id ERROR:", e.message);
-    return res.status(500).json({ message: "Server error" });
   }
-});
+);
 
 module.exports = router;

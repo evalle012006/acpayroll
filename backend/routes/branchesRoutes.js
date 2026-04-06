@@ -21,7 +21,9 @@ const isAdmin = (req) => roleLower(req) === "admin";
 const isHr = (req) => roleLower(req) === "hr";
 const isAccounting = (req) => roleLower(req) === "accounting";
 const isBranchManager = (req) => roleLower(req) === "branch manager";
+const isAreaManager = (req) => roleLower(req) === "area manager";
 const getUserBranchCode = (req) => toStr(req.user?.branch_id);
+const getUserArea = (req) => toStr(req.user?.area);
 
 router.get("/branches", requireAuth, async (req, res) => {
   try {
@@ -46,6 +48,23 @@ router.get("/branches", requireAuth, async (req, res) => {
         ORDER BY id ASC
         `,
         [branchCode]
+      );
+
+      return res.json(r.rows);
+    }
+
+    if (isAreaManager(req)) {
+      const area = getUserArea(req);
+      if (!area) return res.json([]);
+
+      const r = await pool.query(
+        `
+        SELECT id, code, name, area, address, latitude, longitude
+        FROM public.branches
+        WHERE LOWER(TRIM(COALESCE(area, ''))) = LOWER(TRIM($1))
+        ORDER BY id ASC
+        `,
+        [area]
       );
 
       return res.json(r.rows);
@@ -89,6 +108,24 @@ router.get("/branches/:id", requireAuth, async (req, res) => {
           AND LOWER(TRIM(code)) = LOWER(TRIM($2))
         `,
         [id, branchCode]
+      );
+
+      if (r.rowCount === 0) return res.status(403).json({ message: "Access denied" });
+      return res.json(r.rows[0]);
+    }
+
+    if (isAreaManager(req)) {
+      const area = getUserArea(req);
+      if (!area) return res.status(403).json({ message: "Access denied" });
+
+      const r = await pool.query(
+        `
+        SELECT id, code, name, area, address, latitude, longitude
+        FROM public.branches
+        WHERE id = $1
+          AND LOWER(TRIM(COALESCE(area, ''))) = LOWER(TRIM($2))
+        `,
+        [id, area]
       );
 
       if (r.rowCount === 0) return res.status(403).json({ message: "Access denied" });
@@ -154,7 +191,7 @@ router.post(
 router.put(
   "/branches/:id",
   requireAuth,
-  requireRole(["admin","hr","accounting"]),
+  requireRole(["admin", "hr", "accounting"]),
   async (req, res) => {
     try {
       const id = toInt(req.params.id);
@@ -214,7 +251,7 @@ router.put(
 router.delete(
   "/branches/:id",
   requireAuth,
-  requireRole(["admin","hr","accounting"]),
+  requireRole(["admin", "hr", "accounting"]),
   async (req, res) => {
     try {
       const id = toInt(req.params.id);

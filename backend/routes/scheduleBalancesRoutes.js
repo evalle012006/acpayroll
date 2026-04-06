@@ -50,15 +50,20 @@ const resolveRequestedBranchId = async (rawBranchValue) => {
 
 const resolveBranchScope = async (req) => {
   const role = normRole(req.user?.role);
+
   const requestedRaw = toStr(req.query.branchId);
   const userBranchRaw = toStr(req.user?.branch_id);
+  const userAreaRaw = toStr(req.user?.area);
 
   const requestedBranchId = await resolveRequestedBranchId(requestedRaw);
 
+  /* ===============================
+     BRANCH MANAGER
+  =============================== */
   if (role === "branch manager") {
     if (!userBranchRaw) {
       return {
-        error: { status: 403, message: "Access denied: no branch assigned to this account." },
+        error: { status: 403, message: "Access denied: no branch assigned." },
       };
     }
 
@@ -66,7 +71,7 @@ const resolveBranchScope = async (req) => {
 
     if (!userBranchId) {
       return {
-        error: { status: 403, message: "Access denied: invalid branch mapping for this account." },
+        error: { status: 403, message: "Invalid branch mapping." },
       };
     }
 
@@ -77,6 +82,35 @@ const resolveBranchScope = async (req) => {
     }
 
     return { branchId: userBranchId };
+  }
+
+  /* ===============================
+     AREA MANAGER ✅ NEW
+  =============================== */
+  if (role === "area manager") {
+    if (!userAreaRaw) {
+      return {
+        error: { status: 403, message: "Access denied: no area assigned." },
+      };
+    }
+
+    // get all branches under this area
+    const branchRes = await pool.query(
+      `
+      SELECT id
+      FROM public.branches
+      WHERE LOWER(TRIM(area)) = LOWER(TRIM($1))
+      `,
+      [userAreaRaw]
+    );
+
+    const branchIds = branchRes.rows.map((r) => r.id);
+
+    if (!branchIds.length) {
+      return { branchIds: [] };
+    }
+
+    return { branchIds };
   }
 
   return { branchId: requestedBranchId };
@@ -129,7 +163,10 @@ router.get("/", requireAuth, async (req, res) => {
       WHERE sbs.snapshot_month = $1::date
     `;
 
-    if (branchId) {
+    if (scope.branchIds) {
+      params.push(scope.branchIds);
+      sql += ` AND sbs.branch_id = ANY($2::int[])`;
+    } else if (branchId) {
       params.push(branchId);
       sql += ` AND sbs.branch_id = $2::int`;
     }
@@ -165,7 +202,10 @@ router.get("/live", requireAuth, async (req, res) => {
     const params = [snapshotMonth];
     let whereSql = "";
 
-    if (branchId) {
+    if (scope.branchIds) {
+      params.push(scope.branchIds);
+      whereSql = ` WHERE s.branch_id = ANY($2::int[]) `;
+    } else if (branchId) {
       params.push(branchId);
       whereSql = ` WHERE s.branch_id = $2::int `;
     }

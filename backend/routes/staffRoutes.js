@@ -56,6 +56,8 @@ const isAdmin = (req) => roleLower(req) === "admin";
 const isBranchManager = (req) => roleLower(req) === "branch manager";
 const isHr = (req) => roleLower(req) === "hr";
 const isAccounting = (req) => roleLower(req) === "accounting";
+const isAreaManager = (req) => roleLower(req) === "area manager";
+const getUserArea = (req) => toStr(req.user?.area);
 const getUserBranchCode = (req) => toStr(req.user?.branch_id);
 
 const toJsonbArray = (v) => {
@@ -94,7 +96,6 @@ const computeTotals = (body) => {
   const hdmf_ee = toNum(body.hdmf_ee);
 
   const salary_total = salary + ecola;
-
   const personal_deductions_total = cbu + cashbond + utility_charge;
 
   const transport_allowances_total =
@@ -421,6 +422,25 @@ router.get("/staff", requireAuth, async (req, res) => {
       return res.json(r.rows);
     }
 
+    if (isAreaManager(req)) {
+      const area = getUserArea(req);
+      if (!area) return res.json([]);
+
+      const r = await pool.query(
+        `
+        SELECT s.*,
+               b.name AS branch_name,
+               b.code AS branch_code
+        FROM public.staff s
+        LEFT JOIN public.branches b ON b.id = s.branch_id
+        WHERE LOWER(TRIM(COALESCE(s.area, ''))) = LOWER(TRIM($1))
+        ORDER BY s.id DESC
+        `,
+        [area]
+      );
+      return res.json(r.rows);
+    }
+
     return res.status(403).json({ message: "Access denied" });
   } catch (e) {
     console.error("GET /api/staff ERROR:", e.message);
@@ -452,7 +472,7 @@ router.post(
 router.get(
   "/pending-staff",
   requireAuth,
-  requireRole(["admin", "hr", "accounting", "branch manager"]),
+  requireRole(["admin", "hr", "accounting", "branch manager", "area manager"]),
   async (_req, res) => {
     try {
       const r = await pool.query(`
@@ -481,7 +501,7 @@ router.get(
 router.post(
   "/pending-staff",
   requireAuth,
-  requireRole(["admin", "hr", "accounting", "branch manager"]),
+  requireRole(["admin", "hr", "accounting", "branch manager", "area manager"]),
   async (req, res) => {
     try {
       const body = req.body || {};
@@ -649,215 +669,221 @@ router.put(
   }
 );
 
-router.put("/staff/:id", requireAuth, requireRole(["admin", "hr", "accounting", "branch manager"]), async (req, res) => {
-  const client = await pool.connect();
-  try {
-    await client.query("BEGIN");
+router.put(
+  "/staff/:id",
+  requireAuth,
+  requireRole(["admin", "hr", "accounting", "branch manager", "area manager"]),
+  async (req, res) => {
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
 
-    const id = toInt(req.params.id);
-    if (!id) {
-      await client.query("ROLLBACK");
-      return res.status(400).json({ message: "Invalid staff id" });
-    }
-
-    const body = req.body || {};
-
-    const last_name = toStr(body.last_name);
-    const first_name = toStr(body.first_name);
-    const middle_name = toStr(body.middle_name);
-
-    const fullname = buildFullname({ last_name, first_name, middle_name, fullname: body.fullname });
-    const position = toStr(body.position);
-
-    if (!last_name || !first_name || !position) {
-      await client.query("ROLLBACK");
-      return res.status(400).json({ message: "last_name, first_name, and position are required" });
-    }
-
-    const employeeNo = toStr(body.employee_no) || null;
-    if (employeeNo) {
-      const dup = await client.query(
-        `
-        SELECT 1
-        FROM public.staff
-        WHERE LOWER(TRIM(employee_no)) = LOWER(TRIM($1))
-          AND id <> $2
-        LIMIT 1
-        `,
-        [employeeNo, id]
-      );
-      if (dup.rowCount > 0) {
+      const id = toInt(req.params.id);
+      if (!id) {
         await client.query("ROLLBACK");
-        return res.status(409).json({ message: "Employee No already exists" });
+        return res.status(400).json({ message: "Invalid staff id" });
       }
-    }
 
-    const totals = computeTotals(body);
+      const body = req.body || {};
 
-    const children = toJsonbArray(body.children);
-    const education = toJsonbArray(body.education);
-    const employment_history = toJsonbArray(body.employment_history);
-    const beneficiaries = toJsonbArray(body.beneficiaries);
+      const last_name = toStr(body.last_name);
+      const first_name = toStr(body.first_name);
+      const middle_name = toStr(body.middle_name);
 
-    const r = await client.query(
-      `
-      UPDATE public.staff
-      SET
-        employee_no=$1, last_name=$2, first_name=$3, middle_name=$4, fullname=$5,
+      const fullname = buildFullname({ last_name, first_name, middle_name, fullname: body.fullname });
+      const position = toStr(body.position);
 
-        address=$6, municipality=$7, province=$8, contact=$9, email=$10,
-        date_of_birth=$11, place_of_birth=$12, gender=$13, civil_status=$14, citizenship=$15,
-        height=$16, weight=$17, religion=$18, blood_type=$19,
+      if (!last_name || !first_name || !position) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({ message: "last_name, first_name, and position are required" });
+      }
 
-        "position"=$20, department=$21, area=$22, region=$23, division=$24,
-        branch_id=$25, status=$26,
-        start_date=$27, regularization_date=$28,
+      const employeeNo = toStr(body.employee_no) || null;
+      if (employeeNo) {
+        const dup = await client.query(
+          `
+          SELECT 1
+          FROM public.staff
+          WHERE LOWER(TRIM(employee_no)) = LOWER(TRIM($1))
+            AND id <> $2
+          LIMIT 1
+          `,
+          [employeeNo, id]
+        );
+        if (dup.rowCount > 0) {
+          await client.query("ROLLBACK");
+          return res.status(409).json({ message: "Employee No already exists" });
+        }
+      }
 
-        salary=$29, ecola=$30,
-        salary_total=$31,
+      const totals = computeTotals(body);
 
-        cbu=$32, cashbond=$33, utility_charge=$34,
-        personal_deductions_total=$35,
+      const children = toJsonbArray(body.children);
+      const education = toJsonbArray(body.education);
+      const employment_history = toJsonbArray(body.employment_history);
+      const beneficiaries = toJsonbArray(body.beneficiaries);
 
-        transportation=$36, postage=$37, motorcycle_loan=$38,
-        additional_target=$39, repairing=$40, additional_monitoring=$41,
-        motorcycle=$42, other_deduction=$43,
-        transport_allowances_total=$44,
+      const r = await client.query(
+        `
+        UPDATE public.staff
+        SET
+          employee_no=$1, last_name=$2, first_name=$3, middle_name=$4, fullname=$5,
 
-        hdmf_er=$45, sss_er=$46, ph_er=$47, total_er=$48,
-        hdmf_ee=$49, sss_ee=$50, ph_ee=$51, total_ee=$52,
-        tax=$53,
+          address=$6, municipality=$7, province=$8, contact=$9, email=$10,
+          date_of_birth=$11, place_of_birth=$12, gender=$13, civil_status=$14, citizenship=$15,
+          height=$16, weight=$17, religion=$18, blood_type=$19,
 
-        spouse_fullname=$54, spouse_address=$55, spouse_occupation=$56, spouse_employer=$57,
-        father_fullname=$58, father_address=$59, father_occupation=$60, father_employer=$61, father_contact=$62,
-        mother_fullname=$63, mother_address=$64, mother_occupation=$65, mother_employer=$66, mother_contact=$67,
-        guardian_fullname=$68, guardian_address=$69, guardian_occupation=$70, guardian_employer=$71, guardian_contact=$72,
-        sss_no=$73, philhealth_no=$74, pagibig_no=$75, tin_no=$76,
-        children=$77::jsonb, education=$78::jsonb, employment_history=$79::jsonb, beneficiaries=$80::jsonb
-      WHERE id=$81
-      RETURNING id;
-      `,
-      [
-        employeeNo,
-        last_name,
-        first_name,
-        middle_name || null,
-        fullname,
+          "position"=$20, department=$21, area=$22, region=$23, division=$24,
+          branch_id=$25, status=$26,
 
-        toStr(body.address) || null,
-        toStr(body.municipality) || null,
-        toStr(body.province) || null,
-        toStr(body.contact) || null,
-        toEmailOrNull(body.email),
+          start_date=$27, regularization_date=$28,
 
-        toDateOrNull(body.date_of_birth),
-        toStr(body.place_of_birth) || null,
-        toStr(body.gender) || null,
-        toStr(body.civil_status) || null,
-        toStr(body.citizenship) || null,
+          salary=$29, ecola=$30,
+          salary_total=$31,
 
-        toNumOrNull(body.height),
-        toNumOrNull(body.weight),
-        toStr(body.religion) || null,
-        toStr(body.blood_type) || null,
+          cbu=$32, cashbond=$33, utility_charge=$34,
+          personal_deductions_total=$35,
 
-        position,
-        toStr(body.department) || null,
-        toStr(body.area) || null,
-        toStr(body.region) || null,
-        toStr(body.division) || null,
+          transportation=$36, postage=$37, motorcycle_loan=$38,
+          additional_target=$39, repairing=$40, additional_monitoring=$41,
+          motorcycle=$42, other_deduction=$43,
+          transport_allowances_total=$44,
 
-        toInt(body.branch_id),
-        String(body.status || "Active"),
+          hdmf_er=$45, sss_er=$46, ph_er=$47, total_er=$48,
+          hdmf_ee=$49, sss_ee=$50, ph_ee=$51, total_ee=$52,
+          tax=$53,
 
-        toDateOrNull(body.start_date),
-        toDateOrNull(body.regularization_date),
+          spouse_fullname=$54, spouse_address=$55, spouse_occupation=$56, spouse_employer=$57,
+          father_fullname=$58, father_address=$59, father_occupation=$60, father_employer=$61, father_contact=$62,
+          mother_fullname=$63, mother_address=$64, mother_occupation=$65, mother_employer=$66, mother_contact=$67,
+          guardian_fullname=$68, guardian_address=$69, guardian_occupation=$70, guardian_employer=$71, guardian_contact=$72,
+          sss_no=$73, philhealth_no=$74, pagibig_no=$75, tin_no=$76,
+          children=$77::jsonb, education=$78::jsonb, employment_history=$79::jsonb, beneficiaries=$80::jsonb
+        WHERE id=$81
+        RETURNING id;
+        `,
+        [
+          employeeNo,
+          last_name,
+          first_name,
+          middle_name || null,
+          fullname,
 
-        toNumOrNull(body.salary),
-        toNumOrNull(body.ecola),
-        totals.salary_total,
+          toStr(body.address) || null,
+          toStr(body.municipality) || null,
+          toStr(body.province) || null,
+          toStr(body.contact) || null,
+          toEmailOrNull(body.email),
 
-        toNum(body.cbu),
-        toNum(body.cashbond),
-        totals.utility_charge,
-        totals.personal_deductions_total,
+          toDateOrNull(body.date_of_birth),
+          toStr(body.place_of_birth) || null,
+          toStr(body.gender) || null,
+          toStr(body.civil_status) || null,
+          toStr(body.citizenship) || null,
 
-        toNum(body.transportation),
-        toNum(body.postage),
-        toNum(body.motorcycle_loan),
+          toNumOrNull(body.height),
+          toNumOrNull(body.weight),
+          toStr(body.religion) || null,
+          toStr(body.blood_type) || null,
 
-        toNum(body.additional_target),
-        toNum(body.repairing),
-        toNum(body.additional_monitoring),
+          position,
+          toStr(body.department) || null,
+          toStr(body.area) || null,
+          toStr(body.region) || null,
+          toStr(body.division) || null,
 
-        toNum(body.motorcycle),
-        toNum(body.other_deduction),
-        totals.transport_allowances_total,
+          toInt(body.branch_id),
+          String(body.status || "Active"),
 
-        toNum(body.hdmf_er),
-        toNum(body.sss_er),
-        toNum(body.ph_er),
-        totals.total_er,
+          toDateOrNull(body.start_date),
+          toDateOrNull(body.regularization_date),
 
-        toNum(body.hdmf_ee),
-        toNum(body.sss_ee),
-        toNum(body.ph_ee),
-        totals.total_ee,
+          toNumOrNull(body.salary),
+          toNumOrNull(body.ecola),
+          totals.salary_total,
 
-        toNum(body.tax),
+          toNum(body.cbu),
+          toNum(body.cashbond),
+          totals.utility_charge,
+          totals.personal_deductions_total,
 
-        toStr(body.spouse_fullname) || null,
-        toStr(body.spouse_address) || null,
-        toStr(body.spouse_occupation) || null,
-        toStr(body.spouse_employer) || null,
+          toNum(body.transportation),
+          toNum(body.postage),
+          toNum(body.motorcycle_loan),
 
-        toStr(body.father_fullname) || null,
-        toStr(body.father_address) || null,
-        toStr(body.father_occupation) || null,
-        toStr(body.father_employer) || null,
-        toStr(body.father_contact) || null,
+          toNum(body.additional_target),
+          toNum(body.repairing),
+          toNum(body.additional_monitoring),
 
-        toStr(body.mother_fullname) || null,
-        toStr(body.mother_address) || null,
-        toStr(body.mother_occupation) || null,
-        toStr(body.mother_employer) || null,
-        toStr(body.mother_contact) || null,
+          toNum(body.motorcycle),
+          toNum(body.other_deduction),
+          totals.transport_allowances_total,
 
-        toStr(body.guardian_fullname) || null,
-        toStr(body.guardian_address) || null,
-        toStr(body.guardian_occupation) || null,
-        toStr(body.guardian_employer) || null,
-        toStr(body.guardian_contact) || null,
+          toNum(body.hdmf_er),
+          toNum(body.sss_er),
+          toNum(body.ph_er),
+          totals.total_er,
 
-        toStr(body.sss_no) || null,
-        toStr(body.philhealth_no) || null,
-        toStr(body.pagibig_no) || null,
-        toStr(body.tin_no) || null,
+          toNum(body.hdmf_ee),
+          toNum(body.sss_ee),
+          toNum(body.ph_ee),
+          totals.total_ee,
 
-        JSON.stringify(children),
-        JSON.stringify(education),
-        JSON.stringify(employment_history),
-        JSON.stringify(beneficiaries),
+          toNum(body.tax),
 
-        id,
-      ]
-    );
+          toStr(body.spouse_fullname) || null,
+          toStr(body.spouse_address) || null,
+          toStr(body.spouse_occupation) || null,
+          toStr(body.spouse_employer) || null,
 
-    if (r.rowCount === 0) {
+          toStr(body.father_fullname) || null,
+          toStr(body.father_address) || null,
+          toStr(body.father_occupation) || null,
+          toStr(body.father_employer) || null,
+          toStr(body.father_contact) || null,
+
+          toStr(body.mother_fullname) || null,
+          toStr(body.mother_address) || null,
+          toStr(body.mother_occupation) || null,
+          toStr(body.mother_employer) || null,
+          toStr(body.mother_contact) || null,
+
+          toStr(body.guardian_fullname) || null,
+          toStr(body.guardian_address) || null,
+          toStr(body.guardian_occupation) || null,
+          toStr(body.guardian_employer) || null,
+          toStr(body.guardian_contact) || null,
+
+          toStr(body.sss_no) || null,
+          toStr(body.philhealth_no) || null,
+          toStr(body.pagibig_no) || null,
+          toStr(body.tin_no) || null,
+
+          JSON.stringify(children),
+          JSON.stringify(education),
+          JSON.stringify(employment_history),
+          JSON.stringify(beneficiaries),
+
+          id,
+        ]
+      );
+
+      if (r.rowCount === 0) {
+        await client.query("ROLLBACK");
+        return res.status(404).json({ message: "Staff not found" });
+      }
+
+      await client.query("COMMIT");
+      return res.json({ message: "Staff updated" });
+    } catch (e) {
       await client.query("ROLLBACK");
-      return res.status(404).json({ message: "Staff not found" });
+      console.error("PUT /api/staff/:id ERROR:", e.message);
+      return res.status(500).json({ message: e?.message || "Server error" });
+    } finally {
+      client.release();
     }
-
-    await client.query("COMMIT");
-    return res.json({ message: "Staff updated" });
-  } catch (e) {
-    await client.query("ROLLBACK");
-    console.error("PUT /api/staff/:id ERROR:", e.message);
-    return res.status(500).json({ message: e?.message || "Server error" });
-  } finally {
-    client.release();
   }
-});
+);
 
 router.delete("/staff/:id", requireAuth, requireRole(["admin"]), async (req, res) => {
   try {
@@ -877,7 +903,7 @@ router.delete("/staff/:id", requireAuth, requireRole(["admin"]), async (req, res
 router.post(
   "/staff/:id/photo",
   requireAuth,
-  requireRole(["admin", "branch manager"]),
+  requireRole(["admin", "branch manager", "area manager"]),
   upload.single("photo"),
   async (req, res) => {
     try {
@@ -893,6 +919,22 @@ router.post(
         const check = await pool.query(
           `SELECT id FROM public.staff WHERE id=$1 AND branch_id=$2`,
           [staffId, bid]
+        );
+        if (check.rowCount === 0) return res.status(403).json({ message: "Access denied" });
+      }
+
+      if (isAreaManager(req)) {
+        const area = getUserArea(req);
+        if (!area) return res.status(403).json({ message: "Access denied" });
+
+        const check = await pool.query(
+          `
+          SELECT id
+          FROM public.staff
+          WHERE id = $1
+            AND LOWER(TRIM(COALESCE(area, ''))) = LOWER(TRIM($2))
+          `,
+          [staffId, area]
         );
         if (check.rowCount === 0) return res.status(403).json({ message: "Access denied" });
       }
