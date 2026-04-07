@@ -21,7 +21,6 @@ export default function Transactions() {
 
   const isAdmin = role === "admin";
   const isBranchManager = role === "branch manager";
-  const isAreaManager = role === "area manager";
 
   const go = (path) => navigate(path);
 
@@ -62,7 +61,7 @@ export default function Transactions() {
       title: "Suspension Order",
       desc: "Temporarily suspend staff work.",
       path: "/transactions/suspension",
-      roles: ["admin", "hr", "accounting", "vice president", "senior vice president", "president"],
+      roles: ["admin", "hr", "accounting", "assistant vice president", "vice president", "senior vice president", "president"],
     },
     {
       title: "Statement of Accounts",

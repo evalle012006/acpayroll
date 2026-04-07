@@ -19,7 +19,14 @@ export default function SuspensionOrder() {
 
   const role = String(user?.role || "").trim().toLowerCase();
   const isAdmin = role === "admin";
-  const canCreate = role === "admin" || role === "branch manager";
+  const isHr = role === "hr";
+  const isAccounting = role === "accounting";
+  const isAssistantVicePresident = role === "assistant vice president";
+
+  const canCreate =
+    isAdmin || role === "branch manager" || isAssistantVicePresident;
+
+  const canApprove = isAdmin || isHr || isAccounting;
 
   const [orders, setOrders] = useState([]);
   const [staff, setStaff] = useState([]);
@@ -130,7 +137,7 @@ export default function SuspensionOrder() {
   };
 
   const approveOrder = async (o) => {
-    if (!isAdmin) return;
+    if (!canApprove) return;
 
     const pending = String(o.status || "").toLowerCase() === "pending";
     if (!pending) return;
@@ -146,7 +153,7 @@ export default function SuspensionOrder() {
   };
 
   const openReject = (o) => {
-    if (!isAdmin) return;
+    if (!canApprove) return;
     setRejecting(o);
     setRejectReason("");
   };
@@ -215,9 +222,7 @@ export default function SuspensionOrder() {
         </div>
       </div>
 
-      {err && (
-        <div style={{ color: "#ef4444", fontWeight: 900 }}>{err}</div>
-      )}
+      {err && <div style={{ color: "#ef4444", fontWeight: 900 }}>{err}</div>}
 
       <div className="po-card">
         <div className="po-table-wrap">
@@ -254,8 +259,8 @@ export default function SuspensionOrder() {
                   return (
                     <tr key={o.id}>
                       <td>{o.employee_name}</td>
-                      <td>{toDate10(o.suspension_start)}</td>
-                      <td>{toDate10(o.suspension_end)}</td>
+                      <td>{toDate10(o.start_date || o.suspension_start)}</td>
+                      <td>{toDate10(o.end_date || o.suspension_end)}</td>
                       <td>{o.reason}</td>
                       <td>
                         <span className={badgeClass(o.status)}>
@@ -264,12 +269,13 @@ export default function SuspensionOrder() {
                       </td>
                       <td>
                         <div className="po-row-actions">
-                          {isAdmin && (
+                          {canApprove ? (
                             <>
                               <button
                                 className="po-mini-btn po-approve"
                                 onClick={() => approveOrder(o)}
                                 disabled={!pending}
+                                type="button"
                               >
                                 Approve
                               </button>
@@ -277,10 +283,13 @@ export default function SuspensionOrder() {
                                 className="po-mini-btn po-reject"
                                 onClick={() => openReject(o)}
                                 disabled={!pending}
+                                type="button"
                               >
                                 Reject
                               </button>
                             </>
+                          ) : (
+                            <span style={{ opacity: 0.7 }}>-</span>
                           )}
                         </div>
                       </td>
@@ -303,7 +312,7 @@ export default function SuspensionOrder() {
           <div className="po-modal" onMouseDown={(e) => e.stopPropagation()}>
             <div className="po-modal-head">
               <h3 className="po-modal-title">Create Suspension</h3>
-              <button className="po-x" onClick={closeModal}>
+              <button className="po-x" onClick={closeModal} type="button">
                 ✕
               </button>
             </div>
@@ -386,6 +395,54 @@ export default function SuspensionOrder() {
                   disabled={saving}
                 >
                   {saving ? "Saving..." : "Create"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {rejecting && (
+        <div
+          className="po-modal-overlay"
+          onMouseDown={(e) =>
+            e.target.classList.contains("po-modal-overlay") && closeReject()
+          }
+        >
+          <div className="po-modal po-modal-sm" onMouseDown={(e) => e.stopPropagation()}>
+            <div className="po-modal-head">
+              <h3 className="po-modal-title">Reject Suspension</h3>
+              <button className="po-x" onClick={closeReject} type="button">
+                ✕
+              </button>
+            </div>
+
+            <form className="po-form" onSubmit={submitReject}>
+              <div className="po-grid">
+                <div className="po-field full">
+                  <label>Reason for rejection</label>
+                  <textarea
+                    value={rejectReason}
+                    onChange={(e) => setRejectReason(e.target.value)}
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="po-modal-actions">
+                <button
+                  className="po-btn po-btn-outline"
+                  type="button"
+                  onClick={closeReject}
+                >
+                  Cancel
+                </button>
+                <button
+                  className="po-btn po-reject"
+                  type="submit"
+                  disabled={rejectSaving}
+                >
+                  {rejectSaving ? "Rejecting..." : "Reject"}
                 </button>
               </div>
             </form>

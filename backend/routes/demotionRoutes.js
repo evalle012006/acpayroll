@@ -22,6 +22,13 @@ const isAdmin = (req) => roleLower(req) === "admin";
 const isHr = (req) => roleLower(req) === "hr";
 const isAccounting = (req) => roleLower(req) === "accounting";
 const isBranchManager = (req) => roleLower(req) === "branch manager";
+const isAreaManager = (req) => roleLower(req) === "area manager";
+const isRegionalManager = (req) => roleLower(req) === "regional manager";
+const isAssistantVicePresident = (req) =>
+  roleLower(req) === "assistant vice president";
+
+const getUserArea = (req) => toStr(req.user?.area);
+const getUserRegion = (req) => toStr(req.user?.region);
 
 async function getUserBranchIdResolved(req) {
   const raw = String(req.user?.branch_id || "").trim();
@@ -95,7 +102,11 @@ router.get("/demotion-orders/staff/:id", requireAuth, async (req, res) => {
     }
 
     const s = await pool.query(
-      `SELECT id, branch_id FROM public.staff WHERE id=$1`,
+      `
+      SELECT id, branch_id, area, region
+      FROM public.staff
+      WHERE id = $1
+      `,
       [employeeId]
     );
 
@@ -103,12 +114,38 @@ router.get("/demotion-orders/staff/:id", requireAuth, async (req, res) => {
       return res.status(404).json({ message: "Staff not found" });
     }
 
+    const staffRow = s.rows[0];
+
     if (isBranchManager(req)) {
       const myBid = await getUserBranchIdResolved(req);
-      if (!myBid || Number(s.rows[0].branch_id) !== Number(myBid)) {
+      if (!myBid || Number(staffRow.branch_id) !== Number(myBid)) {
         return res.status(403).json({ message: "Access denied" });
       }
-    } else if (!isAdmin(req) && !isHr(req) && !isAccounting(req)) {
+    }
+
+    if (isAreaManager(req)) {
+      const myArea = getUserArea(req);
+      if (!myArea || toStr(staffRow.area).toLowerCase() !== myArea.toLowerCase()) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+    }
+
+    if (isRegionalManager(req) || isAssistantVicePresident(req)) {
+      const myRegion = getUserRegion(req);
+      if (!myRegion || toStr(staffRow.region).toLowerCase() !== myRegion.toLowerCase()) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+    }
+
+    if (
+      !isAdmin(req) &&
+      !isHr(req) &&
+      !isAccounting(req) &&
+      !isBranchManager(req) &&
+      !isAreaManager(req) &&
+      !isRegionalManager(req) &&
+      !isAssistantVicePresident(req)
+    ) {
       return res.status(403).json({ message: "Access denied" });
     }
 
@@ -136,7 +173,11 @@ router.get("/demotion-orders", requireAuth, async (req, res) => {
   try {
     if (isAdmin(req) || isHr(req) || isAccounting(req)) {
       const r = await pool.query(
-        `SELECT * FROM public.demotion_orders ORDER BY created_at DESC`
+        `
+        SELECT *
+        FROM public.demotion_orders
+        ORDER BY created_at DESC
+        `
       );
       return res.json(r.rows);
     }
@@ -159,6 +200,42 @@ router.get("/demotion-orders", requireAuth, async (req, res) => {
       return res.json(r.rows);
     }
 
+    if (isAreaManager(req)) {
+      const area = getUserArea(req);
+      if (!area) return res.json([]);
+
+      const r = await pool.query(
+        `
+        SELECT dmo.*
+        FROM public.demotion_orders dmo
+        JOIN public.staff s ON s.id = dmo.employee_id
+        WHERE LOWER(TRIM(COALESCE(s.area, ''))) = LOWER(TRIM($1))
+        ORDER BY dmo.created_at DESC
+        `,
+        [area]
+      );
+
+      return res.json(r.rows);
+    }
+
+    if (isRegionalManager(req) || isAssistantVicePresident(req)) {
+      const region = getUserRegion(req);
+      if (!region) return res.json([]);
+
+      const r = await pool.query(
+        `
+        SELECT dmo.*
+        FROM public.demotion_orders dmo
+        JOIN public.staff s ON s.id = dmo.employee_id
+        WHERE LOWER(TRIM(COALESCE(s.region, ''))) = LOWER(TRIM($1))
+        ORDER BY dmo.created_at DESC
+        `,
+        [region]
+      );
+
+      return res.json(r.rows);
+    }
+
     return res.status(403).json({ message: "Access denied" });
   } catch (e) {
     console.error("GET /api/demotion-orders ERROR:", e.message);
@@ -172,7 +249,13 @@ router.get("/demotion-orders", requireAuth, async (req, res) => {
 router.post(
   "/demotion-orders",
   requireAuth,
-  requireRole(["admin", "branch manager"]),
+  requireRole([
+    "admin",
+    "branch manager",
+    "area manager",
+    "regional manager",
+    "assistant vice president",
+  ]),
   async (req, res) => {
     const client = await pool.connect();
     try {
@@ -183,7 +266,6 @@ router.post(
       const new_position = toStr(b.new_position);
       const effective_date = toDateOrNull(b.effective_date);
       const details = toStr(b.details);
-
       const to_branch_id = toInt(b.to_branch_id);
 
       if (!employee_id) {
@@ -204,7 +286,11 @@ router.post(
       }
 
       const s = await client.query(
-        `SELECT id, first_name, last_name, middle_name, fullname, "position", branch_id FROM public.staff WHERE id=$1`,
+        `
+        SELECT id, first_name, last_name, middle_name, fullname, "position", branch_id, area, region
+        FROM public.staff
+        WHERE id = $1
+        `,
         [employee_id]
       );
 
@@ -223,17 +309,41 @@ router.post(
         }
       }
 
+      if (isAreaManager(req)) {
+        const area = getUserArea(req);
+        if (!area || toStr(staffRow.area).toLowerCase() !== area.toLowerCase()) {
+          await client.query("ROLLBACK");
+          return res.status(403).json({ message: "Access denied" });
+        }
+      }
+
+      if (isRegionalManager(req) || isAssistantVicePresident(req)) {
+        const region = getUserRegion(req);
+        if (!region || toStr(staffRow.region).toLowerCase() !== region.toLowerCase()) {
+          await client.query("ROLLBACK");
+          return res.status(403).json({ message: "Access denied" });
+        }
+      }
+
       const prevBranchId = staffRow.branch_id ? Number(staffRow.branch_id) : null;
 
       const prevBr = prevBranchId
         ? await client.query(
-            `SELECT id, code, name FROM public.branches WHERE id=$1`,
+            `
+            SELECT id, code, name
+            FROM public.branches
+            WHERE id = $1
+            `,
             [prevBranchId]
           )
         : { rowCount: 0, rows: [] };
 
       const toBr = await client.query(
-        `SELECT id, code, name FROM public.branches WHERE id=$1`,
+        `
+        SELECT id, code, name
+        FROM public.branches
+        WHERE id = $1
+        `,
         [to_branch_id]
       );
 

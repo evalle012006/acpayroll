@@ -38,10 +38,31 @@ export default function Approval() {
   const role = norm(user?.role);
 
   const isAdmin = role === "admin";
+  const isHr = role === "hr";
+  const isAccounting = role === "accounting";
   const isAreaManager = role === "area manager";
+  const isBranchManager = role === "branch manager";
+  const isRegionalManager = role === "regional manager";
+  const isAssistantVicePresident = role === "assistant vice president";
+  const isVicePresident = role === "vice president";
+  const isSeniorVicePresident = role === "senior vice president";
+  const isPresident = role === "president";
 
-  const canViewSAP = !isAreaManager;
-  const canCreateSAP = isAdmin || role === "branch manager";
+  const canApproveLoan = isAdmin || isHr || isAccounting;
+  const canCreateLoan =
+    isAdmin ||
+    isHr ||
+    isAccounting ||
+    isBranchManager ||
+    isAreaManager ||
+    isRegionalManager ||
+    isAssistantVicePresident ||
+    isVicePresident ||
+    isSeniorVicePresident ||
+    isPresident;
+
+  const canViewSAP = !( isAreaManager || isRegionalManager || isAssistantVicePresident);
+  const canCreateSAP = (isAdmin || isBranchManager) && !isAssistantVicePresident;
 
   const [loanRequests, setLoanRequests] = useState([]);
   const [sapRows, setSapRows] = useState([]);
@@ -337,6 +358,7 @@ export default function Approval() {
     } catch (err) {
       console.error("Failed to create loan:", err?.response?.data || err.message);
       if (err?.response?.status === 401) return logout();
+      if (err?.response?.status === 403) return alert("Access denied.");
       alert(err?.response?.data?.message || "Failed to submit loan request.");
     } finally {
       setCreatingLoan(false);
@@ -449,9 +471,11 @@ export default function Approval() {
         </div>
 
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-          <button className="btn-primary" onClick={() => setShowCreateLoan(true)} type="button">
-            + Add Loan
-          </button>
+          {canCreateLoan && (
+            <button className="btn-primary" onClick={() => setShowCreateLoan(true)} type="button">
+              + Add Loan
+            </button>
+          )}
 
           {canCreateSAP && (
             <button className="btn-secondary" onClick={() => setShowCreateSAP(true)} type="button">
@@ -476,7 +500,7 @@ export default function Approval() {
           </div>
           <div className="approval-card-body">
             <div className="mini">
-              {loadingLoan ? "Loading loan requests..." : "Filter by loan type and approve/reject requests."}
+              {loadingLoan ? "Loading loan requests..." : "Filter by loan type and view requests."}
             </div>
           </div>
         </div>
@@ -503,7 +527,7 @@ export default function Approval() {
         )}
       </div>
 
-      {showCreateLoan && (
+      {canCreateLoan && showCreateLoan && (
         <div
           className="modal-overlay"
           onMouseDown={(e) => e.target.classList.contains("modal-overlay") && setShowCreateLoan(false)}
@@ -764,7 +788,7 @@ export default function Approval() {
             <div className="modal-head">
               <div>
                 <h3 className="modal-title">Loan Requests</h3>
-                <p className="modal-subtitle">Filter by type, then approve or reject</p>
+                <p className="modal-subtitle">Filter by type and view requests</p>
               </div>
               <button className="modal-x" type="button" onClick={() => setShowLoanModal(false)}>
                 ✕
@@ -833,7 +857,7 @@ export default function Approval() {
                             <div>Disbursed: {fmtDate(item.disbursement_date)}</div>
                           </td>
                           <td>
-                            {item.status === "Pending" ? (
+                            {canApproveLoan && item.status === "Pending" ? (
                               <div className="row-actions">
                                 <button
                                   className="btn-success"

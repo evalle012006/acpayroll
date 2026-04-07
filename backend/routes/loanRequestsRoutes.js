@@ -19,15 +19,46 @@ const toDate = (v) => {
   return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : null;
 };
 
+const toStr = (v) => String(v ?? "").trim();
+
 const roleLower = (req) => String(req.user?.role || "").trim().toLowerCase();
 const isAdmin = (req) => roleLower(req) === "admin";
+const isHr = (req) => roleLower(req) === "hr";
+const isAccounting = (req) => roleLower(req) === "accounting";
+const isBranchManager = (req) => roleLower(req) === "branch manager";
+const isAreaManager = (req) => roleLower(req) === "area manager";
+const isRegionalManager = (req) => roleLower(req) === "regional manager";
+const isAssistantVicePresident = (req) =>
+  roleLower(req) === "assistant vice president";
 
-async function ensureBalanceRow(client, staffId) {
+const getUserBranchCode = (req) => toStr(req.user?.branch_id);
+const getUserArea = (req) => toStr(req.user?.area);
+const getUserRegion = (req) => toStr(req.user?.region);
+
+async function getBranchIdFromCode(branchCode) {
+  const code = toStr(branchCode);
+  if (!code) return null;
+
+  const r = await pool.query(
+    `
+    SELECT id
+    FROM public.branches
+    WHERE LOWER(TRIM(code)) = LOWER(TRIM($1))
+    LIMIT 1
+    `,
+    [code]
+  );
+
+  if (r.rowCount === 0) return null;
+  return r.rows[0].id;
+}
+
+async function ensureBalanceRow(client, employeeNo) {
   await client.query(
     `
     INSERT INTO public.staff_balances
       (
-        employee_id,
+        employee_no,
         fullname,
         "position",
         last_name,
@@ -47,7 +78,7 @@ async function ensureBalanceRow(client, staffId) {
         updated_at
       )
     SELECT
-      s.id,
+      s.employee_no,
       s.fullname,
       s."position",
       s.last_name,
@@ -58,10 +89,10 @@ async function ensureBalanceRow(client, staffId) {
       0, 0,
       NOW(), NOW()
     FROM public.staff s
-    WHERE s.id = $1::int
-    ON CONFLICT (employee_id) DO NOTHING
+    WHERE s.employee_no = $1
+    ON CONFLICT (employee_no) DO NOTHING
     `,
-    [staffId]
+    [employeeNo]
   );
 }
 
@@ -78,35 +109,147 @@ function loanTypeToBalanceColumn(loanType) {
 }
 
 /* ---------------- GET all loans ---------------- */
-router.get("/loan-requests", requireAuth, async (_req, res) => {
+router.get("/loan-requests", requireAuth, async (req, res) => {
   try {
-    const r = await pool.query(
-      `
-      SELECT
-        lr.id,
-        lr.staff_id,
-        lr.employee_no,
-        lr.loan_type,
-        lr.reason,
-        lr.amount,
-        lr.term,
-        lr.interest,
-        lr.total,
-        lr.per_month,
-        lr.status,
-        lr.approved_at,
-        lr.disbursement_date,
-        COALESCE(s.fullname, '') AS staff_name,
-        s.first_name,
-        s.last_name,
-        s.middle_name
-      FROM public.loan_requests lr
-      LEFT JOIN public.staff s ON s.id = lr.staff_id
-      ORDER BY lr.id DESC
-      `
-    );
+    if (isAdmin(req) || isHr(req) || isAccounting(req) || isAssistantVicePresident(req)) {
+      const r = await pool.query(
+        `
+        SELECT
+          lr.id,
+          lr.staff_id,
+          lr.employee_no,
+          lr.loan_type,
+          lr.reason,
+          lr.amount,
+          lr.term,
+          lr.interest,
+          lr.total,
+          lr.per_month,
+          lr.status,
+          lr.approved_at,
+          lr.disbursement_date,
+          COALESCE(s.fullname, '') AS staff_name,
+          s.first_name,
+          s.last_name,
+          s.middle_name
+        FROM public.loan_requests lr
+        LEFT JOIN public.staff s ON s.id = lr.staff_id
+        ORDER BY lr.id DESC
+        `
+      );
 
-    return res.json(r.rows);
+      return res.json(r.rows);
+    }
+
+    if (isBranchManager(req)) {
+      const branchCode = getUserBranchCode(req);
+      if (!branchCode) return res.json([]);
+
+      const bid = await getBranchIdFromCode(branchCode);
+      if (!bid) return res.json([]);
+
+      const r = await pool.query(
+        `
+        SELECT
+          lr.id,
+          lr.staff_id,
+          lr.employee_no,
+          lr.loan_type,
+          lr.reason,
+          lr.amount,
+          lr.term,
+          lr.interest,
+          lr.total,
+          lr.per_month,
+          lr.status,
+          lr.approved_at,
+          lr.disbursement_date,
+          COALESCE(s.fullname, '') AS staff_name,
+          s.first_name,
+          s.last_name,
+          s.middle_name
+        FROM public.loan_requests lr
+        LEFT JOIN public.staff s ON s.id = lr.staff_id
+        WHERE s.branch_id = $1
+        ORDER BY lr.id DESC
+        `,
+        [bid]
+      );
+
+      return res.json(r.rows);
+    }
+
+    if (isAreaManager(req)) {
+      const area = getUserArea(req);
+      if (!area) return res.json([]);
+
+      const r = await pool.query(
+        `
+        SELECT
+          lr.id,
+          lr.staff_id,
+          lr.employee_no,
+          lr.loan_type,
+          lr.reason,
+          lr.amount,
+          lr.term,
+          lr.interest,
+          lr.total,
+          lr.per_month,
+          lr.status,
+          lr.approved_at,
+          lr.disbursement_date,
+          COALESCE(s.fullname, '') AS staff_name,
+          s.first_name,
+          s.last_name,
+          s.middle_name
+        FROM public.loan_requests lr
+        LEFT JOIN public.staff s ON s.id = lr.staff_id
+        WHERE LOWER(TRIM(COALESCE(s.area, ''))) = LOWER(TRIM($1))
+        ORDER BY lr.id DESC
+        `,
+        [area]
+      );
+
+      return res.json(r.rows);
+    }
+
+    if (isRegionalManager(req)) {
+      const region = getUserRegion(req);
+      if (!region) return res.json([]);
+
+      const r = await pool.query(
+        `
+        SELECT
+          lr.id,
+          lr.staff_id,
+          lr.employee_no,
+          lr.loan_type,
+          lr.reason,
+          lr.amount,
+          lr.term,
+          lr.interest,
+          lr.total,
+          lr.per_month,
+          lr.status,
+          lr.approved_at,
+          lr.disbursement_date,
+          COALESCE(s.fullname, '') AS staff_name,
+          s.first_name,
+          s.last_name,
+          s.middle_name
+        FROM public.loan_requests lr
+        LEFT JOIN public.staff s ON s.id = lr.staff_id
+        WHERE LOWER(TRIM(COALESCE(s.region, ''))) = LOWER(TRIM($1))
+        ORDER BY lr.id DESC
+        `,
+        [region]
+      );
+
+      return res.json(r.rows);
+    }
+
+    return res.status(403).json({ message: "Access denied" });
   } catch (e) {
     console.error("GET /api/loan-requests ERROR:", e.message);
     return res.status(500).json({ message: e?.message || "Server error" });
@@ -118,6 +261,44 @@ router.get("/loan-requests/staff/:staffId", requireAuth, async (req, res) => {
   try {
     const staffId = toInt(req.params.staffId);
     if (!staffId) return res.status(400).json({ message: "Invalid staff id" });
+
+    const s = await pool.query(
+      `
+      SELECT id, branch_id, area, region
+      FROM public.staff
+      WHERE id = $1
+      LIMIT 1
+      `,
+      [staffId]
+    );
+
+    if (s.rowCount === 0) {
+      return res.status(404).json({ message: "Staff not found" });
+    }
+
+    const staffRow = s.rows[0];
+
+    if (isBranchManager(req)) {
+      const branchCode = getUserBranchCode(req);
+      const bid = await getBranchIdFromCode(branchCode);
+      if (!bid || Number(staffRow.branch_id) !== Number(bid)) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+    }
+
+    if (isAreaManager(req)) {
+      const area = getUserArea(req);
+      if (!area || toStr(staffRow.area).toLowerCase() !== area.toLowerCase()) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+    }
+
+    if (isRegionalManager(req)) {
+      const region = getUserRegion(req);
+      if (!region || toStr(staffRow.region).toLowerCase() !== region.toLowerCase()) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+    }
 
     const r = await pool.query(
       `
@@ -158,7 +339,7 @@ router.get("/loan-requests/staff/:staffId", requireAuth, async (req, res) => {
 router.post(
   "/loan-requests",
   requireAuth,
-  requireRole(["admin", "branch manager"]),
+  requireRole(["admin", "hr", "accounting", "branch manager", "area manager", "regional manager","assistant vice president", "vice president", "senior vice president"]),
   async (req, res) => {
     const client = await pool.connect();
 
@@ -190,7 +371,7 @@ router.post(
 
       const s = await client.query(
         `
-        SELECT id, employee_no
+        SELECT id, employee_no, branch_id, area, region
         FROM public.staff
         WHERE id = $1::int
         `,
@@ -202,7 +383,33 @@ router.post(
         return res.status(404).json({ message: "Staff not found" });
       }
 
-      const employee_no = s.rows[0]?.employee_no ?? null;
+      const staffRow = s.rows[0];
+      const employee_no = staffRow?.employee_no ?? null;
+
+      if (isBranchManager(req)) {
+        const branchCode = getUserBranchCode(req);
+        const bid = await getBranchIdFromCode(branchCode);
+        if (!bid || Number(staffRow.branch_id) !== Number(bid)) {
+          await client.query("ROLLBACK");
+          return res.status(403).json({ message: "Access denied" });
+        }
+      }
+
+      if (isAreaManager(req)) {
+        const area = getUserArea(req);
+        if (!area || toStr(staffRow.area).toLowerCase() !== area.toLowerCase()) {
+          await client.query("ROLLBACK");
+          return res.status(403).json({ message: "Access denied" });
+        }
+      }
+
+      if (isRegionalManager(req)) {
+        const region = getUserRegion(req);
+        if (!region || toStr(staffRow.region).toLowerCase() !== region.toLowerCase()) {
+          await client.query("ROLLBACK");
+          return res.status(403).json({ message: "Access denied" });
+        }
+      }
 
       const ins = await client.query(
         `
@@ -291,6 +498,7 @@ router.put("/loan-requests/:id", requireAuth, async (req, res) => {
       SELECT
         id,
         staff_id,
+        employee_no,
         status,
         loan_type,
         total,
@@ -326,12 +534,12 @@ router.put("/loan-requests/:id", requireAuth, async (req, res) => {
     );
 
     if (prevStatus !== "Approved" && newStatus === "Approved") {
-      const staffId = toInt(row.staff_id);
+      const employeeNo = row.employee_no;
       const total = toNum(row.total) || toNum(row.amount);
       const col = loanTypeToBalanceColumn(row.loan_type);
 
-      if (staffId && col) {
-        await ensureBalanceRow(client, staffId);
+      if (employeeNo && col) {
+        await ensureBalanceRow(client, employeeNo);
 
         await client.query(
           `
@@ -339,9 +547,9 @@ router.put("/loan-requests/:id", requireAuth, async (req, res) => {
           SET
             ${col} = COALESCE(${col}, 0) + $1::numeric,
             updated_at = NOW()
-          WHERE employee_id = $2::int
+          WHERE employee_no = $2
           `,
-          [total, staffId]
+          [total, employeeNo]
         );
       }
     }

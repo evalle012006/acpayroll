@@ -27,7 +27,14 @@ const isAdmin = (req) => roleLower(req) === "admin";
 const isHr = (req) => roleLower(req) === "hr";
 const isAccounting = (req) => roleLower(req) === "accounting";
 const isBranchManager = (req) => roleLower(req) === "branch manager";
+const isAreaManager = (req) => roleLower(req) === "area manager";
+const isRegionalManager = (req) => roleLower(req) === "regional manager";
+const isAssistantVicePresident = (req) =>
+  roleLower(req) === "assistant vice president";
+
 const getUserBranchId = (req) => req.user?.branch_id ?? null;
+const getUserArea = (req) => toStr(req.user?.area);
+const getUserRegion = (req) => toStr(req.user?.region);
 
 async function generateOrderNo(client, prefix) {
   const now = new Date();
@@ -95,6 +102,40 @@ router.get("/promotion-orders", requireAuth, async (req, res) => {
       return res.json(r.rows);
     }
 
+    if (isAreaManager(req)) {
+      const area = getUserArea(req);
+      if (!area) return res.json([]);
+
+      const r = await pool.query(
+        `
+        SELECT po.*
+        FROM public.promotion_orders po
+        JOIN public.staff s ON s.id = po.employee_id
+        WHERE LOWER(TRIM(COALESCE(s.area, ''))) = LOWER(TRIM($1))
+        ORDER BY po.created_at DESC
+        `,
+        [area]
+      );
+      return res.json(r.rows);
+    }
+
+    if (isRegionalManager(req) || isAssistantVicePresident(req)) {
+      const region = getUserRegion(req);
+      if (!region) return res.json([]);
+
+      const r = await pool.query(
+        `
+        SELECT po.*
+        FROM public.promotion_orders po
+        JOIN public.staff s ON s.id = po.employee_id
+        WHERE LOWER(TRIM(COALESCE(s.region, ''))) = LOWER(TRIM($1))
+        ORDER BY po.created_at DESC
+        `,
+        [region]
+      );
+      return res.json(r.rows);
+    }
+
     return res.status(403).json({ message: "Access denied" });
   } catch (e) {
     console.error("GET /api/promotion-orders ERROR:", e.message);
@@ -102,10 +143,90 @@ router.get("/promotion-orders", requireAuth, async (req, res) => {
   }
 });
 
+router.get(
+  "/promotion-orders/staff/:id",
+  requireAuth,
+  requireRole([
+    "admin",
+    "hr",
+    "accounting",
+    "branch manager",
+    "area manager",
+    "regional manager",
+    "assistant vice president",
+  ]),
+  async (req, res) => {
+    try {
+      const employeeId = toInt(req.params.id);
+      if (!employeeId) {
+        return res.status(400).json({ message: "Invalid staff id" });
+      }
+
+      const staffRes = await pool.query(
+        `
+        SELECT id, branch_id, area, region
+        FROM public.staff
+        WHERE id = $1
+        LIMIT 1
+        `,
+        [employeeId]
+      );
+
+      if (staffRes.rowCount === 0) {
+        return res.status(404).json({ message: "Staff not found" });
+      }
+
+      const staffRow = staffRes.rows[0];
+
+      if (isBranchManager(req)) {
+        const bid = getUserBranchId(req);
+        if (!bid || Number(staffRow.branch_id) !== Number(bid)) {
+          return res.status(403).json({ message: "Access denied" });
+        }
+      }
+
+      if (isAreaManager(req)) {
+        const area = getUserArea(req);
+        if (!area || toStr(staffRow.area).toLowerCase() !== area.toLowerCase()) {
+          return res.status(403).json({ message: "Access denied" });
+        }
+      }
+
+      if (isRegionalManager(req) || isAssistantVicePresident(req)) {
+        const region = getUserRegion(req);
+        if (!region || toStr(staffRow.region).toLowerCase() !== region.toLowerCase()) {
+          return res.status(403).json({ message: "Access denied" });
+        }
+      }
+
+      const r = await pool.query(
+        `
+        SELECT *
+        FROM public.promotion_orders
+        WHERE employee_id = $1
+        ORDER BY created_at DESC
+        `,
+        [employeeId]
+      );
+
+      return res.json(r.rows);
+    } catch (e) {
+      console.error("GET /api/promotion-orders/staff/:id ERROR:", e.message);
+      return res.status(500).json({ message: "Server error" });
+    }
+  }
+);
+
 router.post(
   "/promotion-orders",
   requireAuth,
-  requireRole(["admin", "branch manager"]),
+  requireRole([
+    "admin",
+    "branch manager",
+    "area manager",
+    "regional manager",
+    "assistant vice president",
+  ]),
   async (req, res) => {
     const client = await pool.connect();
     try {
@@ -120,21 +241,10 @@ router.post(
       const old_position = toStr(b.old_position);
       const new_position = toStr(b.new_position);
 
-      const old_salary = toNum(b.old_salary);
-      const new_salary = toNum(b.new_salary);
-
       const old_ecola = toNum(b.old_ecola);
       const new_ecola = toNum(b.new_ecola);
 
-      const remarks = toStr(b.remarks) || null;
-
-      const prev_branch_id = b.prev_branch_id ? toInt(b.prev_branch_id) : null;
-      const prev_branch_code = toStr(b.prev_branch_code);
-      const prev_branch_name = toStr(b.prev_branch_name);
-
-      const present_branch_id = b.present_branch_id ? toInt(b.present_branch_id) : null;
-      const present_branch_code = toStr(b.present_branch_code);
-      const present_branch_name = toStr(b.present_branch_name);
+      const details = toStr(b.details || b.remarks);
 
       if (!employee_id) {
         await client.query("ROLLBACK");
@@ -148,13 +258,13 @@ router.post(
         await client.query("ROLLBACK");
         return res.status(400).json({ message: "Effective date is required" });
       }
-      if (!present_branch_id) {
-        await client.query("ROLLBACK");
-        return res.status(400).json({ message: "Present branch is required" });
-      }
 
       const staffRes = await client.query(
-        `SELECT id, fullname, branch_id FROM public.staff WHERE id=$1`,
+        `
+        SELECT id, fullname, branch_id, area, region, last_name, first_name, middle_name
+        FROM public.staff
+        WHERE id = $1
+        `,
         [employee_id]
       );
 
@@ -173,6 +283,22 @@ router.post(
         }
       }
 
+      if (isAreaManager(req)) {
+        const area = getUserArea(req);
+        if (!area || toStr(staffRow.area).toLowerCase() !== area.toLowerCase()) {
+          await client.query("ROLLBACK");
+          return res.status(403).json({ message: "Access denied" });
+        }
+      }
+
+      if (isRegionalManager(req)) {
+        const region = getUserRegion(req);
+        if (!region || toStr(staffRow.region).toLowerCase() !== region.toLowerCase()) {
+          await client.query("ROLLBACK");
+          return res.status(403).json({ message: "Access denied" });
+        }
+      }
+
       const orderNo = await generateOrderNo(client, "PRO");
 
       const ins = await client.query(
@@ -182,35 +308,21 @@ router.post(
             order_no,
             employee_id,
             employee_name,
-            prev_branch_id,
-            prev_branch_code,
-            prev_branch_name,
-            present_branch_id,
-            present_branch_code,
-            present_branch_name,
             old_position,
             new_position,
-            old_salary,
-            new_salary,
+            effective_date,
+            details,
+            status,
+            created_by,
             old_ecola,
             new_ecola,
-            effective_date,
-            remarks,
-            status,
-            created_by
+            last_name,
+            first_name,
+            middle_name
           )
         VALUES
           (
-            $1,$2,$3,
-            $4,$5,$6,
-            $7,$8,$9,
-            $10,$11,
-            $12,$13,
-            $14,$15,
-            $16::date,
-            $17,
-            'Pending',
-            $18
+            $1, $2, $3, $4, $5, $6::date, $7, 'Pending', $8, $9, $10, $11, $12, $13
           )
         RETURNING *;
         `,
@@ -218,21 +330,16 @@ router.post(
           orderNo,
           employee_id,
           employee_name || toStr(staffRow.fullname),
-          prev_branch_id,
-          prev_branch_code || null,
-          prev_branch_name || null,
-          present_branch_id,
-          present_branch_code || null,
-          present_branch_name || null,
           old_position || null,
           new_position,
-          old_salary,
-          new_salary,
+          effective_date,
+          details || null,
+          req.user?.id ?? null,
           old_ecola,
           new_ecola,
-          effective_date,
-          remarks,
-          req.user?.id ?? null,
+          toStr(staffRow.last_name) || null,
+          toStr(staffRow.first_name) || null,
+          toStr(staffRow.middle_name) || null,
         ]
       );
 

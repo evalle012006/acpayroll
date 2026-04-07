@@ -10,7 +10,9 @@ const displayNameParts = (s) => {
   const ln = clean(s?.last_name);
   const fn = clean(s?.first_name);
   const mn = clean(s?.middle_name);
-  const built = `${ln}${ln && fn ? ", " : ""}${fn}${mn ? ` ${mn}` : ""}`.replace(/\s+/g, " ").trim();
+  const built = `${ln}${ln && fn ? ", " : ""}${fn}${mn ? ` ${mn}` : ""}`
+    .replace(/\s+/g, " ")
+    .trim();
   return built || clean(s?.fullname) || "-";
 };
 
@@ -27,7 +29,18 @@ export default function DemotionOrder() {
 
   const role = String(user?.role || "").trim().toLowerCase();
   const isAdmin = role === "admin";
-  const canCreate = role === "admin" || role === "branch manager";
+  const isHr = role === "hr";
+  const isAccounting = role === "accounting";
+  const isAssistantVicePresident = role === "assistant vice president";
+
+  const canCreate =
+    isAdmin ||
+    role === "branch manager" ||
+    role === "area manager" ||
+    role === "regional manager" ||
+    isAssistantVicePresident;
+
+  const canApprove = isAdmin || isHr || isAccounting;
 
   const [orders, setOrders] = useState([]);
   const [staff, setStaff] = useState([]);
@@ -161,7 +174,7 @@ export default function DemotionOrder() {
   };
 
   const approveOrder = async (o) => {
-    if (!isAdmin) return;
+    if (!canApprove) return;
     const pending = String(o.status || "").toLowerCase() === "pending";
     if (!pending) return;
 
@@ -177,7 +190,7 @@ export default function DemotionOrder() {
   };
 
   const openReject = (o) => {
-    if (!isAdmin) return;
+    if (!canApprove) return;
     const pending = String(o.status || "").toLowerCase() === "pending";
     if (!pending) return;
 
@@ -193,7 +206,7 @@ export default function DemotionOrder() {
 
   const submitReject = async (e) => {
     e.preventDefault();
-    if (!isAdmin || !rejecting || rejectSaving) return;
+    if (!canApprove || !rejecting || rejectSaving) return;
 
     const reason = clean(rejectReason);
     if (!reason) return setErr("Rejection reason is required.");
@@ -307,7 +320,7 @@ export default function DemotionOrder() {
 
                       <td>
                         <div className="po-row-actions">
-                          {isAdmin ? (
+                          {canApprove ? (
                             <>
                               <button
                                 className="po-mini-btn po-approve"

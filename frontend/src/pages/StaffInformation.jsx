@@ -1267,16 +1267,34 @@ function StaffProfileModal({ staff, avatarUrl, onClose, branchNameById }) {
     if (!staff?.id) return;
     setLoadingDemotion(true);
     setErrDemotion("");
+
     try {
       let rows = [];
-      try {
+
+      const user = (() => {
+        try {
+          return JSON.parse(localStorage.getItem("user") || "null");
+        } catch {
+          return null;
+        }
+      })();
+
+      const role = String(user?.role || "").trim().toLowerCase();
+
+      const canUseStaffEndpoint =
+        role === "admin" ||
+        role === "hr" ||
+        role === "accounting";
+
+      if (canUseStaffEndpoint) {
         const res = await api.get(`/demotion-orders/staff/${staff.id}`);
         rows = Array.isArray(res.data) ? res.data : [];
-      } catch {
+      } else {
         const res2 = await api.get(`/demotion-orders`);
         const all = Array.isArray(res2.data) ? res2.data : [];
         rows = all.filter((x) => String(x.employee_id) === String(staff.id));
       }
+
       setDemotionRows(rows);
     } catch (e) {
       setErrDemotion(e?.response?.data?.message || "Failed to load demotion orders.");

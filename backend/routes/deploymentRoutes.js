@@ -21,9 +21,32 @@ const isHr = (req) => roleLower(req) === "hr";
 const isAccounting = (req) => roleLower(req) === "accounting";
 const isBranchManager = (req) => roleLower(req) === "branch manager";
 const isAreaManager = (req) => roleLower(req) === "area manager";
+const isRegionalManager = (req) => roleLower(req) === "regional manager";
+const isAssistantVicePresident = (req) =>
+  roleLower(req) === "assistant vice president";
 
+const getUserRegion = (req) => toStr(req.user?.region);
 const getUserBranchCode = (req) => toStr(req.user?.branch_id);
 const getUserArea = (req) => toStr(req.user?.area);
+
+async function assertStaffInManagersRegion(req, client, employeeId) {
+  if (!isRegionalManager(req)) return true;
+
+  const userRegion = getUserRegion(req);
+  if (!userRegion) return false;
+
+  const r = await client.query(
+    `
+    SELECT id
+    FROM public.staff
+    WHERE id = $1
+      AND LOWER(TRIM(COALESCE(region, ''))) = LOWER(TRIM($2))
+    `,
+    [employeeId, userRegion]
+  );
+
+  return r.rowCount > 0;
+}
 
 async function getBranchByCode(client, branchCode) {
   const code = toStr(branchCode);
@@ -138,6 +161,36 @@ router.get("/deployments", requireAuth, async (req, res) => {
       return res.json(r.rows);
     }
 
+    if (isRegionalManager(req)) {
+      const userRegion = getUserRegion(req);
+      if (!userRegion) return res.json([]);
+
+      const r = await client.query(
+        `
+        SELECT d.*
+        FROM public.deployment_orders d
+        JOIN public.staff s ON s.id = d.employee_id
+        WHERE LOWER(TRIM(COALESCE(s.region, ''))) = LOWER(TRIM($1))
+        ORDER BY d.id DESC
+        `,
+        [userRegion]
+      );
+
+      return res.json(r.rows);
+    }
+
+    if (isAssistantVicePresident(req)) {
+      const r = await client.query(
+        `
+        SELECT *
+        FROM public.deployment_orders
+        ORDER BY id DESC
+        `
+      );
+
+      return res.json(r.rows);
+    }
+
     return res.status(403).json({ message: "Access denied" });
   } catch (e) {
     console.error("GET /api/deployments ERROR:", e.message);
@@ -157,7 +210,7 @@ router.get("/deployments/:id", requireAuth, async (req, res) => {
     const id = toInt(req.params.id);
     if (!id) return res.status(400).json({ message: "Invalid id" });
 
-    if (isAdmin(req) || isHr(req) || isAccounting(req)) {
+    if (isAdmin(req) || isHr(req) || isAccounting(req) || isAssistantVicePresident(req)) {
       const r = await client.query(
         `
         SELECT *
@@ -219,6 +272,28 @@ router.get("/deployments/:id", requireAuth, async (req, res) => {
       return res.json(r.rows[0]);
     }
 
+    if (isRegionalManager(req)) {
+      const userRegion = getUserRegion(req);
+      if (!userRegion) return res.status(403).json({ message: "Access denied" });
+
+      const r = await client.query(
+        `
+        SELECT d.*
+        FROM public.deployment_orders d
+        JOIN public.staff s ON s.id = d.employee_id
+        WHERE d.id = $1
+          AND LOWER(TRIM(COALESCE(s.region, ''))) = LOWER(TRIM($2))
+        `,
+        [id, userRegion]
+      );
+
+      if (r.rowCount === 0) {
+        return res.status(404).json({ message: "Not found" });
+      }
+
+      return res.json(r.rows[0]);
+    }
+
     return res.status(403).json({ message: "Access denied" });
   } catch (e) {
     console.error("GET /api/deployments/:id ERROR:", e.message);
@@ -234,7 +309,15 @@ router.get("/deployments/:id", requireAuth, async (req, res) => {
 router.get(
   "/deployment-orders/staff/:id",
   requireAuth,
-  requireRole(["admin", "hr", "accounting", "branch manager", "area manager"]),
+  requireRole([
+    "admin",
+    "hr",
+    "accounting",
+    "branch manager",
+    "area manager",
+    "regional manager",
+    "assistant vice president",
+  ]),
   async (req, res) => {
     const client = await pool.connect();
 
@@ -253,6 +336,13 @@ router.get(
 
       if (isAreaManager(req)) {
         const ok = await assertStaffInManagersArea(req, client, employeeId);
+        if (!ok) {
+          return res.status(403).json({ message: "Access denied" });
+        }
+      }
+
+      if (isRegionalManager(req)) {
+        const ok = await assertStaffInManagersRegion(req, client, employeeId);
         if (!ok) {
           return res.status(403).json({ message: "Access denied" });
         }
@@ -284,7 +374,13 @@ router.get(
 router.post(
   "/deployments",
   requireAuth,
-  requireRole(["admin", "branch manager", "area manager"]),
+  requireRole([
+    "admin",
+    "branch manager",
+    "area manager",
+    "regional manager",
+    "assistant vice president",
+  ]),
   async (req, res) => {
     const client = await pool.connect();
 
@@ -321,6 +417,14 @@ router.post(
 
       if (isAreaManager(req)) {
         const ok = await assertStaffInManagersArea(req, client, employee_id);
+        if (!ok) {
+          await client.query("ROLLBACK");
+          return res.status(403).json({ message: "Access denied" });
+        }
+      }
+
+      if (isRegionalManager(req)) {
+        const ok = await assertStaffInManagersRegion(req, client, employee_id);
         if (!ok) {
           await client.query("ROLLBACK");
           return res.status(403).json({ message: "Access denied" });
@@ -405,7 +509,13 @@ router.post(
 router.put(
   "/deployments/:id",
   requireAuth,
-  requireRole(["admin", "branch manager", "area manager"]),
+  requireRole([
+    "admin",
+    "branch manager",
+    "area manager",
+    "regional manager",
+    "assistant vice president",
+  ]),
   async (req, res) => {
     const client = await pool.connect();
 
@@ -449,6 +559,14 @@ router.put(
 
       if (isAreaManager(req)) {
         const ok = await assertStaffInManagersArea(req, client, row.employee_id);
+        if (!ok) {
+          await client.query("ROLLBACK");
+          return res.status(403).json({ message: "Access denied" });
+        }
+      }
+
+      if (isRegionalManager(req)) {
+        const ok = await assertStaffInManagersRegion(req, client, row.employee_id);
         if (!ok) {
           await client.query("ROLLBACK");
           return res.status(403).json({ message: "Access denied" });

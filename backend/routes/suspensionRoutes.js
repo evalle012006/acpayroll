@@ -14,24 +14,27 @@ const toDate = (v) => {
 };
 
 const clean = (v) => String(v ?? "").trim();
+const toStr = (v) => String(v ?? "").trim();
 
 const roleLower = (req) => String(req.user?.role || "").trim().toLowerCase();
 const isAdmin = (req) => roleLower(req) === "admin";
 const isHr = (req) => roleLower(req) === "hr";
 const isAccounting = (req) => roleLower(req) === "accounting";
 const isBranchManager = (req) => roleLower(req) === "branch manager";
+const isAssistantVicePresident = (req) =>
+  roleLower(req) === "assistant vice president";
+
 const getUserBranchId = (req) => req.user?.branch_id ?? null;
+const getUserRegion = (req) => toStr(req.user?.region);
 
 router.get("/suspension-orders", requireAuth, async (req, res) => {
   try {
     if (isAdmin(req) || isHr(req) || isAccounting(req)) {
-      const r = await pool.query(
-        `
+      const r = await pool.query(`
         SELECT *
         FROM public.suspension_orders
         ORDER BY id DESC
-        `
-      );
+      `);
       return res.json(r.rows);
     }
 
@@ -52,6 +55,23 @@ router.get("/suspension-orders", requireAuth, async (req, res) => {
       return res.json(r.rows);
     }
 
+    if (isAssistantVicePresident(req)) {
+      const region = getUserRegion(req);
+      if (!region) return res.json([]);
+
+      const r = await pool.query(
+        `
+        SELECT so.*
+        FROM public.suspension_orders so
+        JOIN public.staff s ON s.id = so.employee_id
+        WHERE LOWER(TRIM(COALESCE(s.region, ''))) = LOWER(TRIM($1))
+        ORDER BY so.id DESC
+        `,
+        [region]
+      );
+      return res.json(r.rows);
+    }
+
     return res.status(403).json({ message: "Access denied" });
   } catch (e) {
     console.error("GET /api/suspension-orders ERROR:", e.message);
@@ -59,10 +79,63 @@ router.get("/suspension-orders", requireAuth, async (req, res) => {
   }
 });
 
+router.get("/suspension-orders/staff/:id", requireAuth, async (req, res) => {
+  try {
+    const employeeId = toInt(req.params.id);
+    if (!employeeId) {
+      return res.status(400).json({ message: "Invalid staff id" });
+    }
+
+    const s = await pool.query(
+      `
+      SELECT id, branch_id, region
+      FROM public.staff
+      WHERE id = $1
+      `,
+      [employeeId]
+    );
+
+    if (s.rowCount === 0) {
+      return res.status(404).json({ message: "Staff not found" });
+    }
+
+    const staff = s.rows[0];
+
+    if (isBranchManager(req)) {
+      const bid = getUserBranchId(req);
+      if (!bid || Number(staff.branch_id) !== Number(bid)) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+    } else if (isAssistantVicePresident(req)) {
+      const region = getUserRegion(req);
+      if (!region || toStr(staff.region).toLowerCase() !== region.toLowerCase()) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+    } else if (!isAdmin(req) && !isHr(req) && !isAccounting(req)) {
+      return res.status(403).json({ message: "Access denied" });
+    }
+
+    const r = await pool.query(
+      `
+      SELECT *
+      FROM public.suspension_orders
+      WHERE employee_id = $1
+      ORDER BY id DESC
+      `,
+      [employeeId]
+    );
+
+    return res.json(r.rows);
+  } catch (e) {
+    console.error("GET /api/suspension-orders/staff/:id ERROR:", e.message);
+    return res.status(500).json({ message: "Server error" });
+  }
+});
+
 router.post(
   "/suspension-orders",
   requireAuth,
-  requireRole(["admin", "branch manager"]),
+  requireRole(["admin", "branch manager", "assistant vice president"]),
   async (req, res) => {
     const client = await pool.connect();
     try {
@@ -94,7 +167,7 @@ router.post(
 
       const s = await client.query(
         `
-        SELECT id, fullname, first_name, last_name, middle_name, branch_id
+        SELECT id, fullname, first_name, last_name, middle_name, branch_id, region
         FROM public.staff
         WHERE id = $1
         `,
@@ -111,6 +184,14 @@ router.post(
       if (isBranchManager(req)) {
         const bid = getUserBranchId(req);
         if (!bid || Number(staff.branch_id) !== Number(bid)) {
+          await client.query("ROLLBACK");
+          return res.status(403).json({ message: "Access denied" });
+        }
+      }
+
+      if (isAssistantVicePresident(req)) {
+        const region = getUserRegion(req);
+        if (!region || toStr(staff.region).toLowerCase() !== region.toLowerCase()) {
           await client.query("ROLLBACK");
           return res.status(403).json({ message: "Access denied" });
         }

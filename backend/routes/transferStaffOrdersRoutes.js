@@ -23,7 +23,11 @@ const isHr = (req) => roleLower(req) === "hr";
 const isAccounting = (req) => roleLower(req) === "accounting";
 const isBranchManager = (req) => roleLower(req) === "branch manager";
 const isAreaManager = (req) => roleLower(req) === "area manager";
+const isRegionalManager = (req) => roleLower(req) === "regional manager";
+const isAssistantVicePresident = (req) =>
+  roleLower(req) === "assistant vice president";
 
+const getUserRegion = (req) => toStr(req.user?.region);
 const getUserBranchId = (req) => req.user?.branch_id ?? null;
 const getUserArea = (req) => toStr(req.user?.area);
 
@@ -78,6 +82,9 @@ async function generateTransferOrderNo(client) {
   return `${prefix}-${year}-${mm}-${nnnn}`;
 }
 
+/* =========================================================
+   GET ALL TRANSFER STAFF ORDERS
+========================================================= */
 router.get("/transfer-staff-orders", requireAuth, async (req, res) => {
   try {
     const branchId = getUserBranchId(req);
@@ -85,7 +92,11 @@ router.get("/transfer-staff-orders", requireAuth, async (req, res) => {
 
     if (isAdmin(req) || isHr(req) || isAccounting(req)) {
       const r = await pool.query(
-        `SELECT * FROM public.transfer_staff_orders ORDER BY created_at DESC`
+        `
+        SELECT *
+        FROM public.transfer_staff_orders
+        ORDER BY created_at DESC
+        `
       );
       return res.json(r.rows);
     }
@@ -120,6 +131,35 @@ router.get("/transfer-staff-orders", requireAuth, async (req, res) => {
       return res.json(r.rows);
     }
 
+    if (isRegionalManager(req)) {
+      const userRegion = getUserRegion(req);
+      if (!userRegion) return res.json([]);
+
+      const r = await pool.query(
+        `
+        SELECT *
+        FROM public.transfer_staff_orders
+        WHERE LOWER(TRIM(COALESCE(region, ''))) = LOWER(TRIM($1))
+        ORDER BY created_at DESC
+        `,
+        [userRegion]
+      );
+
+      return res.json(r.rows);
+    }
+
+    if (isAssistantVicePresident(req)) {
+      const r = await pool.query(
+        `
+        SELECT *
+        FROM public.transfer_staff_orders
+        ORDER BY created_at DESC
+        `
+      );
+
+      return res.json(r.rows);
+    }
+
     return res.status(403).json({ message: "Access denied" });
   } catch (e) {
     console.error("GET /api/transfer-staff-orders ERROR:", e.message);
@@ -127,10 +167,19 @@ router.get("/transfer-staff-orders", requireAuth, async (req, res) => {
   }
 });
 
+/* =========================================================
+   CREATE TRANSFER STAFF ORDER
+========================================================= */
 router.post(
   "/transfer-staff-orders",
   requireAuth,
-  requireRole(["admin", "branch manager", "area manager"]),
+  requireRole([
+    "admin",
+    "branch manager",
+    "area manager",
+    "regional manager",
+    "assistant vice president",
+  ]),
   async (req, res) => {
     const client = await pool.connect();
     try {
@@ -212,6 +261,29 @@ router.post(
         );
 
         if (staffAreaCheck.rowCount === 0) {
+          await client.query("ROLLBACK");
+          return res.status(403).json({ message: "Access denied" });
+        }
+      }
+
+      if (isRegionalManager(req)) {
+        const myRegion = getUserRegion(req);
+        if (!myRegion || myRegion.toLowerCase() !== region.toLowerCase()) {
+          await client.query("ROLLBACK");
+          return res.status(403).json({ message: "Access denied" });
+        }
+
+        const staffRegionCheck = await client.query(
+          `
+          SELECT id
+          FROM public.staff
+          WHERE id = $1
+            AND LOWER(TRIM(COALESCE(region, ''))) = LOWER(TRIM($2))
+          `,
+          [employee_id, myRegion]
+        );
+
+        if (staffRegionCheck.rowCount === 0) {
           await client.query("ROLLBACK");
           return res.status(403).json({ message: "Access denied" });
         }
@@ -306,6 +378,9 @@ router.post(
   }
 );
 
+/* =========================================================
+   APPROVE TRANSFER STAFF ORDER
+========================================================= */
 router.put(
   "/transfer-staff-orders/:id/approve",
   requireAuth,
@@ -358,6 +433,9 @@ router.put(
   }
 );
 
+/* =========================================================
+   REJECT TRANSFER STAFF ORDER
+========================================================= */
 router.put(
   "/transfer-staff-orders/:id/reject",
   requireAuth,
