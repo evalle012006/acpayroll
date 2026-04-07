@@ -32,6 +32,8 @@ const Branches = () => {
   const [code, setCode] = useState("");
   const [name, setName] = useState("");
   const [area, setArea] = useState("");
+  const [region, setRegion] = useState("");
+  const [division, setDivision] = useState("");
   const [address, setAddress] = useState("");
   const [latitude, setLatitude] = useState("");
   const [longitude, setLongitude] = useState("");
@@ -81,6 +83,8 @@ const Branches = () => {
     setCode("");
     setName("");
     setArea("");
+    setRegion("");
+    setDivision("");
     setAddress("");
     setLatitude("");
     setLongitude("");
@@ -99,6 +103,8 @@ const Branches = () => {
     setCode(branch.code || "");
     setName(branch.name || "");
     setArea(branch.area || "");
+    setRegion(branch.region || "");
+    setDivision(branch.division || "");
     setAddress(branch.address || "");
     setLatitude(branch.latitude ?? "");
     setLongitude(branch.longitude ?? "");
@@ -189,6 +195,8 @@ const Branches = () => {
         String(branch.code || "").toLowerCase().includes(q) ||
         String(branch.name || "").toLowerCase().includes(q) ||
         String(branch.area || "").toLowerCase().includes(q) ||
+        String(branch.region || "").toLowerCase().includes(q) ||
+        String(branch.division || "").toLowerCase().includes(q) ||
         String(branch.address || "").toLowerCase().includes(q)
       );
     });
@@ -226,6 +234,8 @@ const Branches = () => {
         code,
         name,
         area,
+        region,
+        division,
         address,
         latitude: latitude === "" ? null : Number(latitude),
         longitude: longitude === "" ? null : Number(longitude),
@@ -272,7 +282,7 @@ const Branches = () => {
           <p>
             {isBranchManager
               ? "Open payroll, transpo, or map view for your branch."
-              : "Manage branch codes, names, and areas."}
+              : "Manage branch codes, names, areas, regions, and divisions."}
           </p>
         </div>
 
@@ -291,7 +301,7 @@ const Branches = () => {
             <input
               className="input"
               type="text"
-              placeholder="Search by ID, code, name, area, or address..."
+              placeholder="Search by ID, code, name, area, region, division, or address..."
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
               onKeyDown={(e) => {
@@ -343,9 +353,11 @@ const Branches = () => {
                 <thead>
                   <tr>
                     <th style={{ width: 90 }}>ID</th>
-                    <th style={{ width: 180 }}>Branch Code</th>
-                    <th style={{ width: 260 }}>Branch Name</th>
-                    <th style={{ width: 180 }}>Area</th>
+                    <th style={{ width: 150 }}>Branch Code</th>
+                    <th style={{ width: 240 }}>Branch Name</th>
+                    <th style={{ width: 150 }}>Area</th>
+                    <th style={{ width: 150 }}>Region</th>
+                    <th style={{ width: 170 }}>Division</th>
                     <th style={{ width: 440 }}>Actions</th>
                   </tr>
                 </thead>
@@ -353,7 +365,7 @@ const Branches = () => {
                 <tbody>
                   {pagedBranches.length === 0 ? (
                     <tr>
-                      <td colSpan={5} className="empty">
+                      <td colSpan={7} className="empty">
                         No branches found.
                       </td>
                     </tr>
@@ -364,6 +376,8 @@ const Branches = () => {
                         <td className="mono">{branch.code}</td>
                         <td className="strong">{branch.name}</td>
                         <td>{branch.area}</td>
+                        <td>{branch.region || "-"}</td>
+                        <td>{branch.division || "-"}</td>
 
                         <td>
                           <div className="actions">
@@ -487,6 +501,16 @@ const Branches = () => {
                   <input className="input" value={area} onChange={(e) => setArea(e.target.value)} required />
                 </div>
 
+                <div className="field">
+                  <label>Region</label>
+                  <input className="input" value={region} onChange={(e) => setRegion(e.target.value)} required />
+                </div>
+
+                <div className="field">
+                  <label>Division</label>
+                  <input className="input" value={division} onChange={(e) => setDivision(e.target.value)} required />
+                </div>
+
                 <div className="field full">
                   <label>Branch Name</label>
                   <input className="input" value={name} onChange={(e) => setName(e.target.value)} required />
@@ -550,6 +574,9 @@ const Branches = () => {
               <div className="branch-map-meta">
                 <div className="branch-map-title">{selectedBranchMap.name || "-"}</div>
                 <div className="branch-map-address">{selectedBranchMap.address || "No address provided"}</div>
+                <div className="branch-map-coords">
+                  Area: {selectedBranchMap.area || "-"} | Region: {selectedBranchMap.region || "-"} | Division: {selectedBranchMap.division || "-"}
+                </div>
                 <div className="branch-map-coords">
                   Latitude: {selectedBranchMap.latitude ?? "-"} | Longitude: {selectedBranchMap.longitude ?? "-"}
                 </div>

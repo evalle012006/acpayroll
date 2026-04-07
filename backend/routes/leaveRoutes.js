@@ -25,6 +25,7 @@ const isBranchManager = (req) => roleLower(req) === "branch manager";
 const isAreaManager = (req) => roleLower(req) === "area manager";
 const isRegionalManager = (req) => roleLower(req) === "regional manager";
 const isAssistantVicePresident = (req) => roleLower(req) === "assistant vice president";
+
 const getUserBranchCode = (req) => toStr(req.user?.branch_id);
 const getUserArea = (req) => toStr(req.user?.area);
 
@@ -63,13 +64,18 @@ const makeTxnCode = (leaveType) => {
   return `${prefix}${y}${m}${day}`;
 };
 
+/* =========================================================
+   GET ALL LEAVE REQUESTS
+========================================================= */
 router.get("/leave-requests", requireAuth, async (req, res) => {
   try {
-    if (isAdmin(req) || isHr(req) || isAccounting(req) || isBranchManager(req) || isAreaManager(req) || isRegionalManager(req) || isAssistantVicePresident(req)) {
+    if (isAdmin(req) || isHr(req) || isAccounting(req) || isRegionalManager(req) || isAssistantVicePresident(req)) {
       const r = await pool.query(
-        `SELECT id, staff_name, leave_type, start_date, end_date, status, transaction_code, entry_date, employee_id
-         FROM public.leave_requests
-         ORDER BY entry_date DESC NULLS LAST, id DESC`
+        `
+        SELECT id, staff_name, leave_type, start_date, end_date, status, transaction_code, entry_date, employee_id
+        FROM public.leave_requests
+        ORDER BY entry_date DESC NULLS LAST, id DESC
+        `
       );
       return res.json(r.rows);
     }
@@ -120,10 +126,21 @@ router.get("/leave-requests", requireAuth, async (req, res) => {
   }
 });
 
+/* =========================================================
+   GET LEAVE REQUESTS BY STAFF
+========================================================= */
 router.get(
   "/leave-requests/staff/:staffId",
   requireAuth,
-  requireRole(["admin", "branch manager", "hr", "accounting", "area manager", "regional manager", "assistant vice president"]),
+  requireRole([
+    "admin",
+    "branch manager",
+    "hr",
+    "accounting",
+    "area manager",
+    "regional manager",
+    "assistant vice president",
+  ]),
   async (req, res) => {
     try {
       const staffId = toInt(req.params.staffId);
@@ -137,9 +154,15 @@ router.get(
         if (!bid) return res.status(403).json({ message: "Access denied" });
 
         const chk = await pool.query(
-          `SELECT id FROM public.staff WHERE id = $1 AND branch_id = $2`,
+          `
+          SELECT id
+          FROM public.staff
+          WHERE id = $1
+            AND branch_id = $2
+          `,
           [staffId, bid]
         );
+
         if (chk.rowCount === 0) return res.status(403).json({ message: "Access denied" });
       }
 
@@ -156,14 +179,17 @@ router.get(
           `,
           [staffId, area]
         );
+
         if (chk.rowCount === 0) return res.status(403).json({ message: "Access denied" });
       }
 
       const r = await pool.query(
-        `SELECT id, staff_name, leave_type, start_date, end_date, status, transaction_code, entry_date, employee_id
-         FROM public.leave_requests
-         WHERE employee_id = $1
-         ORDER BY entry_date DESC NULLS LAST, id DESC`,
+        `
+        SELECT id, staff_name, leave_type, start_date, end_date, status, transaction_code, entry_date, employee_id
+        FROM public.leave_requests
+        WHERE employee_id = $1
+        ORDER BY entry_date DESC NULLS LAST, id DESC
+        `,
         [staffId]
       );
 
@@ -175,10 +201,21 @@ router.get(
   }
 );
 
+/* =========================================================
+   CREATE LEAVE REQUEST
+========================================================= */
 router.post(
   "/leave-requests",
   requireAuth,
-  requireRole(["admin", "branch manager", "hr", "accounting", "area manager", "regional manager", "assistant vice president"]),
+  requireRole([
+    "admin",
+    "branch manager",
+    "hr",
+    "accounting",
+    "area manager",
+    "regional manager",
+    "assistant vice president",
+  ]),
   async (req, res) => {
     const client = await pool.connect();
     try {
@@ -190,19 +227,32 @@ router.post(
       const start_date = toDateOrNull(b.start_date);
       const end_date = toDateOrNull(b.end_date);
 
-      if (!employee_id) return res.status(400).json({ message: "employee_id is required" });
-      if (!leave_type) return res.status(400).json({ message: "leave_type is required" });
+      if (!employee_id) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({ message: "employee_id is required" });
+      }
+      if (!leave_type) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({ message: "leave_type is required" });
+      }
       if (!start_date || !end_date) {
+        await client.query("ROLLBACK");
         return res.status(400).json({ message: "start_date and end_date are required" });
       }
       if (String(start_date) > String(end_date)) {
+        await client.query("ROLLBACK");
         return res.status(400).json({ message: "Start date must be on or before end date" });
       }
 
       const s = await client.query(
-        `SELECT id, fullname, branch_id, area FROM public.staff WHERE id = $1`,
+        `
+        SELECT id, fullname, branch_id, area
+        FROM public.staff
+        WHERE id = $1
+        `,
         [employee_id]
       );
+
       if (s.rowCount === 0) {
         await client.query("ROLLBACK");
         return res.status(404).json({ message: "Staff not found" });
@@ -254,10 +304,13 @@ router.post(
   }
 );
 
+/* =========================================================
+   APPROVE / REJECT LEAVE REQUEST
+========================================================= */
 router.put(
   "/leave-requests/:id",
   requireAuth,
-  requireRole(["admin", "hr", "accounting"]),
+  requireRole(["admin", "hr", "accounting", "area manager"]),
   async (req, res) => {
     try {
       const id = String(req.params.id || "").trim();
@@ -266,6 +319,27 @@ router.put(
       const status = String(req.body?.status || "").trim();
       if (!["Approved", "Rejected"].includes(status)) {
         return res.status(400).json({ message: "Status must be Approved or Rejected" });
+      }
+
+      if (isAreaManager(req)) {
+        const area = getUserArea(req);
+        if (!area) return res.status(403).json({ message: "Access denied" });
+
+        const chk = await pool.query(
+          `
+          SELECT lr.id
+          FROM public.leave_requests lr
+          JOIN public.staff s ON s.id = lr.employee_id
+          WHERE lr.id = $1
+            AND LOWER(TRIM(COALESCE(s.area, ''))) = LOWER(TRIM($2))
+          LIMIT 1
+          `,
+          [id, area]
+        );
+
+        if (chk.rowCount === 0) {
+          return res.status(403).json({ message: "Access denied" });
+        }
       }
 
       const r = await pool.query(

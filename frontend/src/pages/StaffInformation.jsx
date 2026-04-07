@@ -2407,7 +2407,7 @@ export default function StaffInformation() {
       const payload = buildPayload();
       await api.put(`/staff/${editStaff.id}`, payload);
 
-      await api.put(`/staff-balances/${editStaff.employee_no}`, buildBalancePayload());
+      await api.put(`/staff-balances/${payload.employee_no}`, buildBalancePayload());
 
       if (photoFile) {
         const fd = new FormData();

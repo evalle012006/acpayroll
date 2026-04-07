@@ -24,14 +24,17 @@ const isBranchManager = (req) => roleLower(req) === "branch manager";
 const isAreaManager = (req) => roleLower(req) === "area manager";
 const isRegionalManager = (req) => roleLower(req) === "regional manager";
 const isAssistantVicePresident = (req) => roleLower(req) === "assistant vice president";
+
 const getUserBranchCode = (req) => toStr(req.user?.branch_id);
 const getUserArea = (req) => toStr(req.user?.area);
+const getUserRegion = (req) => toStr(req.user?.region);
+const getUserDivision = (req) => toStr(req.user?.division);
 
 router.get("/branches", requireAuth, async (req, res) => {
   try {
-    if (isAdmin(req) || isHr(req) || isAccounting(req) || isBranchManager(req) || isAreaManager(req) || isRegionalManager(req) || isAssistantVicePresident(req)) {
+    if (isAdmin(req) || isHr(req) || isAccounting(req)) {
       const r = await pool.query(`
-        SELECT id, code, name, area, address, latitude, longitude
+        SELECT id, code, name, area, region, division, address, latitude, longitude
         FROM public.branches
         ORDER BY id ASC
       `);
@@ -44,7 +47,7 @@ router.get("/branches", requireAuth, async (req, res) => {
 
       const r = await pool.query(
         `
-        SELECT id, code, name, area, address, latitude, longitude
+        SELECT id, code, name, area, region, division, address, latitude, longitude
         FROM public.branches
         WHERE LOWER(TRIM(code)) = LOWER(TRIM($1))
         ORDER BY id ASC
@@ -61,12 +64,46 @@ router.get("/branches", requireAuth, async (req, res) => {
 
       const r = await pool.query(
         `
-        SELECT id, code, name, area, address, latitude, longitude
+        SELECT id, code, name, area, region, division, address, latitude, longitude
         FROM public.branches
         WHERE LOWER(TRIM(COALESCE(area, ''))) = LOWER(TRIM($1))
         ORDER BY id ASC
         `,
         [area]
+      );
+
+      return res.json(r.rows);
+    }
+
+    if (isRegionalManager(req)) {
+      const region = getUserRegion(req);
+      if (!region) return res.json([]);
+
+      const r = await pool.query(
+        `
+        SELECT id, code, name, area, region, division, address, latitude, longitude
+        FROM public.branches
+        WHERE LOWER(TRIM(COALESCE(region, ''))) = LOWER(TRIM($1))
+        ORDER BY id ASC
+        `,
+        [region]
+      );
+
+      return res.json(r.rows);
+    }
+
+    if (isAssistantVicePresident(req)) {
+      const division = getUserDivision(req);
+      if (!division) return res.json([]);
+
+      const r = await pool.query(
+        `
+        SELECT id, code, name, area, region, division, address, latitude, longitude
+        FROM public.branches
+        WHERE LOWER(TRIM(COALESCE(division, ''))) = LOWER(TRIM($1))
+        ORDER BY id ASC
+        `,
+        [division]
       );
 
       return res.json(r.rows);
@@ -87,7 +124,7 @@ router.get("/branches/:id", requireAuth, async (req, res) => {
     if (isAdmin(req) || isHr(req) || isAccounting(req)) {
       const r = await pool.query(
         `
-        SELECT id, code, name, area, address, latitude, longitude
+        SELECT id, code, name, area, region, division, address, latitude, longitude
         FROM public.branches
         WHERE id = $1
         `,
@@ -104,7 +141,7 @@ router.get("/branches/:id", requireAuth, async (req, res) => {
 
       const r = await pool.query(
         `
-        SELECT id, code, name, area, address, latitude, longitude
+        SELECT id, code, name, area, region, division, address, latitude, longitude
         FROM public.branches
         WHERE id = $1
           AND LOWER(TRIM(code)) = LOWER(TRIM($2))
@@ -122,12 +159,48 @@ router.get("/branches/:id", requireAuth, async (req, res) => {
 
       const r = await pool.query(
         `
-        SELECT id, code, name, area, address, latitude, longitude
+        SELECT id, code, name, area, region, division, address, latitude, longitude
         FROM public.branches
         WHERE id = $1
           AND LOWER(TRIM(COALESCE(area, ''))) = LOWER(TRIM($2))
         `,
         [id, area]
+      );
+
+      if (r.rowCount === 0) return res.status(403).json({ message: "Access denied" });
+      return res.json(r.rows[0]);
+    }
+
+    if (isRegionalManager(req)) {
+      const region = getUserRegion(req);
+      if (!region) return res.status(403).json({ message: "Access denied" });
+
+      const r = await pool.query(
+        `
+        SELECT id, code, name, area, region, division, address, latitude, longitude
+        FROM public.branches
+        WHERE id = $1
+          AND LOWER(TRIM(COALESCE(region, ''))) = LOWER(TRIM($2))
+        `,
+        [id, region]
+      );
+
+      if (r.rowCount === 0) return res.status(403).json({ message: "Access denied" });
+      return res.json(r.rows[0]);
+    }
+
+    if (isAssistantVicePresident(req)) {
+      const division = getUserDivision(req);
+      if (!division) return res.status(403).json({ message: "Access denied" });
+
+      const r = await pool.query(
+        `
+        SELECT id, code, name, area, region, division, address, latitude, longitude
+        FROM public.branches
+        WHERE id = $1
+          AND LOWER(TRIM(COALESCE(division, ''))) = LOWER(TRIM($2))
+        `,
+        [id, division]
       );
 
       if (r.rowCount === 0) return res.status(403).json({ message: "Access denied" });
@@ -150,6 +223,8 @@ router.post(
       const code = toStr(req.body?.code);
       const name = toStr(req.body?.name);
       const area = toStr(req.body?.area);
+      const region = toStr(req.body?.region);
+      const division = toStr(req.body?.division);
       const address = toStr(req.body?.address) || null;
       const latitude = toNumOrNull(req.body?.latitude);
       const longitude = toNumOrNull(req.body?.longitude);
@@ -157,6 +232,8 @@ router.post(
       if (!code) return res.status(400).json({ message: "Branch code is required" });
       if (!name) return res.status(400).json({ message: "Branch name is required" });
       if (!area) return res.status(400).json({ message: "Area is required" });
+      if (!region) return res.status(400).json({ message: "Region is required" });
+      if (!division) return res.status(400).json({ message: "Division is required" });
 
       const dup = await pool.query(
         `
@@ -175,11 +252,13 @@ router.post(
 
       const ins = await pool.query(
         `
-        INSERT INTO public.branches (code, name, area, address, latitude, longitude)
-        VALUES ($1, $2, $3, $4, $5, $6)
-        RETURNING id, code, name, area, address, latitude, longitude
+        INSERT INTO public.branches
+          (code, name, area, region, division, address, latitude, longitude)
+        VALUES
+          ($1, $2, $3, $4, $5, $6, $7, $8)
+        RETURNING id, code, name, area, region, division, address, latitude, longitude
         `,
-        [code, name, area, address, latitude, longitude]
+        [code, name, area, region, division, address, latitude, longitude]
       );
 
       return res.json(ins.rows[0]);
@@ -202,6 +281,8 @@ router.put(
       const code = toStr(req.body?.code);
       const name = toStr(req.body?.name);
       const area = toStr(req.body?.area);
+      const region = toStr(req.body?.region);
+      const division = toStr(req.body?.division);
       const address = toStr(req.body?.address) || null;
       const latitude = toNumOrNull(req.body?.latitude);
       const longitude = toNumOrNull(req.body?.longitude);
@@ -209,6 +290,8 @@ router.put(
       if (!code) return res.status(400).json({ message: "Branch code is required" });
       if (!name) return res.status(400).json({ message: "Branch name is required" });
       if (!area) return res.status(400).json({ message: "Area is required" });
+      if (!region) return res.status(400).json({ message: "Region is required" });
+      if (!division) return res.status(400).json({ message: "Division is required" });
 
       const dup = await pool.query(
         `
@@ -231,13 +314,15 @@ router.put(
         SET code = $1,
             name = $2,
             area = $3,
-            address = $4,
-            latitude = $5,
-            longitude = $6
-        WHERE id = $7
-        RETURNING id, code, name, area, address, latitude, longitude
+            region = $4,
+            division = $5,
+            address = $6,
+            latitude = $7,
+            longitude = $8
+        WHERE id = $9
+        RETURNING id, code, name, area, region, division, address, latitude, longitude
         `,
-        [code, name, area, address, latitude, longitude, id]
+        [code, name, area, region, division, address, latitude, longitude, id]
       );
 
       if (upd.rowCount === 0) return res.status(404).json({ message: "Branch not found" });

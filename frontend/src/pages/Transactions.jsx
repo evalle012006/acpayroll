@@ -21,6 +21,7 @@ export default function Transactions() {
 
   const isAdmin = role === "admin";
   const isBranchManager = role === "branch manager";
+  const isAreaManager = role === "area manager";
 
   const go = (path) => navigate(path);
 
@@ -31,55 +32,55 @@ export default function Transactions() {
       title: "Transfer Staff Order",
       desc: "Move staff to another branch/area.",
       path: "/transactions/transfer",
-      roles: ["admin", "hr", "accounting"],
+      roles: ["admin", "hr", "accounting","area manager", "regional manager", "assistant vice president","vice president", "senior vice president", "president"],
     },
     {
       title: "Leave Requests",
       desc: "Create and manage leave requests.",
       path: "/transactions/leave",
-      roles: ["admin", "hr", "accounting", "branch manager"],
+      roles: ["admin", "hr", "accounting", "area manager", "regional manager", "assistant vice president", "vice president", "senior vice president", "president"],
     },
     {
       title: "Promotion Order",
       desc: "Change position and/or salary upward.",
       path: "/transactions/promotion",
-      roles: ["admin", "hr", "accounting"],
+      roles: ["admin", "hr", "accounting", "assistant vice president", "vice president", "senior vice president", "president"],
     },
     {
       title: "Demotion Order",
       desc: "Adjust role/position downward.",
       path: "/transactions/demotion",
-      roles: ["admin", "hr", "accounting"],
+      roles: ["admin", "hr", "accounting", "assistant vice president", "senior vice president", "vice president", "president"],
     },
     {
       title: "Deployment Order",
       desc: "Staff newly hired / service recommence.",
       path: "/transactions/deployment",
-      roles: ["admin", "hr", "accounting", "branch manager"],
+      roles: ["admin", "hr", "accounting", "branch manager", "area manager", "regional manager", "assistant vice president", "vice president", "senior vice president", "president"],
     },
     {
       title: "Suspension Order",
       desc: "Temporarily suspend staff work.",
       path: "/transactions/suspension",
-      roles: ["admin", "hr", "accounting"],
+      roles: ["admin", "hr", "accounting", "vice president", "senior vice president", "president"],
     },
     {
       title: "Statement of Accounts",
       desc: "Exit staff last pay / liabilities.",
       path: "/transactions/soa",
-      roles: ["admin", "hr", "accounting"],
+      roles: ["admin", "hr", "accounting", "vice president", "senior vice president", "president"],
     },
     {
       title: "Exit Staff",
       desc: "Process resignation or termination.",
       path: "/transactions/exit",
-      roles: ["admin", "hr", "accounting"],
+      roles: ["admin", "hr", "accounting", "vice president", "senior vice president", "president"],
     },
     {
       title: "SBF Order",
       desc: "Staff Benevolent Fund request.",
       path: "/transactions/sbf",
-      roles: ["admin", "hr", "accounting"],
+      roles: ["admin", "hr", "accounting", "vice president", "senior vice president", "president"],
     },
   ];
 

@@ -136,7 +136,7 @@ function AppShell() {
       <Route
         path="/staff-information"
         element={
-          <ProtectedRoute allowedRoles={["admin", "branch manager", "accounting", "hr", "area manager", "regional manager", "assistant vice president"]}>
+          <ProtectedRoute allowedRoles={["admin", "branch manager", "accounting", "hr", "area manager", "regional manager", "assistant vice president", "president"]}>
             <ProtectedLayout>
               <StaffInformation />
             </ProtectedLayout>
@@ -147,7 +147,7 @@ function AppShell() {
       <Route
         path="/salary"
         element={
-          <ProtectedRoute allowedRoles={["admin", "accounting", "hr"]}>
+          <ProtectedRoute allowedRoles={["admin", "accounting", "hr", "president", "assistant vice president", "senior vice president", "vice president"]}>
             <ProtectedLayout>
               <Salary />
             </ProtectedLayout>
@@ -158,7 +158,7 @@ function AppShell() {
       <Route
         path="/payroll/:branchId"
         element={
-          <ProtectedRoute allowedRoles={["admin", "branch manager", "accounting", "hr", "area manager", "regional manager", "assistant vice president"]}>
+          <ProtectedRoute allowedRoles={["admin", "branch manager", "accounting", "hr", "area manager", "regional manager", "assistant vice president","vice president", "senior vice president", "president"]}>
             <ProtectedLayout>
               <Payroll />
             </ProtectedLayout>
@@ -169,7 +169,7 @@ function AppShell() {
       <Route
         path="/profile"
         element={
-          <ProtectedRoute allowedRoles={["admin", "branch manager", "accounting", "hr", "area manager", "regional manager", "assistant vice president"]}>
+          <ProtectedRoute allowedRoles={["admin", "branch manager", "accounting", "hr", "area manager", "regional manager", "assistant vice president","vice president", "senior vice president", "president"]}>
             <ProtectedLayout>
               <Profile />
             </ProtectedLayout>
@@ -180,7 +180,7 @@ function AppShell() {
       <Route
         path="/settings"
         element={
-          <ProtectedRoute allowedRoles={["admin", "branch manager", "accounting", "hr", "area manager", "regional manager", "assistant vice president"]}>
+          <ProtectedRoute allowedRoles={["admin", "branch manager", "accounting", "hr", "area manager", "regional manager", "assistant vice president", "vice president", "senior vice president", "president"]}>
             <ProtectedLayout>
               <Settings />
             </ProtectedLayout>
@@ -191,7 +191,7 @@ function AppShell() {
       <Route
         path="/dashboard"
         element={
-          <ProtectedRoute allowedRoles={["admin", "branch manager", "accounting", "hr", "area manager", "regional manager", "assistant vice president"]}>
+          <ProtectedRoute allowedRoles={["admin", "branch manager", "accounting", "hr", "area manager", "regional manager", "assistant vice president", "vice president", "senior vice president", "president"]}>
             <ProtectedLayout>
               <Dashboard />
             </ProtectedLayout>
@@ -202,7 +202,7 @@ function AppShell() {
       <Route
         path="/payroll"
         element={
-          <ProtectedRoute allowedRoles={["admin", "accounting", "hr", "branch manager", "area manager", "regional manager", "assistant vice president"]}>
+          <ProtectedRoute allowedRoles={["admin", "accounting", "hr", "branch manager", "area manager", "regional manager", "assistant vice president", "vice president", "senior vice president", "president"]}>
             <ProtectedLayout>
               <Payroll />
             </ProtectedLayout>
@@ -213,7 +213,7 @@ function AppShell() {
       <Route
         path="/staff"
         element={
-          <ProtectedRoute allowedRoles={["admin", "accounting", "hr"]}>
+          <ProtectedRoute allowedRoles={["admin", "accounting", "hr", "president", "vice president", "senior vice president"]}>
             <ProtectedLayout>
               <Staff />
             </ProtectedLayout>
@@ -224,7 +224,7 @@ function AppShell() {
       <Route
         path="/transportation/:id"
         element={
-          <ProtectedRoute allowedRoles={["admin", "branch manager", "accounting", "hr", "area manager", "regional manager", "assistant vice president"]}>
+          <ProtectedRoute allowedRoles={["admin", "branch manager", "accounting", "hr", "area manager", "regional manager", "assistant vice president","vice president", "senior vice president", "president"]}>
             <ProtectedLayout>
               <Transportation />
             </ProtectedLayout>
@@ -235,7 +235,7 @@ function AppShell() {
       <Route
         path="/schedule-balances"
         element={
-          <ProtectedRoute allowedRoles={["admin", "accounting", "hr", "branch manager", "area manager", "regional manager", "assistant vice president"]}>
+          <ProtectedRoute allowedRoles={["admin", "accounting", "hr", "branch manager", "area manager", "regional manager", "assistant vice president", "vice president", "senior vice president", "president"]}>
             <ProtectedLayout>
               <ScheduleBalances />
             </ProtectedLayout>
@@ -246,7 +246,7 @@ function AppShell() {
       <Route
         path="/approval"
         element={
-          <ProtectedRoute allowedRoles={["admin", "accounting", "hr", "area manager", "regional manager", "assistant vice president"]}>
+          <ProtectedRoute allowedRoles={["admin", "accounting", "hr", "area manager", "regional manager", "assistant vice president", "vice president", "senior vice president", "president"]}>
             <ProtectedLayout>
               <Approval />
             </ProtectedLayout>
@@ -257,7 +257,7 @@ function AppShell() {
       <Route
         path="/branches"
         element={
-          <ProtectedRoute allowedRoles={["admin", "accounting", "hr", "branch manager", "area manager", "regional manager", "assistant vice president"]}>
+          <ProtectedRoute allowedRoles={["admin", "accounting", "hr", "branch manager", "area manager", "regional manager", "assistant vice president", "vice president", "senior vice president", "president"]}>
             <ProtectedLayout>
               <Branches />
             </ProtectedLayout>
@@ -268,7 +268,7 @@ function AppShell() {
       <Route
         path="/departments"
         element={
-          <ProtectedRoute allowedRoles={["admin", "accounting", "hr"]}>
+          <ProtectedRoute allowedRoles={["admin", "accounting", "hr", "vice president", "senior vice president", "president"]}>
             <ProtectedLayout>
               <Departments />
             </ProtectedLayout>
@@ -279,7 +279,7 @@ function AppShell() {
       <Route
         path="/bonus/:branchId"
         element={
-          <ProtectedRoute allowedRoles={["admin", "branch manager", "accounting", "hr", "area manager", "regional manager", "assistant vice president"]}>
+          <ProtectedRoute allowedRoles={["admin", "branch manager", "accounting", "hr", "area manager", "regional manager", "assistant vice president", "vice president", "senior vice president", "president"]}>
             <ProtectedLayout>
               <Bonus />
             </ProtectedLayout>
@@ -290,7 +290,7 @@ function AppShell() {
       <Route
         path="/system-update"
         element={
-          <ProtectedRoute allowedRoles={["admin", "accounting", "hr"]}>
+          <ProtectedRoute allowedRoles={["admin", "accounting", "hr", "president"]}>
             <ProtectedLayout>
               <SystemUpdate />
             </ProtectedLayout>
@@ -301,7 +301,7 @@ function AppShell() {
       <Route
         path="/system-update/rates"
         element={
-          <ProtectedRoute allowedRoles={["admin", "accounting", "hr"]}>
+          <ProtectedRoute allowedRoles={["admin", "accounting", "hr", "president"]}>
             <ProtectedLayout>
               <SystemRates />
             </ProtectedLayout>
@@ -312,7 +312,7 @@ function AppShell() {
       <Route
         path="/users"
         element={
-          <ProtectedRoute allowedRoles={["admin"]}>
+          <ProtectedRoute allowedRoles={["admin", "president"]}>
             <ProtectedLayout>
               <Users />
             </ProtectedLayout>
@@ -323,7 +323,7 @@ function AppShell() {
       <Route
         path="/transactions"
         element={
-          <ProtectedRoute allowedRoles={["admin", "accounting", "hr", "branch manager", "area manager", "regional manager", "assistant vice president"]}>
+          <ProtectedRoute allowedRoles={["admin", "accounting", "hr", "branch manager", "area manager", "regional manager", "assistant vice president", "vice president", "senior vice president", "president"]}>
             <ProtectedLayout>
               <Transactions />
             </ProtectedLayout>
@@ -334,7 +334,7 @@ function AppShell() {
       <Route
         path="/transactions/promotion"
         element={
-          <ProtectedRoute allowedRoles={["admin", "accounting", "hr", "regional manager", "assistant vice president"]}>
+          <ProtectedRoute allowedRoles={["admin", "accounting", "hr", "regional manager", "assistant vice president", "vice president", "senior vice president", "president"]}>
             <ProtectedLayout>
               <PromotionOrder />
             </ProtectedLayout>
@@ -345,7 +345,7 @@ function AppShell() {
       <Route
         path="/transactions/transfer"
         element={
-          <ProtectedRoute allowedRoles={["admin", "accounting", "hr", "area manager", "regional manager", "assistant vice president"]}>
+          <ProtectedRoute allowedRoles={["admin", "accounting", "hr", "area manager", "regional manager", "assistant vice president", "vice president", "senior vice president", "president"]}>
             <ProtectedLayout>
               <TransferStaffOrder />
             </ProtectedLayout>
@@ -356,7 +356,7 @@ function AppShell() {
       <Route
         path="/transactions/demotion"
         element={
-          <ProtectedRoute allowedRoles={["admin", "accounting", "hr", "area manager", "regional manager", "assistant vice president"]}>
+          <ProtectedRoute allowedRoles={["admin", "accounting", "hr", "area manager", "regional manager", "assistant vice president", "vice president", "senior vice president", "president"]}>
             <ProtectedLayout>
               <DemotionOrder />
             </ProtectedLayout>
@@ -367,7 +367,7 @@ function AppShell() {
       <Route
         path="/transactions/suspension"
         element={
-          <ProtectedRoute allowedRoles={["admin", "accounting", "hr", "area manager", "regional manager", "assistant vice president"]}>
+          <ProtectedRoute allowedRoles={["admin", "accounting", "hr", "area manager", "regional manager", "assistant vice president", "vice president", "senior vice president", "president"]}>
             <ProtectedLayout>
               <SuspensionOrder />
             </ProtectedLayout>
@@ -378,7 +378,7 @@ function AppShell() {
       <Route
         path="/transactions/exit"
         element={
-          <ProtectedRoute allowedRoles={["admin", "accounting", "hr"]}>
+          <ProtectedRoute allowedRoles={["admin", "accounting", "hr", "vice president", "senior vice president", "president"]}>
             <ProtectedLayout>
               <ExitStaffOrders />
             </ProtectedLayout>
@@ -389,7 +389,7 @@ function AppShell() {
       <Route
         path="/transactions/leave"
         element={
-          <ProtectedRoute allowedRoles={["admin", "accounting", "hr", "branch manager", "area manager", "regional manager", "assistant vice president"]}>
+          <ProtectedRoute allowedRoles={["admin", "accounting", "hr", "branch manager", "area manager", "regional manager", "assistant vice president", "vice president", "senior vice president", "president"]}>
             <ProtectedLayout>
               <LeaveTransactions />
             </ProtectedLayout>
@@ -400,7 +400,7 @@ function AppShell() {
       <Route
         path="/transactions/soa"
         element={
-          <ProtectedRoute allowedRoles={["admin", "accounting", "hr"]}>
+          <ProtectedRoute allowedRoles={["admin", "accounting", "hr", "vice president", "senior vice president", "president"]}>
             <ProtectedLayout>
               <Soa />
             </ProtectedLayout>
@@ -411,7 +411,7 @@ function AppShell() {
       <Route
         path="/transactions/deployment"
         element={
-          <ProtectedRoute allowedRoles={["admin", "accounting", "hr", "branch manager", "area manager", "regional manager", "assistant vice president"]}>
+          <ProtectedRoute allowedRoles={["admin", "accounting", "hr", "branch manager", "area manager", "regional manager", "assistant vice president", "vice president", "senior vice president", "president"]}>
             <ProtectedLayout>
               <Deployment />
             </ProtectedLayout>
@@ -422,7 +422,7 @@ function AppShell() {
       <Route
         path="/exit-staff"
         element={
-          <ProtectedRoute allowedRoles={["admin", "accounting", "hr"]}>
+          <ProtectedRoute allowedRoles={["admin", "accounting", "hr", "vice president", "senior vice president", "president"]}>
             <ProtectedLayout>
               <ExitStaff />
             </ProtectedLayout>
@@ -433,7 +433,7 @@ function AppShell() {
       <Route
         path="/exit-staff-orders"
         element={
-          <ProtectedRoute allowedRoles={["admin", "accounting", "hr"]}>
+          <ProtectedRoute allowedRoles={["admin", "accounting", "hr", "vice president", "senior vice president", "president"]}>
             <ProtectedLayout>
               <ExitStaffOrders />
             </ProtectedLayout>
@@ -444,7 +444,7 @@ function AppShell() {
       <Route
         path="/transactions/sbf"
         element={
-          <ProtectedRoute allowedRoles={["admin", "accounting", "hr"]}>
+          <ProtectedRoute allowedRoles={["admin", "accounting", "hr", "vice president", "senior vice president", "president"]}>
             <ProtectedLayout>
               <SbfOrder />
             </ProtectedLayout>
@@ -455,7 +455,7 @@ function AppShell() {
       <Route
         path="/reports"
         element={
-          <ProtectedRoute allowedRoles={["admin", "accounting", "hr"]}>
+          <ProtectedRoute allowedRoles={["admin", "accounting", "hr", "vice president", "senior vice president", "president"]}>
             <ProtectedLayout>
               <Reports />
             </ProtectedLayout>
@@ -466,7 +466,7 @@ function AppShell() {
       <Route
         path="/system-update/area-configurations"
         element={
-          <ProtectedRoute allowedRoles={["admin", "accounting", "hr"]}>
+          <ProtectedRoute allowedRoles={["admin", "accounting", "hr", "president"]}>
             <ProtectedLayout>
               <AreaConfigurations />
             </ProtectedLayout>
@@ -477,7 +477,7 @@ function AppShell() {
       <Route
         path="/system-update/consolidation"
         element={
-          <ProtectedRoute allowedRoles={["admin", "accounting", "hr"]}>
+          <ProtectedRoute allowedRoles={["admin", "accounting", "hr", "president"]}>
             <ProtectedLayout>
               <Consolidation />
             </ProtectedLayout>
@@ -488,7 +488,7 @@ function AppShell() {
       <Route
         path="/system-update/tax-calculator"
         element={
-          <ProtectedRoute allowedRoles={["admin", "accounting", "hr"]}>
+          <ProtectedRoute allowedRoles={["admin", "accounting", "hr", "president"]}>
             <ProtectedLayout>
               <TaxCalculator />
             </ProtectedLayout>
@@ -499,7 +499,7 @@ function AppShell() {
       <Route
         path="/logistic"
         element={
-          <ProtectedRoute allowedRoles={["admin", "accounting", "hr"]}>
+          <ProtectedRoute allowedRoles={["admin", "accounting", "hr", "area manager", "regional manager", "assitant vice president", "vice president", "senior vice president", "president"]}>
             <ProtectedLayout>
               <Logistic />
             </ProtectedLayout>
@@ -510,7 +510,7 @@ function AppShell() {
       <Route
         path="/system-update/details-compensation"
         element={
-          <ProtectedRoute allowedRoles={["admin", "accounting", "hr"]}>
+          <ProtectedRoute allowedRoles={["admin", "accounting", "hr", "president"]}>
             <ProtectedLayout>
               <DetailsCompensation />
             </ProtectedLayout>

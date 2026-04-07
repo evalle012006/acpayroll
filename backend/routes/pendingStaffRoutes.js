@@ -3,6 +3,7 @@ const router = express.Router();
 const pool = require("../db");
 const { requireAuth, requireRole } = require("../middlewares/authMiddleware");
 
+/* ================= HELPERS ================= */
 const toInt = (v) => {
   const n = Number(v);
   return Number.isInteger(n) ? n : null;
@@ -21,12 +22,21 @@ const asObject = (v) => {
   }
 };
 
+const roleLower = (req) => toStr(req.user?.role).toLowerCase();
+const isBranchManager = (req) => roleLower(req) === "branch manager";
+
+/* =========================================================
+   GET ALL PENDING STAFF
+   (Branch Manager = only their branch)
+========================================================= */
 router.get(
   "/pending-staff",
   requireAuth,
   requireRole(["admin", "hr", "accounting", "branch manager"]),
-  async (_req, res) => {
+  async (req, res) => {
     try {
+      const userBranch = toStr(req.user?.branch_id);
+
       const result = await pool.query(`
         SELECT
           id,
@@ -43,13 +53,21 @@ router.get(
         ORDER BY created_at DESC, id DESC
       `);
 
-      const rows = result.rows.map((row) => {
+      let rows = result.rows.map((row) => {
         const payload = asObject(row.payload);
         return {
           ...row,
           payload,
         };
       });
+
+      /* 🔥 FILTER FOR BRANCH MANAGER */
+      if (isBranchManager(req)) {
+        rows = rows.filter((r) => {
+          const branch = toStr(r.payload?.branch_id || r.payload?.branch_code);
+          return branch === userBranch;
+        });
+      }
 
       return res.json(rows);
     } catch (err) {
@@ -59,6 +77,9 @@ router.get(
   }
 );
 
+/* =========================================================
+   GET ONE
+========================================================= */
 router.get(
   "/pending-staff/:id",
   requireAuth,
@@ -72,16 +93,7 @@ router.get(
 
       const result = await pool.query(
         `
-        SELECT
-          id,
-          payload,
-          status,
-          created_by,
-          approved_by,
-          approved_at,
-          rejected_at,
-          rejection_reason,
-          created_at
+        SELECT *
         FROM public.pending_staff_requests
         WHERE id = $1
         LIMIT 1
@@ -94,10 +106,21 @@ router.get(
       }
 
       const row = result.rows[0];
+      const payload = asObject(row.payload);
+
+      /* 🔥 BRANCH MANAGER RESTRICTION */
+      if (isBranchManager(req)) {
+        const userBranch = toStr(req.user?.branch_id);
+        const branch = toStr(payload?.branch_id || payload?.branch_code);
+
+        if (branch !== userBranch) {
+          return res.status(403).json({ message: "Access denied" });
+        }
+      }
 
       return res.json({
         ...row,
-        payload: asObject(row.payload),
+        payload,
       });
     } catch (err) {
       console.error("GET /pending-staff/:id error:", err);
@@ -106,6 +129,9 @@ router.get(
   }
 );
 
+/* =========================================================
+   UPDATE (EDIT)
+========================================================= */
 router.put(
   "/pending-staff/:id",
   requireAuth,
@@ -135,6 +161,18 @@ router.put(
 
       if (norm(existing.status) !== "pending") {
         return res.status(400).json({ message: "Only pending requests can be edited" });
+      }
+
+      const payloadOld = asObject(existing.payload);
+
+      /* 🔥 BRANCH MANAGER CAN ONLY EDIT OWN BRANCH */
+      if (isBranchManager(req)) {
+        const userBranch = toStr(req.user?.branch_id);
+        const branch = toStr(payloadOld?.branch_id || payloadOld?.branch_code);
+
+        if (branch !== userBranch) {
+          return res.status(403).json({ message: "Access denied" });
+        }
       }
 
       const incoming = req.body?.payload ?? req.body ?? {};
@@ -172,16 +210,7 @@ router.put(
         UPDATE public.pending_staff_requests
         SET payload = $1::jsonb
         WHERE id = $2
-        RETURNING
-          id,
-          payload,
-          status,
-          created_by,
-          approved_by,
-          approved_at,
-          rejected_at,
-          rejection_reason,
-          created_at
+        RETURNING *
         `,
         [JSON.stringify(payload), id]
       );
@@ -200,6 +229,9 @@ router.put(
   }
 );
 
+/* =========================================================
+   APPROVE (ADMIN ONLY)
+========================================================= */
 router.put(
   "/pending-staff/:id/approve",
   requireAuth,
@@ -228,7 +260,9 @@ router.put(
       );
 
       if (!result.rows.length) {
-        return res.status(404).json({ message: "Pending staff request not found or already processed" });
+        return res.status(404).json({
+          message: "Pending staff request not found or already processed",
+        });
       }
 
       return res.json({ message: "Pending staff approved successfully" });
@@ -239,6 +273,9 @@ router.put(
   }
 );
 
+/* =========================================================
+   REJECT (ADMIN ONLY)
+========================================================= */
 router.put(
   "/pending-staff/:id/reject",
   requireAuth,
@@ -269,7 +306,9 @@ router.put(
       );
 
       if (!result.rows.length) {
-        return res.status(404).json({ message: "Pending staff request not found or already processed" });
+        return res.status(404).json({
+          message: "Pending staff request not found or already processed",
+        });
       }
 
       return res.json({ message: "Pending staff rejected successfully" });

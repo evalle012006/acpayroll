@@ -35,7 +35,13 @@ const norm = (v) => String(v ?? "").trim().toLowerCase();
 
 export default function Approval() {
   const user = useMemo(() => readUser(), []);
-  const isAdmin = norm(user?.role) === "admin";
+  const role = norm(user?.role);
+
+  const isAdmin = role === "admin";
+  const isAreaManager = role === "area manager";
+
+  const canViewSAP = !isAreaManager;
+  const canCreateSAP = isAdmin || role === "branch manager";
 
   const [loanRequests, setLoanRequests] = useState([]);
   const [sapRows, setSapRows] = useState([]);
@@ -144,8 +150,13 @@ export default function Approval() {
     fetchStaff();
     fetchBranches();
     fetchLoan();
-    fetchSap();
-  }, [user, fetchStaff, fetchBranches, fetchLoan, fetchSap]);
+
+    if (canViewSAP) {
+      fetchSap();
+    } else {
+      setSapRows([]);
+    }
+  }, [user, canViewSAP, fetchStaff, fetchBranches, fetchLoan, fetchSap]);
 
   useEffect(() => {
     const isOpen = showLoanModal || showSapModal || showCreateLoan || showCreateSAP;
@@ -441,9 +452,12 @@ export default function Approval() {
           <button className="btn-primary" onClick={() => setShowCreateLoan(true)} type="button">
             + Add Loan
           </button>
-          <button className="btn-secondary" onClick={() => setShowCreateSAP(true)} type="button">
-            + Staff Accounts Payable
-          </button>
+
+          {canCreateSAP && (
+            <button className="btn-secondary" onClick={() => setShowCreateSAP(true)} type="button">
+              + Staff Accounts Payable
+            </button>
+          )}
         </div>
       </div>
 
@@ -467,24 +481,26 @@ export default function Approval() {
           </div>
         </div>
 
-        <div className="approval-card">
-          <div className="approval-card-head">
-            <div>
-              <div className="approval-card-title">Staff Accounts Payable</div>
-              <div className="approval-card-meta">
-                Pending: <span className="pill">{sapPendingCount}</span>
+        {canViewSAP && (
+          <div className="approval-card">
+            <div className="approval-card-head">
+              <div>
+                <div className="approval-card-title">Staff Accounts Payable</div>
+                <div className="approval-card-meta">
+                  Pending: <span className="pill">{sapPendingCount}</span>
+                </div>
+              </div>
+              <button className="btn-primary" onClick={() => setShowSapModal(true)} type="button">
+                View
+              </button>
+            </div>
+            <div className="approval-card-body">
+              <div className="mini">
+                {loadingSap ? "Loading SAP..." : "Create payable records and approve/reject them."}
               </div>
             </div>
-            <button className="btn-primary" onClick={() => setShowSapModal(true)} type="button">
-              View
-            </button>
           </div>
-          <div className="approval-card-body">
-            <div className="mini">
-              {loadingSap ? "Loading SAP..." : "Create payable records and approve/reject them."}
-            </div>
-          </div>
-        </div>
+        )}
       </div>
 
       {showCreateLoan && (
@@ -630,7 +646,7 @@ export default function Approval() {
         </div>
       )}
 
-      {showCreateSAP && (
+      {canCreateSAP && showCreateSAP && (
         <div
           className="modal-overlay"
           onMouseDown={(e) => e.target.classList.contains("modal-overlay") && setShowCreateSAP(false)}
@@ -857,7 +873,7 @@ export default function Approval() {
         </div>
       )}
 
-      {showSapModal && (
+      {canViewSAP && showSapModal && (
         <div
           className="modal-overlay"
           onMouseDown={(e) => e.target.classList.contains("modal-overlay") && setShowSapModal(false)}

@@ -20,7 +20,10 @@ const isAdmin = (req) => roleLower(req) === "admin";
 const isHr = (req) => roleLower(req) === "hr";
 const isAccounting = (req) => roleLower(req) === "accounting";
 const isBranchManager = (req) => roleLower(req) === "branch manager";
+const isAreaManager = (req) => roleLower(req) === "area manager";
+
 const getUserBranchCode = (req) => toStr(req.user?.branch_id);
+const getUserArea = (req) => toStr(req.user?.area);
 
 async function getBranchByCode(client, branchCode) {
   const code = toStr(branchCode);
@@ -39,22 +42,45 @@ async function getBranchByCode(client, branchCode) {
   return r.rowCount ? r.rows[0] : null;
 }
 
+async function getManagerBranch(client, req) {
+  const managerBranchCode = getUserBranchCode(req);
+  if (!managerBranchCode) return null;
+  return await getBranchByCode(client, managerBranchCode);
+}
+
 async function assertStaffInManagersBranch(req, client, employeeId) {
   if (!isBranchManager(req)) return true;
 
-  const managerBranchCode = getUserBranchCode(req);
-  if (!managerBranchCode) return false;
-
-  const managerBranch = await getBranchByCode(client, managerBranchCode);
+  const managerBranch = await getManagerBranch(client, req);
   if (!managerBranch?.id) return false;
 
   const r = await client.query(
     `
     SELECT id
     FROM public.staff
-    WHERE id = $1 AND branch_id = $2
+    WHERE id = $1
+      AND branch_id = $2
     `,
     [employeeId, managerBranch.id]
+  );
+
+  return r.rowCount > 0;
+}
+
+async function assertStaffInManagersArea(req, client, employeeId) {
+  if (!isAreaManager(req)) return true;
+
+  const userArea = getUserArea(req);
+  if (!userArea) return false;
+
+  const r = await client.query(
+    `
+    SELECT id
+    FROM public.staff
+    WHERE id = $1
+      AND LOWER(TRIM(COALESCE(area, ''))) = LOWER(TRIM($2))
+    `,
+    [employeeId, userArea]
   );
 
   return r.rowCount > 0;
@@ -65,6 +91,7 @@ async function assertStaffInManagersBranch(req, client, employeeId) {
 ========================================================= */
 router.get("/deployments", requireAuth, async (req, res) => {
   const client = await pool.connect();
+
   try {
     if (isAdmin(req) || isHr(req) || isAccounting(req)) {
       const r = await client.query(`
@@ -72,11 +99,12 @@ router.get("/deployments", requireAuth, async (req, res) => {
         FROM public.deployment_orders
         ORDER BY id DESC
       `);
+
       return res.json(r.rows);
     }
 
     if (isBranchManager(req)) {
-      const managerBranch = await getBranchByCode(client, getUserBranchCode(req));
+      const managerBranch = await getManagerBranch(client, req);
       if (!managerBranch?.id) return res.json([]);
 
       const r = await client.query(
@@ -87,6 +115,24 @@ router.get("/deployments", requireAuth, async (req, res) => {
         ORDER BY id DESC
         `,
         [managerBranch.id]
+      );
+
+      return res.json(r.rows);
+    }
+
+    if (isAreaManager(req)) {
+      const userArea = getUserArea(req);
+      if (!userArea) return res.json([]);
+
+      const r = await client.query(
+        `
+        SELECT d.*
+        FROM public.deployment_orders d
+        JOIN public.staff s ON s.id = d.employee_id
+        WHERE LOWER(TRIM(COALESCE(s.area, ''))) = LOWER(TRIM($1))
+        ORDER BY d.id DESC
+        `,
+        [userArea]
       );
 
       return res.json(r.rows);
@@ -106,6 +152,7 @@ router.get("/deployments", requireAuth, async (req, res) => {
 ========================================================= */
 router.get("/deployments/:id", requireAuth, async (req, res) => {
   const client = await pool.connect();
+
   try {
     const id = toInt(req.params.id);
     if (!id) return res.status(400).json({ message: "Invalid id" });
@@ -120,24 +167,55 @@ router.get("/deployments/:id", requireAuth, async (req, res) => {
         [id]
       );
 
-      if (r.rowCount === 0) return res.status(404).json({ message: "Not found" });
+      if (r.rowCount === 0) {
+        return res.status(404).json({ message: "Not found" });
+      }
+
       return res.json(r.rows[0]);
     }
 
     if (isBranchManager(req)) {
-      const managerBranch = await getBranchByCode(client, getUserBranchCode(req));
-      if (!managerBranch?.id) return res.status(403).json({ message: "Access denied" });
+      const managerBranch = await getManagerBranch(client, req);
+      if (!managerBranch?.id) {
+        return res.status(403).json({ message: "Access denied" });
+      }
 
       const r = await client.query(
         `
         SELECT *
         FROM public.deployment_orders
-        WHERE id = $1 AND branch_id = $2
+        WHERE id = $1
+          AND branch_id = $2
         `,
         [id, managerBranch.id]
       );
 
-      if (r.rowCount === 0) return res.status(404).json({ message: "Not found" });
+      if (r.rowCount === 0) {
+        return res.status(404).json({ message: "Not found" });
+      }
+
+      return res.json(r.rows[0]);
+    }
+
+    if (isAreaManager(req)) {
+      const userArea = getUserArea(req);
+      if (!userArea) return res.status(403).json({ message: "Access denied" });
+
+      const r = await client.query(
+        `
+        SELECT d.*
+        FROM public.deployment_orders d
+        JOIN public.staff s ON s.id = d.employee_id
+        WHERE d.id = $1
+          AND LOWER(TRIM(COALESCE(s.area, ''))) = LOWER(TRIM($2))
+        `,
+        [id, userArea]
+      );
+
+      if (r.rowCount === 0) {
+        return res.status(404).json({ message: "Not found" });
+      }
+
       return res.json(r.rows[0]);
     }
 
@@ -156,9 +234,10 @@ router.get("/deployments/:id", requireAuth, async (req, res) => {
 router.get(
   "/deployment-orders/staff/:id",
   requireAuth,
-  requireRole(["admin", "hr", "accounting", "branch manager"]),
+  requireRole(["admin", "hr", "accounting", "branch manager", "area manager"]),
   async (req, res) => {
     const client = await pool.connect();
+
     try {
       const employeeId = toInt(req.params.id);
       if (!employeeId) {
@@ -167,6 +246,13 @@ router.get(
 
       if (isBranchManager(req)) {
         const ok = await assertStaffInManagersBranch(req, client, employeeId);
+        if (!ok) {
+          return res.status(403).json({ message: "Access denied" });
+        }
+      }
+
+      if (isAreaManager(req)) {
+        const ok = await assertStaffInManagersArea(req, client, employeeId);
         if (!ok) {
           return res.status(403).json({ message: "Access denied" });
         }
@@ -198,9 +284,10 @@ router.get(
 router.post(
   "/deployments",
   requireAuth,
-  requireRole(["admin", "branch manager"]),
+  requireRole(["admin", "branch manager", "area manager"]),
   async (req, res) => {
     const client = await pool.connect();
+
     try {
       await client.query("BEGIN");
 
@@ -224,10 +311,20 @@ router.post(
         return res.status(400).json({ message: "Deployment date is required" });
       }
 
-      const ok = await assertStaffInManagersBranch(req, client, employee_id);
-      if (!ok) {
-        await client.query("ROLLBACK");
-        return res.status(403).json({ message: "Access denied" });
+      if (isBranchManager(req)) {
+        const ok = await assertStaffInManagersBranch(req, client, employee_id);
+        if (!ok) {
+          await client.query("ROLLBACK");
+          return res.status(403).json({ message: "Access denied" });
+        }
+      }
+
+      if (isAreaManager(req)) {
+        const ok = await assertStaffInManagersArea(req, client, employee_id);
+        if (!ok) {
+          await client.query("ROLLBACK");
+          return res.status(403).json({ message: "Access denied" });
+        }
       }
 
       const s = await client.query(
@@ -271,7 +368,7 @@ router.post(
           )
         VALUES
           (
-            $1,$2,$3,$4,$5,$6,$7,$8,$9::date,$10,'Pending',$11
+            $1, $2, $3, $4, $5, $6, $7, $8, $9::date, $10, 'Pending', $11
           )
         RETURNING *;
         `,
@@ -308,9 +405,10 @@ router.post(
 router.put(
   "/deployments/:id",
   requireAuth,
-  requireRole(["admin", "branch manager"]),
+  requireRole(["admin", "branch manager", "area manager"]),
   async (req, res) => {
     const client = await pool.connect();
+
     try {
       await client.query("BEGIN");
 
@@ -343,6 +441,14 @@ router.put(
 
       if (isBranchManager(req)) {
         const ok = await assertStaffInManagersBranch(req, client, row.employee_id);
+        if (!ok) {
+          await client.query("ROLLBACK");
+          return res.status(403).json({ message: "Access denied" });
+        }
+      }
+
+      if (isAreaManager(req)) {
+        const ok = await assertStaffInManagersArea(req, client, row.employee_id);
         if (!ok) {
           await client.query("ROLLBACK");
           return res.status(403).json({ message: "Access denied" });
@@ -418,7 +524,9 @@ router.delete(
         [id]
       );
 
-      if (r.rowCount === 0) return res.status(404).json({ message: "Deployment not found" });
+      if (r.rowCount === 0) {
+        return res.status(404).json({ message: "Deployment not found" });
+      }
 
       return res.json({ message: "Deleted", id: r.rows[0].id });
     } catch (e) {
@@ -437,6 +545,7 @@ router.put(
   requireRole(["admin"]),
   async (req, res) => {
     const client = await pool.connect();
+
     try {
       await client.query("BEGIN");
 
@@ -457,7 +566,8 @@ router.put(
           rejected_at = NULL,
           rejection_reason = NULL,
           updated_at = NOW()
-        WHERE id = $1 AND status = 'Pending'
+        WHERE id = $1
+          AND status = 'Pending'
         RETURNING *;
         `,
         [id, req.user?.id ?? null]

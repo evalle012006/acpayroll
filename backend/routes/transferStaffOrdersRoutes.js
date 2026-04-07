@@ -22,7 +22,10 @@ const isAdmin = (req) => roleLower(req) === "admin";
 const isHr = (req) => roleLower(req) === "hr";
 const isAccounting = (req) => roleLower(req) === "accounting";
 const isBranchManager = (req) => roleLower(req) === "branch manager";
+const isAreaManager = (req) => roleLower(req) === "area manager";
+
 const getUserBranchId = (req) => req.user?.branch_id ?? null;
+const getUserArea = (req) => toStr(req.user?.area);
 
 const displayName = (row) => {
   const ln = toStr(row?.last_name);
@@ -78,6 +81,7 @@ async function generateTransferOrderNo(client) {
 router.get("/transfer-staff-orders", requireAuth, async (req, res) => {
   try {
     const branchId = getUserBranchId(req);
+    const userArea = getUserArea(req);
 
     if (isAdmin(req) || isHr(req) || isAccounting(req)) {
       const r = await pool.query(
@@ -101,6 +105,21 @@ router.get("/transfer-staff-orders", requireAuth, async (req, res) => {
       return res.json(r.rows);
     }
 
+    if (isAreaManager(req)) {
+      if (!userArea) return res.json([]);
+
+      const r = await pool.query(
+        `
+        SELECT *
+        FROM public.transfer_staff_orders
+        WHERE LOWER(TRIM(COALESCE(area, ''))) = LOWER(TRIM($1))
+        ORDER BY created_at DESC
+        `,
+        [userArea]
+      );
+      return res.json(r.rows);
+    }
+
     return res.status(403).json({ message: "Access denied" });
   } catch (e) {
     console.error("GET /api/transfer-staff-orders ERROR:", e.message);
@@ -111,7 +130,7 @@ router.get("/transfer-staff-orders", requireAuth, async (req, res) => {
 router.post(
   "/transfer-staff-orders",
   requireAuth,
-  requireRole(["admin", "branch manager"]),
+  requireRole(["admin", "branch manager", "area manager"]),
   async (req, res) => {
     const client = await pool.connect();
     try {
@@ -170,6 +189,29 @@ router.post(
       if (isBranchManager(req)) {
         const myBranch = getUserBranchId(req);
         if (!myBranch || Number(myBranch) !== Number(prev_branch_id)) {
+          await client.query("ROLLBACK");
+          return res.status(403).json({ message: "Access denied" });
+        }
+      }
+
+      if (isAreaManager(req)) {
+        const myArea = getUserArea(req);
+        if (!myArea || myArea.toLowerCase() !== area.toLowerCase()) {
+          await client.query("ROLLBACK");
+          return res.status(403).json({ message: "Access denied" });
+        }
+
+        const staffAreaCheck = await client.query(
+          `
+          SELECT id
+          FROM public.staff
+          WHERE id = $1
+            AND LOWER(TRIM(COALESCE(area, ''))) = LOWER(TRIM($2))
+          `,
+          [employee_id, myArea]
+        );
+
+        if (staffAreaCheck.rowCount === 0) {
           await client.query("ROLLBACK");
           return res.status(403).json({ message: "Access denied" });
         }

@@ -26,7 +26,32 @@ const fmtDate = (d) => (d ? String(d).split("T")[0] : "-");
 export default function LeaveTransactions() {
   const navigate = useNavigate();
   const user = useMemo(() => readUser(), []);
-  const isAdmin = String(user?.role || "").trim().toLowerCase() === "admin";
+  const role = String(user?.role || "").trim().toLowerCase();
+
+  const isAdmin = role === "admin";
+  const isHr = role === "hr";
+  const isAccounting = role === "accounting";
+  const isAreaManager = role === "area manager";
+  const isBranchManager = role === "branch manager";
+  const isRegionalManager = role === "regional manager";
+  const isAssistantVicePresident = role === "assistant vice president";
+  const isVicePresident = role === "vice president";
+  const isSeniorVicePresident = role === "senior vice president";
+  const isPresident = role === "president";
+
+  // area manager = create + view only, no approve
+  const canApproveLeave = isAdmin || isHr || isAccounting;
+  const canCreateLeave =
+    isAdmin ||
+    isHr ||
+    isAccounting ||
+    isBranchManager ||
+    isAreaManager ||
+    isRegionalManager ||
+    isAssistantVicePresident ||
+    isVicePresident ||
+    isSeniorVicePresident ||
+    isPresident;
 
   const [staffList, setStaffList] = useState([]);
   const [branches, setBranches] = useState([]);
@@ -105,6 +130,7 @@ export default function LeaveTransactions() {
       window.location.href = "/login";
       return;
     }
+
     fetchStaff();
     fetchBranches();
     fetchLeave();
@@ -116,8 +142,10 @@ export default function LeaveTransactions() {
     const onKeyDown = (e) => {
       if (e.key === "Escape") setShowCreateLeave(false);
     };
+
     document.addEventListener("keydown", onKeyDown);
     document.body.style.overflow = "hidden";
+
     return () => {
       document.removeEventListener("keydown", onKeyDown);
       document.body.style.overflow = "";
@@ -127,7 +155,7 @@ export default function LeaveTransactions() {
   const renderEmployeeOptions = () =>
     staffList.map((s) => (
       <option key={s.id} value={s.id}>
-        {(s.employee_no ? `${s.employee_no} - ` : "") + s.fullname}
+        {(s.employee_no ? `${s.employee_no} - ` : "") + (s.fullname || "-")}
       </option>
     ));
 
@@ -165,8 +193,9 @@ export default function LeaveTransactions() {
 
     if (!leaveForm.employee_id) return alert("Select an employee.");
     if (!leaveForm.leave_type) return alert("Select leave type.");
-    if (!leaveForm.start_date || !leaveForm.end_date)
+    if (!leaveForm.start_date || !leaveForm.end_date) {
       return alert("Select start/end date.");
+    }
     if (String(leaveForm.start_date) > String(leaveForm.end_date)) {
       return alert("Start date must be on or before end date.");
     }
@@ -187,6 +216,7 @@ export default function LeaveTransactions() {
       await fetchLeave();
     } catch (err) {
       if (err?.response?.status === 401) return logout();
+      if (err?.response?.status === 403) return alert("Access denied.");
       alert(err?.response?.data?.message || "Failed to submit leave request.");
     } finally {
       setLoadingCreate(false);
@@ -206,9 +236,7 @@ export default function LeaveTransactions() {
 
   const filteredLeave = useMemo(() => {
     return (leaveRequests || []).filter((x) =>
-      selectedLeaveType === "All"
-        ? true
-        : String(x.leave_type) === selectedLeaveType
+      selectedLeaveType === "All" ? true : String(x.leave_type) === selectedLeaveType
     );
   }, [leaveRequests, selectedLeaveType]);
 
@@ -227,30 +255,19 @@ export default function LeaveTransactions() {
         </div>
 
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-          <button
-            className="btn-secondary"
-            onClick={() => navigate(-1)}
-            type="button"
-          >
+          <button className="btn-secondary" onClick={() => navigate(-1)} type="button">
             ← Back
           </button>
 
-          <button
-            className="btn-secondary"
-            onClick={handleRefresh}
-            type="button"
-            disabled={loadingList}
-          >
+          <button className="btn-secondary" onClick={handleRefresh} type="button" disabled={loadingList}>
             {loadingList ? "Refreshing..." : "Refresh"}
           </button>
 
-          <button
-            className="btn-primary"
-            onClick={() => setShowCreateLeave(true)}
-            type="button"
-          >
-            + Add Leave
-          </button>
+          {canCreateLeave && (
+            <button className="btn-primary" onClick={() => setShowCreateLeave(true)} type="button">
+              + Add Leave
+            </button>
+          )}
         </div>
       </div>
 
@@ -304,28 +321,22 @@ export default function LeaveTransactions() {
                     <td>{fmtDate(item.start_date)}</td>
                     <td>{fmtDate(item.end_date)}</td>
                     <td>
-                      <span className={badgeClass(item.status)}>
-                        {item.status}
-                      </span>
+                      <span className={badgeClass(item.status)}>{item.status}</span>
                     </td>
                     <td>
-                      {isAdmin && item.status === "Pending" ? (
+                      {canApproveLeave && item.status === "Pending" ? (
                         <div className="row-actions">
                           <button
                             className="btn-success"
                             type="button"
-                            onClick={() =>
-                              updateLeaveStatus(item.id, "Approved")
-                            }
+                            onClick={() => updateLeaveStatus(item.id, "Approved")}
                           >
                             Approve
                           </button>
                           <button
                             className="btn-danger"
                             type="button"
-                            onClick={() =>
-                              updateLeaveStatus(item.id, "Rejected")
-                            }
+                            onClick={() => updateLeaveStatus(item.id, "Rejected")}
                           >
                             Reject
                           </button>
@@ -341,28 +352,21 @@ export default function LeaveTransactions() {
           </table>
         </div>
       </div>
-      
-      {showCreateLeave && (
+
+      {canCreateLeave && showCreateLeave && (
         <div
           className="modal-overlay"
           onMouseDown={(e) =>
-            e.target.classList.contains("modal-overlay") &&
-            setShowCreateLeave(false)
+            e.target.classList.contains("modal-overlay") && setShowCreateLeave(false)
           }
         >
           <div className="modal saas-modal" onMouseDown={(e) => e.stopPropagation()}>
             <div className="modal-head">
               <div>
                 <h3 className="modal-title">Add Leave Request</h3>
-                <p className="modal-subtitle">
-                  This will be submitted with status: Pending
-                </p>
+                <p className="modal-subtitle">This will be submitted with status: Pending</p>
               </div>
-              <button
-                className="modal-x"
-                type="button"
-                onClick={() => setShowCreateLeave(false)}
-              >
+              <button className="modal-x" type="button" onClick={() => setShowCreateLeave(false)}>
                 ✕
               </button>
             </div>
@@ -375,9 +379,7 @@ export default function LeaveTransactions() {
                     id="employee_id"
                     name="employee_id"
                     value={leaveForm.employee_id}
-                    onChange={(e) =>
-                      handleLeaveEmployeeSelect(e.target.value)
-                    }
+                    onChange={(e) => handleLeaveEmployeeSelect(e.target.value)}
                     required
                   >
                     <option value="">Select Employee</option>
@@ -476,18 +478,10 @@ export default function LeaveTransactions() {
               </div>
 
               <div className="modal-buttons">
-                <button
-                  className="btn-secondary"
-                  type="button"
-                  onClick={() => setShowCreateLeave(false)}
-                >
+                <button className="btn-secondary" type="button" onClick={() => setShowCreateLeave(false)}>
                   Cancel
                 </button>
-                <button
-                  className="btn-primary"
-                  type="submit"
-                  disabled={loadingCreate}
-                >
+                <button className="btn-primary" type="submit" disabled={loadingCreate}>
                   {loadingCreate ? "Submitting..." : "Submit"}
                 </button>
               </div>

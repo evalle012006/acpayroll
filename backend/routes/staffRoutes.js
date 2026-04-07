@@ -59,8 +59,10 @@ const isAccounting = (req) => roleLower(req) === "accounting";
 const isAreaManager = (req) => roleLower(req) === "area manager";
 const isRegionalManager = (req) => roleLower(req) === "regional manager";
 const isAssistantVicePresident = (req) => roleLower(req) === "assistant vice president";
+
 const getUserArea = (req) => toStr(req.user?.area);
 const getUserBranchCode = (req) => toStr(req.user?.branch_id);
+const getUserDivision = (req) => toStr(req.user?.division);
 
 const toJsonbArray = (v) => {
   try {
@@ -143,6 +145,45 @@ async function getBranchIdFromCode(branchCode) {
   return r.rows[0].id;
 }
 
+async function canAccessStaffById(client, req, staffId) {
+  const id = toInt(staffId);
+  if (!id) return false;
+
+  if (isAdmin(req) || isHr(req) || isAccounting(req)) return true;
+
+  const r = await client.query(
+    `
+    SELECT id, branch_id, area, division
+    FROM public.staff
+    WHERE id = $1
+    LIMIT 1
+    `,
+    [id]
+  );
+
+  if (r.rowCount === 0) return false;
+
+  const row = r.rows[0];
+
+  if (isBranchManager(req)) {
+    const branchCode = getUserBranchCode(req);
+    const bid = await getBranchIdFromCode(branchCode);
+    return !!bid && Number(row.branch_id) === Number(bid);
+  }
+
+  if (isAreaManager(req)) {
+    const area = getUserArea(req);
+    return !!area && toStr(row.area).toLowerCase() === area.toLowerCase();
+  }
+
+  if (isRegionalManager(req) || isAssistantVicePresident(req)) {
+    const division = getUserDivision(req);
+    return !!division && toStr(row.division).toLowerCase() === division.toLowerCase();
+  }
+
+  return false;
+}
+
 const staffUploadDir = path.join(__dirname, "..", "uploads", "staff");
 fs.mkdirSync(staffUploadDir, { recursive: true });
 
@@ -157,7 +198,7 @@ const storage = multer.diskStorage({
 
 const upload = multer({ storage, limits: { fileSize: 2 * 1024 * 1024 } });
 
-async function insertStaffFromBody(client, body, options = {}) {
+async function insertStaffFromBody(client, body) {
   const last_name = toStr(body.last_name);
   const first_name = toStr(body.first_name);
   const middle_name = toStr(body.middle_name);
@@ -390,7 +431,7 @@ async function insertStaffFromBody(client, body, options = {}) {
 
 router.get("/staff", requireAuth, async (req, res) => {
   try {
-    if (isAdmin(req) || isHr(req) || isAccounting(req) || isAreaManager(req) || isRegionalManager(req) || isAssistantVicePresident(req)) {
+    if (isAdmin(req) || isHr(req) || isAccounting(req)) {
       const r = await pool.query(`
         SELECT s.*,
                b.name AS branch_name,
@@ -439,6 +480,25 @@ router.get("/staff", requireAuth, async (req, res) => {
         ORDER BY s.id DESC
         `,
         [area]
+      );
+      return res.json(r.rows);
+    }
+
+    if (isRegionalManager(req) || isAssistantVicePresident(req)) {
+      const division = getUserDivision(req);
+      if (!division) return res.json([]);
+
+      const r = await pool.query(
+        `
+        SELECT s.*,
+               b.name AS branch_name,
+               b.code AS branch_code
+        FROM public.staff s
+        LEFT JOIN public.branches b ON b.id = s.branch_id
+        WHERE LOWER(TRIM(COALESCE(s.division, ''))) = LOWER(TRIM($1))
+        ORDER BY s.id DESC
+        `,
+        [division]
       );
       return res.json(r.rows);
     }
@@ -513,9 +573,7 @@ router.post(
       const position = toStr(body.position);
 
       if (!last_name || !first_name || !position) {
-        return res
-          .status(400)
-          .json({ message: "last_name, first_name, and position are required" });
+        return res.status(400).json({ message: "last_name, first_name, and position are required" });
       }
 
       const requestedEmployeeNo = toStr(body.employee_no);
@@ -599,7 +657,7 @@ router.put(
           ? JSON.parse(pending.payload || "{}")
           : pending.payload || {};
 
-      const created = await insertStaffFromBody(client, body, { fromPending: true });
+      const created = await insertStaffFromBody(client, body);
 
       await client.query(
         `
@@ -658,9 +716,7 @@ router.put(
       );
 
       if (r.rowCount === 0) {
-        return res
-          .status(404)
-          .json({ message: "Pending request not found or already processed" });
+        return res.status(404).json({ message: "Pending request not found or already processed" });
       }
 
       return res.json({ message: "Rejected" });
@@ -684,6 +740,12 @@ router.put(
       if (!id) {
         await client.query("ROLLBACK");
         return res.status(400).json({ message: "Invalid staff id" });
+      }
+
+      const allowed = await canAccessStaffById(client, req, id);
+      if (!allowed) {
+        await client.query("ROLLBACK");
+        return res.status(403).json({ message: "Access denied" });
       }
 
       const body = req.body || {};
@@ -905,49 +967,29 @@ router.delete("/staff/:id", requireAuth, requireRole(["admin"]), async (req, res
 router.post(
   "/staff/:id/photo",
   requireAuth,
-  requireRole(["admin","hr", "accounting", "branch manager", "area manager", "regional manager", "assistant vice president"]),
+  requireRole(["admin", "hr", "accounting", "branch manager", "area manager", "regional manager", "assistant vice president"]),
   upload.single("photo"),
   async (req, res) => {
+    const client = await pool.connect();
     try {
       const staffId = toInt(req.params.id);
       if (!staffId) return res.status(400).json({ message: "Invalid staff id." });
       if (!req.file) return res.status(400).json({ message: "No file uploaded." });
 
-      if (isBranchManager(req)) {
-        const branchCode = getUserBranchCode(req);
-        const bid = await getBranchIdFromCode(branchCode);
-        if (!bid) return res.status(403).json({ message: "Access denied" });
-
-        const check = await pool.query(
-          `SELECT id FROM public.staff WHERE id=$1 AND branch_id=$2`,
-          [staffId, bid]
-        );
-        if (check.rowCount === 0) return res.status(403).json({ message: "Access denied" });
-      }
-
-      if (isAreaManager(req)) {
-        const area = getUserArea(req);
-        if (!area) return res.status(403).json({ message: "Access denied" });
-
-        const check = await pool.query(
-          `
-          SELECT id
-          FROM public.staff
-          WHERE id = $1
-            AND LOWER(TRIM(COALESCE(area, ''))) = LOWER(TRIM($2))
-          `,
-          [staffId, area]
-        );
-        if (check.rowCount === 0) return res.status(403).json({ message: "Access denied" });
+      const allowed = await canAccessStaffById(client, req, staffId);
+      if (!allowed) {
+        return res.status(403).json({ message: "Access denied" });
       }
 
       const photoUrl = `/uploads/staff/${req.file.filename}`;
-      await pool.query(`UPDATE public.staff SET photo_url=$1 WHERE id=$2`, [photoUrl, staffId]);
+      await client.query(`UPDATE public.staff SET photo_url=$1 WHERE id=$2`, [photoUrl, staffId]);
 
       return res.json({ photo_url: photoUrl });
     } catch (e) {
       console.error("POST /api/staff/:id/photo ERROR:", e.message);
       return res.status(500).json({ message: "Server error" });
+    } finally {
+      client.release();
     }
   }
 );

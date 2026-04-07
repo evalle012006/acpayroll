@@ -1693,6 +1693,11 @@ export default function Deployment() {
   const [rejectingPendingId, setRejectingPendingId] = useState(null);
 
   const fetchUsers = useCallback(async () => {
+    if (!isAdmin) {
+      setUsers([]);
+      return;
+    }
+
     try {
       const res = await api.get("/users");
       setUsers(Array.isArray(res.data) ? res.data : []);
@@ -1700,7 +1705,7 @@ export default function Deployment() {
       console.error(err?.response?.data?.message || "Failed to load users");
       setUsers([]);
     }
-  }, []);
+  }, [isAdmin]);
 
   const branchConfigMap = useMemo(() => {
     const map = new Map();
@@ -2136,27 +2141,39 @@ const updatePendingStaff = async (e) => {
       setErr("");
 
       try {
-        const [d, s, b, p, r, u] = await Promise.all([
+        const requests = [
           api.get("/deployments"),
           api.get("/staff"),
           api.get("/branches"),
-          api.get("/pending-staff"),
           api.get("/comp-rates"),
-          api.get("/users"),
-        ]);
+        ];
 
-        setDeployments(d.data || []);
-        setStaff(s.data || []);
-        setBranches(b.data || []);
-        setPendingStaff(p.data || []);
+        if (isAdmin) {
+          requests.push(api.get("/pending-staff"));
+          requests.push(api.get("/users"));
+        }
+
+        const results = await Promise.all(requests);
+
+        const d = results[0];
+        const s = results[1];
+        const b = results[2];
+        const r = results[3];
+        const p = isAdmin ? results[4] : { data: [] };
+        const u = isAdmin ? results[5] : { data: [] };
+
+        setDeployments(Array.isArray(d.data) ? d.data : []);
+        setStaff(Array.isArray(s.data) ? s.data : []);
+        setBranches(Array.isArray(b.data) ? b.data : []);
         setCompRates(Array.isArray(r.data) ? r.data : []);
+        setPendingStaff(Array.isArray(p.data) ? p.data : []);
         setUsers(Array.isArray(u.data) ? u.data : []);
       } catch (e) {
         setErr(e?.response?.data?.message || "Failed to load deployment data.");
       } finally {
         setLoading(false);
       }
-    }, []);
+    }, [isAdmin]);
 
     useEffect(() => {
     loadData();
