@@ -30,6 +30,7 @@ const areaConfigurationsRoutes = require("./routes/areaConfigurationsRoutes");
 const consolidationRoutes = require("./routes/consolidationRoutes");
 const logisticRoutes = require("./routes/logisticRoutes");
 const pendingStaffRoutes = require("./routes/pendingStaffRoutes");
+const salaryHistoryRoutes = require("./routes/salaryHistoryRoutes");
 
 const app = express();
 
@@ -77,6 +78,7 @@ app.use("/api", areaConfigurationsRoutes);
 app.use("/api", consolidationRoutes);
 
 app.use("/api/logistic", logisticRoutes);
+app.use("/api/salary-history", salaryHistoryRoutes);
 
 app.get("/test", (_req, res) => {
   res.send("Backend is working!");

@@ -27,6 +27,83 @@ const todayDate = () => new Date().toISOString().slice(0, 10);
 
 const isValidDate = (v) => /^\d{4}-\d{2}-\d{2}$/.test(String(v || "").trim());
 
+const parseDate = (v) => {
+  if (!v) return null;
+  const d = new Date(v);
+  return Number.isNaN(d.getTime()) ? null : d;
+};
+
+const monthKey = (dateLike) => {
+  const d = parseDate(dateLike);
+  if (!d) return null;
+  return d.getFullYear() * 12 + d.getMonth();
+};
+
+const getBonusYear = (bonusMonth) => {
+  const y = Number(String(bonusMonth || "").slice(0, 4));
+  return Number.isFinite(y) && y > 0 ? y : new Date().getFullYear();
+};
+
+const computeProratedBonusFromHistory = ({
+  employeeNo,
+  historyRows,
+  fallbackSalary,
+  fallbackEcola,
+  startDate,
+  year,
+}) => {
+  const cleanHistory = Array.isArray(historyRows)
+    ? historyRows
+        .map((row) => ({
+          employee_no: toStr(row.employee_no || employeeNo),
+          effective_date: toStr(row.effective_date),
+          salary: toNum(row.salary),
+          ecola: toNum(row.ecola),
+        }))
+        .filter((row) => row.effective_date)
+        .sort((a, b) => monthKey(a.effective_date) - monthKey(b.effective_date))
+    : [];
+
+  const staffStart = parseDate(startDate);
+  const staffStartKey = staffStart ? monthKey(staffStart) : null;
+
+  let totalCompensation = 0;
+
+  for (let m = 0; m < 12; m++) {
+    const currentMonth = new Date(year, m, 1);
+    const currentMonthKey = monthKey(currentMonth);
+
+    if (staffStartKey !== null && currentMonthKey < staffStartKey) {
+      continue;
+    }
+
+    let applicable = null;
+
+    for (let i = 0; i < cleanHistory.length; i++) {
+      const rowMonthKey = monthKey(cleanHistory[i].effective_date);
+      if (rowMonthKey !== null && currentMonthKey >= rowMonthKey) {
+        applicable = cleanHistory[i];
+      } else {
+        break;
+      }
+    }
+
+    const salary = applicable ? toNum(applicable.salary) : toNum(fallbackSalary);
+    const ecola = applicable ? toNum(applicable.ecola) : toNum(fallbackEcola);
+
+    totalCompensation += salary + ecola;
+  }
+
+  const equivalent = totalCompensation / 12;
+
+  return {
+    total_compensation: totalCompensation,
+    month_13: equivalent,
+    month_14: equivalent,
+    month_15: equivalent,
+  };
+};
+
 const Bonus = () => {
   const params = useParams();
   const branchParam = toStr(params.branchId ?? params.id);
@@ -36,6 +113,9 @@ const Bonus = () => {
   const [staff, setStaff] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+
+  const [salaryHistoryMap, setSalaryHistoryMap] = useState({});
+  const [loadingHistory, setLoadingHistory] = useState(false);
 
   const [openMenuId, setOpenMenuId] = useState(null);
   const menuRef = useRef(null);
@@ -142,6 +222,53 @@ const Bonus = () => {
   }, [branch]);
 
   useEffect(() => {
+    const loadSalaryHistory = async () => {
+      if (!staff.length) {
+        setSalaryHistoryMap({});
+        return;
+      }
+
+      try {
+        setLoadingHistory(true);
+
+        const results = await Promise.all(
+          staff.map(async (s) => {
+            const employeeNo = toStr(s.employee_no);
+            if (!employeeNo) {
+              return { employeeNo: "", rows: [] };
+            }
+
+            try {
+              const res = await api.get(`/salary-history/${employeeNo}`);
+              return {
+                employeeNo,
+                rows: Array.isArray(res.data) ? res.data : [],
+              };
+            } catch {
+              return {
+                employeeNo,
+                rows: [],
+              };
+            }
+          })
+        );
+
+        const mapped = {};
+        results.forEach(({ employeeNo, rows }) => {
+          if (!employeeNo) return;
+          mapped[employeeNo] = rows;
+        });
+
+        setSalaryHistoryMap(mapped);
+      } finally {
+        setLoadingHistory(false);
+      }
+    };
+
+    loadSalaryHistory();
+  }, [staff]);
+
+  useEffect(() => {
     const onDocClick = (e) => {
       if (!menuRef.current) return;
       if (!menuRef.current.contains(e.target)) {
@@ -176,11 +303,22 @@ const Bonus = () => {
   }, [showCalcModal, showReleaseModal]);
 
   const computed = useMemo(() => {
+    const year = getBonusYear(bonusMonth);
+
     return staff.map((s) => {
+      const employeeNo = toStr(s.employee_no);
+      const historyRows = salaryHistoryMap[employeeNo] || [];
+
+      const bonus = computeProratedBonusFromHistory({
+        employeeNo,
+        historyRows,
+        fallbackSalary: s.salary,
+        fallbackEcola: s.ecola,
+        startDate: s.start_date,
+        year,
+      });
+
       const salary = toNum(s.salary);
-      const month_13 = salary / 12;
-      const month_14 = salary / 12;
-      const month_15 = salary / 12;
 
       const saved = savedResults[String(s.id)] || {
         percentage: 0,
@@ -195,9 +333,10 @@ const Bonus = () => {
         ...s,
         employee_id: s.id,
         salary,
-        month_13,
-        month_14,
-        month_15,
+        total_compensation: bonus.total_compensation,
+        month_13: bonus.month_13,
+        month_14: bonus.month_14,
+        month_15: bonus.month_15,
         saved_percentage: toNum(saved.percentage),
         saved_result: toNum(saved.result),
         saved_line_id: saved.line_id ?? null,
@@ -206,7 +345,7 @@ const Bonus = () => {
         saved_release_date: saved.release_date || null,
       };
     });
-  }, [staff, savedResults]);
+  }, [staff, salaryHistoryMap, savedResults, bonusMonth]);
 
   const total13 = computed.reduce((sum, s) => sum + toNum(s.month_13), 0);
   const total14 = computed.reduce((sum, s) => sum + toNum(s.month_14), 0);
@@ -375,6 +514,7 @@ const Bonus = () => {
           <p>
             {branch?.code} • {branch?.name} • {branch?.area}
           </p>
+          {loadingHistory ? <small>Loading salary history...</small> : null}
         </div>
 
         <div style={{ display: "flex", gap: 10, alignItems: "center" }}>

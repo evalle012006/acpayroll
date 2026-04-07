@@ -84,21 +84,30 @@ const MONTH_NAMES = [
 
 const compute13thMonthBreakdown = (staff) => {
   const basicSalary = toNum(staff?.salary);
+  const ecola = toNum(staff?.ecola);
+  const monthlyCompensation = basicSalary + ecola;
+
   const startDateRaw = staff?.start_date;
   const now = new Date();
   const currentYear = now.getFullYear();
+  const currentMonthIndex = now.getMonth();
 
-  if (!basicSalary) {
+  if (!monthlyCompensation) {
     return {
       year: currentYear,
       rows: MONTH_NAMES.map((month) => ({
         month,
-        amount: 0,
+        amount: null,
         eligible: false,
+        passed: false,
       })),
-      totalBasicEarned: 0,
+      totalCompensationEarned: 0,
       thirteenthMonth: 0,
-      monthlyEquivalent: 0,
+      fourteenthMonth: 0,
+      fifteenthMonth: 0,
+      monthlyCompensation: 0,
+      basicSalary: 0,
+      ecola: 0,
     };
   }
 
@@ -107,8 +116,6 @@ const compute13thMonthBreakdown = (staff) => {
     const d = new Date(startDateRaw);
     if (!Number.isNaN(d.getTime())) startDate = d;
   }
-
-  const monthlyEquivalent = basicSalary / 12;
 
   const rows = MONTH_NAMES.map((month, index) => {
     let eligible = true;
@@ -124,25 +131,33 @@ const compute13thMonthBreakdown = (staff) => {
       }
     }
 
+    const passed = index <= currentMonthIndex;
+    const showValue = eligible && passed;
+
     return {
       month,
-      amount: eligible ? monthlyEquivalent : 0,
+      amount: showValue ? monthlyCompensation : null,
       eligible,
+      passed,
     };
   });
 
-  const totalBasicEarned = rows.reduce((sum, row) => {
-    return sum + (row.eligible ? basicSalary : 0);
+  const totalCompensationEarned = rows.reduce((sum, row) => {
+    return sum + (row.amount != null ? row.amount : 0);
   }, 0);
 
-  const thirteenthMonth = totalBasicEarned / 12;
+  const equivalent = totalCompensationEarned / 12;
 
   return {
     year: currentYear,
     rows,
-    totalBasicEarned,
-    thirteenthMonth,
-    monthlyEquivalent,
+    totalCompensationEarned,
+    thirteenthMonth: equivalent,
+    fourteenthMonth: equivalent,
+    fifteenthMonth: equivalent,
+    monthlyCompensation,
+    basicSalary,
+    ecola,
   };
 };
 
@@ -1795,18 +1810,22 @@ function StaffProfileModal({ staff, avatarUrl, onClose, branchNameById }) {
                     <tr><td>Tax</td><td>{money(staff.tax)}</td></tr>
                     <tr><td><strong>Total Tax</strong></td><td>{money(toNum(staff.tax))}</td></tr>
 
-                    <tr><td colSpan="2"><h2>13th Month Computation ({thirteenthMonthData.year})</h2></td></tr>
-                    <tr><td>Basic Salary</td><td>{money(staff.salary)}</td></tr>
+                    <tr><td colSpan="2"><h2>13th / 14th / 15th Month Computation ({thirteenthMonthData.year})</h2></td></tr>
+                    <tr><td>Basic Salary</td><td>{money(thirteenthMonthData.basicSalary)}</td></tr>
+                    <tr><td>Ecola</td><td>{money(thirteenthMonthData.ecola)}</td></tr>
+                    <tr><td><strong>Monthly Compensation</strong></td><td>{money(thirteenthMonthData.monthlyCompensation)}</td></tr>
 
                     {thirteenthMonthData.rows.map((row) => (
                       <tr key={row.month}>
                         <td>{row.month}</td>
-                        <td>{money(row.amount)}</td>
+                        <td>{row.amount == null ? "-" : money(row.amount)}</td>
                       </tr>
                     ))}
 
-                    <tr><td><strong>Total Basic Salary Earned</strong></td><td>{money(thirteenthMonthData.totalBasicEarned)}</td></tr>
+                    <tr><td><strong>Total Compensation Earned</strong></td><td>{money(thirteenthMonthData.totalCompensationEarned)}</td></tr>
                     <tr><td><strong>13th Month Pay</strong></td><td>{money(thirteenthMonthData.thirteenthMonth)}</td></tr>
+                    <tr><td><strong>14th Month Pay</strong></td><td>{money(thirteenthMonthData.fourteenthMonth)}</td></tr>
+                    <tr><td><strong>15th Month Pay</strong></td><td>{money(thirteenthMonthData.fifteenthMonth)}</td></tr>
                   </tbody>
                 </table>
               ) : null}

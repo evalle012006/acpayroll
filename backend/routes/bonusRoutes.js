@@ -3,6 +3,7 @@ const router = express.Router();
 const pool = require("../db");
 const { requireAuth, requireRole } = require("../middlewares/authMiddleware");
 
+/* ================= HELPERS ================= */
 const toNum = (v) => {
   const n = Number(v ?? 0);
   return Number.isFinite(n) ? n : 0;
@@ -25,6 +26,7 @@ const normalizeBonusMonth = (v) => {
   return `${y}-${m}-01`;
 };
 
+/* ================= GET BRANCH BONUS ================= */
 router.get("/branch/:branchId", requireAuth, async (req, res) => {
   try {
     const branchId = toInt(req.params.branchId);
@@ -68,21 +70,27 @@ router.get("/branch/:branchId", requireAuth, async (req, res) => {
 
     return res.json(result.rows);
   } catch (err) {
-    console.error("GET /api/bonus/branch/:branchId ERROR:", err?.message);
-    return res.status(500).json({ message: err?.message || "Failed to load branch bonus lines." });
+    console.error("GET /bonus/branch ERROR:", err?.message);
+    return res.status(500).json({
+      message: err?.message || "Failed to load branch bonus lines.",
+    });
   }
 });
 
+/* ================= CREATE / GET RUN ================= */
 router.post("/run", requireAuth, requireRole(["admin"]), async (req, res) => {
   const branch_id = toInt(req.body?.branch_id);
   const bonus_month = normalizeBonusMonth(req.body?.bonus_month);
   const notes = req.body?.notes ?? null;
 
   if (!branch_id || !bonus_month) {
-    return res.status(400).json({ message: "branch_id and bonus_month are required." });
+    return res.status(400).json({
+      message: "branch_id and bonus_month are required.",
+    });
   }
 
   const client = await pool.connect();
+
   try {
     await client.query("BEGIN");
 
@@ -96,7 +104,7 @@ router.post("/run", requireAuth, requireRole(["admin"]), async (req, res) => {
       [branch_id, bonus_month]
     );
 
-    let runId = null;
+    let runId;
 
     if (existing.rowCount > 0) {
       runId = existing.rows[0].id;
@@ -104,9 +112,8 @@ router.post("/run", requireAuth, requireRole(["admin"]), async (req, res) => {
       await client.query(
         `
         UPDATE public.bonus_runs
-        SET
-          notes = COALESCE($2, notes),
-          updated_at = NOW()
+        SET notes = COALESCE($2, notes),
+            updated_at = NOW()
         WHERE id = $1
         `,
         [runId, notes]
@@ -114,7 +121,8 @@ router.post("/run", requireAuth, requireRole(["admin"]), async (req, res) => {
     } else {
       const inserted = await client.query(
         `
-        INSERT INTO public.bonus_runs (branch_id, bonus_month, notes, created_at, updated_at)
+        INSERT INTO public.bonus_runs
+          (branch_id, bonus_month, notes, created_at, updated_at)
         VALUES ($1, $2::date, $3, NOW(), NOW())
         RETURNING id
         `,
@@ -125,22 +133,24 @@ router.post("/run", requireAuth, requireRole(["admin"]), async (req, res) => {
     }
 
     await client.query("COMMIT");
+
     return res.json({
       bonus_run_id: runId,
       branch_id,
       bonus_month,
     });
   } catch (err) {
-    try {
-      await client.query("ROLLBACK");
-    } catch {}
-    console.error("POST /api/bonus/run ERROR:", err?.message);
-    return res.status(500).json({ message: err?.message || "Failed to create bonus run." });
+    await client.query("ROLLBACK");
+    console.error("POST /bonus/run ERROR:", err?.message);
+    return res.status(500).json({
+      message: err?.message || "Failed to create bonus run.",
+    });
   } finally {
     client.release();
   }
 });
 
+/* ================= GET RUN DETAILS ================= */
 router.get("/run/:runId", requireAuth, async (req, res) => {
   try {
     const runId = toInt(req.params.runId);
@@ -149,17 +159,7 @@ router.get("/run/:runId", requireAuth, async (req, res) => {
     }
 
     const runRes = await pool.query(
-      `
-      SELECT
-        id,
-        branch_id,
-        bonus_month,
-        notes,
-        created_at,
-        updated_at
-      FROM public.bonus_runs
-      WHERE id = $1
-      `,
+      `SELECT * FROM public.bonus_runs WHERE id = $1`,
       [runId]
     );
 
@@ -170,27 +170,15 @@ router.get("/run/:runId", requireAuth, async (req, res) => {
     const linesRes = await pool.query(
       `
       SELECT
-        bl.id,
-        bl.bonus_run_id,
-        bl.employee_id,
+        bl.*,
         s.employee_no,
         s.fullname AS employee_name,
-        s.position,
-        bl.salary,
-        bl.month_13,
-        bl.month_14,
-        bl.month_15,
-        bl.percentage,
-        bl.result,
-        bl.is_released,
-        bl.release_date,
-        bl.created_at,
-        bl.updated_at
+        s.position
       FROM public.bonus_lines bl
       LEFT JOIN public.staff s
         ON s.id = bl.employee_id
       WHERE bl.bonus_run_id = $1
-      ORDER BY s.fullname ASC NULLS LAST, bl.employee_id ASC
+      ORDER BY s.fullname ASC NULLS LAST
       `,
       [runId]
     );
@@ -200,28 +188,33 @@ router.get("/run/:runId", requireAuth, async (req, res) => {
       lines: linesRes.rows,
     });
   } catch (err) {
-    console.error("GET /api/bonus/run/:runId ERROR:", err?.message);
-    return res.status(500).json({ message: err?.message || "Failed to load bonus run." });
+    console.error("GET /bonus/run/:runId ERROR:", err?.message);
+    return res.status(500).json({
+      message: err?.message || "Failed to load bonus run.",
+    });
   }
 });
 
+/* ================= UPSERT BONUS LINES ================= */
 router.post("/run/:runId/lines", requireAuth, requireRole(["admin"]), async (req, res) => {
   const runId = toInt(req.params.runId);
+  const lines = Array.isArray(req.body?.lines) ? req.body.lines : [];
+
   if (!runId) {
     return res.status(400).json({ message: "Invalid runId." });
   }
 
-  const lines = Array.isArray(req.body?.lines) ? req.body.lines : [];
   if (lines.length === 0) {
     return res.status(400).json({ message: "lines is required." });
   }
 
   const client = await pool.connect();
+
   try {
     await client.query("BEGIN");
 
     const runCheck = await client.query(
-      `SELECT id, branch_id FROM public.bonus_runs WHERE id = $1`,
+      `SELECT id FROM public.bonus_runs WHERE id = $1`,
       [runId]
     );
 
@@ -236,7 +229,7 @@ router.post("/run/:runId/lines", requireAuth, requireRole(["admin"]), async (req
       const employee_id = toInt(l.employee_id);
       if (!employee_id) continue;
 
-      const upsert = await client.query(
+      const result = await client.query(
         `
         INSERT INTO public.bonus_lines (
           bonus_run_id,
@@ -252,20 +245,7 @@ router.post("/run/:runId/lines", requireAuth, requireRole(["admin"]), async (req
           created_at,
           updated_at
         )
-        VALUES (
-          $1,
-          $2,
-          $3,
-          $4,
-          $5,
-          $6,
-          $7,
-          $8,
-          false,
-          NULL,
-          NOW(),
-          NOW()
-        )
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,false,NULL,NOW(),NOW())
         ON CONFLICT (bonus_run_id, employee_id)
         DO UPDATE SET
           salary = EXCLUDED.salary,
@@ -289,7 +269,7 @@ router.post("/run/:runId/lines", requireAuth, requireRole(["admin"]), async (req
         ]
       );
 
-      upserted.push(upsert.rows[0]);
+      upserted.push(result.rows[0]);
     }
 
     await client.query(
@@ -298,21 +278,23 @@ router.post("/run/:runId/lines", requireAuth, requireRole(["admin"]), async (req
     );
 
     await client.query("COMMIT");
+
     return res.json({
       message: "Bonus saved.",
       lines: upserted,
     });
   } catch (err) {
-    try {
-      await client.query("ROLLBACK");
-    } catch {}
-    console.error("POST /api/bonus/run/:runId/lines ERROR:", err?.message);
-    return res.status(500).json({ message: err?.message || "Failed to save bonus lines." });
+    await client.query("ROLLBACK");
+    console.error("POST /bonus/run/:runId/lines ERROR:", err?.message);
+    return res.status(500).json({
+      message: err?.message || "Failed to save bonus lines.",
+    });
   } finally {
     client.release();
   }
 });
 
+/* ================= RELEASE BONUS ================= */
 router.put("/line/:lineId/release", requireAuth, requireRole(["admin"]), async (req, res) => {
   try {
     const lineId = toInt(req.params.lineId);
@@ -345,8 +327,10 @@ router.put("/line/:lineId/release", requireAuth, requireRole(["admin"]), async (
 
     return res.json(result.rows[0]);
   } catch (err) {
-    console.error("PUT /api/bonus/line/:lineId/release ERROR:", err?.message);
-    return res.status(500).json({ message: err?.message || "Failed to release bonus." });
+    console.error("PUT /bonus/line/:lineId/release ERROR:", err?.message);
+    return res.status(500).json({
+      message: err?.message || "Failed to release bonus.",
+    });
   }
 });
 

@@ -123,20 +123,20 @@ const Sidebar = ({ collapsed }) => {
         to: "/reports",
         label: "Reports",
         icon: LuFiles,
-        roles: ["admin", "hr", "accounting", "president"],
+        roles: ["admin", "hr", "accounting", "vice president", "senior vice president", "president"],
         badge: reportPending > 0 ? reportPending : null,
       },
       {
         to: "/exit-staff",
         label: "Exit Staff",
         icon: RxExit,
-        roles: ["admin", "hr", "accounting", "president"],
+        roles: ["admin", "hr", "accounting", "vice president", "senior vice president", "president"],
       },
       {
         to: "/system-update",
         label: "System Update",
         icon: FiSettings,
-        roles: ["admin", "president"],
+        roles: ["admin", "hr", "accounting", "vice president", "senior vice president", "president"],
       },
       {
         to: "/users",
