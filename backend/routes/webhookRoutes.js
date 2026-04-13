@@ -103,7 +103,7 @@
  * │ Examples:                                                               │
  * │   GET /api/webhook/staff/1                                              │
  * │   GET /api/webhook/staff/EMP-0001                                       │
- * │   GET /api/webhook/staff/emp-0001     ← same result, case-insensitive  │
+ * │   GET /api/webhook/staff/emp-0001     ← same result, case-insensitive   │
  * │                                                                         │
  * │ Sample Response:                                                        │
  * │ {                                                                       │
@@ -147,7 +147,7 @@
  * │   "current_status": "Active",                                           │
  * │   "current_position": "Branch Manager",                                 │
  * │   "current_branch": {                                                   │
- * │     "id": 1, "name": "Baras Main Branch", "code": "BR001"              │
+ * │     "id": 1, "name": "Baras Main Branch", "code": "BR001"               │
  * │   },                                                                    │
  * │   "on_leave": {                                                         │
  * │     "active": false,                                                    │
@@ -155,7 +155,7 @@
  * │     "history": [                                                        │
  * │       {                                                                 │
  * │         "id": 10,                                                       │
- * │         "transaction_code": "LR-2025-01-0001",                         │
+ * │         "transaction_code": "LR-2025-01-0001",                          │
  * │         "leave_type": "Sick Leave",                                     │
  * │         "start_date": "2025-01-10",                                     │
  * │         "end_date": "2025-01-12",                                       │
@@ -183,7 +183,7 @@
  * │     }                                                                   │
  * │   ],                                                                    │
  * │   "demotions": [],                                                      │
- * │   "exit": { "exited": false, "source": null, "record": null }          │
+ * │   "exit": { "exited": false, "source": null, "record": null }           │
  * │ }                                                                       │
  * └─────────────────────────────────────────────────────────────────────────┘
  */

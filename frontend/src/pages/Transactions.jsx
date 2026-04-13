@@ -81,6 +81,12 @@ export default function Transactions() {
       path: "/transactions/sbf",
       roles: ["admin", "hr", "accounting", "vice president", "senior vice president", "president"],
     },
+    {
+      title: "Regularization Order",
+      desc: "Staff Regularization Order",
+      path: "/transactions/regularization",
+      roles: ["admin", "hr", "accounting", "vice president", "senior vice president", "president"],
+    },
   ];
 
   const filteredCards = cards.filter((c) => c.roles.includes(role));

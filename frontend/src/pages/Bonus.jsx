@@ -195,7 +195,7 @@ const getPreviousYear13thMonthRecord = (rows = [], selectedBonusMonth) => {
   return candidates.length ? candidates[0] : null;
 };
 
-const Bonus = () => {
+export default function Bonus() {
   const params = useParams();
   const branchParam = toStr(params.branchId ?? params.id);
   const navigate = useNavigate();
@@ -529,6 +529,7 @@ const Bonus = () => {
         : 0;
 
       const salary = toNum(s.salary);
+      const releaseBase15th = previousYear13thMonth > 0 ? previousYear13thMonth : bonus.month_15;
 
       const saved = savedResults[String(s.id)] || {
         percentage: 0,
@@ -550,6 +551,7 @@ const Bonus = () => {
         month_13: bonus.month_13,
         month_14: bonus.month_14,
         month_15: bonus.month_15,
+        release_base_15th: releaseBase15th,
         saved_percentage: toNum(saved.percentage),
         saved_result: toNum(saved.result),
         saved_line_id: saved.line_id ?? null,
@@ -665,7 +667,9 @@ const Bonus = () => {
   };
 
   const percentageValue = toNum(percentage);
-  const result = selectedRow ? (toNum(selectedRow.month_15) * percentageValue) / 100 : 0;
+  const result = selectedRow
+    ? (toNum(selectedRow.release_base_15th) * percentageValue) / 100
+    : 0;
 
   const handleSaveCalculation = async () => {
     if (!selectedRow) return;
@@ -682,7 +686,7 @@ const Bonus = () => {
             salary: toNum(selectedRow.salary),
             month_13: toNum(selectedRow.month_13),
             month_14: toNum(selectedRow.month_14),
-            month_15: toNum(selectedRow.month_15),
+            month_15: toNum(selectedRow.release_base_15th),
             percentage: percentageValue,
             result: toNum(result),
           },
@@ -745,7 +749,7 @@ const Bonus = () => {
       setSavedResults((prev) => ({
         ...prev,
         [String(selectedRow.employee_id)]: {
-          ...prev[String(selectedRow.employee_id)],
+          ...prev[String(prev ? selectedRow.employee_id : selectedRow.employee_id)],
           is_released: true,
           release_date: releaseDate,
         },
@@ -960,8 +964,8 @@ const Bonus = () => {
               <div>
                 <h3 className="modal-title">Calculate 15th Month Result</h3>
                 <p className="modal-subtitle">
-                  {selectedRow.fullname} • {formatMonthYearLabel(bonusMonth)} 15th Month Base:{" "}
-                  <b>₱ {fmtMoney(selectedRow.month_15)}</b>
+                  {selectedRow.fullname} • {previousYearLabel} base, released as 15th month pay:{" "}
+                  <b>₱ {fmtMoney(selectedRow.release_base_15th)}</b>
                 </p>
               </div>
 
@@ -986,7 +990,7 @@ const Bonus = () => {
                 <div className="field full">
                   <label>Formula</label>
                   <div className="bonus-result-box">
-                    ₱ {fmtMoney(selectedRow.month_15)} × {percentageValue || 0}% ={" "}
+                    ₱ {fmtMoney(selectedRow.release_base_15th)} × {percentageValue || 0}% ={" "}
                     <strong>₱ {fmtMoney(result)}</strong>
                   </div>
                 </div>
@@ -1030,10 +1034,9 @@ const Bonus = () => {
           <div className="modal bonus-calc-modal" onMouseDown={(e) => e.stopPropagation()}>
             <div className="modal-head">
               <div>
-                <h3 className="modal-title">Release 15th Month Pay</h3>
+                <h3 className="modal-title">Release {previousYearLabel} as 15th Month Pay</h3>
                 <p className="modal-subtitle">
-                  {selectedRow.fullname} • {formatMonthYearLabel(bonusMonth)} Amount:{" "}
-                  <b>₱ {fmtMoney(selectedRow.saved_result)}</b>
+                  {selectedRow.fullname} • Release Amount: <b>₱ {fmtMoney(selectedRow.saved_result)}</b>
                 </p>
               </div>
 
@@ -1175,6 +1178,4 @@ const Bonus = () => {
       )}
     </div>
   );
-};
-
-export default Bonus;
+}
