@@ -57,7 +57,7 @@ if [ ! -d ".git" ]; then
 fi
 
 # Stash any local changes to avoid conflicts
-git stash --quiet && warn "Local changes stashed." || true
+# git stash --quiet && warn "Local changes stashed." || true
 
 # Fetch and pull
 git fetch origin
