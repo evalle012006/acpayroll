@@ -1082,7 +1082,7 @@ function ContractDetailsStep({ form, branches, onChange }) {
   );
 }
 
-function PersonalBalancesStep({ balanceForm, onBalanceChange }) {
+function PersonalBalancesStep({ balanceForm, onBalanceChange, readOnlyLoans = false, openingLoanRows = [] }) {
   const totalSavings =
     toNum(balanceForm.cbu) + toNum(balanceForm.cashbond) + toNum(balanceForm.utility);
 
@@ -1128,22 +1128,46 @@ function PersonalBalancesStep({ balanceForm, onBalanceChange }) {
 
         <div className="field">
           <label>Salary Advance</label>
-          <input className="input" name="salary_advance" value={balanceForm.salary_advance} onChange={onBalanceChange} />
+          <input
+            className="input"
+            name="salary_advance"
+            value={balanceForm.salary_advance}
+            onChange={onBalanceChange}
+            readOnly={readOnlyLoans}
+          />
         </div>
 
         <div className="field">
           <label>Special Advance</label>
-          <input className="input" name="special_advance" value={balanceForm.special_advance} onChange={onBalanceChange} />
+          <input
+            className="input"
+            name="special_advance"
+            value={balanceForm.special_advance}
+            onChange={onBalanceChange}
+            readOnly={readOnlyLoans}
+          />
         </div>
 
         <div className="field">
           <label>Cash Advance</label>
-          <input className="input" name="cash_advance" value={balanceForm.cash_advance} onChange={onBalanceChange} />
+          <input
+            className="input"
+            name="cash_advance"
+            value={balanceForm.cash_advance}
+            onChange={onBalanceChange}
+            readOnly={readOnlyLoans}
+          />
         </div>
 
         <div className="field">
           <label>Motorcycle Loan</label>
-          <input className="input" name="motorcycle_loan" value={balanceForm.motorcycle_loan} onChange={onBalanceChange} />
+          <input
+            className="input"
+            name="motorcycle_loan"
+            value={balanceForm.motorcycle_loan}
+            onChange={onBalanceChange}
+            readOnly={readOnlyLoans}
+          />
         </div>
 
         <div className="field">
@@ -1165,6 +1189,26 @@ function PersonalBalancesStep({ balanceForm, onBalanceChange }) {
           <label>Total Personal Balance</label>
           <div className="input" style={{ background: "var(--panel-2)" }}>{money(totalBalances)}</div>
         </div>
+
+        {readOnlyLoans ? (
+          <div className="field full" style={{ marginTop: 16 }}>
+            <label>Opening Loan Balances</label>
+            <div className="input" style={{ background: "var(--panel-2)", minHeight: 80 }}>
+              {!openingLoanRows.length ? (
+                <div style={{ opacity: 0.8 }}>No opening loan balances found.</div>
+              ) : (
+                openingLoanRows.map((row) => (
+                  <div key={row.id} style={{ marginBottom: 8 }}>
+                    <strong>{row.loan_type}</strong> — Remaining: ₱ {money(row.remaining_balance)}
+                    {row.interest != null ? ` • Interest: ${toNum(row.interest)}%` : ""}
+                    {row.term_months ? ` • Term: ${row.term_months}` : ""}
+                    {row.months_paid != null ? ` • Paid: ${row.months_paid}` : ""}
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        ) : null}
       </div>
     </div>
   );
@@ -1189,6 +1233,10 @@ function StaffProfileModal({ staff, avatarUrl, onClose, branchNameById }) {
   const [demotionRows, setDemotionRows] = useState([]);
   const [loadingDemotion, setLoadingDemotion] = useState(false);
   const [errDemotion, setErrDemotion] = useState("");
+
+  const [openingLoanRows, setOpeningLoanRows] = useState([]);
+  const [loadingOpeningLoans, setLoadingOpeningLoans] = useState(false);
+  const [errOpeningLoans, setErrOpeningLoans] = useState("");
 
   const [balances, setBalances] = useState(null);
   const [loadingBal, setLoadingBal] = useState(false);
@@ -1319,16 +1367,49 @@ function StaffProfileModal({ staff, avatarUrl, onClose, branchNameById }) {
     }
   }, [staff?.id]);
 
-  const loadBalances = useCallback(async () => {
+  const loadOpeningLoans = useCallback(async () => {
     if (!staff?.id) return;
+    setLoadingOpeningLoans(true);
+    setErrOpeningLoans("");
+
+    try {
+      const res = await api.get(`/staff-loan-opening-balances/staff/${staff.id}`);
+      setOpeningLoanRows(Array.isArray(res.data) ? res.data : []);
+    } catch (e) {
+      setErrOpeningLoans(
+        e?.response?.data?.message || "Failed to load opening loan balances."
+      );
+      setOpeningLoanRows([]);
+    } finally {
+      setLoadingOpeningLoans(false);
+    }
+  }, [staff?.id]);
+
+  const loadBalances = useCallback(async () => {
+    if (!staff?.employee_no) return;
+
     setLoadingBal(true);
     setErrBal("");
+
     try {
-      const res = await api.get(`/staff-balances/${staff.employee_no}`);
-      setBalances(res.data || null);
+      const now = new Date();
+      const month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+
+      const res = await api.get(`/schedule-balances/live`, {
+        params: { month },
+      });
+
+      const rows = Array.isArray(res.data) ? res.data : [];
+
+      const found =
+        rows.find((r) => String(r.staff_id) === String(staff.id)) ||
+        rows.find((r) => String(r.employee_no) === String(staff.employee_no)) ||
+        null;
+
+      setBalances(found || {});
     } catch (e) {
       setErrBal(e?.response?.data?.message || "Failed to load personal balances.");
-      setBalances(null);
+      setBalances({});
     } finally {
       setLoadingBal(false);
     }
@@ -1336,13 +1417,29 @@ function StaffProfileModal({ staff, avatarUrl, onClose, branchNameById }) {
 
   useEffect(() => {
     if (tab === "leave") loadLeaves();
+
     if (tab === "history") {
       loadLoans();
+      loadOpeningLoans();
       loadDemotions();
       loadSapHistory();
     }
-    if (tab === "balances") loadBalances();
-  }, [tab, loadLeaves, loadLoans, loadDemotions, loadSapHistory, loadBalances]);
+
+    if (tab === "balances") {
+      loadBalances();
+      loadLoans();
+      loadOpeningLoans();
+      loadSapHistory();
+    }
+  }, [
+    tab,
+    loadLeaves,
+    loadLoans,
+    loadOpeningLoans,
+    loadDemotions,
+    loadSapHistory,
+    loadBalances,
+  ]);
 
   const historyItems = useMemo(() => {
     const items = [];
@@ -1434,6 +1531,75 @@ function StaffProfileModal({ staff, avatarUrl, onClose, branchNameById }) {
   }, [leaveRows, leaveKind]);
 
   const bal = balances || {};
+  const openingLoanTotals = useMemo(() => {
+    const totals = {
+      salary_advance: 0,
+      special_advance: 0,
+      cash_advance: 0,
+      motorcycle_loan: 0,
+      other_loan: 0,
+    };
+
+    for (const row of openingLoanRows || []) {
+      const type = String(row?.loan_type || "").trim().toLowerCase();
+      const remaining = toNum(row?.remaining_balance);
+
+      if (String(row?.status || "").trim().toLowerCase() !== "active") continue;
+
+      if (type === "salary advance") totals.salary_advance += remaining;
+      else if (type === "special advance") totals.special_advance += remaining;
+      else if (type === "cash advance") totals.cash_advance += remaining;
+      else if (type === "motorcycle loan") totals.motorcycle_loan += remaining;
+      else totals.other_loan += remaining;
+    }
+
+    return totals;
+  }, [openingLoanRows]);
+
+  const approvedLoanTotals = useMemo(() => {
+    const totals = {
+      salary_advance: 0,
+      special_advance: 0,
+      cash_advance: 0,
+      motorcycle_loan: 0,
+    };
+
+    for (const row of loanRows || []) {
+      const status = String(row?.status || "").trim().toLowerCase();
+      if (status !== "approved") continue;
+
+      const type = String(row?.loan_type || "").trim().toLowerCase();
+      const amount =
+        toNum(row?.balance) ||
+        toNum(row?.remaining_balance) ||
+        toNum(row?.total) ||
+        toNum(row?.amount);
+
+      if (type === "salary advance") totals.salary_advance += amount;
+      else if (type === "special advance" || type === "special loan") totals.special_advance += amount;
+      else if (type === "cash advance" || type === "cash loan") totals.cash_advance += amount;
+      else if (type === "motorcycle loan") totals.motorcycle_loan += amount;
+    }
+
+    return totals;
+  }, [loanRows]);
+
+  const combinedBalances = useMemo(() => {
+    return {
+      cbu: toNum(bal.cbu),
+      cashbond: toNum(bal.cashbond),
+      utility: toNum(bal.utility ?? staff.utility_charge ?? staff.utility),
+      salary_advance: toNum(bal.salary_advance),
+      special_advance: toNum(bal.special_advance),
+      cash_advance: toNum(bal.cash_advance),
+      motorcycle_loan: toNum(bal.motorcycle_loan),
+      pag_ibig_loan: toNum(bal.pag_ibig_loan),
+      other_receivable: toNum(bal.other_receivable),
+      staff_accounts_payable: toNum(bal.staff_accounts_payable),
+      other_opening_loan: 0,
+    };
+  }, [bal, staff]);
+  
   const utilityValue = toNum(bal.utility ?? staff.utility_charge ?? staff.utility);
   const headerName = displayName(staff);
   const headerPosition = toStr(staff?.position) || "-";
@@ -1767,30 +1933,32 @@ function StaffProfileModal({ staff, avatarUrl, onClose, branchNameById }) {
                 <table className="profile-table">
                   <tbody>
                     <tr><td colSpan="2"><h2>Personal Savings</h2></td></tr>
-                    <tr><td>CBU</td><td>{money(bal.cbu)}</td></tr>
-                    <tr><td>Cashbond</td><td>{money(bal.cashbond)}</td></tr>
-                    <tr><td>Utility</td><td>{money(utilityValue)}</td></tr>
-                    <tr><td><strong>Total Personal Savings</strong></td><td>{money(toNum(bal.cbu) + toNum(bal.cashbond) + utilityValue)}</td></tr>
+                    <tr><td>CBU</td><td>{money(combinedBalances.cbu)}</td></tr>
+                    <tr><td>Cashbond</td><td>{money(combinedBalances.cashbond)}</td></tr>
+                    <tr><td>Utility</td><td>{money(combinedBalances.utility)}</td></tr>
+                    <tr>
+                      <td><strong>Total Personal Savings</strong></td>
+                      <td>{money(combinedBalances.cbu + combinedBalances.cashbond + combinedBalances.utility)}</td>
+                    </tr>
 
-                    <tr><td colSpan="2"><h2>Personal Balances</h2></td></tr>
-                    <tr><td>Salary Advance</td><td>{money(bal.salary_advance)}</td></tr>
-                    <tr><td>Special Advance</td><td>{money(bal.special_advance)}</td></tr>
-                    <tr><td>Cash Advance</td><td>{money(bal.cash_advance)}</td></tr>
-                    <tr><td>Motorcycle Loan</td><td>{money(bal.motorcycle_loan)}</td></tr>
-                    <tr><td>Pag-ibig Loan</td><td>{money(bal.pag_ibig_loan)}</td></tr>
-                    <tr><td>Other Receivable</td><td>{money(bal.other_receivable)}</td></tr>
-                    <tr><td>Staff Accounts Payable</td><td>{money(bal.staff_accounts_payable)}</td></tr>
+                    <tr><td>Salary Advance</td><td>{money(combinedBalances.salary_advance)}</td></tr>
+                    <tr><td>Special Advance</td><td>{money(combinedBalances.special_advance)}</td></tr>
+                    <tr><td>Cash Advance</td><td>{money(combinedBalances.cash_advance)}</td></tr>
+                    <tr><td>Motorcycle Loan</td><td>{money(combinedBalances.motorcycle_loan)}</td></tr>
+                    <tr><td>Pag-ibig Loan</td><td>{money(combinedBalances.pag_ibig_loan)}</td></tr>
+                    <tr><td>Other Receivable</td><td>{money(combinedBalances.other_receivable)}</td></tr>
+                    <tr><td>Staff Accounts Payable</td><td>{money(combinedBalances.staff_accounts_payable)}</td></tr>
                     <tr>
                       <td><strong>Total Personal Balance</strong></td>
                       <td>
                         {money(
-                          toNum(bal.salary_advance) +
-                            toNum(bal.special_advance) +
-                            toNum(bal.cash_advance) +
-                            toNum(bal.motorcycle_loan) +
-                            toNum(bal.pag_ibig_loan) +
-                            toNum(bal.other_receivable) +
-                            toNum(bal.staff_accounts_payable)
+                          combinedBalances.salary_advance +
+                            combinedBalances.special_advance +
+                            combinedBalances.cash_advance +
+                            combinedBalances.motorcycle_loan +
+                            combinedBalances.pag_ibig_loan +
+                            combinedBalances.other_receivable +
+                            combinedBalances.staff_accounts_payable
                         )}
                       </td>
                     </tr>
@@ -2096,8 +2264,11 @@ export default function StaffInformation() {
     resetForm();
   };
 
-  const onChange = (e) => setForm((p) => ({ ...p, [e.target.name]: e.target.value }));
-  const onBalanceChange = (e) => setBalanceForm((p) => ({ ...p, [e.target.name]: e.target.value }));
+  const onChange = (e) =>
+    setForm((p) => ({ ...p, [e.target.name]: e.target.value }));
+
+  const onBalanceChange = (e) =>
+    setBalanceForm((p) => ({ ...p, [e.target.name]: e.target.value }));
 
   const onPickPhoto = (file) => {
     setPhotoFile(file || null);

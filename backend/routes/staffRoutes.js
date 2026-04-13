@@ -748,6 +748,21 @@ router.put(
         return res.status(403).json({ message: "Access denied" });
       }
 
+      const existing = await client.query(
+        `
+        SELECT id, employee_no, status
+        FROM public.staff
+        WHERE id = $1
+        FOR UPDATE
+        `,
+        [id]
+      );
+
+      if (existing.rowCount === 0) {
+        await client.query("ROLLBACK");
+        return res.status(404).json({ message: "Staff not found" });
+      }
+
       const body = req.body || {};
 
       const last_name = toStr(body.last_name);
@@ -787,6 +802,10 @@ router.put(
       const employment_history = toJsonbArray(body.employment_history);
       const beneficiaries = toJsonbArray(body.beneficiaries);
 
+      const oldStatus = toStr(existing.rows[0]?.status || "Active");
+      const newStatus = toStr(body.status || oldStatus || "Active");
+      const finalEmployeeNo = employeeNo || toStr(existing.rows[0]?.employee_no);
+
       const r = await client.query(
         `
         UPDATE public.staff
@@ -799,7 +818,6 @@ router.put(
 
           "position"=$20, department=$21, area=$22, region=$23, division=$24,
           branch_id=$25, status=$26,
-
           start_date=$27, regularization_date=$28,
 
           salary=$29, ecola=$30,
@@ -824,7 +842,7 @@ router.put(
           sss_no=$73, philhealth_no=$74, pagibig_no=$75, tin_no=$76,
           children=$77::jsonb, education=$78::jsonb, employment_history=$79::jsonb, beneficiaries=$80::jsonb
         WHERE id=$81
-        RETURNING id;
+        RETURNING id, employee_no, status;
         `,
         [
           employeeNo,
@@ -857,7 +875,7 @@ router.put(
           toStr(body.division) || null,
 
           toInt(body.branch_id),
-          String(body.status || "Active"),
+          newStatus || "Active",
 
           toDateOrNull(body.start_date),
           toDateOrNull(body.regularization_date),
@@ -935,6 +953,31 @@ router.put(
       if (r.rowCount === 0) {
         await client.query("ROLLBACK");
         return res.status(404).json({ message: "Staff not found" });
+      }
+
+      if (finalEmployeeNo && oldStatus !== newStatus) {
+        const effectiveDate =
+          toDateOrNull(body.status_effective_date) ||
+          toDateOrNull(body.reactivation_date) ||
+          toDateOrNull(body.exit_date) ||
+          new Date().toISOString().slice(0, 10);
+
+        await client.query(
+          `
+          INSERT INTO public.status_history
+            (employee_no, effective_date, status, reason, remarks)
+          VALUES
+            ($1, $2::date, $3, $4, $5)
+          ON CONFLICT DO NOTHING
+          `,
+          [
+            finalEmployeeNo,
+            effectiveDate,
+            newStatus === "Inactive" ? "Inactive" : "Active",
+            newStatus === "Inactive" ? "Manual Inactive" : "Reactivated",
+            toStr(body.status_remarks) || null,
+          ]
+        );
       }
 
       await client.query("COMMIT");

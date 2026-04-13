@@ -14,6 +14,10 @@ const toDate = (v) => {
 };
 
 const toStr = (v) => String(v ?? "").trim();
+const toNum = (v) => {
+  const n = Number(v ?? 0);
+  return Number.isFinite(n) ? n : 0;
+};
 
 const roleLower = (req) => String(req.user?.role || "").trim().toLowerCase();
 const isAdmin = (req) => roleLower(req) === "admin";
@@ -107,6 +111,62 @@ async function assertStaffInManagersArea(req, client, employeeId) {
   );
 
   return r.rowCount > 0;
+}
+
+async function syncStaffBalancesFromStaff(client, staffId) {
+  const staffRes = await client.query(
+    `
+    SELECT
+      employee_no,
+      cbu,
+      cashbond,
+      utility_charge,
+      utility,
+      other_receivable,
+      staff_accounts_payable
+    FROM public.staff
+    WHERE id = $1
+    LIMIT 1
+    `,
+    [staffId]
+  );
+
+  if (staffRes.rowCount === 0) return;
+
+  const s = staffRes.rows[0];
+  const employeeNo = toStr(s.employee_no);
+  if (!employeeNo) return;
+
+  await client.query(
+    `
+    INSERT INTO public.staff_balances
+      (
+        employee_no,
+        cbu,
+        cashbond,
+        utility,
+        other_receivable,
+        staff_accounts_payable
+      )
+    VALUES
+      ($1, $2, $3, $4, $5, $6)
+    ON CONFLICT (employee_no)
+    DO UPDATE SET
+      cbu = EXCLUDED.cbu,
+      cashbond = EXCLUDED.cashbond,
+      utility = EXCLUDED.utility,
+      other_receivable = EXCLUDED.other_receivable,
+      staff_accounts_payable = EXCLUDED.staff_accounts_payable
+    `,
+    [
+      employeeNo,
+      toNum(s.cbu),
+      toNum(s.cashbond),
+      toNum(s.utility ?? s.utility_charge),
+      toNum(s.other_receivable),
+      toNum(s.staff_accounts_payable),
+    ]
+  );
 }
 
 /* =========================================================
@@ -707,12 +767,14 @@ router.put(
         [order.branch_id, order.employee_id]
       );
 
+      await syncStaffBalancesFromStaff(client, order.employee_id);
+
       await client.query("COMMIT");
       return res.json(order);
     } catch (e) {
       await client.query("ROLLBACK");
       console.error("PUT /api/deployments/:id/approve ERROR:", e.message);
-      return res.status(500).json({ message: "Server error" });
+      return res.status(500).json({ message: e?.message || "Server error" });
     } finally {
       client.release();
     }

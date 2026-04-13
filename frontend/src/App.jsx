@@ -40,6 +40,7 @@ import TaxCalculator from "./pages/TaxCalculator";
 import { CompRatesProvider } from "./context/CompRatesContext";
 import Logistic from "./pages/Logistic";
 import DetailsCompensation from "./pages/DetailsCompensation";
+import OpeningLoanBalances from "./pages/OpeningLoanBalances";
 
 const readUser = () => {
   try {
@@ -516,6 +517,17 @@ function AppShell() {
             </ProtectedLayout>
           </ProtectedRoute>
         }
+      />
+
+      <Route 
+        path="/opening-loan-balances" 
+        element={
+          <ProtectedRoute allowedRoles={["admin", "hr", "accounting", "branch manager", "area manager", "regional manager", "assistant vice president", "vice president", "president"]}>
+            <ProtectedLayout>
+              <OpeningLoanBalances />
+            </ProtectedLayout>
+          </ProtectedRoute>
+        }   
       />
 
       <Route path="*" element={<Navigate to={homeRedirect()} replace />} />

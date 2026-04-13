@@ -1,6 +1,6 @@
 /* ===============================
    APPROVALS / LEAVE TRANSACTIONS
-   SaaS + Dark Mode (REWRITTEN)
+   SaaS + Dark Mode
 ================================= */
 
 /* page */
@@ -53,10 +53,13 @@
   background: var(--primary);
   color: white;
   border: none;
-  padding: 10px 16px;
-  border-radius: 12px;
-  font-weight: 900;
+  padding: 8px 12px;
+  border-radius: 9px;
+  font-weight: 800;
+  font-size: 12px;
+  line-height: 1;
   cursor: pointer;
+  white-space: nowrap;
 }
 .btn-primary:hover {
   background: var(--primary-hover);
@@ -66,20 +69,26 @@
   background: var(--panel-2);
   color: var(--text);
   border: 1px solid var(--border);
-  padding: 10px 16px;
-  border-radius: 12px;
-  font-weight: 900;
+  padding: 8px 12px;
+  border-radius: 9px;
+  font-weight: 800;
+  font-size: 12px;
+  line-height: 1;
   cursor: pointer;
+  white-space: nowrap;
 }
 
 .btn-success {
   background: #10b981;
   color: #fff;
   border: none;
-  padding: 7px 12px;
-  border-radius: 10px;
-  font-weight: 900;
+  padding: 6px 10px;
+  border-radius: 8px;
+  font-weight: 800;
+  font-size: 12px;
+  line-height: 1;
   cursor: pointer;
+  white-space: nowrap;
 }
 .btn-success:hover {
   background: #059669;
@@ -89,10 +98,13 @@
   background: #ef4444;
   color: #fff;
   border: none;
-  padding: 7px 12px;
-  border-radius: 10px;
-  font-weight: 900;
+  padding: 6px 10px;
+  border-radius: 8px;
+  font-weight: 800;
+  font-size: 12px;
+  line-height: 1;
   cursor: pointer;
+  white-space: nowrap;
 }
 .btn-danger:hover {
   background: #dc2626;
@@ -101,7 +113,19 @@
 /* row actions */
 .row-actions {
   display: flex;
-  gap: 8px;
+  gap: 6px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.row-actions .btn-primary,
+.row-actions .btn-secondary,
+.row-actions .btn-success,
+.row-actions .btn-danger {
+  padding: 5px 8px;
+  font-size: 11px;
+  border-radius: 7px;
+  min-height: 28px;
 }
 
 /* chips */
@@ -145,7 +169,7 @@
 /* table */
 .table {
   width: 100%;
-  min-width: 980px;
+  min-width: 1100px;
   border-collapse: collapse;
   table-layout: auto;
 }
@@ -169,6 +193,7 @@
   border-bottom: 1px solid var(--border);
   font-size: 13px;
   color: var(--text);
+  vertical-align: top;
 }
 
 .table tbody tr:hover {
@@ -196,6 +221,7 @@
   font-size: 12px;
   font-weight: 900;
   border: 1px solid transparent;
+  white-space: nowrap;
 }
 
 .badge-approved {
@@ -336,6 +362,12 @@
   box-shadow: 0 0 0 4px color-mix(in srgb, var(--primary) 20%, transparent);
 }
 
+/* file upload button look */
+.form-group input[type="file"] {
+  padding: 8px 10px;
+  font-size: 12px;
+}
+
 /* modal buttons */
 .modal-buttons {
   display: flex;
@@ -346,7 +378,16 @@
 
 /* responsive */
 @media (max-width: 768px) {
+  .approval-page-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
   .modal-grid {
     grid-template-columns: 1fr;
+  }
+
+  .table {
+    min-width: 950px;
   }
 }

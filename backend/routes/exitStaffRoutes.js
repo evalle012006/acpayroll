@@ -133,7 +133,6 @@ router.post(
     try {
       await client.query("BEGIN");
 
-      // frontend currently sends staff.id in employee_no field
       const employee_id = toInt(req.body?.employee_no);
       const exit_type = normalizeExitType(req.body?.exit_type);
       const date_created = toDate(req.body?.date_created) || toDate(new Date().toISOString());
@@ -360,6 +359,8 @@ router.put(
       }
 
       const order = r.rows[0];
+      const employeeNo = clean(order.employee_no);
+      const effectiveDate = toDate(order.effective_date);
 
       await client.query(
         `
@@ -372,9 +373,25 @@ router.put(
         WHERE employee_no = $1
         `,
         [
-          clean(order.employee_no),
+          employeeNo,
           normalizeExitType(order.exit_type),
-          toDate(order.effective_date),
+          effectiveDate,
+          clean(order.remarks) || null,
+        ]
+      );
+
+      await client.query(
+        `
+        INSERT INTO public.status_history
+          (employee_no, effective_date, status, reason, remarks)
+        VALUES
+          ($1, $2::date, 'Inactive', $3, $4)
+        ON CONFLICT DO NOTHING
+        `,
+        [
+          employeeNo,
+          effectiveDate,
+          normalizeExitType(order.exit_type),
           clean(order.remarks) || null,
         ]
       );
@@ -443,17 +460,16 @@ router.delete(
         `
         DELETE FROM public.exit_staff_orders
         WHERE id = $1
-          AND status <> 'Approved'
         RETURNING id
         `,
         [id]
       );
 
       if (r.rowCount === 0) {
-        return res.status(400).json({ message: "Cannot delete Approved record or not found" });
+        return res.status(404).json({ message: "Order not found" });
       }
 
-      return res.json({ message: "Deleted", id: r.rows[0].id });
+      return res.json({ message: "Deleted" });
     } catch (e) {
       console.error("DELETE /exit-staff-orders/:id ERROR:", e.message);
       return res.status(500).json({ message: "Server error" });

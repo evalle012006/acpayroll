@@ -1,0 +1,11 @@
+BEGIN;
+
+ALTER TABLE public.leave_requests
+ADD COLUMN IF NOT EXISTS date_created DATE,
+ADD COLUMN IF NOT EXISTS total_no_of_days INTEGER DEFAULT 0,
+ADD COLUMN IF NOT EXISTS reason TEXT,
+ADD COLUMN IF NOT EXISTS attachment_name TEXT,
+ADD COLUMN IF NOT EXISTS attachment_path TEXT,
+ADD COLUMN IF NOT EXISTS attachment_mime TEXT;
+
+COMMIT;

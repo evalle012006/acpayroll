@@ -22,6 +22,20 @@ const readUser = () => {
 };
 
 const fmtDate = (d) => (d ? String(d).split("T")[0] : "-");
+const todayDate = () => new Date().toISOString().slice(0, 10);
+
+const diffDaysInclusive = (startDate, endDate) => {
+  if (!startDate || !endDate) return 0;
+  const a = new Date(startDate);
+  const b = new Date(endDate);
+  if (Number.isNaN(a.getTime()) || Number.isNaN(b.getTime())) return 0;
+  const ms = b.setHours(0, 0, 0, 0) - a.setHours(0, 0, 0, 0);
+  return Math.floor(ms / 86400000) + 1;
+};
+
+const isPdfFile = (mime, name) =>
+  String(mime || "").toLowerCase() === "application/pdf" ||
+  String(name || "").toLowerCase().endsWith(".pdf");
 
 export default function LeaveTransactions() {
   const navigate = useNavigate();
@@ -39,8 +53,6 @@ export default function LeaveTransactions() {
   const isSeniorVicePresident = role === "senior vice president";
   const isPresident = role === "president";
 
-  // area manager = create + view only, no approve
-  const canApproveLeave = isAdmin || isHr || isAccounting;
   const canCreateLeave =
     isAdmin ||
     isHr ||
@@ -53,12 +65,18 @@ export default function LeaveTransactions() {
     isSeniorVicePresident ||
     isPresident;
 
+  const canViewRequestFile = isAdmin || isRegionalManager || isAssistantVicePresident;
+  const canViewApprovedFile =
+    isAdmin || isRegionalManager || isAssistantVicePresident || isAreaManager;
+  const canUploadApprovedFile = isAdmin;
+
   const [staffList, setStaffList] = useState([]);
   const [branches, setBranches] = useState([]);
   const [leaveRequests, setLeaveRequests] = useState([]);
 
   const [loadingCreate, setLoadingCreate] = useState(false);
   const [loadingList, setLoadingList] = useState(false);
+  const [uploadingApproved, setUploadingApproved] = useState({});
 
   const [selectedLeaveType, setSelectedLeaveType] = useState("All");
   const [showCreateLeave, setShowCreateLeave] = useState(false);
@@ -70,10 +88,14 @@ export default function LeaveTransactions() {
     branch_code: "",
     branch_name: "",
     leave_type: "",
+    date_created: todayDate(),
     start_date: "",
     end_date: "",
+    total_no_of_days: 0,
     reason: "",
   });
+
+  const [attachmentFile, setAttachmentFile] = useState(null);
 
   const logout = useCallback(() => {
     localStorage.removeItem("token");
@@ -152,6 +174,13 @@ export default function LeaveTransactions() {
     };
   }, [showCreateLeave]);
 
+  useEffect(() => {
+    setLeaveForm((prev) => ({
+      ...prev,
+      total_no_of_days: diffDaysInclusive(prev.start_date, prev.end_date),
+    }));
+  }, [leaveForm.start_date, leaveForm.end_date]);
+
   const renderEmployeeOptions = () =>
     staffList.map((s) => (
       <option key={s.id} value={s.id}>
@@ -182,10 +211,13 @@ export default function LeaveTransactions() {
       branch_code: "",
       branch_name: "",
       leave_type: "",
+      date_created: todayDate(),
       start_date: "",
       end_date: "",
+      total_no_of_days: 0,
       reason: "",
     });
+    setAttachmentFile(null);
   };
 
   const handleCreateLeave = async (e) => {
@@ -193,9 +225,8 @@ export default function LeaveTransactions() {
 
     if (!leaveForm.employee_id) return alert("Select an employee.");
     if (!leaveForm.leave_type) return alert("Select leave type.");
-    if (!leaveForm.start_date || !leaveForm.end_date) {
-      return alert("Select start/end date.");
-    }
+    if (!leaveForm.date_created) return alert("Select date created.");
+    if (!leaveForm.start_date || !leaveForm.end_date) return alert("Select start/end date.");
     if (String(leaveForm.start_date) > String(leaveForm.end_date)) {
       return alert("Start date must be on or before end date.");
     }
@@ -203,11 +234,20 @@ export default function LeaveTransactions() {
     try {
       setLoadingCreate(true);
 
-      await api.post("/leave-requests", {
-        employee_id: leaveForm.employee_id,
-        leave_type: leaveForm.leave_type,
-        start_date: leaveForm.start_date,
-        end_date: leaveForm.end_date,
+      const formData = new FormData();
+      formData.append("employee_id", leaveForm.employee_id);
+      formData.append("leave_type", leaveForm.leave_type);
+      formData.append("date_created", leaveForm.date_created);
+      formData.append("start_date", leaveForm.start_date);
+      formData.append("end_date", leaveForm.end_date);
+      formData.append("reason", leaveForm.reason || "");
+
+      if (attachmentFile) {
+        formData.append("attachment", attachmentFile);
+      }
+
+      await api.post("/leave-requests", formData, {
+        headers: { "Content-Type": "multipart/form-data" },
       });
 
       alert("Leave request submitted!");
@@ -223,9 +263,23 @@ export default function LeaveTransactions() {
     }
   };
 
-  const updateLeaveStatus = async (id, status) => {
+  const canApproveThisRow = (item) => {
+    const status = String(item.status || "").trim();
+
+    if (status === "Pending Area Manager") return isAreaManager;
+    if (status === "Pending Regional Manager") return isRegionalManager;
+    if (status === "Pending Assistant Vice President") return isAssistantVicePresident;
+    if (status === "Pending Admin") return isAdmin || isHr || isAccounting;
+
+    return false;
+  };
+
+  const updateLeaveStatus = async (id, action) => {
     try {
-      await api.put(`/leave-requests/${id}`, { status });
+      await api.put(`/leave-requests/${id}`, {
+        action,
+        rejection_reason: action === "reject" ? "Rejected by approver" : "",
+      });
       await fetchLeave();
     } catch (err) {
       if (err?.response?.status === 401) return logout();
@@ -243,7 +297,101 @@ export default function LeaveTransactions() {
   const badgeClass = (status) => {
     if (status === "Approved") return "badge badge-approved";
     if (status === "Rejected") return "badge badge-rejected";
+    if (String(status || "").includes("Pending")) return "badge badge-pending";
     return "badge badge-pending";
+  };
+
+  const downloadAttachment = async (id, type, fallbackName = "") => {
+    try {
+      const res = await api.get(`/leave-requests/${id}/download/${type}`, {
+        responseType: "blob",
+      });
+
+      const blob = new Blob([res.data]);
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = fallbackName || `leave-${id}-${type}`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      alert(err?.response?.data?.message || "Failed to download file.");
+    }
+  };
+
+  const uploadApprovedFile = async (leaveId, file) => {
+    if (!file) return;
+    try {
+      setUploadingApproved((prev) => ({ ...prev, [leaveId]: true }));
+
+      const formData = new FormData();
+      formData.append("attachment", file);
+
+      await api.post(`/leave-requests/${leaveId}/approved-file`, formData, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+
+      alert("Approved leave file uploaded.");
+      await fetchLeave();
+    } catch (err) {
+      alert(err?.response?.data?.message || "Failed to upload approved file.");
+    } finally {
+      setUploadingApproved((prev) => ({ ...prev, [leaveId]: false }));
+    }
+  };
+
+  const renderRequestFileAction = (item) => {
+    if (!item.request_attachment_path) return null;
+
+    if (canViewRequestFile) {
+      const label = isPdfFile(item.request_attachment_mime, item.request_attachment_name)
+        ? "Download Request PDF"
+        : "Download Request File";
+
+      return (
+        <button
+          className="btn-secondary"
+          type="button"
+          onClick={() =>
+            downloadAttachment(item.id, "request", item.request_attachment_name || "")
+          }
+        >
+          {label}
+        </button>
+      );
+    }
+
+    if (isAreaManager) {
+      return (
+        <button className="btn-secondary" type="button" disabled>
+          Request File Uploaded
+        </button>
+      );
+    }
+
+    return null;
+  };
+
+  const renderApprovedFileAction = (item) => {
+    if (!item.approved_attachment_path || !canViewApprovedFile) return null;
+
+    const label = isPdfFile(item.approved_attachment_mime, item.approved_attachment_name)
+      ? "Download Approved PDF"
+      : "Download Approved File";
+
+    return (
+      <button
+        className="btn-secondary"
+        type="button"
+        onClick={() =>
+          downloadAttachment(item.id, "approved", item.approved_attachment_name || "")
+        }
+      >
+        {label}
+      </button>
+    );
   };
 
   return (
@@ -292,23 +440,25 @@ export default function LeaveTransactions() {
                 <th>Code</th>
                 <th>Name</th>
                 <th>Type</th>
+                <th>Date Created</th>
                 <th>Start</th>
                 <th>End</th>
+                <th>Days</th>
                 <th>Status</th>
-                <th style={{ width: 220 }}>Action</th>
+                <th style={{ width: 460 }}>Action</th>
               </tr>
             </thead>
 
             <tbody>
               {loadingList ? (
                 <tr>
-                  <td colSpan={7} className="empty-state">
+                  <td colSpan={9} className="empty-state">
                     Loading…
                   </td>
                 </tr>
               ) : filteredLeave.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="empty-state">
+                  <td colSpan={9} className="empty-state">
                     No requests found.
                   </td>
                 </tr>
@@ -318,32 +468,49 @@ export default function LeaveTransactions() {
                     <td>{item.id}</td>
                     <td className="td-strong">{item.staff_name || "-"}</td>
                     <td>{item.leave_type}</td>
+                    <td>{fmtDate(item.date_created)}</td>
                     <td>{fmtDate(item.start_date)}</td>
                     <td>{fmtDate(item.end_date)}</td>
+                    <td>{item.total_no_of_days ?? 0}</td>
                     <td>
                       <span className={badgeClass(item.status)}>{item.status}</span>
                     </td>
                     <td>
-                      {canApproveLeave && item.status === "Pending" ? (
-                        <div className="row-actions">
-                          <button
-                            className="btn-success"
-                            type="button"
-                            onClick={() => updateLeaveStatus(item.id, "Approved")}
-                          >
-                            Approve
-                          </button>
-                          <button
-                            className="btn-danger"
-                            type="button"
-                            onClick={() => updateLeaveStatus(item.id, "Rejected")}
-                          >
-                            Reject
-                          </button>
-                        </div>
-                      ) : (
-                        "-"
-                      )}
+                      <div className="row-actions" style={{ flexWrap: "wrap" }}>
+                        {renderRequestFileAction(item)}
+                        {renderApprovedFileAction(item)}
+
+                        {canUploadApprovedFile && item.status === "Approved" ? (
+                          <label className="btn-secondary" style={{ cursor: "pointer" }}>
+                            {uploadingApproved[item.id] ? "Uploading..." : "Upload Approved File"}
+                            <input
+                              type="file"
+                              accept=".pdf,.png,.jpg,.jpeg,.doc,.docx"
+                              style={{ display: "none" }}
+                              onChange={(e) => uploadApprovedFile(item.id, e.target.files?.[0] || null)}
+                            />
+                          </label>
+                        ) : null}
+
+                        {canApproveThisRow(item) ? (
+                          <>
+                            <button
+                              className="btn-success"
+                              type="button"
+                              onClick={() => updateLeaveStatus(item.id, "approve")}
+                            >
+                              Approve
+                            </button>
+                            <button
+                              className="btn-danger"
+                              type="button"
+                              onClick={() => updateLeaveStatus(item.id, "reject")}
+                            >
+                              Reject
+                            </button>
+                          </>
+                        ) : null}
+                      </div>
                     </td>
                   </tr>
                 ))
@@ -364,7 +531,7 @@ export default function LeaveTransactions() {
             <div className="modal-head">
               <div>
                 <h3 className="modal-title">Add Leave Request</h3>
-                <p className="modal-subtitle">This will be submitted with status: Pending</p>
+                <p className="modal-subtitle">Submitted into approval chain automatically</p>
               </div>
               <button className="modal-x" type="button" onClick={() => setShowCreateLeave(false)}>
                 ✕
@@ -427,6 +594,23 @@ export default function LeaveTransactions() {
                 </div>
 
                 <div className="form-group">
+                  <label htmlFor="date_created">Date Created</label>
+                  <input
+                    id="date_created"
+                    name="date_created"
+                    type="date"
+                    value={leaveForm.date_created}
+                    onChange={(e) =>
+                      setLeaveForm((p) => ({
+                        ...p,
+                        date_created: e.target.value,
+                      }))
+                    }
+                    required
+                  />
+                </div>
+
+                <div className="form-group">
                   <label htmlFor="start_date">Start Date</label>
                   <input
                     id="start_date"
@@ -460,6 +644,28 @@ export default function LeaveTransactions() {
                   />
                 </div>
 
+                <div className="form-group">
+                  <label htmlFor="total_no_of_days">Total No. of Days</label>
+                  <input
+                    id="total_no_of_days"
+                    name="total_no_of_days"
+                    value={leaveForm.total_no_of_days}
+                    readOnly
+                    placeholder="Auto-calculated"
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label htmlFor="attachment">Upload Leave File</label>
+                  <input
+                    id="attachment"
+                    name="attachment"
+                    type="file"
+                    accept=".pdf,.png,.jpg,.jpeg,.doc,.docx"
+                    onChange={(e) => setAttachmentFile(e.target.files?.[0] || null)}
+                  />
+                </div>
+
                 <div className="form-group full">
                   <label htmlFor="reason">Reason (optional)</label>
                   <textarea
@@ -472,7 +678,7 @@ export default function LeaveTransactions() {
                         reason: e.target.value,
                       }))
                     }
-                    placeholder="Optional (not saved yet)"
+                    placeholder="Optional reason"
                   />
                 </div>
               </div>

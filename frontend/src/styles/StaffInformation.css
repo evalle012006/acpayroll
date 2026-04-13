@@ -235,7 +235,7 @@
   text-overflow: ellipsis;
 }
 
-.staff-profile-modal {
+.staff-profile-z {
   max-height: 90vh;
   display: flex;
   flex-direction: column;
@@ -284,3 +284,4 @@
   cursor: not-allowed;
   transform: none;
 }
+

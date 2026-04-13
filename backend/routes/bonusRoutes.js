@@ -26,12 +26,35 @@ const normalizeBonusMonth = (v) => {
   return `${y}-${m}-01`;
 };
 
+const bonusTypeFromLine = (line) => {
+  const month13 = toNum(line?.month_13);
+  const month14 = toNum(line?.month_14);
+  const month15 = toNum(line?.month_15);
+  const result = toNum(line?.result);
+
+  if (month13 > 0 && Math.abs(result - month13) < 0.01) return "13th Month";
+  if (month14 > 0 && Math.abs(result - month14) < 0.01) return "14th Month";
+  if (month15 > 0) return "15th Month";
+
+  return "13th Month";
+};
+
 /* ================= GET BRANCH BONUS ================= */
 router.get("/branch/:branchId", requireAuth, async (req, res) => {
   try {
     const branchId = toInt(req.params.branchId);
+    const bonusMonth = normalizeBonusMonth(req.query?.bonus_month);
+
     if (!branchId) {
       return res.status(400).json({ message: "Invalid branchId." });
+    }
+
+    const params = [branchId];
+    let whereExtra = "";
+
+    if (bonusMonth) {
+      params.push(bonusMonth);
+      whereExtra = ` AND br.bonus_month = $2::date `;
     }
 
     const result = await pool.query(
@@ -63,9 +86,10 @@ router.get("/branch/:branchId", requireAuth, async (req, res) => {
       LEFT JOIN public.staff s
         ON s.id = bl.employee_id
       WHERE br.branch_id = $1
+      ${whereExtra}
       ORDER BY br.bonus_month DESC, bl.updated_at DESC, bl.id DESC
       `,
-      [branchId]
+      params
     );
 
     return res.json(result.rows);
@@ -296,19 +320,25 @@ router.post("/run/:runId/lines", requireAuth, requireRole(["admin"]), async (req
 
 /* ================= RELEASE BONUS ================= */
 router.put("/line/:lineId/release", requireAuth, requireRole(["admin"]), async (req, res) => {
+  const client = await pool.connect();
+
   try {
+    await client.query("BEGIN");
+
     const lineId = toInt(req.params.lineId);
     const release_date = normalizeDate(req.body?.release_date);
 
     if (!lineId) {
+      await client.query("ROLLBACK");
       return res.status(400).json({ message: "Invalid lineId." });
     }
 
     if (!release_date) {
+      await client.query("ROLLBACK");
       return res.status(400).json({ message: "Valid release_date is required." });
     }
 
-    const result = await pool.query(
+    const result = await client.query(
       `
       UPDATE public.bonus_lines
       SET
@@ -322,15 +352,79 @@ router.put("/line/:lineId/release", requireAuth, requireRole(["admin"]), async (
     );
 
     if (result.rowCount === 0) {
+      await client.query("ROLLBACK");
       return res.status(404).json({ message: "Bonus line not found." });
     }
 
-    return res.json(result.rows[0]);
+    const line = result.rows[0];
+
+    const detailRes = await client.query(
+      `
+      SELECT
+        bl.id,
+        bl.employee_id,
+        bl.result,
+        bl.month_13,
+        bl.month_14,
+        bl.month_15,
+        bl.release_date,
+        br.bonus_month,
+        s.employee_no
+      FROM public.bonus_lines bl
+      INNER JOIN public.bonus_runs br
+        ON br.id = bl.bonus_run_id
+      LEFT JOIN public.staff s
+        ON s.id = bl.employee_id
+      WHERE bl.id = $1
+      LIMIT 1
+      `,
+      [lineId]
+    );
+
+    if (detailRes.rowCount > 0) {
+      const detail = detailRes.rows[0];
+      const bonusType = bonusTypeFromLine(detail);
+
+      await client.query(
+        `
+        INSERT INTO public.staff_bonus_history
+          (
+            staff_id,
+            employee_no,
+            bonus_type,
+            bonus_month,
+            amount,
+            release_date,
+            remarks,
+            created_by,
+            created_at
+          )
+        VALUES
+          ($1, $2, $3, $4::date, $5, $6::date, $7, $8, NOW())
+        `,
+        [
+          detail.employee_id,
+          detail.employee_no || null,
+          bonusType,
+          detail.bonus_month || null,
+          toNum(detail.result),
+          detail.release_date || release_date,
+          `Released from bonus line #${lineId}`,
+          req.user?.id ?? null,
+        ]
+      );
+    }
+
+    await client.query("COMMIT");
+    return res.json(line);
   } catch (err) {
+    await client.query("ROLLBACK");
     console.error("PUT /bonus/line/:lineId/release ERROR:", err?.message);
     return res.status(500).json({
       message: err?.message || "Failed to release bonus.",
     });
+  } finally {
+    client.release();
   }
 });
 

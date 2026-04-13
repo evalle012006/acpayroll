@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import api from "../api/axiosClient";
 import "../styles/Bonus.css";
@@ -18,11 +18,6 @@ const fmtMoney = (v) =>
     maximumFractionDigits: 2,
   });
 
-const monthStartFromToday = () => {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`;
-};
-
 const todayDate = () => new Date().toISOString().slice(0, 10);
 
 const isValidDate = (v) => /^\d{4}-\d{2}-\d{2}$/.test(String(v || "").trim());
@@ -39,18 +34,62 @@ const monthKey = (dateLike) => {
   return d.getFullYear() * 12 + d.getMonth();
 };
 
-const getBonusYear = (bonusMonth) => {
-  const y = Number(String(bonusMonth || "").slice(0, 4));
-  return Number.isFinite(y) && y > 0 ? y : new Date().getFullYear();
+const currentBonusMonth = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`;
+};
+
+const getYearFromBonusMonth = (bonusMonth) => {
+  const d = parseDate(bonusMonth);
+  return d ? d.getFullYear() : new Date().getFullYear();
+};
+
+const getMonthIndexFromBonusMonth = (bonusMonth) => {
+  const d = parseDate(bonusMonth);
+  return d ? d.getMonth() : new Date().getMonth();
+};
+
+const formatMonthYearLabel = (value) => {
+  const d = parseDate(value);
+  if (!d) return value;
+  return `${d.toLocaleString("default", { month: "long" })} ${d.getFullYear()}`;
+};
+
+const buildMonthYearOptions = (staffRows = []) => {
+  const current = new Date();
+  let minDate = new Date(current.getFullYear(), 0, 1);
+
+  for (const s of staffRows) {
+    const start = parseDate(s?.start_date);
+    if (start) {
+      const normalized = new Date(start.getFullYear(), start.getMonth(), 1);
+      if (normalized < minDate) minDate = normalized;
+    }
+  }
+
+  const options = [];
+  const cursor = new Date(current.getFullYear(), current.getMonth(), 1);
+
+  while (cursor >= minDate) {
+    const value = `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, "0")}-01`;
+    options.push({
+      value,
+      label: formatMonthYearLabel(value),
+    });
+    cursor.setMonth(cursor.getMonth() - 1);
+  }
+
+  return options;
 };
 
 const computeProratedBonusFromHistory = ({
   employeeNo,
   historyRows,
+  statusRows,
   fallbackSalary,
   fallbackEcola,
   startDate,
-  year,
+  bonusMonth,
 }) => {
   const cleanHistory = Array.isArray(historyRows)
     ? historyRows
@@ -64,12 +103,27 @@ const computeProratedBonusFromHistory = ({
         .sort((a, b) => monthKey(a.effective_date) - monthKey(b.effective_date))
     : [];
 
+  const cleanStatuses = Array.isArray(statusRows)
+    ? statusRows
+        .map((row) => ({
+          employee_no: toStr(row.employee_no || employeeNo),
+          effective_date: toStr(row.effective_date),
+          status: toStr(row.status || "Active"),
+        }))
+        .filter((row) => row.effective_date && row.status)
+        .sort((a, b) => monthKey(a.effective_date) - monthKey(b.effective_date))
+    : [];
+
+  const year = getYearFromBonusMonth(bonusMonth);
+  const lastMonthIndex = getMonthIndexFromBonusMonth(bonusMonth);
+
   const staffStart = parseDate(startDate);
   const staffStartKey = staffStart ? monthKey(staffStart) : null;
 
   let totalCompensation = 0;
+  let countedMonths = 0;
 
-  for (let m = 0; m < 12; m++) {
+  for (let m = 0; m <= lastMonthIndex; m++) {
     const currentMonth = new Date(year, m, 1);
     const currentMonthKey = monthKey(currentMonth);
 
@@ -77,31 +131,68 @@ const computeProratedBonusFromHistory = ({
       continue;
     }
 
-    let applicable = null;
-
+    let applicableSalary = null;
     for (let i = 0; i < cleanHistory.length; i++) {
       const rowMonthKey = monthKey(cleanHistory[i].effective_date);
       if (rowMonthKey !== null && currentMonthKey >= rowMonthKey) {
-        applicable = cleanHistory[i];
+        applicableSalary = cleanHistory[i];
       } else {
         break;
       }
     }
 
-    const salary = applicable ? toNum(applicable.salary) : toNum(fallbackSalary);
-    const ecola = applicable ? toNum(applicable.ecola) : toNum(fallbackEcola);
+    let applicableStatus = "Active";
+    for (let i = 0; i < cleanStatuses.length; i++) {
+      const rowMonthKey = monthKey(cleanStatuses[i].effective_date);
+      if (rowMonthKey !== null && currentMonthKey >= rowMonthKey) {
+        applicableStatus = cleanStatuses[i].status;
+      } else {
+        break;
+      }
+    }
 
-    totalCompensation += salary + ecola;
+    if (norm(applicableStatus) !== "active") {
+      continue;
+    }
+
+    const salary = applicableSalary ? toNum(applicableSalary.salary) : toNum(fallbackSalary);
+    const ecola = applicableSalary ? toNum(applicableSalary.ecola) : toNum(fallbackEcola);
+    const monthlyCompensation = salary + ecola;
+
+    totalCompensation += monthlyCompensation;
+    countedMonths += 1;
   }
 
   const equivalent = totalCompensation / 12;
 
   return {
     total_compensation: totalCompensation,
+    counted_months: countedMonths,
     month_13: equivalent,
     month_14: equivalent,
     month_15: equivalent,
   };
+};
+
+const getPreviousYear13thMonthRecord = (rows = [], selectedBonusMonth) => {
+  const selectedDate = parseDate(selectedBonusMonth);
+  if (!selectedDate) return null;
+
+  const previousYear = selectedDate.getFullYear() - 1;
+
+  const candidates = (Array.isArray(rows) ? rows : [])
+    .filter((row) => {
+      const type = norm(row?.bonus_type);
+      const d = parseDate(row?.bonus_month || row?.release_date || row?.created_at);
+      return type === "13th month" && d && d.getFullYear() === previousYear;
+    })
+    .sort((a, b) => {
+      const ad = parseDate(a?.bonus_month || a?.release_date || a?.created_at)?.getTime() || 0;
+      const bd = parseDate(b?.bonus_month || b?.release_date || b?.created_at)?.getTime() || 0;
+      return bd - ad;
+    });
+
+  return candidates.length ? candidates[0] : null;
 };
 
 const Bonus = () => {
@@ -117,22 +208,75 @@ const Bonus = () => {
   const [salaryHistoryMap, setSalaryHistoryMap] = useState({});
   const [loadingHistory, setLoadingHistory] = useState(false);
 
+  const [statusHistoryMap, setStatusHistoryMap] = useState({});
+  const [loadingStatusHistory, setLoadingStatusHistory] = useState(false);
+
+  const [bonusHistoryMap, setBonusHistoryMap] = useState({});
+  const [loadingBonusHistory, setLoadingBonusHistory] = useState(false);
+
   const [openMenuId, setOpenMenuId] = useState(null);
   const menuRef = useRef(null);
 
   const [showCalcModal, setShowCalcModal] = useState(false);
   const [showReleaseModal, setShowReleaseModal] = useState(false);
+  const [showEdit13Modal, setShowEdit13Modal] = useState(false);
 
   const [selectedRow, setSelectedRow] = useState(null);
   const [percentage, setPercentage] = useState("");
   const [releaseDate, setReleaseDate] = useState(todayDate());
 
+  const [edit13Id, setEdit13Id] = useState(null);
+  const [edit13Amount, setEdit13Amount] = useState("");
+  const [edit13ReleaseDate, setEdit13ReleaseDate] = useState(todayDate());
+  const [edit13Remarks, setEdit13Remarks] = useState("");
+
   const [saving, setSaving] = useState(false);
 
-  const [bonusMonth, setBonusMonth] = useState(monthStartFromToday());
+  const [bonusMonth, setBonusMonth] = useState(currentBonusMonth());
   const [runId, setRunId] = useState(null);
 
   const [savedResults, setSavedResults] = useState({});
+
+  const refreshBonusHistory = useCallback(async (staffRows) => {
+    if (!staffRows.length) {
+      setBonusHistoryMap({});
+      return;
+    }
+
+    try {
+      setLoadingBonusHistory(true);
+
+      const results = await Promise.all(
+        staffRows.map(async (s) => {
+          const staffId = Number(s?.id);
+          if (!staffId) return { staffId: "", rows: [] };
+
+          try {
+            const res = await api.get(`/staff-bonus-history/staff/${staffId}`);
+            return {
+              staffId: String(staffId),
+              rows: Array.isArray(res.data) ? res.data : [],
+            };
+          } catch {
+            return {
+              staffId: String(staffId),
+              rows: [],
+            };
+          }
+        })
+      );
+
+      const mapped = {};
+      results.forEach(({ staffId, rows }) => {
+        if (!staffId) return;
+        mapped[staffId] = rows;
+      });
+
+      setBonusHistoryMap(mapped);
+    } finally {
+      setLoadingBonusHistory(false);
+    }
+  }, []);
 
   useEffect(() => {
     const load = async () => {
@@ -174,6 +318,12 @@ const Bonus = () => {
             : allStaff.filter((s) => norm(s.area) === norm(found.area));
 
         setStaff(filtered);
+        await refreshBonusHistory(filtered);
+
+        const options = buildMonthYearOptions(filtered);
+        if (options.length && !options.some((opt) => opt.value === bonusMonth)) {
+          setBonusMonth(options[0].value);
+        }
       } catch (err) {
         setError(err?.response?.data?.message || "Failed to load bonus.");
       } finally {
@@ -182,14 +332,17 @@ const Bonus = () => {
     };
 
     load();
-  }, [branchParam]);
+  }, [branchParam, bonusMonth, refreshBonusHistory]);
 
   useEffect(() => {
     const loadSavedForBranch = async () => {
       try {
         if (!branch?.id) return;
 
-        const res = await api.get(`/bonus/branch/${branch.id}`);
+        const res = await api.get(`/bonus/branch/${branch.id}`, {
+          params: { bonus_month: bonusMonth },
+        });
+
         const lines = Array.isArray(res.data) ? res.data : [];
 
         const mapped = {};
@@ -212,14 +365,60 @@ const Bonus = () => {
         });
 
         setSavedResults(mapped);
-        if (latestRunId) setRunId(latestRunId);
+        setRunId(latestRunId || null);
       } catch {
         setSavedResults({});
+        setRunId(null);
       }
     };
 
     loadSavedForBranch();
-  }, [branch]);
+  }, [branch, bonusMonth]);
+
+  useEffect(() => {
+    const loadStatusHistory = async () => {
+      if (!staff.length) {
+        setStatusHistoryMap({});
+        return;
+      }
+
+      try {
+        setLoadingStatusHistory(true);
+
+        const results = await Promise.all(
+          staff.map(async (s) => {
+            const employeeNo = toStr(s.employee_no);
+            if (!employeeNo) return { employeeNo: "", rows: [] };
+
+            try {
+              const res = await api.get(`/status-history/${employeeNo}`);
+              return {
+                employeeNo,
+                rows: Array.isArray(res.data) ? res.data : [],
+              };
+            } catch {
+              return {
+                employeeNo,
+                rows: [],
+              };
+            }
+          })
+        );
+
+        const mapped = {};
+        results.forEach(({ employeeNo, rows }) => {
+          if (!employeeNo) return;
+          mapped[employeeNo] = rows;
+        });
+
+        setStatusHistoryMap(mapped);
+      } finally {
+        setLoadingStatusHistory(false);
+      }
+    };
+
+    loadStatusHistory();
+  }, [staff]);
 
   useEffect(() => {
     const loadSalaryHistory = async () => {
@@ -234,9 +433,7 @@ const Bonus = () => {
         const results = await Promise.all(
           staff.map(async (s) => {
             const employeeNo = toStr(s.employee_no);
-            if (!employeeNo) {
-              return { employeeNo: "", rows: [] };
-            }
+            if (!employeeNo) return { employeeNo: "", rows: [] };
 
             try {
               const res = await api.get(`/salary-history/${employeeNo}`);
@@ -281,6 +478,7 @@ const Bonus = () => {
         setOpenMenuId(null);
         setShowCalcModal(false);
         setShowReleaseModal(false);
+        setShowEdit13Modal(false);
       }
     };
 
@@ -294,29 +492,41 @@ const Bonus = () => {
   }, []);
 
   useEffect(() => {
-    const anyOpen = showCalcModal || showReleaseModal;
+    const anyOpen = showCalcModal || showReleaseModal || showEdit13Modal;
     if (!anyOpen) return;
     document.body.style.overflow = "hidden";
     return () => {
       document.body.style.overflow = "";
     };
-  }, [showCalcModal, showReleaseModal]);
+  }, [showCalcModal, showReleaseModal, showEdit13Modal]);
+
+  const monthYearOptions = useMemo(() => buildMonthYearOptions(staff), [staff]);
 
   const computed = useMemo(() => {
-    const year = getBonusYear(bonusMonth);
-
     return staff.map((s) => {
       const employeeNo = toStr(s.employee_no);
       const historyRows = salaryHistoryMap[employeeNo] || [];
+      const statusRows = statusHistoryMap[employeeNo] || [];
+      const bonusHistoryRows = bonusHistoryMap[String(s.id)] || [];
 
       const bonus = computeProratedBonusFromHistory({
         employeeNo,
         historyRows,
+        statusRows,
         fallbackSalary: s.salary,
         fallbackEcola: s.ecola,
         startDate: s.start_date,
-        year,
+        bonusMonth,
       });
+
+      const previousYearRecord = getPreviousYear13thMonthRecord(
+        bonusHistoryRows,
+        bonusMonth
+      );
+
+      const previousYear13thMonth = previousYearRecord
+        ? toNum(previousYearRecord.amount)
+        : 0;
 
       const salary = toNum(s.salary);
 
@@ -333,7 +543,10 @@ const Bonus = () => {
         ...s,
         employee_id: s.id,
         salary,
+        previous_year_13th_month: previousYear13thMonth,
+        previous_year_13th_record: previousYearRecord,
         total_compensation: bonus.total_compensation,
+        counted_months: bonus.counted_months,
         month_13: bonus.month_13,
         month_14: bonus.month_14,
         month_15: bonus.month_15,
@@ -345,8 +558,18 @@ const Bonus = () => {
         saved_release_date: saved.release_date || null,
       };
     });
-  }, [staff, salaryHistoryMap, savedResults, bonusMonth]);
+  }, [staff, salaryHistoryMap, statusHistoryMap, bonusHistoryMap, savedResults, bonusMonth]);
 
+  const previousYearLabel = useMemo(() => {
+    const d = parseDate(bonusMonth);
+    const year = d ? d.getFullYear() - 1 : new Date().getFullYear() - 1;
+    return `${year} 13th Month`;
+  }, [bonusMonth]);
+
+  const totalPreviousYear13th = computed.reduce(
+    (sum, s) => sum + toNum(s.previous_year_13th_month),
+    0
+  );
   const total13 = computed.reduce((sum, s) => sum + toNum(s.month_13), 0);
   const total14 = computed.reduce((sum, s) => sum + toNum(s.month_14), 0);
   const total15 = computed.reduce((sum, s) => sum + toNum(s.month_15), 0);
@@ -409,6 +632,38 @@ const Bonus = () => {
     setReleaseDate(todayDate());
   };
 
+  const handleOpen13Month = (row) => {
+    setOpenMenuId(null);
+    setSelectedRow(row);
+
+    const record = row?.previous_year_13th_record;
+
+    if (record?.id) {
+      setEdit13Id(record.id);
+      setEdit13Amount(String(toNum(record.amount)));
+      setEdit13ReleaseDate(
+        record.release_date ? String(record.release_date).slice(0, 10) : todayDate()
+      );
+      setEdit13Remarks(toStr(record.remarks));
+    } else {
+      setEdit13Id(null);
+      setEdit13Amount("");
+      setEdit13ReleaseDate(todayDate());
+      setEdit13Remarks("");
+    }
+
+    setShowEdit13Modal(true);
+  };
+
+  const closeEdit13Modal = () => {
+    setShowEdit13Modal(false);
+    setSelectedRow(null);
+    setEdit13Id(null);
+    setEdit13Amount("");
+    setEdit13ReleaseDate(todayDate());
+    setEdit13Remarks("");
+  };
+
   const percentageValue = toNum(percentage);
   const result = selectedRow ? (toNum(selectedRow.month_15) * percentageValue) / 100 : 0;
 
@@ -436,7 +691,9 @@ const Bonus = () => {
 
       await api.post(`/bonus/run/${currentRunId}/lines`, payload);
 
-      const lineRefresh = await api.get(`/bonus/branch/${branch.id}`);
+      const lineRefresh = await api.get(`/bonus/branch/${branch.id}`, {
+        params: { bonus_month: bonusMonth },
+      });
       const lines = Array.isArray(lineRefresh.data) ? lineRefresh.data : [];
 
       const mapped = {};
@@ -494,10 +751,59 @@ const Bonus = () => {
         },
       }));
 
+      await refreshBonusHistory(staff);
+
       closeReleaseModal();
       alert("15th month pay released.");
     } catch (err) {
       alert(err?.response?.data?.message || err?.message || "Failed to release bonus.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleSave13thMonth = async () => {
+    try {
+      if (!selectedRow) return;
+
+      if (toNum(edit13Amount) <= 0) {
+        alert("Enter valid amount");
+        return;
+      }
+
+      if (!isValidDate(edit13ReleaseDate)) {
+        alert("Please select a valid release date.");
+        return;
+      }
+
+      setSaving(true);
+
+      if (edit13Id) {
+        await api.put(`/staff-bonus-history/${edit13Id}`, {
+          amount: toNum(edit13Amount),
+          release_date: edit13ReleaseDate,
+          remarks: edit13Remarks,
+        });
+      } else {
+        const previousYear = getYearFromBonusMonth(bonusMonth) - 1;
+
+        await api.post(`/staff-bonus-history`, {
+          staff_id: selectedRow.id,
+          employee_no: selectedRow.employee_no,
+          bonus_type: "13th Month",
+          bonus_month: `${previousYear}-12-01`,
+          amount: toNum(edit13Amount),
+          release_date: edit13ReleaseDate,
+          remarks: edit13Remarks,
+        });
+      }
+
+      await refreshBonusHistory(staff);
+
+      closeEdit13Modal();
+      alert(edit13Id ? "Updated successfully" : "Added successfully");
+    } catch (err) {
+      alert(err?.response?.data?.message || err?.message || "Save failed");
     } finally {
       setSaving(false);
     }
@@ -514,17 +820,31 @@ const Bonus = () => {
           <p>
             {branch?.code} • {branch?.name} • {branch?.area}
           </p>
-          {loadingHistory ? <small>Loading salary history...</small> : null}
+          <small>
+            Showing {formatMonthYearLabel(bonusMonth)} bonus computation
+            {loadingHistory || loadingStatusHistory || loadingBonusHistory
+              ? " • Loading history..."
+              : ""}
+          </small>
         </div>
 
         <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-          <input
+          <select
             className="input"
-            type="date"
             value={bonusMonth}
-            onChange={(e) => setBonusMonth(e.target.value)}
-            style={{ width: 170 }}
-          />
+            onChange={(e) => {
+              setBonusMonth(e.target.value);
+              setOpenMenuId(null);
+            }}
+            style={{ width: 220 }}
+          >
+            {monthYearOptions.map((opt) => (
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
+              </option>
+            ))}
+          </select>
+
           <button className="btn-back" onClick={() => navigate(-1)} type="button">
             ← Back
           </button>
@@ -540,9 +860,10 @@ const Bonus = () => {
               <th>Employee</th>
               <th>Position</th>
               <th>Salary</th>
+              <th>{previousYearLabel}</th>
+              <th>15th Month</th>
               <th>13th Month</th>
               <th>14th Month</th>
-              <th>15th Month</th>
               <th>Result</th>
               <th>Release Date</th>
               <th style={{ width: 90 }}>Action</th>
@@ -557,9 +878,12 @@ const Bonus = () => {
                 <td>{s.fullname}</td>
                 <td>{s.position}</td>
                 <td>{fmtMoney(s.salary)}</td>
+                <td className="strong">
+                  {s.previous_year_13th_month > 0 ? fmtMoney(s.previous_year_13th_month) : "-"}
+                </td>
+                <td className="strong">{fmtMoney(s.month_15)}</td>
                 <td className="strong">{fmtMoney(s.month_13)}</td>
                 <td className="strong">{fmtMoney(s.month_14)}</td>
-                <td className="strong">{fmtMoney(s.month_15)}</td>
                 <td className="bonus-result">
                   {s.saved_result > 0 ? `₱ ${fmtMoney(s.saved_result)}` : "-"}
                   {s.saved_percentage > 0 ? (
@@ -595,6 +919,14 @@ const Bonus = () => {
                         >
                           {s.saved_is_released ? "Released" : "Release"}
                         </button>
+
+                        <button
+                          type="button"
+                          className="bonus-menu-item"
+                          onClick={() => handleOpen13Month(s)}
+                        >
+                          {s.previous_year_13th_month > 0 ? "Edit" : "Add"} {previousYearLabel}
+                        </button>
                       </div>
                     )}
                   </div>
@@ -604,9 +936,10 @@ const Bonus = () => {
 
             <tr className="total-row">
               <td colSpan={5}>TOTAL</td>
+              <td className="strong">{fmtMoney(totalPreviousYear13th)}</td>
+              <td className="strong">{fmtMoney(total15)}</td>
               <td className="strong">{fmtMoney(total13)}</td>
               <td className="strong">{fmtMoney(total14)}</td>
-              <td className="strong">{fmtMoney(total15)}</td>
               <td className="bonus-result">{fmtMoney(totalResult)}</td>
               <td></td>
               <td></td>
@@ -627,7 +960,8 @@ const Bonus = () => {
               <div>
                 <h3 className="modal-title">Calculate 15th Month Result</h3>
                 <p className="modal-subtitle">
-                  {selectedRow.fullname} • 15th Month Base: <b>₱ {fmtMoney(selectedRow.month_15)}</b>
+                  {selectedRow.fullname} • {formatMonthYearLabel(bonusMonth)} 15th Month Base:{" "}
+                  <b>₱ {fmtMoney(selectedRow.month_15)}</b>
                 </p>
               </div>
 
@@ -698,7 +1032,8 @@ const Bonus = () => {
               <div>
                 <h3 className="modal-title">Release 15th Month Pay</h3>
                 <p className="modal-subtitle">
-                  {selectedRow.fullname} • Amount: <b>₱ {fmtMoney(selectedRow.saved_result)}</b>
+                  {selectedRow.fullname} • {formatMonthYearLabel(bonusMonth)} Amount:{" "}
+                  <b>₱ {fmtMoney(selectedRow.saved_result)}</b>
                 </p>
               </div>
 
@@ -746,6 +1081,92 @@ const Bonus = () => {
                   disabled={saving}
                 >
                   {saving ? "Releasing..." : "Release"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showEdit13Modal && selectedRow && (
+        <div
+          className="modal-overlay"
+          onMouseDown={(e) =>
+            e.target.classList.contains("modal-overlay") && closeEdit13Modal()
+          }
+        >
+          <div className="modal bonus-calc-modal" onMouseDown={(e) => e.stopPropagation()}>
+            <div className="modal-head">
+              <div>
+                <h3 className="modal-title">
+                  {edit13Id ? "Edit" : "Add"} {previousYearLabel}
+                </h3>
+                <p className="modal-subtitle">{selectedRow.fullname}</p>
+              </div>
+
+              <button className="modal-x" type="button" onClick={closeEdit13Modal}>
+                ✕
+              </button>
+            </div>
+
+            <div className="modal-form">
+              <div className="grid">
+                <div className="field full">
+                  <label>Employee</label>
+                  <div className="bonus-result-box">{selectedRow.fullname}</div>
+                </div>
+
+                <div className="field full">
+                  <label>{previousYearLabel} Amount</label>
+                  <input
+                    className="input"
+                    type="number"
+                    value={edit13Amount}
+                    onChange={(e) => setEdit13Amount(e.target.value)}
+                    placeholder="Enter amount"
+                  />
+                </div>
+
+                <div className="field full">
+                  <label>Release Date</label>
+                  <input
+                    className="input"
+                    type="date"
+                    value={edit13ReleaseDate}
+                    onChange={(e) => setEdit13ReleaseDate(e.target.value)}
+                  />
+                </div>
+
+                <div className="field full">
+                  <label>Remarks</label>
+                  <textarea
+                    className="input"
+                    value={edit13Remarks}
+                    onChange={(e) => setEdit13Remarks(e.target.value)}
+                    placeholder="Remarks"
+                  />
+                </div>
+              </div>
+
+              <div className="modal-actions">
+                <button
+                  className="btn-secondary"
+                  type="button"
+                  onClick={closeEdit13Modal}
+                  disabled={saving}
+                >
+                  Cancel
+                </button>
+
+                <button
+                  className="btn-primary"
+                  type="button"
+                  onClick={handleSave13thMonth}
+                  disabled={saving}
+                >
+                  {saving
+                    ? "Saving..."
+                    : `${edit13Id ? "Save" : "Add"} ${previousYearLabel}`}
                 </button>
               </div>
             </div>
