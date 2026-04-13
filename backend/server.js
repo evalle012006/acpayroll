@@ -31,6 +31,7 @@ const consolidationRoutes = require("./routes/consolidationRoutes");
 const logisticRoutes = require("./routes/logisticRoutes");
 const pendingStaffRoutes = require("./routes/pendingStaffRoutes");
 const salaryHistoryRoutes = require("./routes/salaryHistoryRoutes");
+const webhookRoutes = require("./routes/webhookRoutes");
 
 const app = express();
 
@@ -79,6 +80,8 @@ app.use("/api", consolidationRoutes);
 
 app.use("/api/logistic", logisticRoutes);
 app.use("/api/salary-history", salaryHistoryRoutes);
+
+app.use("/api/webhook", webhookRoutes);
 
 app.get("/test", (_req, res) => {
   res.send("Backend is working!");
