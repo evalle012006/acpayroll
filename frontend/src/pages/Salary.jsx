@@ -244,10 +244,11 @@ export default function Salary() {
       const total_ee = hdmf_ee + sss_ee + ph_ee;
 
       const tax = toNum(s.tax);
-      const utility_charge = toNum(s.utility_charge ?? bal.utility ?? s.utility);
 
-      const cbu = toNum(bal.cbu);
-      const cashbond = toNum(bal.cashbond);
+      // Monthly deduction values should come from staff table, not personal savings totals
+      const utility_charge = toNum(s.utility_charge ?? s.utility);
+      const cbu = toNum(s.cbu);
+      const cashbond = toNum(s.cashbond);
 
       const salary_advance = toNum(monthlyLoans.salary_advance);
       const motorcycle_loan = toNum(monthlyLoans.motorcycle_loan);
@@ -323,6 +324,11 @@ export default function Salary() {
         cash_advance,
         other_receivable,
         staff_accounts_payable,
+
+        // keep balance values too, for future display if needed
+        balance_cbu: toNum(bal.cbu),
+        balance_cashbond: toNum(bal.cashbond),
+        balance_utility: toNum(bal.utility),
 
         total_deduction,
         net_pay,
@@ -473,11 +479,11 @@ export default function Salary() {
                 <h3>Deductions (Monthly)</h3>
                 <table>
                   <tr><td>Withheld Tax</td><td>${money(s.tax)}</td></tr>
-                  <tr><td>Utility</td><td>${money(s.utility_charge)}</td></tr>
                   <tr><td>SSS (EE)</td><td>${money(s.sss_ee)}</td></tr>
                   <tr><td>PhilHealth (EE)</td><td>${money(s.ph_ee)}</td></tr>
                   <tr><td>HDMF (EE)</td><td>${money(s.hdmf_ee)}</td></tr>
                   <tr><td>CBU</td><td>${money(s.cbu)}</td></tr>
+                  <tr><td>Utility</td><td>${money(s.utility_charge)}</td></tr>
                   <tr><td>Cashbond</td><td>${money(s.cashbond)}</td></tr>
                   <tr><td>Salary Advance</td><td>${money(s.salary_advance)}</td></tr>
                   <tr><td>Motorcycle Loan</td><td>${money(s.motorcycle_loan)}</td></tr>
@@ -818,10 +824,6 @@ export default function Salary() {
                   <span>Withheld Tax</span>
                   <strong>{money(selectedStaff.tax)}</strong>
                 </div>
-                <div className="box-row">
-                  <span>Utility</span>
-                  <strong>{money(selectedStaff.utility_charge)}</strong>
-                </div>
 
                 <div className="box-row">
                   <span>SSS (EE)</span>
@@ -839,6 +841,10 @@ export default function Salary() {
                 <div className="box-row">
                   <span>CBU</span>
                   <strong>{money(selectedStaff.cbu)}</strong>
+                </div>
+                <div className="box-row">
+                  <span>Utility</span>
+                  <strong>{money(selectedStaff.utility_charge)}</strong>
                 </div>
                 <div className="box-row">
                   <span>Cashbond</span>

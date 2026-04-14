@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState, useCallback } from "react";
+import React, { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import api from "../api/axiosClient";
 import "../styles/TransferStaffOrder.css";
@@ -41,6 +41,10 @@ const fileSizeLabel = (bytes) => {
 export default function TransferStaffOrder() {
   const navigate = useNavigate();
 
+  const employeeBoxRef = useRef(null);
+  const fromBranchBoxRef = useRef(null);
+  const toBranchBoxRef = useRef(null);
+
   const user = useMemo(() => readUser(), []);
   const role = norm(user?.role);
   const canApprove = role === "admin";
@@ -75,7 +79,13 @@ export default function TransferStaffOrder() {
   const [showEmployeeResults, setShowEmployeeResults] = useState(false);
 
   const [fromBranchId, setFromBranchId] = useState("");
+  const [fromBranchQuery, setFromBranchQuery] = useState("");
+  const [showFromBranchResults, setShowFromBranchResults] = useState(false);
+
   const [toBranchId, setToBranchId] = useState("");
+  const [toBranchQuery, setToBranchQuery] = useState("");
+  const [showToBranchResults, setShowToBranchResults] = useState(false);
+
   const [effectiveDate, setEffectiveDate] = useState("");
 
   const [selectedFiles, setSelectedFiles] = useState([]);
@@ -107,8 +117,7 @@ export default function TransferStaffOrder() {
         const status = err?.response?.status;
         if (status === 401) return logout();
         setError(
-          err?.response?.data?.message ||
-            "Failed to load branches and staff."
+          err?.response?.data?.message || "Failed to load branches and staff."
         );
       } finally {
         setLoadingRefs(false);
@@ -234,9 +243,7 @@ export default function TransferStaffOrder() {
   const filteredStaff = useMemo(() => {
     const q = toStr(employeeQuery).toLowerCase();
 
-    if (!q) {
-      return staff.slice(0, 15);
-    }
+    if (!q) return staff.slice(0, 15);
 
     return staff
       .filter((s) => {
@@ -263,13 +270,86 @@ export default function TransferStaffOrder() {
       .slice(0, 20);
   }, [staff, employeeQuery, branches]);
 
+  const filteredFromBranches = useMemo(() => {
+    const q = toStr(fromBranchQuery).toLowerCase();
+
+    if (!q) return branches.slice(0, 15);
+
+    return branches
+      .filter((b) => {
+        const haystack = [b.id, b.code, b.name, b.area]
+          .map(toStr)
+          .join(" ")
+          .toLowerCase();
+
+        return haystack.includes(q);
+      })
+      .slice(0, 20);
+  }, [branches, fromBranchQuery]);
+
+  const filteredToBranches = useMemo(() => {
+    const q = toStr(toBranchQuery).toLowerCase();
+
+    const availableBranches = branches.filter(
+      (b) => String(b.id) !== String(fromBranchId)
+    );
+
+    if (!q) return availableBranches.slice(0, 15);
+
+    return availableBranches
+      .filter((b) => {
+        const haystack = [b.id, b.code, b.name, b.area]
+          .map(toStr)
+          .join(" ")
+          .toLowerCase();
+
+        return haystack.includes(q);
+      })
+      .slice(0, 20);
+  }, [branches, fromBranchId, toBranchQuery]);
+
   useEffect(() => {
     if (!showModal || !selectedEmployee) return;
 
     if (selectedEmployee.branch_id && !fromBranchId) {
+      const branch = branches.find(
+        (b) => Number(b.id) === Number(selectedEmployee.branch_id)
+      );
+
       setFromBranchId(String(selectedEmployee.branch_id));
+      setFromBranchQuery(branch ? branchLabel(branch) : "");
     }
-  }, [showModal, selectedEmployee, fromBranchId]);
+  }, [showModal, selectedEmployee, fromBranchId, branches]);
+
+  useEffect(() => {
+    if (!showModal) return;
+
+    const onMouseDown = (e) => {
+      if (
+        employeeBoxRef.current &&
+        !employeeBoxRef.current.contains(e.target)
+      ) {
+        setShowEmployeeResults(false);
+      }
+
+      if (
+        fromBranchBoxRef.current &&
+        !fromBranchBoxRef.current.contains(e.target)
+      ) {
+        setShowFromBranchResults(false);
+      }
+
+      if (
+        toBranchBoxRef.current &&
+        !toBranchBoxRef.current.contains(e.target)
+      ) {
+        setShowToBranchResults(false);
+      }
+    };
+
+    document.addEventListener("mousedown", onMouseDown);
+    return () => document.removeEventListener("mousedown", onMouseDown);
+  }, [showModal]);
 
   const approveOrder = async (id) => {
     if (!canApprove) return;
@@ -333,9 +413,14 @@ export default function TransferStaffOrder() {
     setShowEmployeeResults(false);
 
     setFromBranchId("");
-    setToBranchId("");
-    setEffectiveDate("");
+    setFromBranchQuery("");
+    setShowFromBranchResults(false);
 
+    setToBranchId("");
+    setToBranchQuery("");
+    setShowToBranchResults(false);
+
+    setEffectiveDate("");
     setSelectedFiles([]);
 
     setIsRedeploy(false);
@@ -366,8 +451,13 @@ export default function TransferStaffOrder() {
 
     setEmployeeId(String(order.employee_id || ""));
     setEmployeeQuery(toStr(order.employee_name));
+
     setFromBranchId(String(order.to_branch_id || ""));
     setToBranchId("");
+    setFromBranchQuery(
+      `${toStr(order.to_branch_code)} - ${toStr(order.to_branch_name)}`
+    );
+    setToBranchQuery("");
 
     setDivision(toStr(order.division));
     setArea("");
@@ -432,8 +522,27 @@ export default function TransferStaffOrder() {
     setShowEmployeeResults(false);
 
     if (s.branch_id) {
+      const branch = branches.find((b) => Number(b.id) === Number(s.branch_id));
       setFromBranchId(String(s.branch_id));
+      setFromBranchQuery(branch ? branchLabel(branch) : "");
     }
+  };
+
+  const handleChooseFromBranch = (b) => {
+    setFromBranchId(String(b.id || ""));
+    setFromBranchQuery(branchLabel(b));
+    setShowFromBranchResults(false);
+
+    if (String(toBranchId) === String(b.id)) {
+      setToBranchId("");
+      setToBranchQuery("");
+    }
+  };
+
+  const handleChooseToBranch = (b) => {
+    setToBranchId(String(b.id || ""));
+    setToBranchQuery(branchLabel(b));
+    setShowToBranchResults(false);
   };
 
   const saveOrder = async () => {
@@ -971,7 +1080,11 @@ export default function TransferStaffOrder() {
                     />
                   </div>
 
-                  <div className="field full" style={{ position: "relative" }}>
+                  <div
+                    className="field full"
+                    style={{ position: "relative" }}
+                    ref={employeeBoxRef}
+                  >
                     <label>Employee</label>
                     <input
                       type="text"
@@ -1001,7 +1114,7 @@ export default function TransferStaffOrder() {
                           background: "var(--card, #0f172a)",
                           border: "1px solid var(--border, rgba(255,255,255,0.1))",
                           borderRadius: 12,
-                          zIndex: 20,
+                          zIndex: 30,
                           boxShadow: "0 12px 30px rgba(0,0,0,0.25)",
                         }}
                       >
@@ -1026,7 +1139,8 @@ export default function TransferStaffOrder() {
                                 textAlign: "left",
                                 padding: "10px 12px",
                                 border: "none",
-                                borderBottom: "1px solid var(--border, rgba(255,255,255,0.08))",
+                                borderBottom:
+                                  "1px solid var(--border, rgba(255,255,255,0.08))",
                                 background: "transparent",
                                 color: "inherit",
                                 cursor: "pointer",
@@ -1045,13 +1159,11 @@ export default function TransferStaffOrder() {
                               >
                                 {toStr(s.position) || "No position"}
                                 {s.branch_id
-                                  ? ` • ${
-                                      branchLabel(
-                                        branches.find(
-                                          (b) => Number(b.id) === Number(s.branch_id)
-                                        )
-                                      ) || "-"
-                                    }`
+                                  ? ` • ${branchLabel(
+                                      branches.find(
+                                        (b) => Number(b.id) === Number(s.branch_id)
+                                      )
+                                    )}`
                                   : ""}
                               </div>
                             </button>
@@ -1061,36 +1173,140 @@ export default function TransferStaffOrder() {
                     )}
                   </div>
 
-                  <div className="field">
+                  <div
+                    className="field"
+                    style={{ position: "relative" }}
+                    ref={fromBranchBoxRef}
+                  >
                     <label>Previous Branch</label>
-                    <select
-                      value={fromBranchId}
-                      onChange={(e) => setFromBranchId(e.target.value)}
-                    >
-                      <option value="">Select branch…</option>
-                      {branches.map((b) => (
-                        <option key={b.id} value={b.id}>
-                          {branchLabel(b)}
-                        </option>
-                      ))}
-                    </select>
+                    <input
+                      type="text"
+                      value={fromBranchQuery}
+                      placeholder="Search previous branch..."
+                      onChange={(e) => {
+                        setFromBranchQuery(e.target.value);
+                        setFromBranchId("");
+                        setShowFromBranchResults(true);
+                      }}
+                      onFocus={() => setShowFromBranchResults(true)}
+                    />
+
+                    {showFromBranchResults && (
+                      <div
+                        style={{
+                          position: "absolute",
+                          left: 0,
+                          right: 0,
+                          top: "100%",
+                          marginTop: 6,
+                          maxHeight: 220,
+                          overflowY: "auto",
+                          background: "var(--card, #0f172a)",
+                          border: "1px solid var(--border, rgba(255,255,255,0.1))",
+                          borderRadius: 12,
+                          zIndex: 25,
+                          boxShadow: "0 12px 30px rgba(0,0,0,0.25)",
+                        }}
+                      >
+                        {filteredFromBranches.length === 0 ? (
+                          <div style={{ padding: 12, color: "var(--muted)", fontSize: 14 }}>
+                            No branch found.
+                          </div>
+                        ) : (
+                          filteredFromBranches.map((b) => (
+                            <button
+                              key={b.id}
+                              type="button"
+                              onClick={() => handleChooseFromBranch(b)}
+                              style={{
+                                width: "100%",
+                                textAlign: "left",
+                                padding: "10px 12px",
+                                border: "none",
+                                borderBottom:
+                                  "1px solid var(--border, rgba(255,255,255,0.08))",
+                                background: "transparent",
+                                color: "inherit",
+                                cursor: "pointer",
+                              }}
+                            >
+                              <div style={{ fontWeight: 700 }}>{branchLabel(b)}</div>
+                              <div style={{ fontSize: 12, opacity: 0.8, marginTop: 2 }}>
+                                {toStr(b.area) || "No area"}
+                              </div>
+                            </button>
+                          ))
+                        )}
+                      </div>
+                    )}
                   </div>
 
-                  <div className="field">
+                  <div
+                    className="field"
+                    style={{ position: "relative" }}
+                    ref={toBranchBoxRef}
+                  >
                     <label>Transfer To</label>
-                    <select
-                      value={toBranchId}
-                      onChange={(e) => setToBranchId(e.target.value)}
-                    >
-                      <option value="">Select branch…</option>
-                      {branches
-                        .filter((b) => String(b.id) !== String(fromBranchId))
-                        .map((b) => (
-                          <option key={b.id} value={b.id}>
-                            {branchLabel(b)}
-                          </option>
-                        ))}
-                    </select>
+                    <input
+                      type="text"
+                      value={toBranchQuery}
+                      placeholder="Search transfer branch..."
+                      onChange={(e) => {
+                        setToBranchQuery(e.target.value);
+                        setToBranchId("");
+                        setShowToBranchResults(true);
+                      }}
+                      onFocus={() => setShowToBranchResults(true)}
+                    />
+
+                    {showToBranchResults && (
+                      <div
+                        style={{
+                          position: "absolute",
+                          left: 0,
+                          right: 0,
+                          top: "100%",
+                          marginTop: 6,
+                          maxHeight: 220,
+                          overflowY: "auto",
+                          background: "var(--card, #0f172a)",
+                          border: "1px solid var(--border, rgba(255,255,255,0.1))",
+                          borderRadius: 12,
+                          zIndex: 25,
+                          boxShadow: "0 12px 30px rgba(0,0,0,0.25)",
+                        }}
+                      >
+                        {filteredToBranches.length === 0 ? (
+                          <div style={{ padding: 12, color: "var(--muted)", fontSize: 14 }}>
+                            No branch found.
+                          </div>
+                        ) : (
+                          filteredToBranches.map((b) => (
+                            <button
+                              key={b.id}
+                              type="button"
+                              onClick={() => handleChooseToBranch(b)}
+                              style={{
+                                width: "100%",
+                                textAlign: "left",
+                                padding: "10px 12px",
+                                border: "none",
+                                borderBottom:
+                                  "1px solid var(--border, rgba(255,255,255,0.08))",
+                                background: "transparent",
+                                color: "inherit",
+                                cursor: "pointer",
+                              }}
+                            >
+                              <div style={{ fontWeight: 700 }}>{branchLabel(b)}</div>
+                              <div style={{ fontSize: 12, opacity: 0.8, marginTop: 2 }}>
+                                {toStr(b.area) || "No area"}
+                              </div>
+                            </button>
+                          ))
+                        )}
+                      </div>
+                    )}
                   </div>
 
                   <div className="field">

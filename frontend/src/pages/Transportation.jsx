@@ -14,6 +14,8 @@ const toStr = (v) => String(v ?? "").trim();
 const norm = (v) => toStr(v).toLowerCase();
 const toDate10 = (v) => (v ? String(v).slice(0, 10) : "");
 
+const isActiveStaff = (s) => norm(s.status || "Active") !== "inactive";
+
 const readUser = () => {
   try {
     return JSON.parse(localStorage.getItem("user") || "null");
@@ -166,12 +168,14 @@ export default function Transportation() {
         const byBranchId = all.filter((s) => Number(s.branch_id) === Number(foundBranch.id));
         const byBranchCode = all.filter((s) => norm(s.branch_code) === norm(foundBranch.code));
 
-        const filtered =
+        const filteredRaw =
           byBranchId.length > 0
             ? byBranchId
             : byBranchCode.length > 0
             ? byBranchCode
             : all.filter((s) => norm(s.area) === norm(foundBranch.area));
+
+        const filtered = filteredRaw.filter(isActiveStaff);
 
         setStaff(filtered);
         await loadOverrides(foundBranch.id);
@@ -389,307 +393,62 @@ export default function Transportation() {
     );
   }
 
-    return (
-      <>
-        <div className="transpo-page no-print">
-          <div className="transpo-page-header">
-            <div>
-              <h2 className="transpo-title">Transportation Report</h2>
-              <p className="transpo-subtitle">
-                {branch ? `${branch.code} • ${branch.name} • ${branch.area}` : ""}
-              </p>
-            </div>
-
-            <div className="transpo-actions">
-              <button className="btn-secondary" onClick={() => navigate(-1)} type="button">
-                ← Back
-              </button>
-              <button className="btn-primary" onClick={() => window.print()} type="button">
-                Print
-              </button>
-            </div>
+  return (
+    <>
+      <div className="transpo-page no-print">
+        <div className="transpo-page-header">
+          <div>
+            <h2 className="transpo-title">Transportation Report</h2>
+            <p className="transpo-subtitle">
+              {branch ? `${branch.code} • ${branch.name} • ${branch.area}` : ""}
+            </p>
           </div>
 
-          <div className="transpo-card">
-            <div className="transpo-card-head">
-              <div className="transpo-card-title">Allowances, Deductions & Net Pay</div>
-            </div>
-
-            <div className="transpo-table-wrap">
-              <table className="transpo-table">
-                <thead>
-                  <tr>
-                    <th rowSpan={2}>ID</th>
-                    <th rowSpan={2}>Employee No</th>
-                    <th rowSpan={2}>Staff Name</th>
-                    <th rowSpan={2}>Position</th>
-                    <th rowSpan={2}>Date Regularized</th>
-                    <th rowSpan={2}>No. of Clients</th>
-
-                    <th colSpan={6}>Allowances & Incentives</th>
-                    <th colSpan={3}>Deductions</th>
-                    <th colSpan={3}>Net Pay</th>
-
-                    <th rowSpan={2}>Action</th>
-                  </tr>
-
-                  <tr>
-                    <th>Postage</th>
-                    <th>Transportation</th>
-                    <th>Target / 1200 / Less Excuses</th>
-                    <th>Repairing</th>
-                    <th>Monitoring</th>
-                    <th>Total Allowance</th>
-
-                    <th>Motorcycle</th>
-                    <th>Other</th>
-                    <th>Total Deduction</th>
-
-                    <th>Total Net Pay</th>
-                    <th>10th</th>
-                    <th>25th</th>
-                  </tr>
-                </thead>
-
-                <tbody>
-                  {rows.length === 0 ? (
-                    <tr>
-                      <td colSpan={19} className="empty-state">
-                        No staff found for this branch.
-                      </td>
-                    </tr>
-                  ) : (
-                    rows.map((r) => {
-                      const staffId = String(r.id);
-                      const ov = overrides?.[staffId];
-                      const hasOverride = !!ov && !isExpired(ov?.until);
-
-                      return (
-                        <tr key={r.id}>
-                          <td className="mono">{r.id}</td>
-                          <td className="mono">{r.employee_no || "-"}</td>
-                          <td className="td-strong td-left">
-                            {r.fullname}
-                            {hasOverride ? (
-                              <span style={{ marginLeft: 8, fontSize: 11, opacity: 0.9 }}>
-                                (Manual until {ov?.until})
-                              </span>
-                            ) : null}
-                          </td>
-                          <td>{r.position || "-"}</td>
-                          <td>{r.regularization_date ? String(r.regularization_date).split("T")[0] : "-"}</td>
-                          <td>{r.noOfClients || 0}</td>
-
-                          <td>₱ {money(r.postage)}</td>
-                          <td>₱ {money(r.transportation)}</td>
-                          <td>₱ {money(r.additionalTarget)}</td>
-                          <td>₱ {money(r.repairing)}</td>
-                          <td>₱ {money(r.additionalMonitoring)}</td>
-                          <td className="td-strong">₱ {money(r.totalAllowance)}</td>
-
-                          <td>₱ {money(r.motorcycle)}</td>
-                          <td>₱ {money(r.other)}</td>
-                          <td className="td-strong">₱ {money(r.totalDeduction)}</td>
-
-                          <td className={`td-strong ${r.netPay < 0 ? "neg" : "pos"}`}>
-                            ₱ {money(r.netPay)}
-                          </td>
-                          <td className={`${r.netPay10 < 0 ? "neg" : "pos"}`}>₱ {money(r.netPay10)}</td>
-                          <td className={`${r.netPay25 < 0 ? "neg" : "pos"}`}>₱ {money(r.netPay25)}</td>
-
-                          <td style={{ position: "relative" }}>
-                            <div
-                              ref={menuOpenFor === r.id ? menuWrapRef : null}
-                              style={{ display: "inline-block" }}
-                            >
-                              <button
-                                type="button"
-                                className="transpo-dots-btn"
-                                onClick={() => setMenuOpenFor((p) => (p === r.id ? null : r.id))}
-                                title="Actions"
-                              >
-                                <HiDotsVertical />
-                              </button>
-
-                              {menuOpenFor === r.id ? (
-                                <div className="transpo-action-menu">
-                                  {canManualEdit ? (
-                                    <button
-                                      type="button"
-                                      className="transpo-action-item"
-                                      onClick={() => openManualEdit(r)}
-                                    >
-                                      Edit manually
-                                    </button>
-                                  ) : null}
-
-                                  {canManualEdit && hasOverride ? (
-                                    <button
-                                      type="button"
-                                      className="transpo-action-item danger"
-                                      onClick={() => {
-                                        setMenuOpenFor(null);
-                                        const ok = window.confirm(
-                                          "Remove manual override and revert to normal?"
-                                        );
-                                        if (ok) clearOverrideForStaff(r.id);
-                                      }}
-                                    >
-                                      Remove manual edit
-                                    </button>
-                                  ) : null}
-                                </div>
-                              ) : null}
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })
-                  )}
-
-                  {rows.length > 0 && (
-                    <tr className="totals-row">
-                      <td colSpan={5} className="totals-label">
-                        Total
-                      </td>
-
-                      <td>{totals.noOfClients}</td>
-
-                      <td>₱ {money(totals.postage)}</td>
-                      <td>₱ {money(totals.transportation)}</td>
-                      <td>₱ {money(totals.additionalTarget)}</td>
-                      <td>₱ {money(totals.repairing)}</td>
-                      <td>₱ {money(totals.additionalMonitoring)}</td>
-                      <td className="td-strong">₱ {money(totals.totalAllowance)}</td>
-
-                      <td>₱ {money(totals.motorcycle)}</td>
-                      <td>₱ {money(totals.other)}</td>
-                      <td className="td-strong">₱ {money(totals.totalDeduction)}</td>
-
-                      <td className="td-strong">₱ {money(totals.netPay)}</td>
-                      <td className="td-strong">₱ {money(totals.netPay10)}</td>
-                      <td className="td-strong">₱ {money(totals.netPay25)}</td>
-
-                      <td />
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-
-            <div className="transpo-hint">Tip: scroll horizontally to view all columns.</div>
+          <div className="transpo-actions">
+            <button className="btn-secondary" onClick={() => navigate(-1)} type="button">
+              ← Back
+            </button>
+            <button className="btn-primary" onClick={() => window.print()} type="button">
+              Print
+            </button>
           </div>
-
-          {editModalStaff && canManualEdit ? (
-            <div
-              className="transpo-modal-overlay"
-              onMouseDown={(e) =>
-                e.target.classList.contains("transpo-modal-overlay") && closeModal()
-              }
-            >
-              <div className="transpo-modal" onMouseDown={(e) => e.stopPropagation()}>
-                <div className="transpo-modal-head">
-                  <div>
-                    <div className="transpo-modal-title">Edit manually</div>
-                    <div className="transpo-modal-sub">
-                      Employee: <b>{editModalStaff.fullname}</b> (ID:{" "}
-                      <span className="mono">{editModalStaff.id}</span>)
-                    </div>
-                    <div style={{ fontSize: 12, opacity: 0.85, marginTop: 6 }}>
-                      Note: Values start at <b>0</b>. This is a temporary override and will
-                      revert automatically.
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    className="transpo-modal-x"
-                    onClick={closeModal}
-                    disabled={savingOverride}
-                  >
-                    ✕
-                  </button>
-                </div>
-
-                <div className="transpo-modal-body">
-                  <div className="transpo-modal-row">
-                    <label>Effective date until</label>
-                    <input
-                      type="date"
-                      value={editUntil}
-                      onChange={(e) => setEditUntil(e.target.value)}
-                      disabled={savingOverride}
-                    />
-                  </div>
-
-                  <div className="transpo-modal-grid">
-                    {OVERRIDE_FIELDS.map((k) => (
-                      <div key={k} className="transpo-modal-field">
-                        <label>{LABELS[k] || k}</label>
-                        <input
-                          type="number"
-                          value={toNum(editValues[k])}
-                          onChange={(e) =>
-                            setEditValues((p) => ({
-                              ...p,
-                              [k]: toNum(e.target.value),
-                            }))
-                          }
-                          disabled={savingOverride}
-                        />
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="transpo-modal-actions">
-                  <button
-                    type="button"
-                    className="btn-secondary"
-                    onClick={closeModal}
-                    disabled={savingOverride}
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="button"
-                    className="btn-primary"
-                    onClick={saveManualEdit}
-                    disabled={savingOverride}
-                  >
-                    {savingOverride ? "Saving..." : "Save"}
-                  </button>
-                </div>
-              </div>
-            </div>
-          ) : null}
         </div>
 
-        <div className="print-only">
-          <div className="branch-transpo-print">
-            <div className="branch-transpo-print__title">TRANSPORTATION REPORT</div>
-            <div className="branch-transpo-print__branch">
-              {branch ? `${branch.code} • ${branch.name}` : ""}
-            </div>
-            <div className="branch-transpo-print__period">{branch?.area || ""}</div>
+        <div className="transpo-card">
+          <div className="transpo-card-head">
+            <div className="transpo-card-title">Allowances, Deductions & Net Pay</div>
+          </div>
 
-            <table className="branch-transpo-print-table">
+          <div className="transpo-table-wrap">
+            <table className="transpo-table">
               <thead>
                 <tr>
-                  <th>ID</th>
-                  <th>Employee No</th>
-                  <th>Name</th>
-                  <th>Position</th>
-                  <th>Date Regularized</th>
-                  <th>Clients</th>
+                  <th rowSpan={2}>ID</th>
+                  <th rowSpan={2}>Employee No</th>
+                  <th rowSpan={2}>Staff Name</th>
+                  <th rowSpan={2}>Position</th>
+                  <th rowSpan={2}>Date Regularized</th>
+                  <th rowSpan={2}>No. of Clients</th>
+
+                  <th colSpan={6}>Allowances & Incentives</th>
+                  <th colSpan={3}>Deductions</th>
+                  <th colSpan={3}>Net Pay</th>
+
+                  <th rowSpan={2}>Action</th>
+                </tr>
+
+                <tr>
                   <th>Postage</th>
                   <th>Transportation</th>
-                  <th>Target</th>
+                  <th>Target / 1200 / Less Excuses</th>
                   <th>Repairing</th>
                   <th>Monitoring</th>
                   <th>Total Allowance</th>
+
                   <th>Motorcycle</th>
                   <th>Other</th>
                   <th>Total Deduction</th>
+
                   <th>Total Net Pay</th>
                   <th>10th</th>
                   <th>25th</th>
@@ -699,71 +458,315 @@ export default function Transportation() {
               <tbody>
                 {rows.length === 0 ? (
                   <tr>
-                    <td colSpan={18}>No staff found for this branch.</td>
+                    <td colSpan={19} className="empty-state">
+                      No staff found for this branch.
+                    </td>
                   </tr>
                 ) : (
-                  rows.map((r) => (
-                    <tr key={`print-${r.id}`}>
-                      <td>{r.id}</td>
-                      <td>{r.employee_no || "-"}</td>
-                      <td>{r.fullname}</td>
-                      <td>{r.position || "-"}</td>
-                      <td>{r.regularization_date ? String(r.regularization_date).split("T")[0] : "-"}</td>
-                      <td>{r.noOfClients || 0}</td>
-                      <td>{money(r.postage)}</td>
-                      <td>{money(r.transportation)}</td>
-                      <td>{money(r.additionalTarget)}</td>
-                      <td>{money(r.repairing)}</td>
-                      <td>{money(r.additionalMonitoring)}</td>
-                      <td>{money(r.totalAllowance)}</td>
-                      <td>{money(r.motorcycle)}</td>
-                      <td>{money(r.other)}</td>
-                      <td>{money(r.totalDeduction)}</td>
-                      <td>{money(r.netPay)}</td>
-                      <td>{money(r.netPay10)}</td>
-                      <td>{money(r.netPay25)}</td>
-                    </tr>
-                  ))
+                  rows.map((r) => {
+                    const staffId = String(r.id);
+                    const ov = overrides?.[staffId];
+                    const hasOverride = !!ov && !isExpired(ov?.until);
+
+                    return (
+                      <tr key={r.id}>
+                        <td className="mono">{r.id}</td>
+                        <td className="mono">{r.employee_no || "-"}</td>
+                        <td className="td-strong td-left">
+                          {r.fullname}
+                          {hasOverride ? (
+                            <span style={{ marginLeft: 8, fontSize: 11, opacity: 0.9 }}>
+                              (Manual until {ov?.until})
+                            </span>
+                          ) : null}
+                        </td>
+                        <td>{r.position || "-"}</td>
+                        <td>{r.regularization_date ? String(r.regularization_date).split("T")[0] : "-"}</td>
+                        <td>{r.noOfClients || 0}</td>
+
+                        <td>₱ {money(r.postage)}</td>
+                        <td>₱ {money(r.transportation)}</td>
+                        <td>₱ {money(r.additionalTarget)}</td>
+                        <td>₱ {money(r.repairing)}</td>
+                        <td>₱ {money(r.additionalMonitoring)}</td>
+                        <td className="td-strong">₱ {money(r.totalAllowance)}</td>
+
+                        <td>₱ {money(r.motorcycle)}</td>
+                        <td>₱ {money(r.other)}</td>
+                        <td className="td-strong">₱ {money(r.totalDeduction)}</td>
+
+                        <td className={`td-strong ${r.netPay < 0 ? "neg" : "pos"}`}>
+                          ₱ {money(r.netPay)}
+                        </td>
+                        <td className={`${r.netPay10 < 0 ? "neg" : "pos"}`}>₱ {money(r.netPay10)}</td>
+                        <td className={`${r.netPay25 < 0 ? "neg" : "pos"}`}>₱ {money(r.netPay25)}</td>
+
+                        <td style={{ position: "relative" }}>
+                          <div
+                            ref={menuOpenFor === r.id ? menuWrapRef : null}
+                            style={{ display: "inline-block" }}
+                          >
+                            <button
+                              type="button"
+                              className="transpo-dots-btn"
+                              onClick={() => setMenuOpenFor((p) => (p === r.id ? null : r.id))}
+                              title="Actions"
+                            >
+                              <HiDotsVertical />
+                            </button>
+
+                            {menuOpenFor === r.id ? (
+                              <div className="transpo-action-menu">
+                                {canManualEdit ? (
+                                  <button
+                                    type="button"
+                                    className="transpo-action-item"
+                                    onClick={() => openManualEdit(r)}
+                                  >
+                                    Edit manually
+                                  </button>
+                                ) : null}
+
+                                {canManualEdit && hasOverride ? (
+                                  <button
+                                    type="button"
+                                    className="transpo-action-item danger"
+                                    onClick={() => {
+                                      setMenuOpenFor(null);
+                                      const ok = window.confirm(
+                                        "Remove manual override and revert to normal?"
+                                      );
+                                      if (ok) clearOverrideForStaff(r.id);
+                                    }}
+                                  >
+                                    Remove manual edit
+                                  </button>
+                                ) : null}
+                              </div>
+                            ) : null}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })
                 )}
 
                 {rows.length > 0 && (
-                  <tr className="branch-transpo-print-total">
-                    <td colSpan={6}>TOTAL</td>
-                    <td>{money(totals.postage)}</td>
-                    <td>{money(totals.transportation)}</td>
-                    <td>{money(totals.additionalTarget)}</td>
-                    <td>{money(totals.repairing)}</td>
-                    <td>{money(totals.additionalMonitoring)}</td>
-                    <td>{money(totals.totalAllowance)}</td>
-                    <td>{money(totals.motorcycle)}</td>
-                    <td>{money(totals.other)}</td>
-                    <td>{money(totals.totalDeduction)}</td>
-                    <td>{money(totals.netPay)}</td>
-                    <td>{money(totals.netPay10)}</td>
-                    <td>{money(totals.netPay25)}</td>
+                  <tr className="totals-row">
+                    <td colSpan={5} className="totals-label">
+                      Total
+                    </td>
+
+                    <td>{totals.noOfClients}</td>
+
+                    <td>₱ {money(totals.postage)}</td>
+                    <td>₱ {money(totals.transportation)}</td>
+                    <td>₱ {money(totals.additionalTarget)}</td>
+                    <td>₱ {money(totals.repairing)}</td>
+                    <td>₱ {money(totals.additionalMonitoring)}</td>
+                    <td className="td-strong">₱ {money(totals.totalAllowance)}</td>
+
+                    <td>₱ {money(totals.motorcycle)}</td>
+                    <td>₱ {money(totals.other)}</td>
+                    <td className="td-strong">₱ {money(totals.totalDeduction)}</td>
+
+                    <td className="td-strong">₱ {money(totals.netPay)}</td>
+                    <td className="td-strong">₱ {money(totals.netPay10)}</td>
+                    <td className="td-strong">₱ {money(totals.netPay25)}</td>
+
+                    <td />
                   </tr>
                 )}
               </tbody>
             </table>
-            <div className="branch-payroll-print__signatures">
-              <div className="branch-payroll-print__sign-box">
-                <div className="branch-payroll-print__sign-line"></div>
-                <div>Prepared by:</div>
+          </div>
+
+          <div className="transpo-hint">Tip: scroll horizontally to view all columns.</div>
+        </div>
+
+        {editModalStaff && canManualEdit ? (
+          <div
+            className="transpo-modal-overlay"
+            onMouseDown={(e) =>
+              e.target.classList.contains("transpo-modal-overlay") && closeModal()
+            }
+          >
+            <div className="transpo-modal" onMouseDown={(e) => e.stopPropagation()}>
+              <div className="transpo-modal-head">
+                <div>
+                  <div className="transpo-modal-title">Edit manually</div>
+                  <div className="transpo-modal-sub">
+                    Employee: <b>{editModalStaff.fullname}</b> (ID:{" "}
+                    <span className="mono">{editModalStaff.id}</span>)
+                  </div>
+                  <div style={{ fontSize: 12, opacity: 0.85, marginTop: 6 }}>
+                    Note: Values start at <b>0</b>. This is a temporary override and will
+                    revert automatically.
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  className="transpo-modal-x"
+                  onClick={closeModal}
+                  disabled={savingOverride}
+                >
+                  ✕
+                </button>
               </div>
 
-              <div className="branch-payroll-print__sign-box">
-                <div className="branch-payroll-print__sign-line"></div>
-                <div>Checked by:</div>
+              <div className="transpo-modal-body">
+                <div className="transpo-modal-row">
+                  <label>Effective date until</label>
+                  <input
+                    type="date"
+                    value={editUntil}
+                    onChange={(e) => setEditUntil(e.target.value)}
+                    disabled={savingOverride}
+                  />
+                </div>
+
+                <div className="transpo-modal-grid">
+                  {OVERRIDE_FIELDS.map((k) => (
+                    <div key={k} className="transpo-modal-field">
+                      <label>{LABELS[k] || k}</label>
+                      <input
+                        type="number"
+                        value={toNum(editValues[k])}
+                        onChange={(e) =>
+                          setEditValues((p) => ({
+                            ...p,
+                            [k]: toNum(e.target.value),
+                          }))
+                        }
+                        disabled={savingOverride}
+                      />
+                    </div>
+                  ))}
+                </div>
               </div>
 
-              <div className="branch-payroll-print__sign-box">
-                <div className="branch-payroll-print__sign-line"></div>
-                <div>Approved by:</div>
+              <div className="transpo-modal-actions">
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  onClick={closeModal}
+                  disabled={savingOverride}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="btn-primary"
+                  onClick={saveManualEdit}
+                  disabled={savingOverride}
+                >
+                  {savingOverride ? "Saving..." : "Save"}
+                </button>
               </div>
             </div>
+          </div>
+        ) : null}
+      </div>
 
+      <div className="print-only">
+        <div className="branch-transpo-print">
+          <div className="branch-transpo-print__title">TRANSPORTATION REPORT</div>
+          <div className="branch-transpo-print__branch">
+            {branch ? `${branch.code} • ${branch.name}` : ""}
+          </div>
+          <div className="branch-transpo-print__period">{branch?.area || ""}</div>
+
+          <table className="branch-transpo-print-table">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Employee No</th>
+                <th>Name</th>
+                <th>Position</th>
+                <th>Date Regularized</th>
+                <th>Clients</th>
+                <th>Postage</th>
+                <th>Transportation</th>
+                <th>Target</th>
+                <th>Repairing</th>
+                <th>Monitoring</th>
+                <th>Total Allowance</th>
+                <th>Motorcycle</th>
+                <th>Other</th>
+                <th>Total Deduction</th>
+                <th>Total Net Pay</th>
+                <th>10th</th>
+                <th>25th</th>
+              </tr>
+            </thead>
+
+            <tbody>
+              {rows.length === 0 ? (
+                <tr>
+                  <td colSpan={18}>No staff found for this branch.</td>
+                </tr>
+              ) : (
+                rows.map((r) => (
+                  <tr key={`print-${r.id}`}>
+                    <td>{r.id}</td>
+                    <td>{r.employee_no || "-"}</td>
+                    <td>{r.fullname}</td>
+                    <td>{r.position || "-"}</td>
+                    <td>{r.regularization_date ? String(r.regularization_date).split("T")[0] : "-"}</td>
+                    <td>{r.noOfClients || 0}</td>
+                    <td>{money(r.postage)}</td>
+                    <td>{money(r.transportation)}</td>
+                    <td>{money(r.additionalTarget)}</td>
+                    <td>{money(r.repairing)}</td>
+                    <td>{money(r.additionalMonitoring)}</td>
+                    <td>{money(r.totalAllowance)}</td>
+                    <td>{money(r.motorcycle)}</td>
+                    <td>{money(r.other)}</td>
+                    <td>{money(r.totalDeduction)}</td>
+                    <td>{money(r.netPay)}</td>
+                    <td>{money(r.netPay10)}</td>
+                    <td>{money(r.netPay25)}</td>
+                  </tr>
+                ))
+              )}
+
+              {rows.length > 0 && (
+                <tr className="branch-transpo-print-total">
+                  <td colSpan={6}>TOTAL</td>
+                  <td>{money(totals.postage)}</td>
+                  <td>{money(totals.transportation)}</td>
+                  <td>{money(totals.additionalTarget)}</td>
+                  <td>{money(totals.repairing)}</td>
+                  <td>{money(totals.additionalMonitoring)}</td>
+                  <td>{money(totals.totalAllowance)}</td>
+                  <td>{money(totals.motorcycle)}</td>
+                  <td>{money(totals.other)}</td>
+                  <td>{money(totals.totalDeduction)}</td>
+                  <td>{money(totals.netPay)}</td>
+                  <td>{money(totals.netPay10)}</td>
+                  <td>{money(totals.netPay25)}</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+          <div className="branch-payroll-print__signatures">
+            <div className="branch-payroll-print__sign-box">
+              <div className="branch-payroll-print__sign-line"></div>
+              <div>Prepared by:</div>
+            </div>
+
+            <div className="branch-payroll-print__sign-box">
+              <div className="branch-payroll-print__sign-line"></div>
+              <div>Checked by:</div>
+            </div>
+
+            <div className="branch-payroll-print__sign-box">
+              <div className="branch-payroll-print__sign-line"></div>
+              <div>Approved by:</div>
+            </div>
           </div>
         </div>
-      </>
-    );  
+      </div>
+    </>
+  );
 }

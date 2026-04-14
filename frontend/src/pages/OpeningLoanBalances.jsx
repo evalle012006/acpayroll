@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import api from "../api/axiosClient";
 import "../styles/LeaveTransactions.css";
 
@@ -6,6 +6,8 @@ const toNum = (v) => {
   const n = Number(v ?? 0);
   return Number.isFinite(n) ? n : 0;
 };
+
+const toStr = (v) => String(v ?? "").trim();
 
 const fmtMoney = (v) =>
   `₱ ${toNum(v).toLocaleString(undefined, {
@@ -31,14 +33,25 @@ const readUser = () => {
   }
 };
 
+const displayStaffLabel = (s) => {
+  const employeeNo = toStr(s?.employee_no);
+  const fullname = toStr(s?.fullname);
+  return `${employeeNo ? `${employeeNo} - ` : ""}${fullname || "-"}`;
+};
+
 export default function OpeningLoanBalances() {
   const user = useMemo(() => readUser(), []);
   const role = String(user?.role || "").trim().toLowerCase();
   const canManage = role === "admin" || role === "hr" || role === "accounting";
 
+  const staffPickerRef = useRef(null);
+
   const [staffList, setStaffList] = useState([]);
   const [rows, setRows] = useState([]);
   const [staffId, setStaffId] = useState("");
+  const [staffQuery, setStaffQuery] = useState("");
+  const [showStaffResults, setShowStaffResults] = useState(false);
+
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -95,10 +108,48 @@ export default function OpeningLoanBalances() {
     fetchRows(staffId);
   }, [staffId, fetchRows]);
 
+  useEffect(() => {
+    const onMouseDown = (e) => {
+      if (staffPickerRef.current && !staffPickerRef.current.contains(e.target)) {
+        setShowStaffResults(false);
+      }
+    };
+
+    document.addEventListener("mousedown", onMouseDown);
+    return () => document.removeEventListener("mousedown", onMouseDown);
+  }, []);
+
   const selectedStaff = useMemo(
-    () => staffList.find((s) => String(s.id) === String(staffId)),
+    () => staffList.find((s) => String(s.id) === String(staffId)) || null,
     [staffId, staffList]
   );
+
+  const filteredStaffList = useMemo(() => {
+    const q = toStr(staffQuery).toLowerCase();
+
+    if (!q) return staffList.slice(0, 20);
+
+    return staffList
+      .filter((s) => {
+        const haystack = [
+          s.id,
+          s.employee_no,
+          s.fullname,
+          s.last_name,
+          s.first_name,
+          s.middle_name,
+          s.position,
+          s.area,
+          s.region,
+          s.division,
+        ]
+          .map((x) => toStr(x).toLowerCase())
+          .join(" ");
+
+        return haystack.includes(q);
+      })
+      .slice(0, 30);
+  }, [staffList, staffQuery]);
 
   useEffect(() => {
     const original = toNum(form.original_amount);
@@ -158,6 +209,31 @@ export default function OpeningLoanBalances() {
       status: "Active",
       remarks: "",
     });
+  };
+
+  const handleChooseStaff = (staffRow) => {
+    setStaffId(String(staffRow.id));
+    setStaffQuery(displayStaffLabel(staffRow));
+    setShowStaffResults(false);
+
+    setForm((prev) => ({
+      ...prev,
+      id: null,
+      staff_id: staffRow.id,
+      loan_type: "Salary Advance",
+      original_amount: "",
+      interest: "",
+      interest_amount: "",
+      total_amount: "",
+      term_months: "",
+      months_paid: "",
+      per_month: "",
+      remaining_balance: "",
+      start_date: "",
+      effective_date: "",
+      status: "Active",
+      remarks: "",
+    }));
   };
 
   const onEdit = (row) => {
@@ -231,19 +307,99 @@ export default function OpeningLoanBalances() {
         </div>
       </div>
 
-      <div className="table-card" style={{ marginBottom: 16 }}>
-        <div className="modal-form" style={{ padding: 16 }}>
-          <div className="modal-grid">
-            <div className="form-group">
+      <div
+        className="table-card"
+        style={{
+          marginBottom: 16,
+          overflow: "visible",
+          position: "relative",
+          zIndex: 30,
+        }}
+      >
+        <div
+          className="modal-form"
+          style={{
+            padding: 16,
+            overflow: "visible",
+            position: "relative",
+            zIndex: 30,
+          }}
+        >
+          <div
+            className="modal-grid"
+            style={{
+              overflow: "visible",
+              position: "relative",
+              zIndex: 30,
+            }}
+          >
+            <div
+              className="form-group"
+              style={{ position: "relative", zIndex: 50 }}
+              ref={staffPickerRef}
+            >
               <label>Staff</label>
-              <select value={staffId} onChange={(e) => setStaffId(e.target.value)}>
-                <option value="">Select Staff</option>
-                {staffList.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {(s.employee_no ? `${s.employee_no} - ` : "") + (s.fullname || "-")}
-                  </option>
-                ))}
-              </select>
+              <input
+                value={staffQuery}
+                placeholder="Type employee no or staff name..."
+                onChange={(e) => {
+                  setStaffQuery(e.target.value);
+                  setStaffId("");
+                  setShowStaffResults(true);
+                  setRows([]);
+                }}
+                onFocus={() => setShowStaffResults(true)}
+              />
+
+              {showStaffResults && (
+                <div
+                  style={{
+                    position: "absolute",
+                    left: 0,
+                    right: 0,
+                    top: "100%",
+                    marginTop: 6,
+                    maxHeight: 240,
+                    overflowY: "auto",
+                    background: "var(--card, #0f172a)",
+                    border: "1px solid var(--border, rgba(255,255,255,0.1))",
+                    borderRadius: 12,
+                    zIndex: 9999,
+                    boxShadow: "0 12px 30px rgba(0,0,0,0.25)",
+                  }}
+                >
+                  {filteredStaffList.length === 0 ? (
+                    <div style={{ padding: 12, opacity: 0.8 }}>
+                      No staff found.
+                    </div>
+                  ) : (
+                    filteredStaffList.map((s) => (
+                      <button
+                        key={s.id}
+                        type="button"
+                        onClick={() => handleChooseStaff(s)}
+                        style={{
+                          width: "100%",
+                          textAlign: "left",
+                          padding: "10px 12px",
+                          border: "none",
+                          borderBottom: "1px solid var(--border, rgba(255,255,255,0.08))",
+                          background: "transparent",
+                          color: "inherit",
+                          cursor: "pointer",
+                        }}
+                      >
+                        <div style={{ fontWeight: 700 }}>
+                          {displayStaffLabel(s)}
+                        </div>
+                        <div style={{ fontSize: 12, opacity: 0.8, marginTop: 2 }}>
+                          {toStr(s.position) || "No position"}
+                        </div>
+                      </button>
+                    ))
+                  )}
+                </div>
+              )}
             </div>
 
             <div className="form-group">

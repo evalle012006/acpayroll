@@ -46,10 +46,11 @@ app.use(
   })
 );
 
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: "25mb" }));
+app.use(express.urlencoded({ extended: true, limit: "25mb" }));
 
-app.use("/uploads", express.static(path.join(__dirname, "uploads")));
+// IMPORTANT: must match your upload route code that uses process.cwd() + /uploads
+app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
 
 app.use("/api/auth", authRoutes);
 app.use("/api/users", userRoutes);
@@ -57,12 +58,13 @@ app.use("/api/users", userRoutes);
 app.use("/api/bonus", bonusRoutes);
 app.use("/api/schedule-balances", scheduleBalancesRoutes);
 app.use("/api/transport-overrides", transportOverrideRoutes);
+app.use("/api/logistic", logisticRoutes);
+app.use("/api/salary-history", salaryHistoryRoutes);
+app.use("/api/status-history", statusHistoryRoutes);
 
 app.use("/api", compRatesRoutes);
 app.use("/api", staffRoutes);
-
 app.use("/api", pendingStaffRoutes);
-
 app.use("/api", reportRoutes);
 app.use("/api", settlementsRoutes);
 app.use("/api", leaveRoutes);
@@ -80,11 +82,6 @@ app.use("/api", branchesRoutes);
 app.use("/api", sbfRoutes);
 app.use("/api", areaConfigurationsRoutes);
 app.use("/api", consolidationRoutes);
-
-app.use("/api/logistic", logisticRoutes);
-
-app.use("/api/salary-history", salaryHistoryRoutes);
-app.use("/api/status-history", statusHistoryRoutes);
 app.use("/api", staffLoanOpeningBalancesRoutes);
 app.use("/api", staffBonusHistoryRoutes);
 
@@ -100,9 +97,9 @@ app.use((req, res) => {
   res.status(404).json({ message: "Route not found" });
 });
 
-app.use((err, req, res, next) => {
+app.use((err, _req, res, _next) => {
   console.error("SERVER ERROR:", err);
-  res.status(500).json({ message: "Internal server error" });
+  res.status(500).json({ message: err?.message || "Internal server error" });
 });
 
 const PORT = Number(process.env.PORT || 5000);

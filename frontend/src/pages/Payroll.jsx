@@ -21,6 +21,8 @@ const monthlyFromWhole = (v) => {
   return n / 12;
 };
 
+const isActiveStaff = (s) => norm(s.status || "Active") !== "inactive";
+
 const readUser = () => {
   try {
     return JSON.parse(localStorage.getItem("user") || "null");
@@ -197,12 +199,14 @@ function Payroll() {
           (s) => norm(s.branch_code) === norm(foundBranch.code)
         );
 
-        const filtered =
+        const filteredRaw =
           byBranchId.length > 0
             ? byBranchId
             : byBranchCode.length > 0
             ? byBranchCode
             : allStaff.filter((s) => norm(s.area) === norm(foundBranch.area));
+
+        const filtered = filteredRaw.filter(isActiveStaff);
 
         setStaff(filtered);
       } catch (err) {
@@ -921,8 +925,6 @@ function Payroll() {
               <div>Approved by:</div>
             </div>
           </div>
-
-          
         </div>
       </div>
     </div>

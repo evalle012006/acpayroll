@@ -111,7 +111,7 @@ export default function ScheduleBalances() {
   const branchLabel = useCallback(
     (branchId) => {
       const b = branchMap.get(String(branchId));
-      return b ? `${b.code} - ${b.name}` : String(branchId || "-");
+      return b ? `${b.code} - ${b.name}` : "";
     },
     [branchMap]
   );
@@ -137,8 +137,7 @@ export default function ScheduleBalances() {
 
     if (isAreaManager) {
       return branches.filter(
-        (b) =>
-          String(b.area || "").trim().toLowerCase() === userArea.toLowerCase()
+        (b) => String(b.area || "").trim().toLowerCase() === userArea.toLowerCase()
       );
     }
 
@@ -299,19 +298,32 @@ export default function ScheduleBalances() {
     const map = new Map();
 
     for (const r of filteredEmployeeRows) {
-      if (isBranchManager && String(r.branch_id) !== String(resolvedUserBranchId)) continue;
+      const rawBranchId = r.branch_id;
+
+      // Skip rows with blank/null branch_id so "-" group will not appear
+      if (rawBranchId === null || rawBranchId === undefined || String(rawBranchId).trim() === "") {
+        continue;
+      }
+
+      const branch = branchMap.get(String(rawBranchId));
+
+      // Skip rows whose branch_id does not exist in master branches
+      if (!branch) {
+        continue;
+      }
+
+      if (isBranchManager && String(rawBranchId) !== String(resolvedUserBranchId)) continue;
 
       if (isAreaManager) {
-        const branch = branchMap.get(String(r.branch_id));
         const branchArea = String(branch?.area || "").trim().toLowerCase();
         if (branchArea !== userArea.toLowerCase()) continue;
       }
 
-      const key = String(r.branch_id || "unassigned");
+      const key = String(rawBranchId);
 
       const existing = map.get(key) || {
-        branch_id: r.branch_id || "",
-        branch_label: branchLabel(r.branch_id),
+        branch_id: rawBranchId,
+        branch_label: `${toStr(branch.code)} - ${toStr(branch.name)}`,
         staff_count: 0,
         staff_rows: [],
         cbu: 0,
@@ -340,7 +352,6 @@ export default function ScheduleBalances() {
     );
   }, [
     filteredEmployeeRows,
-    branchLabel,
     isBranchManager,
     isAreaManager,
     resolvedUserBranchId,
@@ -406,7 +417,7 @@ export default function ScheduleBalances() {
     if (isAreaManager) {
       return userArea || "My Area";
     }
-    if (effectiveBranchId) return branchLabel(effectiveBranchId);
+    if (effectiveBranchId) return branchLabel(effectiveBranchId) || effectiveBranchId;
     if (isBranchManager && userBranchRaw) return userBranchRaw;
     return "All";
   }, [effectiveBranchId, branchLabel, isBranchManager, isAreaManager, userBranchRaw, userArea]);

@@ -1,6 +1,9 @@
 const express = require("express");
 const router = express.Router();
 const pool = require("../db");
+const path = require("path");
+const fs = require("fs");
+const multer = require("multer");
 const { requireAuth, requireRole } = require("../middlewares/authMiddleware");
 
 const toInt = (v) => {
@@ -41,6 +44,34 @@ const displayName = (row) => {
   return built || toStr(row?.fullname) || "-";
 };
 
+/* =========================================================
+   UPLOAD CONFIG
+========================================================= */
+const uploadsRoot = path.join(process.cwd(), "uploads");
+const transferUploadsDir = path.join(uploadsRoot, "transfer-staff-orders");
+
+if (!fs.existsSync(transferUploadsDir)) {
+  fs.mkdirSync(transferUploadsDir, { recursive: true });
+}
+
+const storage = multer.diskStorage({
+  destination: (_req, _file, cb) => {
+    cb(null, transferUploadsDir);
+  },
+  filename: (_req, file, cb) => {
+    const ext = path.extname(file.originalname || "");
+    const base = path
+      .basename(file.originalname || "file", ext)
+      .replace(/[^a-zA-Z0-9-_]/g, "_");
+    cb(null, `${Date.now()}-${Math.round(Math.random() * 1e9)}-${base}${ext}`);
+  },
+});
+
+const upload = multer({
+  storage,
+  limits: { fileSize: 20 * 1024 * 1024 }, // 20MB each
+});
+
 async function generateTransferOrderNo(client) {
   const now = new Date();
   const year = now.getFullYear();
@@ -80,6 +111,35 @@ async function generateTransferOrderNo(client) {
   const mm = String(month).padStart(2, "0");
   const nnnn = String(nextVal).padStart(4, "0");
   return `${prefix}-${year}-${mm}-${nnnn}`;
+}
+
+async function canAccessTransferOrderFiles(req, orderRow) {
+  const branchId = getUserBranchId(req);
+  const userArea = getUserArea(req);
+  const userRegion = getUserRegion(req);
+
+  if (
+    isAdmin(req) ||
+    isHr(req) ||
+    isAccounting(req) ||
+    isAssistantVicePresident(req)
+  ) {
+    return true;
+  }
+
+  if (isBranchManager(req)) {
+    return Number(branchId) === Number(orderRow.prev_branch_id);
+  }
+
+  if (isAreaManager(req)) {
+    return toStr(userArea).toLowerCase() === toStr(orderRow.area).toLowerCase();
+  }
+
+  if (isRegionalManager(req)) {
+    return toStr(userRegion).toLowerCase() === toStr(orderRow.region).toLowerCase();
+  }
+
+  return false;
 }
 
 /* =========================================================
@@ -182,6 +242,7 @@ router.post(
   ]),
   async (req, res) => {
     const client = await pool.connect();
+
     try {
       await client.query("BEGIN");
 
@@ -374,6 +435,220 @@ router.post(
       return res.status(500).json({ message: "Server error" });
     } finally {
       client.release();
+    }
+  }
+);
+
+/* =========================================================
+   LIST FILES OF A TRANSFER ORDER
+========================================================= */
+router.get(
+  "/transfer-staff-orders/:id/files",
+  requireAuth,
+  async (req, res) => {
+    try {
+      const transferOrderId = toInt(req.params.id);
+      if (!transferOrderId) {
+        return res.status(400).json({ message: "Invalid transfer order id" });
+      }
+
+      const orderCheck = await pool.query(
+        `
+        SELECT id, prev_branch_id, area, region
+        FROM public.transfer_staff_orders
+        WHERE id = $1
+        `,
+        [transferOrderId]
+      );
+
+      if (orderCheck.rowCount === 0) {
+        return res.status(404).json({ message: "Transfer order not found" });
+      }
+
+      const order = orderCheck.rows[0];
+      const allowed = await canAccessTransferOrderFiles(req, order);
+
+      if (!allowed) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      const r = await pool.query(
+        `
+        SELECT
+          id,
+          transfer_order_id,
+          original_name,
+          filename,
+          file_path,
+          mime_type,
+          file_size,
+          uploaded_by,
+          created_at
+        FROM public.transfer_staff_order_files
+        WHERE transfer_order_id = $1
+        ORDER BY created_at DESC, id DESC
+        `,
+        [transferOrderId]
+      );
+
+      return res.json(r.rows);
+    } catch (e) {
+      console.error("GET /api/transfer-staff-orders/:id/files ERROR:", e.message);
+      return res.status(500).json({ message: "Server error" });
+    }
+  }
+);
+
+/* =========================================================
+   UPLOAD FILES TO A TRANSFER ORDER
+========================================================= */
+router.post(
+  "/transfer-staff-orders/:id/files",
+  requireAuth,
+  requireRole([
+    "admin",
+    "branch manager",
+    "area manager",
+    "regional manager",
+    "assistant vice president",
+  ]),
+  upload.array("files", 10),
+  async (req, res) => {
+    const client = await pool.connect();
+
+    try {
+      const transferOrderId = toInt(req.params.id);
+      if (!transferOrderId) {
+        return res.status(400).json({ message: "Invalid transfer order id" });
+      }
+
+      const files = Array.isArray(req.files) ? req.files : [];
+      if (files.length === 0) {
+        return res.status(400).json({ message: "No files uploaded" });
+      }
+
+      const orderCheck = await client.query(
+        `
+        SELECT id, prev_branch_id, area, region
+        FROM public.transfer_staff_orders
+        WHERE id = $1
+        `,
+        [transferOrderId]
+      );
+
+      if (orderCheck.rowCount === 0) {
+        return res.status(404).json({ message: "Transfer order not found" });
+      }
+
+      const order = orderCheck.rows[0];
+      const allowed = await canAccessTransferOrderFiles(req, order);
+
+      if (!allowed) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      await client.query("BEGIN");
+
+      const inserted = [];
+
+      for (const file of files) {
+        const ins = await client.query(
+          `
+          INSERT INTO public.transfer_staff_order_files
+          (
+            transfer_order_id,
+            original_name,
+            filename,
+            file_path,
+            mime_type,
+            file_size,
+            uploaded_by
+          )
+          VALUES ($1,$2,$3,$4,$5,$6,$7)
+          RETURNING *
+          `,
+          [
+            transferOrderId,
+            toStr(file.originalname),
+            toStr(file.filename),
+            toStr(file.path),
+            toStr(file.mimetype),
+            Number(file.size || 0),
+            req.user?.id ?? null,
+          ]
+        );
+
+        inserted.push(ins.rows[0]);
+      }
+
+      await client.query("COMMIT");
+      return res.json(inserted);
+    } catch (e) {
+      await client.query("ROLLBACK");
+      console.error("POST /api/transfer-staff-orders/:id/files ERROR:", e.message);
+      return res.status(500).json({ message: "Server error" });
+    } finally {
+      client.release();
+    }
+  }
+);
+
+/* =========================================================
+   DOWNLOAD TRANSFER FILE
+========================================================= */
+router.get(
+  "/transfer-staff-orders/files/:fileId/download",
+  requireAuth,
+  async (req, res) => {
+    try {
+      const fileId = toInt(req.params.fileId);
+      if (!fileId) {
+        return res.status(400).json({ message: "Invalid file id" });
+      }
+
+      const r = await pool.query(
+        `
+        SELECT
+          f.id,
+          f.transfer_order_id,
+          f.original_name,
+          f.filename,
+          f.file_path,
+          f.mime_type,
+          f.file_size,
+          t.prev_branch_id,
+          t.area,
+          t.region
+        FROM public.transfer_staff_order_files f
+        JOIN public.transfer_staff_orders t
+          ON t.id = f.transfer_order_id
+        WHERE f.id = $1
+        `,
+        [fileId]
+      );
+
+      if (r.rowCount === 0) {
+        return res.status(404).json({ message: "File not found" });
+      }
+
+      const row = r.rows[0];
+      const allowed = await canAccessTransferOrderFiles(req, row);
+
+      if (!allowed) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      if (!row.file_path || !fs.existsSync(row.file_path)) {
+        return res.status(404).json({ message: "Stored file not found" });
+      }
+
+      return res.download(
+        row.file_path,
+        row.original_name || row.filename || "download"
+      );
+    } catch (e) {
+      console.error("GET /api/transfer-staff-orders/files/:fileId/download ERROR:", e.message);
+      return res.status(500).json({ message: "Server error" });
     }
   }
 );

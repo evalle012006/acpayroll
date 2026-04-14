@@ -11,6 +11,7 @@ const toNum = (v) => {
 
 const toStr = (v) => String(v ?? "").trim();
 const norm = (v) => toStr(v).toLowerCase();
+const isActiveStaff = (s) => norm(s.status || "Active") !== "inactive";
 
 const fmtMoney = (v) =>
   toNum(v).toLocaleString(undefined, {
@@ -310,12 +311,14 @@ export default function Bonus() {
         const byBranch = allStaff.filter((s) => Number(s.branch_id) === Number(found.id));
         const byBranchCode = allStaff.filter((s) => norm(s.branch_code) === norm(found.code));
 
-        const filtered =
+        const filteredRaw =
           byBranch.length > 0
             ? byBranch
             : byBranchCode.length > 0
             ? byBranchCode
             : allStaff.filter((s) => norm(s.area) === norm(found.area));
+
+        const filtered = filteredRaw.filter(isActiveStaff);
 
         setStaff(filtered);
         await refreshBonusHistory(filtered);
@@ -749,7 +752,7 @@ export default function Bonus() {
       setSavedResults((prev) => ({
         ...prev,
         [String(selectedRow.employee_id)]: {
-          ...prev[String(prev ? selectedRow.employee_id : selectedRow.employee_id)],
+          ...prev[String(selectedRow.employee_id)],
           is_released: true,
           release_date: releaseDate,
         },
