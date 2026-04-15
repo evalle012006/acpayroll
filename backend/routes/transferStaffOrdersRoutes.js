@@ -69,7 +69,7 @@ const storage = multer.diskStorage({
 
 const upload = multer({
   storage,
-  limits: { fileSize: 20 * 1024 * 1024 }, // 20MB each
+  limits: { fileSize: 20 * 1024 * 1024 },
 });
 
 async function generateTransferOrderNo(client) {
@@ -266,10 +266,6 @@ router.post(
       if (!prev_branch_id || !to_branch_id) {
         await client.query("ROLLBACK");
         return res.status(400).json({ message: "Branches required" });
-      }
-      if (prev_branch_id === to_branch_id) {
-        await client.query("ROLLBACK");
-        return res.status(400).json({ message: "Branches must differ" });
       }
       if (!division) {
         await client.query("ROLLBACK");

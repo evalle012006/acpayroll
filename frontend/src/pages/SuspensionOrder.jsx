@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import api from "../api/axiosClient";
 import "../styles/SuspensionOrder.css";
@@ -6,8 +6,19 @@ import "../styles/SuspensionOrder.css";
 const clean = (v) => String(v ?? "").trim();
 const toDate10 = (v) => (v ? String(v).slice(0, 10) : "");
 
+const displayNameParts = (s) => {
+  const ln = clean(s?.last_name);
+  const fn = clean(s?.first_name);
+  const mn = clean(s?.middle_name);
+  const built = `${ln}${ln && fn ? ", " : ""}${fn}${mn ? ` ${mn}` : ""}`
+    .replace(/\s+/g, " ")
+    .trim();
+  return built || clean(s?.fullname) || "-";
+};
+
 export default function SuspensionOrder() {
   const navigate = useNavigate();
+  const employeeBoxRef = useRef(null);
 
   const user = useMemo(() => {
     try {
@@ -41,10 +52,14 @@ export default function SuspensionOrder() {
   const [rejectReason, setRejectReason] = useState("");
   const [rejectSaving, setRejectSaving] = useState(false);
 
+  const [employeeSearch, setEmployeeSearch] = useState("");
+  const [showEmployeeDropdown, setShowEmployeeDropdown] = useState(false);
+
   const emptyForm = useMemo(
     () => ({
       employee_id: "",
       employee_name: "",
+      suspension_type: "",
       suspension_start: "",
       suspension_end: "",
       reason: "",
@@ -53,6 +68,30 @@ export default function SuspensionOrder() {
   );
 
   const [form, setForm] = useState(emptyForm);
+  const [attachFile, setAttachFile] = useState(null);
+
+  const filteredStaff = useMemo(() => {
+    const q = employeeSearch.toLowerCase();
+
+    if (!q) return staff.slice(0, 20);
+
+    return staff.filter((s) => {
+      const haystack = [
+        s.id,
+        s.employee_no,
+        s.fullname,
+        s.first_name,
+        s.middle_name,
+        s.last_name,
+        displayNameParts(s),
+        s.position,
+      ]
+        .map((x) => clean(x).toLowerCase())
+        .join(" ");
+
+      return haystack.includes(q);
+    });
+  }, [employeeSearch, staff]);
 
   const badgeClass = (status) => {
     const s = String(status || "Pending").toLowerCase();
@@ -83,9 +122,36 @@ export default function SuspensionOrder() {
     loadData();
   }, []);
 
+  useEffect(() => {
+    if (!showModal) return;
+
+    const onMouseDown = (e) => {
+      if (employeeBoxRef.current && !employeeBoxRef.current.contains(e.target)) {
+        setShowEmployeeDropdown(false);
+      }
+    };
+
+    const onKeyDown = (e) => {
+      if (e.key === "Escape") {
+        setShowEmployeeDropdown(false);
+      }
+    };
+
+    document.addEventListener("mousedown", onMouseDown);
+    document.addEventListener("keydown", onKeyDown);
+
+    return () => {
+      document.removeEventListener("mousedown", onMouseDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [showModal]);
+
   const openCreate = () => {
     setErr("");
     setForm(emptyForm);
+    setEmployeeSearch("");
+    setShowEmployeeDropdown(false);
+    setAttachFile(null);
     setShowModal(true);
   };
 
@@ -94,15 +160,25 @@ export default function SuspensionOrder() {
     setSaving(false);
     setErr("");
     setForm(emptyForm);
+    setEmployeeSearch("");
+    setShowEmployeeDropdown(false);
+    setAttachFile(null);
   };
 
   const onSelectEmployee = (id) => {
     const emp = staff.find((x) => String(x.id) === String(id));
     setForm((p) => ({
       ...p,
-      employee_id: id,
-      employee_name: emp?.fullname || "",
+      employee_id: String(id),
+      employee_name: emp?.fullname || displayNameParts(emp),
     }));
+
+    if (emp) {
+      setEmployeeSearch(
+        `${emp.id} — ${displayNameParts(emp)}${emp.employee_no ? ` (${emp.employee_no})` : ""}`
+      );
+    }
+    setShowEmployeeDropdown(false);
   };
 
   const submitCreate = async (e) => {
@@ -111,22 +187,30 @@ export default function SuspensionOrder() {
 
     setErr("");
 
-    const payload = {
-      employee_id: Number(form.employee_id),
-      employee_name: clean(form.employee_name),
-      suspension_start: toDate10(form.suspension_start),
-      suspension_end: toDate10(form.suspension_end),
-      reason: clean(form.reason),
-    };
-
-    if (!payload.employee_id) return setErr("Select employee.");
-    if (!payload.suspension_start) return setErr("Start date required.");
-    if (!payload.suspension_end) return setErr("End date required.");
-    if (!payload.reason) return setErr("Reason required.");
+    if (!form.employee_id) return setErr("Select employee.");
+    if (!clean(form.suspension_type)) return setErr("Suspension type required.");
+    if (!toDate10(form.suspension_start)) return setErr("Start date required.");
+    if (!toDate10(form.suspension_end)) return setErr("End date required.");
+    if (!clean(form.reason)) return setErr("Reason required.");
 
     setSaving(true);
     try {
-      await api.post("/suspension-orders", payload);
+      const formData = new FormData();
+      formData.append("employee_id", Number(form.employee_id));
+      formData.append("employee_name", clean(form.employee_name));
+      formData.append("suspension_type", clean(form.suspension_type));
+      formData.append("suspension_start", toDate10(form.suspension_start));
+      formData.append("suspension_end", toDate10(form.suspension_end));
+      formData.append("reason", clean(form.reason));
+
+      if (attachFile) {
+        formData.append("attachment", attachFile);
+      }
+
+      await api.post("/suspension-orders", formData, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+
       closeModal();
       await loadData();
     } catch (e2) {
@@ -230,6 +314,7 @@ export default function SuspensionOrder() {
             <thead>
               <tr>
                 <th>Employee</th>
+                <th>Type</th>
                 <th>Start</th>
                 <th>End</th>
                 <th>Reason</th>
@@ -241,13 +326,13 @@ export default function SuspensionOrder() {
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={6} className="po-empty">
+                  <td colSpan={7} className="po-empty">
                     Loading...
                   </td>
                 </tr>
               ) : orders.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="po-empty">
+                  <td colSpan={7} className="po-empty">
                     No suspension orders found.
                   </td>
                 </tr>
@@ -259,6 +344,7 @@ export default function SuspensionOrder() {
                   return (
                     <tr key={o.id}>
                       <td>{o.employee_name}</td>
+                      <td>{o.suspension_type || "-"}</td>
                       <td>{toDate10(o.start_date || o.suspension_start)}</td>
                       <td>{toDate10(o.end_date || o.suspension_end)}</td>
                       <td>{o.reason}</td>
@@ -319,24 +405,102 @@ export default function SuspensionOrder() {
 
             <form className="po-form" onSubmit={submitCreate}>
               <div className="po-grid">
-                <div className="po-field">
+                <div
+                  className="po-field"
+                  ref={employeeBoxRef}
+                  style={{ position: "relative" }}
+                >
                   <label>Employee</label>
-                  <select
-                    value={form.employee_id}
-                    onChange={(e) => onSelectEmployee(e.target.value)}
-                  >
-                    <option value="">Select Employee</option>
-                    {staff.map((s) => (
-                      <option key={s.id} value={s.id}>
-                        {s.fullname}
-                      </option>
-                    ))}
-                  </select>
+
+                  <input
+                    type="text"
+                    placeholder="Search employee ID, name, or employee no..."
+                    value={employeeSearch}
+                    onChange={(e) => {
+                      setEmployeeSearch(e.target.value);
+                      setShowEmployeeDropdown(true);
+                      setForm((p) => ({
+                        ...p,
+                        employee_id: "",
+                        employee_name: "",
+                      }));
+                    }}
+                    onFocus={() => setShowEmployeeDropdown(true)}
+                  />
+
+                  {showEmployeeDropdown && (
+                    <div
+                      style={{
+                        position: "absolute",
+                        top: "100%",
+                        left: 0,
+                        right: 0,
+                        marginTop: 6,
+                        maxHeight: 240,
+                        overflowY: "auto",
+                        background: "var(--card, #0f172a)",
+                        border: "1px solid var(--border, rgba(255,255,255,0.1))",
+                        borderRadius: 10,
+                        zIndex: 50,
+                        boxShadow: "0 12px 30px rgba(0,0,0,0.25)",
+                      }}
+                    >
+                      {filteredStaff.length === 0 ? (
+                        <div
+                          style={{
+                            padding: 12,
+                            color: "var(--muted)",
+                            fontSize: 14,
+                          }}
+                        >
+                          No employee found
+                        </div>
+                      ) : (
+                        filteredStaff.map((s) => (
+                          <button
+                            key={s.id}
+                            type="button"
+                            onClick={() => onSelectEmployee(s.id)}
+                            style={{
+                              width: "100%",
+                              textAlign: "left",
+                              padding: "10px 12px",
+                              border: "none",
+                              borderBottom:
+                                "1px solid var(--border, rgba(255,255,255,0.08))",
+                              background: "transparent",
+                              color: "inherit",
+                              cursor: "pointer",
+                            }}
+                          >
+                            {s.id} — {displayNameParts(s)}{" "}
+                            {s.employee_no ? `(${s.employee_no})` : ""}
+                          </button>
+                        ))
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 <div className="po-field">
                   <label>Employee Name</label>
                   <input value={form.employee_name} readOnly />
+                </div>
+
+                <div className="po-field">
+                  <label>Suspension Type</label>
+                  <select
+                    value={form.suspension_type}
+                    onChange={(e) =>
+                      setForm((p) => ({ ...p, suspension_type: e.target.value }))
+                    }
+                    required
+                  >
+                    <option value="">Select suspension type</option>
+                    <option value="Suspension">Suspension</option>
+                    <option value="Preventive Suspension">Preventive Suspension</option>
+                    <option value="Notice of Admin Hearing">Notice of Admin Hearing</option>
+                  </select>
                 </div>
 
                 <div className="po-field">
@@ -366,6 +530,14 @@ export default function SuspensionOrder() {
                       }))
                     }
                     required
+                  />
+                </div>
+
+                <div className="po-field">
+                  <label>Attach File</label>
+                  <input
+                    type="file"
+                    onChange={(e) => setAttachFile(e.target.files?.[0] || null)}
                   />
                 </div>
 

@@ -27,6 +27,7 @@ const displayName = (s) => {
 
 const fmtBranch = (b) => `${toStr(b?.code)}${b?.name ? ` • ${b.name}` : ""}`.trim();
 const norm = (v) => toStr(v).toLowerCase();
+const isActiveStaff = (s) => norm(s.status || "Active") !== "inactive";
 
 export default function Salary() {
   const [staff, setStaff] = useState([]);
@@ -67,7 +68,10 @@ export default function Salary() {
           api.get("/staff-accounts-payable").catch(() => ({ data: [] })),
         ]);
 
-        setStaff(Array.isArray(sRes.data) ? sRes.data : []);
+        const allStaff = Array.isArray(sRes.data) ? sRes.data : [];
+        const activeStaff = allStaff.filter(isActiveStaff);
+
+        setStaff(activeStaff);
         setBranches(Array.isArray(brRes.data) ? brRes.data : []);
         setLoanRequests(Array.isArray(lrRes.data) ? lrRes.data : []);
         setSapRows(Array.isArray(sapRes.data) ? sapRes.data : []);

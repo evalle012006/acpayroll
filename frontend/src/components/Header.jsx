@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import {FaBars, FaUser, FaCog, FaSignOutAlt, FaMoon, FaSun, FaBell, FaCheck, FaTrash,} from "react-icons/fa";
+import { TbMessageCircle } from "react-icons/tb";
 import { GoSidebarCollapse } from "react-icons/go";
 import "../styles/Header.css";
 
@@ -184,6 +185,8 @@ const Header = ({ toggleSidebar }) => {
           {theme === "light" ? <FaMoon /> : <FaSun />}
           <span className="theme-text">{theme === "light" ? "Dark" : "Light"}</span>
         </button>
+
+        <TbMessageCircle />
 
         <div className="notif-wrap" ref={notifRef}>
           <button className="notif-btn" type="button" onClick={toggleNotif} aria-label="Notifications">

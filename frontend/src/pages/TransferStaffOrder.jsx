@@ -290,13 +290,9 @@ export default function TransferStaffOrder() {
   const filteredToBranches = useMemo(() => {
     const q = toStr(toBranchQuery).toLowerCase();
 
-    const availableBranches = branches.filter(
-      (b) => String(b.id) !== String(fromBranchId)
-    );
+    if (!q) return branches.slice(0, 15);
 
-    if (!q) return availableBranches.slice(0, 15);
-
-    return availableBranches
+    return branches
       .filter((b) => {
         const haystack = [b.id, b.code, b.name, b.area]
           .map(toStr)
@@ -306,7 +302,7 @@ export default function TransferStaffOrder() {
         return haystack.includes(q);
       })
       .slice(0, 20);
-  }, [branches, fromBranchId, toBranchQuery]);
+  }, [branches, toBranchQuery]);
 
   useEffect(() => {
     if (!showModal || !selectedEmployee) return;
@@ -532,11 +528,6 @@ export default function TransferStaffOrder() {
     setFromBranchId(String(b.id || ""));
     setFromBranchQuery(branchLabel(b));
     setShowFromBranchResults(false);
-
-    if (String(toBranchId) === String(b.id)) {
-      setToBranchId("");
-      setToBranchQuery("");
-    }
   };
 
   const handleChooseToBranch = (b) => {
@@ -551,9 +542,6 @@ export default function TransferStaffOrder() {
     if (!employeeId) return setError("Select employee.");
     if (!fromBranchId) return setError("Select previous branch.");
     if (!toBranchId) return setError("Select transfer branch.");
-    if (String(fromBranchId) === String(toBranchId)) {
-      return setError("Previous and transfer branch must differ.");
-    }
     if (!toStr(division)) return setError("Division required.");
     if (!toStr(area)) return setError("Area required.");
     if (!toStr(region)) return setError("Region required.");

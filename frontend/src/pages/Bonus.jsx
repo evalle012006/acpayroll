@@ -868,10 +868,10 @@ export default function Bonus() {
               <th>Position</th>
               <th>Salary</th>
               <th>{previousYearLabel}</th>
+              <th>Result</th>
               <th>15th Month</th>
               <th>13th Month</th>
               <th>14th Month</th>
-              <th>Result</th>
               <th>Release Date</th>
               <th style={{ width: 90 }}>Action</th>
             </tr>
@@ -885,18 +885,22 @@ export default function Bonus() {
                 <td>{s.fullname}</td>
                 <td>{s.position}</td>
                 <td>{fmtMoney(s.salary)}</td>
+
                 <td className="strong">
                   {s.previous_year_13th_month > 0 ? fmtMoney(s.previous_year_13th_month) : "-"}
                 </td>
-                <td className="strong">{fmtMoney(s.month_15)}</td>
-                <td className="strong">{fmtMoney(s.month_13)}</td>
-                <td className="strong">{fmtMoney(s.month_14)}</td>
+
                 <td className="bonus-result">
                   {s.saved_result > 0 ? `₱ ${fmtMoney(s.saved_result)}` : "-"}
                   {s.saved_percentage > 0 ? (
                     <div className="bonus-result-note">{s.saved_percentage}%</div>
                   ) : null}
                 </td>
+
+                <td className="strong">{fmtMoney(s.month_15)}</td>
+                <td className="strong">{fmtMoney(s.month_13)}</td>
+                <td className="strong">{fmtMoney(s.month_14)}</td>
+
                 <td>{s.saved_is_released && s.saved_release_date ? s.saved_release_date : "-"}</td>
 
                 <td className="bonus-action-cell">
@@ -944,10 +948,10 @@ export default function Bonus() {
             <tr className="total-row">
               <td colSpan={5}>TOTAL</td>
               <td className="strong">{fmtMoney(totalPreviousYear13th)}</td>
+              <td className="bonus-result">{fmtMoney(totalResult)}</td>
               <td className="strong">{fmtMoney(total15)}</td>
               <td className="strong">{fmtMoney(total13)}</td>
               <td className="strong">{fmtMoney(total14)}</td>
-              <td className="bonus-result">{fmtMoney(totalResult)}</td>
               <td></td>
               <td></td>
             </tr>

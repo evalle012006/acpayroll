@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import "../styles/Soa.css";
 import api from "../api/axiosClient";
@@ -12,6 +12,7 @@ const fmtDate = (d) => (d ? String(d).split("T")[0] : "-");
 
 export default function Soa() {
   const navigate = useNavigate();
+  const staffBoxRef = useRef(null);
 
   const [staffList, setStaffList] = useState([]);
   const [branches, setBranches] = useState([]);
@@ -23,11 +24,13 @@ export default function Soa() {
   const [showCreate, setShowCreate] = useState(false);
   const [viewRow, setViewRow] = useState(null);
 
+  const [staffSearch, setStaffSearch] = useState("");
+  const [showStaffDropdown, setShowStaffDropdown] = useState(false);
+
   const [form, setForm] = useState({
     staff_id: "",
-
     prev_branch: "",
-    employee_id: "",
+    employee_no: "",
     employee_name: "",
 
     cbu: "",
@@ -46,6 +49,28 @@ export default function Soa() {
     (branches || []).forEach((b) => m.set(Number(b.id), b));
     return m;
   }, [branches]);
+
+  const filteredStaff = useMemo(() => {
+    const q = staffSearch.toLowerCase();
+
+    if (!q) return staffList.slice(0, 20);
+
+    return staffList.filter((s) => {
+      const hay = [
+        s.id,
+        s.employee_no,
+        s.fullname,
+        s.first_name,
+        s.last_name,
+        s.middle_name,
+        s.position,
+      ]
+        .map((x) => toStr(x).toLowerCase())
+        .join(" ");
+
+      return hay.includes(q);
+    });
+  }, [staffSearch, staffList]);
 
   const loadStaff = useCallback(async () => {
     try {
@@ -85,11 +110,27 @@ export default function Soa() {
 
   useEffect(() => {
     if (!showCreate) return;
-    const onKeyDown = (e) => e.key === "Escape" && setShowCreate(false);
+
+    const onKeyDown = (e) => {
+      if (e.key === "Escape") {
+        setShowCreate(false);
+        setShowStaffDropdown(false);
+      }
+    };
+
+    const onMouseDown = (e) => {
+      if (staffBoxRef.current && !staffBoxRef.current.contains(e.target)) {
+        setShowStaffDropdown(false);
+      }
+    };
+
     document.addEventListener("keydown", onKeyDown);
+    document.addEventListener("mousedown", onMouseDown);
     document.body.style.overflow = "hidden";
+
     return () => {
       document.removeEventListener("keydown", onKeyDown);
+      document.removeEventListener("mousedown", onMouseDown);
       document.body.style.overflow = "";
     };
   }, [showCreate]);
@@ -98,7 +139,7 @@ export default function Soa() {
     setForm({
       staff_id: "",
       prev_branch: "",
-      employee_id: "",
+      employee_no: "",
       employee_name: "",
 
       cbu: "",
@@ -111,6 +152,8 @@ export default function Soa() {
       separation_pay: "",
       cash_assistance: "",
     });
+    setStaffSearch("");
+    setShowStaffDropdown(false);
   };
 
   const onChange = (e) => setForm((p) => ({ ...p, [e.target.name]: e.target.value }));
@@ -129,10 +172,15 @@ export default function Soa() {
     setForm((p) => ({
       ...p,
       staff_id: String(s.id),
-      employee_id: String(s.id),
+      employee_no: toStr(s.employee_no),
       employee_name: toStr(s.fullname),
       prev_branch: prevBranchLabel,
     }));
+
+    setStaffSearch(
+      `${toStr(s.employee_no) || s.id} — ${toStr(s.fullname)}`
+    );
+    setShowStaffDropdown(false);
   };
 
   const totalBenefits = useMemo(() => {
@@ -155,7 +203,9 @@ export default function Soa() {
     e.preventDefault();
 
     if (!toStr(form.staff_id)) return alert("Select staff.");
-    if (!toStr(form.employee_id) || !toStr(form.employee_name)) return alert("Employee fields not set.");
+    if (!toStr(form.employee_no) || !toStr(form.employee_name)) {
+      return alert("Employee fields not set.");
+    }
 
     setSaving(true);
     try {
@@ -163,7 +213,7 @@ export default function Soa() {
         staff_id: Number(form.staff_id),
 
         prev_branch: toStr(form.prev_branch),
-        employee_id: Number(form.employee_id),
+        employee_no: toStr(form.employee_no),
         employee_name: toStr(form.employee_name),
 
         cbu: toNum(form.cbu),
@@ -257,7 +307,9 @@ export default function Soa() {
                     <td>{r.id}</td>
                     <td className="td-strong">
                       {r.employee_name || "-"}
-                      <div style={{ fontSize: 12, opacity: 0.8 }}>Employee ID: {r.employee_id || "-"}</div>
+                      <div style={{ fontSize: 12, opacity: 0.8 }}>
+                        Employee No: {r.employee_no || "-"}
+                      </div>
                     </td>
                     <td>{r.prev_branch || "-"}</td>
                     <td>{money(r.total_benefits)}</td>
@@ -283,35 +335,101 @@ export default function Soa() {
       </div>
 
       {showCreate && (
-        <div className="modal-overlay" onMouseDown={(e) => e.target.classList.contains("modal-overlay") && setShowCreate(false)}>
+        <div
+          className="modal-overlay"
+          onMouseDown={(e) => e.target.classList.contains("modal-overlay") && setShowCreate(false)}
+        >
           <div className="modal saas-modal" onMouseDown={(e) => e.stopPropagation()}>
             <div className="modal-head">
               <div>
                 <h3 className="modal-title">Create Settlement</h3>
-                <p className="modal-subtitle">Employee and Previous Branch are auto-filled from staff</p>
+                <p className="modal-subtitle">Employee No, Employee Name, and Previous Branch are auto-filled from staff</p>
               </div>
-              <button className="modal-x" type="button" onClick={() => setShowCreate(false)}>
+              <button
+                className="modal-x"
+                type="button"
+                onClick={() => {
+                  setShowCreate(false);
+                  resetForm();
+                }}
+              >
                 ✕
               </button>
             </div>
 
             <form onSubmit={createSettlement} className="modal-form">
               <div className="modal-grid">
-                <div className="form-group full">
+                <div className="form-group full" ref={staffBoxRef} style={{ position: "relative" }}>
                   <label>Staff</label>
-                  <select value={form.staff_id} onChange={(e) => pickStaff(e.target.value)} required>
-                    <option value="">Select staff</option>
-                    {staffList.map((s) => (
-                      <option key={s.id} value={s.id}>
-                        {(s.employee_no ? `${s.employee_no} - ` : "") + s.fullname}
-                      </option>
-                    ))}
-                  </select>
+
+                  <input
+                    type="text"
+                    placeholder="Search staff..."
+                    value={staffSearch}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      setStaffSearch(value);
+                      setShowStaffDropdown(true);
+
+                      setForm((p) => ({
+                        ...p,
+                        staff_id: "",
+                        prev_branch: "",
+                        employee_no: "",
+                        employee_name: "",
+                      }));
+                    }}
+                    onFocus={() => setShowStaffDropdown(true)}
+                    required={!form.staff_id}
+                  />
+
+                  {showStaffDropdown && (
+                    <div
+                      style={{
+                        position: "absolute",
+                        top: "100%",
+                        left: 0,
+                        right: 0,
+                        background: "#0f172a",
+                        border: "1px solid rgba(255,255,255,0.1)",
+                        borderRadius: 10,
+                        maxHeight: 220,
+                        overflowY: "auto",
+                        zIndex: 50,
+                        boxShadow: "0 12px 30px rgba(0,0,0,0.25)",
+                        marginTop: 6,
+                      }}
+                    >
+                      {filteredStaff.length === 0 ? (
+                        <div style={{ padding: 10, color: "#cbd5e1" }}>No staff found</div>
+                      ) : (
+                        filteredStaff.map((s) => (
+                          <button
+                            key={s.id}
+                            type="button"
+                            onClick={() => pickStaff(s.id)}
+                            style={{
+                              width: "100%",
+                              textAlign: "left",
+                              padding: "10px 12px",
+                              border: "none",
+                              borderBottom: "1px solid rgba(255,255,255,0.08)",
+                              background: "transparent",
+                              color: "white",
+                              cursor: "pointer",
+                            }}
+                          >
+                            {toStr(s.employee_no) || s.id} — {toStr(s.fullname)}
+                          </button>
+                        ))
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 <div className="form-group">
-                  <label>Employee ID</label>
-                  <input value={form.employee_id} readOnly placeholder="Auto-filled" />
+                  <label>Employee No</label>
+                  <input value={form.employee_no} readOnly placeholder="Auto-filled" />
                 </div>
 
                 <div className="form-group">
@@ -346,7 +464,13 @@ export default function Soa() {
 
                 <div className="form-group">
                   <label>13th Month Pay</label>
-                  <input type="number" step="0.01" name="thirteenth_month_pay" value={form.thirteenth_month_pay} onChange={onChange} />
+                  <input
+                    type="number"
+                    step="0.01"
+                    name="thirteenth_month_pay"
+                    value={form.thirteenth_month_pay}
+                    onChange={onChange}
+                  />
                 </div>
 
                 <div className="form-group">
@@ -356,12 +480,26 @@ export default function Soa() {
 
                 <div className="form-group">
                   <label>Separation Pay (Optional)</label>
-                  <input type="number" step="0.01" name="separation_pay" value={form.separation_pay} onChange={onChange} placeholder="0 or blank" />
+                  <input
+                    type="number"
+                    step="0.01"
+                    name="separation_pay"
+                    value={form.separation_pay}
+                    onChange={onChange}
+                    placeholder="0 or blank"
+                  />
                 </div>
 
                 <div className="form-group">
                   <label>Cash Assistance (Optional)</label>
-                  <input type="number" step="0.01" name="cash_assistance" value={form.cash_assistance} onChange={onChange} placeholder="0 or blank" />
+                  <input
+                    type="number"
+                    step="0.01"
+                    name="cash_assistance"
+                    value={form.cash_assistance}
+                    onChange={onChange}
+                    placeholder="0 or blank"
+                  />
                 </div>
               </div>
 
@@ -378,7 +516,14 @@ export default function Soa() {
               </div>
 
               <div className="modal-buttons">
-                <button className="btn-secondary" type="button" onClick={() => setShowCreate(false)}>
+                <button
+                  className="btn-secondary"
+                  type="button"
+                  onClick={() => {
+                    setShowCreate(false);
+                    resetForm();
+                  }}
+                >
                   Cancel
                 </button>
                 <button className="btn-primary" type="submit" disabled={saving}>
@@ -397,7 +542,7 @@ export default function Soa() {
               <div>
                 <h3 className="modal-title">Settlement Record</h3>
                 <p className="modal-subtitle">
-                  {viewRow.employee_name} • Employee ID: {viewRow.employee_id} • Prev Branch: {viewRow.prev_branch}
+                  {viewRow.employee_name} • Employee No: {viewRow.employee_no} • Prev Branch: {viewRow.prev_branch}
                 </p>
               </div>
               <button className="modal-x" type="button" onClick={() => setViewRow(null)}>
@@ -420,6 +565,9 @@ export default function Soa() {
 
               <table className="table">
                 <tbody>
+                  <tr><td>Employee No</td><td>{viewRow.employee_no || "-"}</td></tr>
+                  <tr><td>Employee Name</td><td>{viewRow.employee_name || "-"}</td></tr>
+                  <tr><td>Previous Branch</td><td>{viewRow.prev_branch || "-"}</td></tr>
                   <tr><td>CBU</td><td>{money(viewRow.cbu)}</td></tr>
                   <tr><td>Cashbond</td><td>{money(viewRow.cashbond)}</td></tr>
                   <tr><td>Utility</td><td>{money(viewRow.utility)}</td></tr>

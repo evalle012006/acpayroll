@@ -77,6 +77,25 @@ const LABELS = {
   staff_accounts_payable: "Staff A/P",
 };
 
+const splitPayroll = (netPay) => {
+  const net = toNum(netPay);
+
+  if (net >= 0) {
+    const pay10 = Math.floor(net / 2);
+    const pay25 = net - pay10;
+    return { pay10, pay25 };
+  }
+
+  const absNet = Math.abs(net);
+  const abs10 = Math.floor(absNet / 2);
+  const abs25 = absNet - abs10;
+
+  return {
+    pay10: -abs10,
+    pay25: -abs25,
+  };
+};
+
 function Payroll() {
   const params = useParams();
   const rawBranchParam = params.branchId ?? params.id;
@@ -341,6 +360,7 @@ function Payroll() {
         staff_accounts_payable;
 
       const netPay = totalComp - total_deduction;
+      const { pay10, pay25 } = splitPayroll(netPay);
 
       return {
         ...s,
@@ -363,7 +383,8 @@ function Payroll() {
         whole_staff_accounts_payable: toNum(balance.staff_accounts_payable),
         total_deduction,
         netPay,
-        netPayHalf: netPay / 2,
+        pay10,
+        pay25,
       };
     });
   }, [staff, applyOverrideToStaffRow, getBalanceForStaff]);
@@ -587,8 +608,8 @@ function Payroll() {
 
                     <td className="num td-strong">{fmt(s.total_deduction)}</td>
                     <td className={`num td-strong ${s.netPay < 0 ? "neg" : "pos"}`}>{fmt(s.netPay)}</td>
-                    <td className={`num td-strong ${s.netPayHalf < 0 ? "neg" : "pos"}`}>{fmt(s.netPayHalf)}</td>
-                    <td className={`num td-strong ${s.netPayHalf < 0 ? "neg" : "pos"}`}>{fmt(s.netPayHalf)}</td>
+                    <td className={`num td-strong ${s.pay10 < 0 ? "neg" : "pos"}`}>{fmt(s.pay10)}</td>
+                    <td className={`num td-strong ${s.pay25 < 0 ? "neg" : "pos"}`}>{fmt(s.pay25)}</td>
 
                     <td style={{ position: "relative" }}>
                       <div
@@ -674,8 +695,8 @@ function Payroll() {
 
                 <td className="num td-strong">{sumColumn("total_deduction").toLocaleString()}</td>
                 <td className="num td-strong">{sumColumn("netPay").toLocaleString()}</td>
-                <td className="num td-strong">{(sumColumn("netPay") / 2).toLocaleString()}</td>
-                <td className="num td-strong">{(sumColumn("netPay") / 2).toLocaleString()}</td>
+                <td className="num td-strong">{sumColumn("pay10").toLocaleString()}</td>
+                <td className="num td-strong">{sumColumn("pay25").toLocaleString()}</td>
                 <td />
               </tr>
             </tbody>
@@ -789,7 +810,8 @@ function Payroll() {
 
                 <th rowSpan={2}>Total Deductions</th>
                 <th rowSpan={2}>Total Net Pay</th>
-                <th rowSpan={2}>Every 10th and 25th Day</th>
+                <th rowSpan={2}>Every 10th</th>
+                <th rowSpan={2}>Every 25th</th>
                 <th rowSpan={2}>Signature</th>
               </tr>
 
@@ -866,7 +888,8 @@ function Payroll() {
 
                     <td>{fmt(s.total_deduction)}</td>
                     <td>{fmt(s.netPay)}</td>
-                    <td>{fmt(s.netPayHalf)}</td>
+                    <td>{fmt(s.pay10)}</td>
+                    <td>{fmt(s.pay25)}</td>
                     <td></td>
                   </tr>
                 );
@@ -903,7 +926,8 @@ function Payroll() {
 
                 <td>{fmt(sumColumn("total_deduction"))}</td>
                 <td>{fmt(sumColumn("netPay"))}</td>
-                <td>{fmt(sumColumn("netPayHalf"))}</td>
+                <td>{fmt(sumColumn("pay10"))}</td>
+                <td>{fmt(sumColumn("pay25"))}</td>
                 <td></td>
               </tr>
             </tbody>

@@ -969,18 +969,42 @@ function StaffDetailsStep({ form, setForm }) {
 }
 
 function ContractDetailsStep({ form, branches, compRates = [], setForm, branchConfigMap }) {
-  const setField = (name, v) => setForm((p) => ({ ...p, [name]: v }));
-  
+  const setField = (name, value) =>
+    setForm((prev) => ({
+      ...prev,
+      [name]: value,
+    }));
+
   const setBranchAndConfig = (branchId) => {
     const id = String(branchId || "").trim();
+
+    const selectedBranch = (branches || []).find(
+      (b) => String(b?.id ?? "").trim() === id
+    );
+
     const cfg = branchConfigMap?.get(id);
+
+    const nextArea =
+      toStr(cfg?.area) ||
+      toStr(selectedBranch?.area) ||
+      "";
+
+    const nextRegion =
+      toStr(cfg?.region) ||
+      toStr(selectedBranch?.region) ||
+      "";
+
+    const nextDivision =
+      toStr(cfg?.division) ||
+      toStr(selectedBranch?.division) ||
+      "";
 
     setForm((prev) => ({
       ...prev,
       branch_id: id,
-      area: cfg?.area || "",
-      region: cfg?.region || "",
-      division: cfg?.division || "",
+      area: nextArea,
+      region: nextRegion,
+      division: nextDivision,
     }));
   };
 
@@ -992,7 +1016,10 @@ function ContractDetailsStep({ form, branches, compRates = [], setForm, branchCo
       (r) => toStr(r.position).toLowerCase() === pos.toLowerCase()
     );
 
-    if (!matched) return;
+    if (!matched) {
+      setField("position", pos);
+      return;
+    }
 
     setForm((prev) => ({
       ...prev,
@@ -1075,7 +1102,7 @@ function ContractDetailsStep({ form, branches, compRates = [], setForm, branchCo
                 </select>
               </td>
             </tr>
-            
+
             <tr>
               <td>Branch</td>
               <td style={{ textAlign: "right" }}>
@@ -1086,9 +1113,9 @@ function ContractDetailsStep({ form, branches, compRates = [], setForm, branchCo
                   onChange={(e) => setBranchAndConfig(e.target.value)}
                 >
                   <option value="">Select branch...</option>
-                  {branches.map((b) => (
+                  {(branches || []).map((b) => (
                     <option key={b.id} value={b.id}>
-                      {b.name}
+                      {b.code ? `${b.code} - ${b.name}` : b.name}
                     </option>
                   ))}
                 </select>
@@ -1097,29 +1124,52 @@ function ContractDetailsStep({ form, branches, compRates = [], setForm, branchCo
 
             <tr>
               <td>Area</td>
-              <td>
-                <EditableCell value={form.area} placeholder="Type area..." onChange={(v) => setField("area", v)} />
+              <td style={{ textAlign: "right" }}>
+                <input
+                  className="input"
+                  style={{ width: 280, textAlign: "right" }}
+                  value={form.area || ""}
+                  readOnly
+                  placeholder="Auto-filled"
+                />
               </td>
             </tr>
 
             <tr>
               <td>Region</td>
-              <td>
-                <EditableCell value={form.region} placeholder="Type region..." onChange={(v) => setField("region", v)} />
+              <td style={{ textAlign: "right" }}>
+                <input
+                  className="input"
+                  style={{ width: 280, textAlign: "right" }}
+                  value={form.region || ""}
+                  readOnly
+                  placeholder="Auto-filled"
+                />
               </td>
             </tr>
 
             <tr>
               <td>Division</td>
-              <td>
-                <EditableCell value={form.division} placeholder="Type division..." onChange={(v) => setField("division", v)} />
+              <td style={{ textAlign: "right" }}>
+                <input
+                  className="input"
+                  style={{ width: 280, textAlign: "right" }}
+                  value={form.division || ""}
+                  readOnly
+                  placeholder="Auto-filled"
+                />
               </td>
             </tr>
 
             <tr>
               <td>Status</td>
               <td style={{ textAlign: "right" }}>
-                <select className="input" style={{ width: 280, textAlignLast: "right" }} value={form.status} onChange={(e) => setField("status", e.target.value)}>
+                <select
+                  className="input"
+                  style={{ width: 280, textAlignLast: "right" }}
+                  value={form.status}
+                  onChange={(e) => setField("status", e.target.value)}
+                >
                   <option value="Active">Active</option>
                   <option value="Inactive">Inactive</option>
                 </select>
@@ -1129,14 +1179,22 @@ function ContractDetailsStep({ form, branches, compRates = [], setForm, branchCo
             <tr>
               <td>Start Date</td>
               <td>
-                <EditableCell value={form.start_date} placeholder="YYYY-MM-DD" onChange={(v) => setField("start_date", v)} />
+                <EditableCell
+                  value={form.start_date}
+                  placeholder="YYYY-MM-DD"
+                  onChange={(v) => setField("start_date", v)}
+                />
               </td>
             </tr>
 
             <tr>
               <td>Regularization Date</td>
               <td>
-                <EditableCell value={form.regularization_date} placeholder="YYYY-MM-DD" onChange={(v) => setField("regularization_date", v)} />
+                <EditableCell
+                  value={form.regularization_date}
+                  placeholder="YYYY-MM-DD"
+                  onChange={(v) => setField("regularization_date", v)}
+                />
               </td>
             </tr>
 
@@ -1256,50 +1314,76 @@ function ContractDetailsStep({ form, branches, compRates = [], setForm, branchCo
               <td style={{ fontWeight: 900 }}>Total</td>
               <td style={{ fontWeight: 900 }}>{transpoTotal.toLocaleString()}</td>
             </tr>
+
             <tr>
               <td className="editable-section" colSpan={2}>Remittances: ER</td>
             </tr>
+
             <tr>
               <td>SSS ER</td>
-              <td><EditableCell value={form.sss_er} placeholder="0" onChange={(v) => setField("sss_er", v)} /></td>
+              <td>
+                <EditableCell value={form.sss_er} placeholder="0" onChange={(v) => setField("sss_er", v)} />
+              </td>
             </tr>
+
             <tr>
               <td>PhilHealth ER</td>
-              <td><EditableCell value={form.ph_er} placeholder="0" onChange={(v) => setField("ph_er", v)} /></td>
+              <td>
+                <EditableCell value={form.ph_er} placeholder="0" onChange={(v) => setField("ph_er", v)} />
+              </td>
             </tr>
+
             <tr>
               <td>HDMF ER</td>
-              <td><EditableCell value={form.hdmf_er} placeholder="0" onChange={(v) => setField("hdmf_er", v)} /></td>
+              <td>
+                <EditableCell value={form.hdmf_er} placeholder="0" onChange={(v) => setField("hdmf_er", v)} />
+              </td>
             </tr>
+
             <tr>
               <td style={{ fontWeight: 900 }}>Total ER</td>
               <td style={{ fontWeight: 900 }}>{erTotal.toLocaleString()}</td>
             </tr>
+
             <tr>
               <td className="editable-section" colSpan={2}>Remittances: EE</td>
             </tr>
+
             <tr>
               <td>SSS EE</td>
-              <td><EditableCell value={form.sss_ee} placeholder="0" onChange={(v) => setField("sss_ee", v)} /></td>
+              <td>
+                <EditableCell value={form.sss_ee} placeholder="0" onChange={(v) => setField("sss_ee", v)} />
+              </td>
             </tr>
+
             <tr>
               <td>PhilHealth EE</td>
-              <td><EditableCell value={form.ph_ee} placeholder="0" onChange={(v) => setField("ph_ee", v)} /></td>
+              <td>
+                <EditableCell value={form.ph_ee} placeholder="0" onChange={(v) => setField("ph_ee", v)} />
+              </td>
             </tr>
+
             <tr>
               <td>HDMF EE</td>
-              <td><EditableCell value={form.hdmf_ee} placeholder="0" onChange={(v) => setField("hdmf_ee", v)} /></td>
+              <td>
+                <EditableCell value={form.hdmf_ee} placeholder="0" onChange={(v) => setField("hdmf_ee", v)} />
+              </td>
             </tr>
+
             <tr>
               <td style={{ fontWeight: 900 }}>Total EE</td>
               <td style={{ fontWeight: 900 }}>{eeTotal.toLocaleString()}</td>
             </tr>
+
             <tr>
               <td className="editable-section" colSpan={2}>Remittances: Tax</td>
             </tr>
+
             <tr>
               <td>Withheld Tax</td>
-              <td><EditableCell value={form.tax} placeholder="0" onChange={(v) => setField("tax", v)} /></td>
+              <td>
+                <EditableCell value={form.tax} placeholder="0" onChange={(v) => setField("tax", v)} />
+              </td>
             </tr>
           </tbody>
         </table>
@@ -1659,6 +1743,39 @@ export default function Deployment() {
     setShowAddStaff(false);
   };
 
+  const setPendingBranchAndConfig = (branchId) => {
+    const id = String(branchId || "").trim();
+
+    const selectedBranch = (branches || []).find(
+      (b) => String(b?.id ?? "").trim() === id
+    );
+
+    const cfg = branchConfigMap?.get(id);
+
+    const nextArea =
+      toStr(cfg?.area) ||
+      toStr(selectedBranch?.area) ||
+      "";
+
+    const nextRegion =
+      toStr(cfg?.region) ||
+      toStr(selectedBranch?.region) ||
+      "";
+
+    const nextDivision =
+      toStr(cfg?.division) ||
+      toStr(selectedBranch?.division) ||
+      "";
+
+    setPendingForm((prev) => ({
+      ...prev,
+      branch_id: id,
+      area: nextArea,
+      region: nextRegion,
+      division: nextDivision,
+    }));
+  };
+
   const user = useMemo(() => {
     try {
       return JSON.parse(localStorage.getItem("user") || "null");
@@ -1708,36 +1825,21 @@ export default function Deployment() {
   }, [isAdmin]);
 
   const branchConfigMap = useMemo(() => {
-    const map = new Map();
+  const map = new Map();
 
-    (users || []).forEach((u) => {
-      const userBranchKey = String(u?.branch_id ?? "").trim();
-      if (!userBranchKey) return;
+  (branches || []).forEach((b) => {
+    const key = String(b?.id ?? "").trim();
+    if (!key) return;
 
-      const cfg = {
-        area: toStr(u?.area),
-        region: toStr(u?.region),
-        division: toStr(u?.division),
-      };
-
-      if (!map.has(userBranchKey)) {
-        map.set(userBranchKey, cfg);
-      }
-
-      const matchedBranch = (branches || []).find(
-        (b) => String(b?.code ?? "").trim() === userBranchKey
-      );
-
-      if (matchedBranch) {
-        const branchIdKey = String(matchedBranch.id ?? "").trim();
-        if (branchIdKey && !map.has(branchIdKey)) {
-          map.set(branchIdKey, cfg);
-        }
-      }
+    map.set(key, {
+      area: toStr(b?.area),
+      region: toStr(b?.region),
+      division: toStr(b?.division),
     });
+  });
 
-    return map;
-  }, [users, branches]);
+  return map;
+}, [branches]);
 
   const [editingPending, setEditingPending] = useState(null);
   const makeEmptyPendingForm = useCallback(
@@ -2395,6 +2497,7 @@ const updatePendingStaff = async (e) => {
       <StaffCreateModal
         branches={branches}
         compRates={compRates}
+        branchConfigMap={branchConfigMap}
         onClose={() => setShowAddStaff(false)}
         onCreated={onStaffCreated}
       />
@@ -2519,6 +2622,7 @@ const updatePendingStaff = async (e) => {
                     branches={branches}
                     compRates={compRates}
                     setForm={setPendingForm}
+                    branchConfigMap={branchConfigMap}
                   />
                 )}
               </div>

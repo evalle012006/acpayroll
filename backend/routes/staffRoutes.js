@@ -241,6 +241,28 @@ async function insertStaffFromBody(client, body) {
 
   const status = String(body.status || "Active");
   const branchId = toInt(body.branch_id);
+    let finalArea = toStr(body.area) || null;
+    let finalRegion = toStr(body.region) || null;
+    let finalDivision = toStr(body.division) || null;
+
+    if (branchId) {
+      const branchRes = await client.query(
+        `
+        SELECT area, region, division
+        FROM public.branches
+        WHERE id = $1
+        LIMIT 1
+        `,
+        [branchId]
+      );
+
+      if (branchRes.rowCount > 0) {
+        const b = branchRes.rows[0];
+        finalArea = toStr(b.area) || finalArea;
+        finalRegion = toStr(b.region) || finalRegion;
+        finalDivision = toStr(b.division) || finalDivision;
+      }
+    }
 
   const ins = await client.query(
     `
@@ -340,9 +362,9 @@ async function insertStaffFromBody(client, body) {
 
       position,
       toStr(body.department) || null,
-      toStr(body.area) || null,
-      toStr(body.region) || null,
-      toStr(body.division) || null,
+      finalArea,
+      finalRegion,
+      finalDivision,
 
       branchId,
       status,

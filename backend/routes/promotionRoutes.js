@@ -1,6 +1,9 @@
 const express = require("express");
 const router = express.Router();
 const pool = require("../db");
+const path = require("path");
+const fs = require("fs");
+const multer = require("multer");
 const { requireAuth, requireRole } = require("../middlewares/authMiddleware");
 
 const toNum = (v) => {
@@ -35,6 +38,32 @@ const isAssistantVicePresident = (req) =>
 const getUserBranchId = (req) => req.user?.branch_id ?? null;
 const getUserArea = (req) => toStr(req.user?.area);
 const getUserRegion = (req) => toStr(req.user?.region);
+
+/* =========================================================
+   FILE UPLOAD SETUP
+========================================================= */
+const uploadDir = path.join(__dirname, "..", "uploads", "promotion-orders");
+if (!fs.existsSync(uploadDir)) {
+  fs.mkdirSync(uploadDir, { recursive: true });
+}
+
+const storage = multer.diskStorage({
+  destination: (_req, _file, cb) => cb(null, uploadDir),
+  filename: (_req, file, cb) => {
+    const ext = path.extname(file.originalname || "");
+    const base = path
+      .basename(file.originalname || "attachment", ext)
+      .replace(/[^a-zA-Z0-9-_]/g, "_");
+    cb(null, `${Date.now()}-${base}${ext}`);
+  },
+});
+
+const upload = multer({
+  storage,
+  limits: {
+    fileSize: 15 * 1024 * 1024,
+  },
+});
 
 async function generateOrderNo(client, prefix) {
   const now = new Date();
@@ -227,6 +256,7 @@ router.post(
     "regional manager",
     "assistant vice president",
   ]),
+  upload.single("attachment"),
   async (req, res) => {
     const client = await pool.connect();
     try {
@@ -241,10 +271,25 @@ router.post(
       const old_position = toStr(b.old_position);
       const new_position = toStr(b.new_position);
 
+      const old_salary = toNum(b.old_salary);
+      const new_salary = toNum(b.new_salary);
       const old_ecola = toNum(b.old_ecola);
       const new_ecola = toNum(b.new_ecola);
 
+      const prev_branch_id = toInt(b.prev_branch_id);
+      const present_branch_id = toInt(b.present_branch_id);
+      const prev_branch_code = toStr(b.prev_branch_code);
+      const prev_branch_name = toStr(b.prev_branch_name);
+      const present_branch_code = toStr(b.present_branch_code);
+      const present_branch_name = toStr(b.present_branch_name);
+
       const details = toStr(b.details || b.remarks);
+
+      const attachment_path = req.file
+        ? `/uploads/promotion-orders/${req.file.filename}`
+        : null;
+      const attachment_name = req.file ? req.file.originalname : null;
+      const attachment_mime = req.file ? req.file.mimetype : null;
 
       if (!employee_id) {
         await client.query("ROLLBACK");
@@ -261,7 +306,7 @@ router.post(
 
       const staffRes = await client.query(
         `
-        SELECT id, fullname, branch_id, area, region, last_name, first_name, middle_name
+        SELECT id, fullname, branch_id, area, region, last_name, first_name, middle_name, position, salary, ecola
         FROM public.staff
         WHERE id = $1
         `,
@@ -310,6 +355,8 @@ router.post(
             employee_name,
             old_position,
             new_position,
+            old_salary,
+            new_salary,
             effective_date,
             details,
             status,
@@ -318,11 +365,21 @@ router.post(
             new_ecola,
             last_name,
             first_name,
-            middle_name
+            middle_name,
+            prev_branch_id,
+            prev_branch_code,
+            prev_branch_name,
+            present_branch_id,
+            present_branch_code,
+            present_branch_name,
+            attachment_path,
+            attachment_name,
+            attachment_mime
           )
         VALUES
           (
-            $1, $2, $3, $4, $5, $6::date, $7, 'Pending', $8, $9, $10, $11, $12, $13
+            $1, $2, $3, $4, $5, $6, $7, $8::date, $9, 'Pending', $10, $11, $12, $13, $14, $15,
+            $16, $17, $18, $19, $20, $21, $22, $23, $24
           )
         RETURNING *;
         `,
@@ -330,16 +387,27 @@ router.post(
           orderNo,
           employee_id,
           employee_name || toStr(staffRow.fullname),
-          old_position || null,
+          old_position || toStr(staffRow.position) || null,
           new_position,
+          old_salary || toNum(staffRow.salary),
+          new_salary,
           effective_date,
           details || null,
           req.user?.id ?? null,
-          old_ecola,
+          old_ecola || toNum(staffRow.ecola),
           new_ecola,
           toStr(staffRow.last_name) || null,
           toStr(staffRow.first_name) || null,
           toStr(staffRow.middle_name) || null,
+          prev_branch_id,
+          prev_branch_code || null,
+          prev_branch_name || null,
+          present_branch_id,
+          present_branch_code || null,
+          present_branch_name || null,
+          attachment_path,
+          attachment_name,
+          attachment_mime,
         ]
       );
 

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import "../styles/LeaveTransactions.css";
 import api from "../api/axiosClient";
@@ -37,6 +37,8 @@ const isPdfFile = (mime, name) =>
   String(mime || "").toLowerCase() === "application/pdf" ||
   String(name || "").toLowerCase().endsWith(".pdf");
 
+const toStr = (v) => String(v ?? "").trim();
+
 export default function LeaveTransactions() {
   const navigate = useNavigate();
   const user = useMemo(() => readUser(), []);
@@ -70,6 +72,8 @@ export default function LeaveTransactions() {
     isAdmin || isRegionalManager || isAssistantVicePresident || isAreaManager;
   const canUploadApprovedFile = isAdmin;
 
+  const employeePickerRef = useRef(null);
+
   const [staffList, setStaffList] = useState([]);
   const [branches, setBranches] = useState([]);
   const [leaveRequests, setLeaveRequests] = useState([]);
@@ -96,6 +100,9 @@ export default function LeaveTransactions() {
   });
 
   const [attachmentFile, setAttachmentFile] = useState(null);
+
+  const [employeeSearch, setEmployeeSearch] = useState("");
+  const [showEmployeeDropdown, setShowEmployeeDropdown] = useState(false);
 
   const logout = useCallback(() => {
     localStorage.removeItem("token");
@@ -175,6 +182,17 @@ export default function LeaveTransactions() {
   }, [showCreateLeave]);
 
   useEffect(() => {
+    const onMouseDown = (e) => {
+      if (employeePickerRef.current && !employeePickerRef.current.contains(e.target)) {
+        setShowEmployeeDropdown(false);
+      }
+    };
+
+    document.addEventListener("mousedown", onMouseDown);
+    return () => document.removeEventListener("mousedown", onMouseDown);
+  }, []);
+
+  useEffect(() => {
     setLeaveForm((prev) => ({
       ...prev,
       total_no_of_days: diffDaysInclusive(prev.start_date, prev.end_date),
@@ -187,6 +205,18 @@ export default function LeaveTransactions() {
         {(s.employee_no ? `${s.employee_no} - ` : "") + (s.fullname || "-")}
       </option>
     ));
+
+  const filteredEmployees = useMemo(() => {
+    const q = employeeSearch.toLowerCase();
+
+    if (!q) return staffList.slice(0, 30);
+
+    return (staffList || []).filter((s) => {
+      const name = String(s.fullname || "").toLowerCase();
+      const empNo = String(s.employee_no || "").toLowerCase();
+      return name.includes(q) || empNo.includes(q);
+    });
+  }, [staffList, employeeSearch]);
 
   const handleLeaveEmployeeSelect = (employeeId) => {
     const emp = staffList.find((s) => String(s.id) === String(employeeId));
@@ -201,6 +231,11 @@ export default function LeaveTransactions() {
       branch_code: b?.code || "",
       branch_name: b?.name || "",
     }));
+
+    setEmployeeSearch(
+      emp ? `${emp.employee_no ? `${emp.employee_no} - ` : ""}${emp.fullname || "-"}` : ""
+    );
+    setShowEmployeeDropdown(false);
   };
 
   const resetForm = () => {
@@ -218,6 +253,8 @@ export default function LeaveTransactions() {
       reason: "",
     });
     setAttachmentFile(null);
+    setEmployeeSearch("");
+    setShowEmployeeDropdown(false);
   };
 
   const handleCreateLeave = async (e) => {
@@ -527,7 +564,11 @@ export default function LeaveTransactions() {
             e.target.classList.contains("modal-overlay") && setShowCreateLeave(false)
           }
         >
-          <div className="modal saas-modal" onMouseDown={(e) => e.stopPropagation()}>
+          <div
+            className="modal saas-modal"
+            onMouseDown={(e) => e.stopPropagation()}
+            style={{ overflow: "visible" }}
+          >
             <div className="modal-head">
               <div>
                 <h3 className="modal-title">Add Leave Request</h3>
@@ -538,20 +579,84 @@ export default function LeaveTransactions() {
               </button>
             </div>
 
-            <form onSubmit={handleCreateLeave} className="modal-form">
-              <div className="modal-grid">
-                <div className="form-group">
-                  <label htmlFor="employee_id">Employee</label>
-                  <select
-                    id="employee_id"
-                    name="employee_id"
-                    value={leaveForm.employee_id}
-                    onChange={(e) => handleLeaveEmployeeSelect(e.target.value)}
-                    required
-                  >
-                    <option value="">Select Employee</option>
-                    {renderEmployeeOptions()}
-                  </select>
+            <form onSubmit={handleCreateLeave} className="modal-form" style={{ overflow: "visible" }}>
+              <div className="modal-grid" style={{ overflow: "visible" }}>
+                <div
+                  className="form-group"
+                  ref={employeePickerRef}
+                  style={{ position: "relative", zIndex: 50 }}
+                >
+                  <label htmlFor="employee_id_search">Employee</label>
+
+                  <input
+                    id="employee_id_search"
+                    name="employee_id_search"
+                    type="text"
+                    placeholder="Search Employee..."
+                    value={employeeSearch}
+                    onChange={(e) => {
+                      setEmployeeSearch(e.target.value);
+                      setShowEmployeeDropdown(true);
+                      setLeaveForm((prev) => ({
+                        ...prev,
+                        employee_id: "",
+                        staff_name: "",
+                        branch_id: "",
+                        branch_code: "",
+                        branch_name: "",
+                      }));
+                    }}
+                    onFocus={() => setShowEmployeeDropdown(true)}
+                    autoComplete="off"
+                    required={!leaveForm.employee_id}
+                  />
+
+                  {showEmployeeDropdown && (
+                    <div
+                      style={{
+                        position: "absolute",
+                        top: "100%",
+                        left: 0,
+                        right: 0,
+                        marginTop: 6,
+                        maxHeight: 220,
+                        overflowY: "auto",
+                        background: "#0f1a2e",
+                        border: "1px solid rgba(255,255,255,0.1)",
+                        borderRadius: 8,
+                        zIndex: 9999,
+                        boxShadow: "0 10px 24px rgba(0,0,0,0.4)",
+                      }}
+                    >
+                      {filteredEmployees.length === 0 ? (
+                        <div style={{ padding: 10, color: "#9aa7bd" }}>No results</div>
+                      ) : (
+                        filteredEmployees.map((s) => (
+                          <div
+                            key={s.id}
+                            style={{
+                              padding: 10,
+                              cursor: "pointer",
+                              borderBottom: "1px solid rgba(255,255,255,0.05)",
+                              color: "#e7edf7",
+                              transition: "background 0.15s ease",
+                            }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.background = "#1e293b";
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.background = "transparent";
+                            }}
+                            onClick={() => handleLeaveEmployeeSelect(s.id)}
+                          >
+                            {(s.employee_no ? `${s.employee_no} - ` : "") + (s.fullname || "-")}
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  )}
+
+                  <input type="hidden" name="employee_id" value={leaveForm.employee_id} />
                 </div>
 
                 <div className="form-group">

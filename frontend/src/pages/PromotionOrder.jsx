@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState, useCallback } from "react";
+import React, { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import "../styles/PromotionOrder.css";
 import api from "../api/axiosClient";
@@ -7,6 +7,9 @@ const toNum = (v) => {
   const n = Number(v ?? 0);
   return Number.isFinite(n) ? n : 0;
 };
+
+const toStr = (v) => String(v ?? "").trim();
+const norm = (v) => toStr(v).toLowerCase();
 
 const readUser = () => {
   try {
@@ -54,6 +57,14 @@ export default function PromotionOrder() {
     present_branch_name: "",
   });
 
+  const [employeeSearch, setEmployeeSearch] = useState("");
+  const [employeeQuery, setEmployeeQuery] = useState("");
+  const [showEmployeeResults, setShowEmployeeResults] = useState(false);
+  const [attachmentFile, setAttachmentFile] = useState(null);
+  const [selectedEmployee, setSelectedEmployee] = useState(null);
+
+  const employeePickerRef = useRef(null);
+
   const branchMap = useMemo(() => {
     const m = new Map();
     (branches || []).forEach((b) => m.set(Number(b.id), b));
@@ -61,6 +72,32 @@ export default function PromotionOrder() {
   }, [branches]);
 
   const branchLabel = (b) => (b ? `${b.code} - ${b.name}` : "-");
+
+  const filteredStaff = useMemo(() => {
+    const q = norm(employeeQuery);
+    if (!q) return staff.slice(0, 25);
+
+    return staff
+      .filter((s) => {
+        const hay = [
+          s.id,
+          s.employee_no,
+          s.fullname,
+          s.first_name,
+          s.last_name,
+          s.middle_name,
+          s.position,
+          s.area,
+          s.region,
+          s.division,
+        ]
+          .map((x) => norm(x))
+          .join(" ");
+
+        return hay.includes(q);
+      })
+      .slice(0, 50);
+  }, [staff, employeeQuery]);
 
   const closeModal = () => {
     setShowCreate(false);
@@ -71,6 +108,8 @@ export default function PromotionOrder() {
       new_position: "",
       old_salary: "",
       new_salary: "",
+      old_ecola: "",
+      new_ecola: "",
       effective_date: "",
       remarks: "",
 
@@ -81,6 +120,11 @@ export default function PromotionOrder() {
       present_branch_code: "",
       present_branch_name: "",
     });
+    setEmployeeSearch("");
+    setEmployeeQuery("");
+    setSelectedEmployee(null);
+    setShowEmployeeResults(false);
+    setAttachmentFile(null);
   };
 
   const loadStaff = useCallback(async () => {
@@ -127,23 +171,41 @@ export default function PromotionOrder() {
 
   useEffect(() => {
     if (!showCreate) return;
+
     const onKey = (e) => e.key === "Escape" && closeModal();
     document.addEventListener("keydown", onKey);
     document.body.style.overflow = "hidden";
+
     return () => {
       document.removeEventListener("keydown", onKey);
       document.body.style.overflow = "";
     };
   }, [showCreate]);
 
+  useEffect(() => {
+    const onMouseDown = (e) => {
+      if (employeePickerRef.current && !employeePickerRef.current.contains(e.target)) {
+        setShowEmployeeResults(false);
+      }
+    };
+
+    document.addEventListener("mousedown", onMouseDown);
+    return () => document.removeEventListener("mousedown", onMouseDown);
+  }, []);
+
   const onSelectEmployee = (employeeId) => {
     const s = staff.find((x) => String(x.id) === String(employeeId));
+    if (!s) return;
+
     const prevBranchId = s?.branch_id ? Number(s.branch_id) : null;
     const prevBranch = prevBranchId ? branchMap.get(prevBranchId) : null;
+    const idStr = String(s.id);
+
+    setSelectedEmployee(s);
 
     setForm((p) => ({
       ...p,
-      employee_id: employeeId,
+      employee_id: idStr,
       employee_name: s?.fullname || "",
       old_position: s?.position || "",
       old_salary: String(toNum(s?.salary)),
@@ -157,6 +219,11 @@ export default function PromotionOrder() {
       present_branch_code: prevBranch?.code || "",
       present_branch_name: prevBranch?.name || "",
     }));
+
+    const label = `${s.employee_no ? `${s.employee_no} - ` : ""}${s.fullname || ""}`;
+    setEmployeeSearch(label);
+    setEmployeeQuery(label);
+    setShowEmployeeResults(false);
   };
 
   const onSelectPresentBranch = (branchId) => {
@@ -173,35 +240,49 @@ export default function PromotionOrder() {
   const createOrder = async (e) => {
     e.preventDefault();
 
-    if (!form.employee_id) return alert("Select employee.");
+    if (!selectedEmployee || !form.employee_id || form.employee_id === "") {
+      return alert("Employee is required");
+    }
     if (!String(form.new_position).trim()) return alert("New position is required.");
     if (!String(form.effective_date).trim()) return alert("Effective date is required.");
     if (!String(form.present_branch_id).trim()) return alert("Present branch is required.");
 
-    const payload = {
-      employee_id: Number(form.employee_id),
-      employee_name: String(form.employee_name || "").trim(),
-      old_position: String(form.old_position || "").trim(),
-      new_position: String(form.new_position || "").trim(),
-      old_salary: toNum(form.old_salary),
-      new_salary: toNum(form.new_salary),
-      old_ecola: toNum(form.old_ecola),
-      new_ecola: toNum(form.new_ecola),
-
-      effective_date: String(form.effective_date).slice(0, 10),
-      remarks: String(form.remarks || "").trim(),
-
-      prev_branch_id: form.prev_branch_id ? Number(form.prev_branch_id) : null,
-      prev_branch_code: String(form.prev_branch_code || ""),
-      prev_branch_name: String(form.prev_branch_name || ""),
-      present_branch_id: form.present_branch_id ? Number(form.present_branch_id) : null,
-      present_branch_code: String(form.present_branch_code || ""),
-      present_branch_name: String(form.present_branch_name || ""),
-    };
-
     try {
       setSaving(true);
-      await api.post("/promotion-orders", payload);
+
+      const formData = new FormData();
+      formData.append("employee_id", parseInt(String(selectedEmployee.id), 10));
+      formData.append("employee_name", String(form.employee_name || "").trim());
+      formData.append("old_position", String(form.old_position || "").trim());
+      formData.append("new_position", String(form.new_position || "").trim());
+      formData.append("old_salary", toNum(form.old_salary));
+      formData.append("new_salary", toNum(form.new_salary));
+      formData.append("old_ecola", toNum(form.old_ecola));
+      formData.append("new_ecola", toNum(form.new_ecola));
+      formData.append("effective_date", String(form.effective_date).slice(0, 10));
+      formData.append("remarks", String(form.remarks || "").trim());
+
+      formData.append(
+        "prev_branch_id",
+        form.prev_branch_id ? Number(form.prev_branch_id) : ""
+      );
+      formData.append("prev_branch_code", String(form.prev_branch_code || ""));
+      formData.append("prev_branch_name", String(form.prev_branch_name || ""));
+      formData.append(
+        "present_branch_id",
+        form.present_branch_id ? Number(form.present_branch_id) : ""
+      );
+      formData.append("present_branch_code", String(form.present_branch_code || ""));
+      formData.append("present_branch_name", String(form.present_branch_name || ""));
+
+      if (attachmentFile) {
+        formData.append("attachment", attachmentFile);
+      }
+
+      await api.post("/promotion-orders", formData, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+
       alert("Promotion order created (Pending).");
       closeModal();
       await loadOrders();
@@ -245,13 +326,17 @@ export default function PromotionOrder() {
   };
 
   const resolvePrevBranchText = (o) => {
-    if (o.prev_branch_code || o.prev_branch_name) return `${o.prev_branch_code || ""} - ${o.prev_branch_name || ""}`.trim();
+    if (o.prev_branch_code || o.prev_branch_name) {
+      return `${o.prev_branch_code || ""} - ${o.prev_branch_name || ""}`.trim();
+    }
     const b = o.prev_branch_id ? branchMap.get(Number(o.prev_branch_id)) : null;
     return branchLabel(b);
   };
 
   const resolvePresentBranchText = (o) => {
-    if (o.present_branch_code || o.present_branch_name) return `${o.present_branch_code || ""} - ${o.present_branch_name || ""}`.trim();
+    if (o.present_branch_code || o.present_branch_name) {
+      return `${o.present_branch_code || ""} - ${o.present_branch_name || ""}`.trim();
+    }
     const b = o.present_branch_id ? branchMap.get(Number(o.present_branch_id)) : null;
     return branchLabel(b);
   };
@@ -289,10 +374,8 @@ export default function PromotionOrder() {
               <tr>
                 <th>ORDER NO</th>
                 <th>EMPLOYEE</th>
-
                 <th>PREVIOUS BRANCH</th>
                 <th>PRESENT BRANCH</th>
-
                 <th>OLD POSITION</th>
                 <th>NEW POSITION</th>
                 <th className="num">OLD SALARY</th>
@@ -323,10 +406,8 @@ export default function PromotionOrder() {
                     <tr key={o.id}>
                       <td className="mono">{o.order_no || `PRO-${o.id}`}</td>
                       <td className="td-strong">{o.employee_name}</td>
-
                       <td>{resolvePrevBranchText(o) || "-"}</td>
                       <td>{resolvePresentBranchText(o) || "-"}</td>
-
                       <td>{o.old_position || "-"}</td>
                       <td>{o.new_position || "-"}</td>
                       <td className="num">{toNum(o.old_salary).toLocaleString()}</td>
@@ -359,7 +440,10 @@ export default function PromotionOrder() {
       </div>
 
       {showCreate && (
-        <div className="po-modal-overlay" onMouseDown={(e) => e.target.classList.contains("po-modal-overlay") && closeModal()}>
+        <div
+          className="po-modal-overlay"
+          onMouseDown={(e) => e.target.classList.contains("po-modal-overlay") && closeModal()}
+        >
           <div className="po-modal" onMouseDown={(e) => e.stopPropagation()}>
             <div className="po-modal-head">
               <div>
@@ -373,16 +457,90 @@ export default function PromotionOrder() {
 
             <form onSubmit={createOrder} className="po-form">
               <div className="po-grid">
-                <div className="po-field">
+                <div
+                  className="po-field"
+                  ref={employeePickerRef}
+                  style={{ position: "relative", overflow: "visible" }}
+                >
                   <label>Employee</label>
-                  <select value={form.employee_id} onChange={(e) => onSelectEmployee(e.target.value)} required>
-                    <option value="">{loadingStaff ? "Loading staff..." : "Select Employee"}</option>
-                    {staff.map((s) => (
-                      <option key={s.id} value={s.id}>
-                        {(s.employee_no ? `${s.employee_no} - ` : "") + s.fullname}
-                      </option>
-                    ))}
-                  </select>
+
+                  <input
+                    value={employeeSearch}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      setEmployeeSearch(value);
+                      setEmployeeQuery(value);
+                      setShowEmployeeResults(true);
+                      setSelectedEmployee(null);
+
+                      setForm((p) => ({
+                        ...p,
+                        employee_id: "",
+                        employee_name: "",
+                        old_position: "",
+                        old_salary: "",
+                        old_ecola: "",
+                        prev_branch_id: "",
+                        prev_branch_code: "",
+                        prev_branch_name: "",
+                        present_branch_id: "",
+                        present_branch_code: "",
+                        present_branch_name: "",
+                      }));
+                    }}
+                    onFocus={() => setShowEmployeeResults(true)}
+                    placeholder="Search employee no or name..."
+                  />
+
+                  {showEmployeeResults && (
+                    <div
+                      style={{
+                        position: "absolute",
+                        top: "100%",
+                        left: 0,
+                        right: 0,
+                        marginTop: 6,
+                        maxHeight: 240,
+                        overflowY: "auto",
+                        background: "#0f1a2e",
+                        border: "1px solid rgba(255,255,255,0.1)",
+                        borderRadius: 10,
+                        zIndex: 9999,
+                        boxShadow: "0 12px 30px rgba(0,0,0,0.35)",
+                      }}
+                    >
+                      {loadingStaff ? (
+                        <div style={{ padding: 12, color: "#9aa7bd" }}>
+                          Loading staff...
+                        </div>
+                      ) : filteredStaff.length === 0 ? (
+                        <div style={{ padding: 12, color: "#9aa7bd" }}>
+                          No employee found.
+                        </div>
+                      ) : (
+                        filteredStaff.map((s) => (
+                          <div
+                            key={s.id}
+                            style={{
+                              padding: "10px 12px",
+                              cursor: "pointer",
+                              borderBottom: "1px solid rgba(255,255,255,0.05)",
+                              color: "#e7edf7",
+                            }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.background = "#1e293b";
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.background = "transparent";
+                            }}
+                            onClick={() => onSelectEmployee(s.id)}
+                          >
+                            {(s.employee_no ? `${s.employee_no} - ` : "") + (s.fullname || "-")}
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 <div className="po-field">
@@ -397,7 +555,14 @@ export default function PromotionOrder() {
 
                 <div className="po-field">
                   <label>Previous Branch</label>
-                  <input value={`${form.prev_branch_code || ""}${form.prev_branch_name ? ` - ${form.prev_branch_name}` : ""}` || ""} readOnly placeholder="Auto-filled" />
+                  <input
+                    value={
+                      `${form.prev_branch_code || ""}${form.prev_branch_name ? ` - ${form.prev_branch_name}` : ""}` ||
+                      ""
+                    }
+                    readOnly
+                    placeholder="Auto-filled"
+                  />
                 </div>
 
                 <div className="po-field">
@@ -447,6 +612,7 @@ export default function PromotionOrder() {
                     placeholder="Enter new salary"
                   />
                 </div>
+
                 <div className="po-field">
                   <label>Previous Ecola</label>
                   <input value={form.old_ecola} readOnly placeholder="Auto-filled" />
@@ -459,6 +625,15 @@ export default function PromotionOrder() {
                     value={form.new_ecola}
                     onChange={(e) => setForm((p) => ({ ...p, new_ecola: e.target.value }))}
                     placeholder="Enter new ecola"
+                  />
+                </div>
+
+                <div className="po-field full">
+                  <label>Attach File</label>
+                  <input
+                    type="file"
+                    accept=".pdf,.png,.jpg,.jpeg,.doc,.docx"
+                    onChange={(e) => setAttachmentFile(e.target.files?.[0] || null)}
                   />
                 </div>
 
@@ -477,7 +652,11 @@ export default function PromotionOrder() {
                 <button className="po-btn po-btn-ghost" type="button" onClick={closeModal}>
                   Cancel
                 </button>
-                <button className="po-btn po-btn-primary" type="submit" disabled={saving}>
+                <button
+                  className="po-btn po-btn-primary"
+                  type="submit"
+                  disabled={saving || !form.employee_id}
+                >
                   {saving ? "Creating..." : "Create Order"}
                 </button>
               </div>

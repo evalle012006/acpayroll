@@ -1,6 +1,9 @@
 const express = require("express");
 const router = express.Router();
 const pool = require("../db");
+const path = require("path");
+const fs = require("fs");
+const multer = require("multer");
 const { requireAuth, requireRole } = require("../middlewares/authMiddleware");
 
 const toInt = (v) => {
@@ -26,6 +29,29 @@ const isAssistantVicePresident = (req) =>
 
 const getUserBranchId = (req) => req.user?.branch_id ?? null;
 const getUserRegion = (req) => toStr(req.user?.region);
+
+const uploadRoot = path.join(process.cwd(), "uploads");
+const suspensionUploadDir = path.join(uploadRoot, "suspension");
+
+if (!fs.existsSync(suspensionUploadDir)) {
+  fs.mkdirSync(suspensionUploadDir, { recursive: true });
+}
+
+const storage = multer.diskStorage({
+  destination: (_req, _file, cb) => cb(null, suspensionUploadDir),
+  filename: (_req, file, cb) => {
+    const ext = path.extname(file.originalname || "");
+    const base = path
+      .basename(file.originalname || "file", ext)
+      .replace(/[^a-zA-Z0-9-_]/g, "_");
+    cb(null, `${Date.now()}-${base}${ext}`);
+  },
+});
+
+const upload = multer({
+  storage,
+  limits: { fileSize: 20 * 1024 * 1024 },
+});
 
 router.get("/suspension-orders", requireAuth, async (req, res) => {
   try {
@@ -136,6 +162,7 @@ router.post(
   "/suspension-orders",
   requireAuth,
   requireRole(["admin", "branch manager", "assistant vice president"]),
+  upload.single("attachment"),
   async (req, res) => {
     const client = await pool.connect();
     try {
@@ -144,13 +171,22 @@ router.post(
       const employee_id = toInt(req.body?.employee_id);
       const reason = clean(req.body?.reason);
       const details = clean(req.body?.details);
+      const suspension_type = clean(req.body?.suspension_type);
 
       const start_date = toDate(req.body?.suspension_start ?? req.body?.start_date);
       const end_date = toDate(req.body?.suspension_end ?? req.body?.end_date);
 
+      const attachment_path = req.file ? `/uploads/suspension/${req.file.filename}` : null;
+      const attachment_name = req.file ? clean(req.file.originalname) : null;
+      const attachment_mime = req.file ? clean(req.file.mimetype) : null;
+
       if (!employee_id) {
         await client.query("ROLLBACK");
         return res.status(400).json({ message: "Employee is required" });
+      }
+      if (!suspension_type) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({ message: "Suspension type is required" });
       }
       if (!start_date) {
         await client.query("ROLLBACK");
@@ -213,10 +249,14 @@ router.post(
             order_no,
             employee_id,
             employee_name,
+            suspension_type,
             reason,
             start_date,
             end_date,
             details,
+            attachment_path,
+            attachment_name,
+            attachment_mime,
             status,
             created_by,
             last_name,
@@ -225,7 +265,8 @@ router.post(
           )
         VALUES
           (
-            $1, $2, $3, $4, $5, $6::date, $7::date, $8, 'Pending', $9, $10, $11, $12
+            $1, $2, $3, $4, $5, $6, $7::date, $8::date, $9, $10, $11, $12,
+            'Pending', $13, $14, $15, $16
           )
         RETURNING *;
         `,
@@ -234,10 +275,14 @@ router.post(
           order_no,
           employee_id,
           employee_name,
+          suspension_type,
           reason,
           start_date,
           end_date,
           details || null,
+          attachment_path,
+          attachment_name,
+          attachment_mime,
           req.user?.id ?? null,
           clean(staff.last_name),
           clean(staff.first_name),
@@ -253,6 +298,61 @@ router.post(
       return res.status(500).json({ message: "Server error" });
     } finally {
       client.release();
+    }
+  }
+);
+
+router.get(
+  "/suspension-orders/:id/download",
+  requireAuth,
+  async (req, res) => {
+    try {
+      const id = toInt(req.params.id);
+      if (!id) return res.status(400).json({ message: "Invalid id" });
+
+      const r = await pool.query(
+        `
+        SELECT so.*, s.branch_id, s.region
+        FROM public.suspension_orders so
+        LEFT JOIN public.staff s ON s.id = so.employee_id
+        WHERE so.id = $1
+        `,
+        [id]
+      );
+
+      if (r.rowCount === 0) {
+        return res.status(404).json({ message: "Suspension order not found" });
+      }
+
+      const row = r.rows[0];
+
+      if (isBranchManager(req)) {
+        const bid = getUserBranchId(req);
+        if (!bid || Number(row.branch_id) !== Number(bid)) {
+          return res.status(403).json({ message: "Access denied" });
+        }
+      } else if (isAssistantVicePresident(req)) {
+        const region = getUserRegion(req);
+        if (!region || toStr(row.region).toLowerCase() !== region.toLowerCase()) {
+          return res.status(403).json({ message: "Access denied" });
+        }
+      } else if (!isAdmin(req) && !isHr(req) && !isAccounting(req)) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      if (!row.attachment_path) {
+        return res.status(404).json({ message: "No attachment found" });
+      }
+
+      const filePath = path.join(process.cwd(), row.attachment_path.replace(/^\/+/, ""));
+      if (!fs.existsSync(filePath)) {
+        return res.status(404).json({ message: "Stored file not found" });
+      }
+
+      return res.download(filePath, row.attachment_name || path.basename(filePath));
+    } catch (e) {
+      console.error("GET /api/suspension-orders/:id/download ERROR:", e.message);
+      return res.status(500).json({ message: "Server error" });
     }
   }
 );

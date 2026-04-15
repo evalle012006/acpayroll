@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import api from "../api/axiosClient";
 import "../styles/DemotionOrder.css";
@@ -18,6 +18,7 @@ const displayNameParts = (s) => {
 
 export default function DemotionOrder() {
   const navigate = useNavigate();
+  const employeeBoxRef = useRef(null);
 
   const user = useMemo(() => {
     try {
@@ -56,6 +57,9 @@ export default function DemotionOrder() {
   const [rejectReason, setRejectReason] = useState("");
   const [rejectSaving, setRejectSaving] = useState(false);
 
+  const [employeeSearch, setEmployeeSearch] = useState("");
+  const [showEmployeeDropdown, setShowEmployeeDropdown] = useState(false);
+
   const emptyForm = useMemo(
     () => ({
       employee_id: "",
@@ -79,6 +83,29 @@ export default function DemotionOrder() {
     (branches || []).forEach((b) => m.set(String(b.id), b));
     return m;
   }, [branches]);
+
+  const filteredStaff = useMemo(() => {
+    const q = employeeSearch.toLowerCase();
+
+    if (!q) return staff.slice(0, 20);
+
+    return staff.filter((s) => {
+      const haystack = [
+        s.id,
+        s.employee_no,
+        s.fullname,
+        s.first_name,
+        s.middle_name,
+        s.last_name,
+        displayNameParts(s),
+        s.position,
+      ]
+        .map((x) => clean(x).toLowerCase())
+        .join(" ");
+
+      return haystack.includes(q);
+    });
+  }, [employeeSearch, staff]);
 
   const badgeClass = (status) => {
     const s = String(status || "Pending").toLowerCase();
@@ -110,9 +137,35 @@ export default function DemotionOrder() {
     loadData();
   }, []);
 
+  useEffect(() => {
+    if (!showModal) return;
+
+    const onMouseDown = (e) => {
+      if (employeeBoxRef.current && !employeeBoxRef.current.contains(e.target)) {
+        setShowEmployeeDropdown(false);
+      }
+    };
+
+    const onKeyDown = (e) => {
+      if (e.key === "Escape") {
+        setShowEmployeeDropdown(false);
+      }
+    };
+
+    document.addEventListener("mousedown", onMouseDown);
+    document.addEventListener("keydown", onKeyDown);
+
+    return () => {
+      document.removeEventListener("mousedown", onMouseDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [showModal]);
+
   const openCreate = () => {
     setErr("");
     setForm(emptyForm);
+    setEmployeeSearch("");
+    setShowEmployeeDropdown(false);
     setShowModal(true);
   };
 
@@ -121,19 +174,28 @@ export default function DemotionOrder() {
     setSaving(false);
     setErr("");
     setForm(emptyForm);
+    setEmployeeSearch("");
+    setShowEmployeeDropdown(false);
   };
 
   const onSelectEmployee = (id) => {
     const emp = staff.find((x) => String(x.id) === String(id));
     setForm((p) => ({
       ...p,
-      employee_id: id,
+      employee_id: String(id),
       first_name: clean(emp?.first_name),
       last_name: clean(emp?.last_name),
       middle_name: clean(emp?.middle_name),
       prev_position: clean(emp?.position || emp?.["position"]),
       prev_branch_id: emp?.branch_id != null ? String(emp.branch_id) : "",
     }));
+
+    if (emp) {
+      setEmployeeSearch(
+        `${emp.id} — ${displayNameParts(emp)}${emp.employee_no ? ` (${emp.employee_no})` : ""}`
+      );
+    }
+    setShowEmployeeDropdown(false);
   };
 
   const submitCreate = async (e) => {
@@ -375,16 +437,79 @@ export default function DemotionOrder() {
 
             <form className="po-form" onSubmit={submitCreate}>
               <div className="po-grid">
-                <div className="po-field full">
+                <div className="po-field full" ref={employeeBoxRef} style={{ position: "relative" }}>
                   <label>Employee (ID + Name)</label>
-                  <select value={form.employee_id} onChange={(e) => onSelectEmployee(e.target.value)}>
-                    <option value="">Select Employee</option>
-                    {staff.map((s) => (
-                      <option key={s.id} value={s.id}>
-                        {s.id} — {displayNameParts(s)} {s.employee_no ? `(${s.employee_no})` : ""}
-                      </option>
-                    ))}
-                  </select>
+
+                  <input
+                    type="text"
+                    placeholder="Search employee ID, name, or employee no..."
+                    value={employeeSearch}
+                    onChange={(e) => {
+                      setEmployeeSearch(e.target.value);
+                      setShowEmployeeDropdown(true);
+                      setForm((p) => ({
+                        ...p,
+                        employee_id: "",
+                        first_name: "",
+                        last_name: "",
+                        middle_name: "",
+                        prev_position: "",
+                        prev_branch_id: "",
+                      }));
+                    }}
+                    onFocus={() => setShowEmployeeDropdown(true)}
+                  />
+
+                  {showEmployeeDropdown && (
+                    <div
+                      style={{
+                        position: "absolute",
+                        top: "100%",
+                        left: 0,
+                        right: 0,
+                        marginTop: 6,
+                        maxHeight: 240,
+                        overflowY: "auto",
+                        background: "var(--card, #0f172a)",
+                        border: "1px solid var(--border, rgba(255,255,255,0.1))",
+                        borderRadius: 10,
+                        zIndex: 50,
+                        boxShadow: "0 12px 30px rgba(0,0,0,0.25)",
+                      }}
+                    >
+                      {filteredStaff.length === 0 ? (
+                        <div
+                          style={{
+                            padding: 12,
+                            color: "var(--muted)",
+                            fontSize: 14,
+                          }}
+                        >
+                          No employee found
+                        </div>
+                      ) : (
+                        filteredStaff.map((s) => (
+                          <button
+                            key={s.id}
+                            type="button"
+                            onClick={() => onSelectEmployee(s.id)}
+                            style={{
+                              width: "100%",
+                              textAlign: "left",
+                              padding: "10px 12px",
+                              border: "none",
+                              borderBottom: "1px solid var(--border, rgba(255,255,255,0.08))",
+                              background: "transparent",
+                              color: "inherit",
+                              cursor: "pointer",
+                            }}
+                          >
+                            {s.id} — {displayNameParts(s)} {s.employee_no ? `(${s.employee_no})` : ""}
+                          </button>
+                        ))
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 <div className="po-field">

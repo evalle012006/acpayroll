@@ -34,7 +34,9 @@ const displayNameParts = (s) => {
   const ln = toStr(s?.last_name);
   const fn = toStr(s?.first_name);
   const mn = toStr(s?.middle_name);
-  const built = `${ln}${ln && fn ? ", " : ""}${fn}${mn ? ` ${mn}` : ""}`.replace(/\s+/g, " ").trim();
+  const built = `${ln}${ln && fn ? ", " : ""}${fn}${mn ? ` ${mn}` : ""}`
+    .replace(/\s+/g, " ")
+    .trim();
   return built || toStr(s?.fullname) || toStr(s?.employee_name) || "-";
 };
 
@@ -49,10 +51,12 @@ export default function ExitStaffOrders() {
   const [staff, setStaff] = useState([]);
   const [branches, setBranches] = useState([]);
   const [orders, setOrders] = useState([]);
+  const [balancesByKey, setBalancesByKey] = useState({});
 
   const [loadingStaff, setLoadingStaff] = useState(false);
   const [loadingBranches, setLoadingBranches] = useState(false);
   const [loadingOrders, setLoadingOrders] = useState(false);
+  const [loadingBalances, setLoadingBalances] = useState(false);
 
   const [saving, setSaving] = useState(false);
   const [approvingId, setApprovingId] = useState(null);
@@ -66,6 +70,7 @@ export default function ExitStaffOrders() {
 
   const emptyForm = useMemo(
     () => ({
+      staff_id: "",
       employee_no: "",
       last_name: "",
       first_name: "",
@@ -157,11 +162,46 @@ export default function ExitStaffOrders() {
     }
   }, []);
 
+  const loadBalances = useCallback(async () => {
+    try {
+      setLoadingBalances(true);
+
+      const now = new Date();
+      const month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+
+      const res = await api.get("/schedule-balances/live", {
+        params: { month },
+      });
+
+      const rows = Array.isArray(res.data) ? res.data : [];
+      const map = {};
+
+      rows.forEach((r) => {
+        if (r?.staff_id != null && String(r.staff_id).trim() !== "") {
+          map[`staff:${String(r.staff_id)}`] = r;
+        }
+        if (r?.employee_no != null && String(r.employee_no).trim() !== "") {
+          map[`emp:${String(r.employee_no)}`] = r;
+        }
+        if (r?.employee_id != null && String(r.employee_id).trim() !== "") {
+          map[`empid:${String(r.employee_id)}`] = r;
+        }
+      });
+
+      setBalancesByKey(map);
+    } catch {
+      setBalancesByKey({});
+    } finally {
+      setLoadingBalances(false);
+    }
+  }, []);
+
   useEffect(() => {
     loadStaff();
     loadBranches();
     loadOrders();
-  }, [loadStaff, loadBranches, loadOrders]);
+    loadBalances();
+  }, [loadStaff, loadBranches, loadOrders, loadBalances]);
 
   useEffect(() => {
     if (!showCreate) return;
@@ -195,8 +235,19 @@ export default function ExitStaffOrders() {
   }, [showCreate, closeModal]);
 
   const selectedStaff = useMemo(() => {
-    return staff.find((x) => String(x.id) === String(form.employee_no)) || null;
-  }, [staff, form.employee_no]);
+    return staff.find((x) => String(x.id) === String(form.staff_id)) || null;
+  }, [staff, form.staff_id]);
+
+  const selectedBalanceRow = useMemo(() => {
+    if (!selectedStaff) return null;
+
+    return (
+      balancesByKey[`staff:${String(selectedStaff.id)}`] ||
+      balancesByKey[`emp:${String(selectedStaff.employee_no)}`] ||
+      balancesByKey[`empid:${String(selectedStaff.employee_id)}`] ||
+      null
+    );
+  }, [selectedStaff, balancesByKey]);
 
   const selectedSavings = useMemo(() => {
     if (!selectedStaff) {
@@ -217,17 +268,38 @@ export default function ExitStaffOrders() {
       };
     }
 
-    const cbu = toNum(selectedStaff.cbu);
-    const cashbond = toNum(selectedStaff.cashbond);
-    const utility = toNum(selectedStaff.utility ?? selectedStaff.utility_charge);
+    const bal = selectedBalanceRow || {};
 
-    const salaryAdvance = toNum(selectedStaff.salary_advance);
-    const specialAdvance = toNum(selectedStaff.special_advance);
-    const cashAdvance = toNum(selectedStaff.cash_advance);
-    const motorcycleLoan = toNum(selectedStaff.motorcycle_loan);
-    const pagIbigLoan = toNum(selectedStaff.pag_ibig_loan);
-    const otherReceivable = toNum(selectedStaff.other_receivable);
-    const staffAccountsPayable = toNum(selectedStaff.staff_accounts_payable);
+    const cbu = toNum(bal.cbu ?? selectedStaff.cbu);
+    const cashbond = toNum(bal.cashbond ?? selectedStaff.cashbond);
+    const utility = toNum(
+      bal.utility ??
+        bal.utility_charge ??
+        selectedStaff.utility ??
+        selectedStaff.utility_charge
+    );
+
+    const salaryAdvance = toNum(
+      bal.salary_advance ?? selectedStaff.salary_advance
+    );
+    const specialAdvance = toNum(
+      bal.special_advance ?? selectedStaff.special_advance
+    );
+    const cashAdvance = toNum(
+      bal.cash_advance ?? selectedStaff.cash_advance
+    );
+    const motorcycleLoan = toNum(
+      bal.motorcycle_loan ?? selectedStaff.motorcycle_loan
+    );
+    const pagIbigLoan = toNum(
+      bal.pag_ibig_loan ?? selectedStaff.pag_ibig_loan
+    );
+    const otherReceivable = toNum(
+      bal.other_receivable ?? selectedStaff.other_receivable
+    );
+    const staffAccountsPayable = toNum(
+      bal.staff_accounts_payable ?? selectedStaff.staff_accounts_payable
+    );
 
     const totalSavings = cbu + cashbond + utility;
     const totalBalances =
@@ -254,7 +326,7 @@ export default function ExitStaffOrders() {
       totalBalances,
       netPersonal: totalSavings - totalBalances,
     };
-  }, [selectedStaff]);
+  }, [selectedStaff, selectedBalanceRow]);
 
   const onSelectEmployee = (id) => {
     const s = staff.find((x) => String(x.id) === String(id));
@@ -263,7 +335,8 @@ export default function ExitStaffOrders() {
 
     setForm((p) => ({
       ...p,
-      employee_no: id,
+      staff_id: String(id),
+      employee_no: toStr(s?.employee_no),
       last_name: toStr(s?.last_name),
       first_name: toStr(s?.first_name),
       middle_name: toStr(s?.middle_name),
@@ -279,14 +352,14 @@ export default function ExitStaffOrders() {
 
     setErr("");
 
-    const employeeNo = Number(form.employee_no);
-    if (!employeeNo) return setErr("Select employee.");
+    const staffId = Number(form.staff_id);
+    if (!staffId) return setErr("Select employee.");
     if (!toStr(form.exit_type)) return setErr("Exit type is required.");
     if (!toStr(form.date_created)) return setErr("Date created is required.");
     if (!toStr(form.effective_date)) return setErr("Effective date is required.");
 
     const payload = {
-      employee_no: employeeNo,
+      employee_no: staffId,
       exit_type: toStr(form.exit_type),
       date_created: toDate10(form.date_created),
       effective_date: toDate10(form.effective_date),
@@ -312,7 +385,9 @@ export default function ExitStaffOrders() {
     if (!isAdmin) return alert("Admin only.");
     if (!o?.id) return;
 
-    const ok = window.confirm(`Approve Exit Staff Order ${o.order_no || o.id}?\n\nEmployee: ${o.employee_name}`);
+    const ok = window.confirm(
+      `Approve Exit Staff Order ${o.order_no || o.id}?\n\nEmployee: ${o.employee_name}`
+    );
     if (!ok) return;
 
     setApprovingId(o.id);
@@ -397,6 +472,10 @@ export default function ExitStaffOrders() {
             {loadingOrders ? "Refreshing..." : "Refresh"}
           </button>
 
+          <button className="exit-btn exit-btn-outline" type="button" onClick={loadBalances} disabled={loadingBalances}>
+            {loadingBalances ? "Refreshing balances..." : "Refresh Balances"}
+          </button>
+
           <button className="exit-btn exit-btn-primary" type="button" onClick={() => setShowCreate(true)}>
             + Create Exit Staff
           </button>
@@ -416,7 +495,7 @@ export default function ExitStaffOrders() {
             <thead>
               <tr>
                 <th>ORDER NO</th>
-                <th>EMPLOYEE ID</th>
+                <th>EMPLOYEE NO</th>
                 <th>EMPLOYEE</th>
                 <th>PREV BRANCH</th>
                 <th>EXIT TYPE</th>
@@ -527,7 +606,16 @@ export default function ExitStaffOrders() {
           className="exit-modal-overlay"
           onMouseDown={(e) => e.target.classList.contains("exit-modal-overlay") && closeModal()}
         >
-          <div className="exit-modal" onMouseDown={(e) => e.stopPropagation()}>
+          <div
+            className="exit-modal"
+            onMouseDown={(e) => e.stopPropagation()}
+            style={{
+              maxHeight: "90vh",
+              display: "flex",
+              flexDirection: "column",
+              overflow: "hidden",
+            }}
+          >
             <div className="exit-modal-head">
               <div>
                 <h3 className="exit-modal-title">Create Exit Staff</h3>
@@ -540,283 +628,297 @@ export default function ExitStaffOrders() {
 
             {err ? <div style={{ marginBottom: 10, color: "#ef4444", fontWeight: 900 }}>{err}</div> : null}
 
-            <form className="exit-form" onSubmit={createOrder}>
-              <div className="exit-grid">
-                <div className="exit-field">
-                  <label>Employee</label>
+            <form
+              className="exit-form"
+              onSubmit={createOrder}
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                minHeight: 0,
+                flex: 1,
+                overflow: "hidden",
+              }}
+            >
+              <div
+                className="exit-grid-scroll"
+                style={{
+                  overflowY: "auto",
+                  paddingRight: 8,
+                  flex: 1,
+                  minHeight: 0,
+                }}
+              >
+                <div className="exit-grid">
+                  <div className="exit-field">
+                    <label>Employee</label>
 
-                  <input
-                    className="employee-search-input"
-                    type="text"
-                    placeholder={loadingStaff ? "Loading staff..." : "Search employee..."}
-                    value={employeeSearch}
-                    onChange={(e) => {
-                      setEmployeeSearch(e.target.value);
-                      setShowEmployeeDropdown(true);
-                    }}
-                    onFocus={() => setShowEmployeeDropdown(true)}
-                  />
+                    <input
+                      className="employee-search-input"
+                      type="text"
+                      placeholder={loadingStaff ? "Loading staff..." : "Search employee..."}
+                      value={employeeSearch}
+                      onChange={(e) => {
+                        setEmployeeSearch(e.target.value);
+                        setShowEmployeeDropdown(true);
+                      }}
+                      onFocus={() => setShowEmployeeDropdown(true)}
+                    />
 
-                  {showEmployeeDropdown && (
-                    <div className="employee-dropdown">
-                      {filteredStaff.length === 0 ? (
-                        <div className="employee-item empty">No results</div>
-                      ) : (
-                        filteredStaff.slice(0, 20).map((s) => (
+                    {showEmployeeDropdown && (
+                      <div className="employee-dropdown">
+                        {filteredStaff.length === 0 ? (
+                          <div className="employee-item empty">No results</div>
+                        ) : (
+                          filteredStaff.slice(0, 20).map((s) => (
+                            <div
+                              key={s.id}
+                              className="employee-item"
+                              onClick={() => {
+                                onSelectEmployee(s.id);
+                                setEmployeeSearch(`${displayNameParts(s)} (${s.employee_no || s.id})`);
+                                setShowEmployeeDropdown(false);
+                              }}
+                            >
+                              {displayNameParts(s)} ({s.employee_no || s.id})
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="exit-field">
+                    <label>Employee No</label>
+                    <input value={form.employee_no || ""} readOnly />
+                  </div>
+
+                  <div className="exit-field">
+                    <label>Last Name</label>
+                    <input value={form.last_name} readOnly placeholder="Auto-filled" />
+                  </div>
+
+                  <div className="exit-field">
+                    <label>First Name</label>
+                    <input value={form.first_name} readOnly placeholder="Auto-filled" />
+                  </div>
+
+                  <div className="exit-field">
+                    <label>Middle Name</label>
+                    <input value={form.middle_name} readOnly placeholder="Auto-filled" />
+                  </div>
+
+                  <div className="exit-field">
+                    <label>Previous Branch</label>
+                    <input
+                      value={
+                        form.prev_branch_code || form.prev_branch_name
+                          ? `${form.prev_branch_code || "-"} - ${form.prev_branch_name || "-"}`
+                          : loadingBranches
+                          ? "Loading branches..."
+                          : "Auto-filled"
+                      }
+                      readOnly
+                      placeholder="Auto-filled"
+                    />
+                  </div>
+
+                  <div className="exit-field">
+                    <label>Exit Type</label>
+                    <select
+                      value={form.exit_type}
+                      onChange={(e) => setForm((p) => ({ ...p, exit_type: e.target.value }))}
+                      required
+                    >
+                      <option value="">Select Exit Type</option>
+                      <option value="Resigned">Resigned</option>
+                      <option value="AWOL">AWOL</option>
+                      <option value="Terminated">Terminated</option>
+                    </select>
+                  </div>
+
+                  <div className="exit-field">
+                    <label>Date Created</label>
+                    <input
+                      type="date"
+                      value={form.date_created}
+                      onChange={(e) => setForm((p) => ({ ...p, date_created: e.target.value }))}
+                      required
+                    />
+                  </div>
+
+                  <div className="exit-field">
+                    <label>Effective Date</label>
+                    <input
+                      type="date"
+                      value={form.effective_date}
+                      onChange={(e) => setForm((p) => ({ ...p, effective_date: e.target.value }))}
+                      required
+                    />
+                  </div>
+
+                  <div className="exit-field">
+                    <label>Settlement Date (optional)</label>
+                    <input
+                      type="date"
+                      value={form.settlement_date}
+                      onChange={(e) => setForm((p) => ({ ...p, settlement_date: e.target.value }))}
+                    />
+                  </div>
+
+                  <div className="exit-field">
+                    <label>Settlement Branch (optional)</label>
+                    <select
+                      value={form.settlement_branch_id}
+                      onChange={(e) => setForm((p) => ({ ...p, settlement_branch_id: e.target.value }))}
+                    >
+                      <option value="">Select Branch (optional)</option>
+                      {branches.map((b) => (
+                        <option key={b.id} value={b.id}>
+                          {b.code} - {b.name}
+                        </option>
+                      ))}
+                    </select>
+
+                    <div style={{ marginTop: 6, fontSize: 12, opacity: 0.85 }}>
+                      Selected: <b>{settlementBranchLabel(form.settlement_branch_id)}</b>
+                    </div>
+                  </div>
+
+                  <div className="exit-field full">
+                    <label>Remarks</label>
+                    <textarea
+                      rows={3}
+                      value={form.remarks}
+                      onChange={(e) => setForm((p) => ({ ...p, remarks: e.target.value }))}
+                      placeholder="Optional remarks"
+                    />
+                  </div>
+
+                  {selectedStaff && (
+                    <div className="exit-field full" style={{ marginTop: 8 }}>
+                      <div style={{ fontSize: 12, opacity: 0.9, marginBottom: 12 }}>
+                        <div>
+                          Preview: <b>{displayNameParts(selectedStaff)}</b>
+                        </div>
+                        <div style={{ marginTop: 4 }}>
+                          Exit: <b>{form.exit_type || "—"}</b>
+                        </div>
+                        <div style={{ marginTop: 4 }}>
+                          Effective: <b>{form.effective_date || "—"}</b>
+                        </div>
+                      </div>
+
+                      <div
+                        style={{
+                          border: "1px solid var(--border)",
+                          borderRadius: 12,
+                          background: "var(--panel-2)",
+                          overflow: "hidden",
+                        }}
+                      >
+                        <div
+                          style={{
+                            padding: "12px 14px",
+                            borderBottom: "1px solid var(--border)",
+                            fontWeight: 900,
+                            position: "sticky",
+                            top: 0,
+                            background: "var(--panel-2)",
+                            zIndex: 2,
+                          }}
+                        >
+                          Personal Savings & Balances
+                        </div>
+
+                        <div
+                          style={{
+                            maxHeight: 320,
+                            overflowY: "auto",
+                            padding: "10px 14px",
+                            display: "grid",
+                            gridTemplateColumns: "1fr auto",
+                            rowGap: 8,
+                          }}
+                        >
+                          <div style={{ gridColumn: "1 / -1", fontWeight: 900, marginTop: 4 }}>
+                            Personal Savings
+                          </div>
+
+                          <div>CBU</div>
+                          <div>{money(selectedSavings.cbu)}</div>
+
+                          <div>Cashbond</div>
+                          <div>{money(selectedSavings.cashbond)}</div>
+
+                          <div>Utility</div>
+                          <div>{money(selectedSavings.utility)}</div>
+
+                          <div style={{ fontWeight: 900, paddingTop: 6 }}>
+                            Total Personal Savings
+                          </div>
+                          <div style={{ fontWeight: 900, paddingTop: 6 }}>
+                            {money(selectedSavings.totalSavings)}
+                          </div>
+
                           <div
-                            key={s.id}
-                            className="employee-item"
-                            onClick={() => {
-                              onSelectEmployee(s.id);
-                              setEmployeeSearch(`${displayNameParts(s)} (${s.employee_no || s.id})`);
-                              setShowEmployeeDropdown(false);
+                            style={{
+                              gridColumn: "1 / -1",
+                              fontWeight: 900,
+                              marginTop: 12,
+                              borderTop: "1px solid var(--border)",
+                              paddingTop: 10,
                             }}
                           >
-                            {displayNameParts(s)} ({s.employee_no || s.id})
+                            Personal Balances
                           </div>
-                        ))
-                      )}
+
+                          <div>Salary Advance</div>
+                          <div>{money(selectedSavings.salaryAdvance)}</div>
+
+                          <div>Special Advance</div>
+                          <div>{money(selectedSavings.specialAdvance)}</div>
+
+                          <div>Cash Advance</div>
+                          <div>{money(selectedSavings.cashAdvance)}</div>
+
+                          <div>Motorcycle Loan</div>
+                          <div>{money(selectedSavings.motorcycleLoan)}</div>
+
+                          <div>Pag-ibig Loan</div>
+                          <div>{money(selectedSavings.pagIbigLoan)}</div>
+
+                          <div>Other Receivable</div>
+                          <div>{money(selectedSavings.otherReceivable)}</div>
+
+                          <div>Staff Accounts Payable</div>
+                          <div>{money(selectedSavings.staffAccountsPayable)}</div>
+
+                          <div style={{ fontWeight: 900, paddingTop: 6 }}>
+                            Total Personal Balance
+                          </div>
+                          <div style={{ fontWeight: 900, paddingTop: 6 }}>
+                            {money(selectedSavings.totalBalances)}
+                          </div>
+
+                          <div
+                            style={{
+                              gridColumn: "1 / -1",
+                              borderTop: "1px solid var(--border)",
+                              marginTop: 12,
+                              paddingTop: 10,
+                              fontWeight: 900,
+                              display: "grid",
+                              gridTemplateColumns: "1fr auto",
+                            }}
+                          >
+                            <div>Total Savings less Balances</div>
+                            <div>{money(selectedSavings.netPersonal)}</div>
+                          </div>
+                        </div>
+                      </div>
                     </div>
                   )}
                 </div>
-
-                <div className="exit-field">
-                  <label>Employee ID</label>
-                  <input value={form.employee_no || ""} readOnly />
-                </div>
-
-                <div className="exit-field">
-                  <label>Last Name</label>
-                  <input value={form.last_name} readOnly placeholder="Auto-filled" />
-                </div>
-
-                <div className="exit-field">
-                  <label>First Name</label>
-                  <input value={form.first_name} readOnly placeholder="Auto-filled" />
-                </div>
-
-                <div className="exit-field">
-                  <label>Middle Name</label>
-                  <input value={form.middle_name} readOnly placeholder="Auto-filled" />
-                </div>
-
-                <div className="exit-field">
-                  <label>Previous Branch</label>
-                  <input
-                    value={
-                      form.prev_branch_code || form.prev_branch_name
-                        ? `${form.prev_branch_code || "-"} - ${form.prev_branch_name || "-"}`
-                        : loadingBranches
-                        ? "Loading branches..."
-                        : "Auto-filled"
-                    }
-                    readOnly
-                    placeholder="Auto-filled"
-                  />
-                </div>
-
-                <div className="exit-field">
-                  <label>Exit Type</label>
-                  <select
-                    value={form.exit_type}
-                    onChange={(e) => setForm((p) => ({ ...p, exit_type: e.target.value }))}
-                    required
-                  >
-                    <option value="">Select Exit Type</option>
-                    <option value="Resigned">Resigned</option>
-                    <option value="AWOL">AWOL</option>
-                    <option value="Terminated">Terminated</option>
-                  </select>
-                </div>
-
-                <div className="exit-field">
-                  <label>Date Created</label>
-                  <input
-                    type="date"
-                    value={form.date_created}
-                    onChange={(e) => setForm((p) => ({ ...p, date_created: e.target.value }))}
-                    required
-                  />
-                </div>
-
-                <div className="exit-field">
-                  <label>Effective Date</label>
-                  <input
-                    type="date"
-                    value={form.effective_date}
-                    onChange={(e) => setForm((p) => ({ ...p, effective_date: e.target.value }))}
-                    required
-                  />
-                </div>
-
-                <div className="exit-field">
-                  <label>Settlement Date (optional)</label>
-                  <input
-                    type="date"
-                    value={form.settlement_date}
-                    onChange={(e) => setForm((p) => ({ ...p, settlement_date: e.target.value }))}
-                  />
-                </div>
-
-                <div className="exit-field">
-                  <label>Settlement Branch (optional)</label>
-                  <select
-                    value={form.settlement_branch_id}
-                    onChange={(e) => setForm((p) => ({ ...p, settlement_branch_id: e.target.value }))}
-                  >
-                    <option value="">Select Branch (optional)</option>
-                    {branches.map((b) => (
-                      <option key={b.id} value={b.id}>
-                        {b.code} - {b.name}
-                      </option>
-                    ))}
-                  </select>
-
-                  <div style={{ marginTop: 6, fontSize: 12, opacity: 0.85 }}>
-                    Selected: <b>{settlementBranchLabel(form.settlement_branch_id)}</b>
-                  </div>
-                </div>
-
-                <div className="exit-field full">
-                  <label>Remarks</label>
-                  <textarea
-                    rows={3}
-                    value={form.remarks}
-                    onChange={(e) => setForm((p) => ({ ...p, remarks: e.target.value }))}
-                    placeholder="Optional remarks"
-                  />
-                </div>
-
-                {selectedStaff && (
-                  <div className="exit-field full" style={{ marginTop: 8 }}>
-                    <div style={{ fontSize: 12, opacity: 0.9, marginBottom: 12 }}>
-                      <div>
-                        Preview: <b>{displayNameParts(selectedStaff)}</b>
-                      </div>
-                      <div style={{ marginTop: 4 }}>
-                        Exit: <b>{form.exit_type || "—"}</b>
-                      </div>
-                      <div style={{ marginTop: 4 }}>
-                        Effective: <b>{form.effective_date || "—"}</b>
-                      </div>
-                    </div>
-
-                    {/* SCROLLABLE BALANCE BOX */}
-                    <div
-                      style={{
-                        border: "1px solid var(--border)",
-                        borderRadius: 12,
-                        background: "var(--panel-2)",
-                        overflow: "hidden",
-                      }}
-                    >
-                      {/* Sticky Header */}
-                      <div
-                        style={{
-                          padding: "12px 14px",
-                          borderBottom: "1px solid var(--border)",
-                          fontWeight: 900,
-                          position: "sticky",
-                          top: 0,
-                          background: "var(--panel-2)",
-                          zIndex: 2,
-                        }}
-                      >
-                        Personal Savings & Balances
-                      </div>
-
-                      {/* Scroll Area */}
-                      <div
-                        style={{
-                          maxHeight: 320,
-                          overflowY: "auto",
-                          padding: "10px 14px",
-                          display: "grid",
-                          gridTemplateColumns: "1fr auto",
-                          rowGap: 8,
-                        }}
-                      >
-                        {/* ===== SAVINGS ===== */}
-                        <div style={{ gridColumn: "1 / -1", fontWeight: 900, marginTop: 4 }}>
-                          Personal Savings
-                        </div>
-
-                        <div>CBU</div>
-                        <div>{money(selectedSavings.cbu)}</div>
-
-                        <div>Cashbond</div>
-                        <div>{money(selectedSavings.cashbond)}</div>
-
-                        <div>Utility</div>
-                        <div>{money(selectedSavings.utility)}</div>
-
-                        <div style={{ fontWeight: 900, paddingTop: 6 }}>
-                          Total Personal Savings
-                        </div>
-                        <div style={{ fontWeight: 900, paddingTop: 6 }}>
-                          {money(selectedSavings.totalSavings)}
-                        </div>
-
-                        {/* ===== BALANCES ===== */}
-                        <div
-                          style={{
-                            gridColumn: "1 / -1",
-                            fontWeight: 900,
-                            marginTop: 12,
-                            borderTop: "1px solid var(--border)",
-                            paddingTop: 10,
-                          }}
-                        >
-                          Personal Balances
-                        </div>
-
-                        <div>Salary Advance</div>
-                        <div>{money(selectedSavings.salaryAdvance)}</div>
-
-                        <div>Special Advance</div>
-                        <div>{money(selectedSavings.specialAdvance)}</div>
-
-                        <div>Cash Advance</div>
-                        <div>{money(selectedSavings.cashAdvance)}</div>
-
-                        <div>Motorcycle Loan</div>
-                        <div>{money(selectedSavings.motorcycleLoan)}</div>
-
-                        <div>Pag-ibig Loan</div>
-                        <div>{money(selectedSavings.pagIbigLoan)}</div>
-
-                        <div>Other Receivable</div>
-                        <div>{money(selectedSavings.otherReceivable)}</div>
-
-                        <div>Staff Accounts Payable</div>
-                        <div>{money(selectedSavings.staffAccountsPayable)}</div>
-
-                        <div style={{ fontWeight: 900, paddingTop: 6 }}>
-                          Total Personal Balance
-                        </div>
-                        <div style={{ fontWeight: 900, paddingTop: 6 }}>
-                          {money(selectedSavings.totalBalances)}
-                        </div>
-
-                        {/* ===== NET ===== */}
-                        <div
-                          style={{
-                            gridColumn: "1 / -1",
-                            borderTop: "1px solid var(--border)",
-                            marginTop: 12,
-                            paddingTop: 10,
-                            fontWeight: 900,
-                            display: "grid",
-                            gridTemplateColumns: "1fr auto",
-                          }}
-                        >
-                          <div>Total Savings less Balances</div>
-                          <div>{money(selectedSavings.netPersonal)}</div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                )}
               </div>
 
               <div className="exit-modal-actions">
