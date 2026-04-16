@@ -5,6 +5,10 @@ import "../styles/SuspensionOrder.css";
 
 const clean = (v) => String(v ?? "").trim();
 const toDate10 = (v) => (v ? String(v).slice(0, 10) : "");
+const toNum = (v) => {
+  const n = Number(v ?? 0);
+  return Number.isFinite(n) ? n : 0;
+};
 
 const displayNameParts = (s) => {
   const ln = clean(s?.last_name);
@@ -14,6 +18,20 @@ const displayNameParts = (s) => {
     .replace(/\s+/g, " ")
     .trim();
   return built || clean(s?.fullname) || "-";
+};
+
+const daysBetweenInclusive = (start, end) => {
+  const s = toDate10(start);
+  const e = toDate10(end);
+  if (!s || !e) return 0;
+
+  const sd = new Date(`${s}T00:00:00`);
+  const ed = new Date(`${e}T00:00:00`);
+  if (Number.isNaN(sd.getTime()) || Number.isNaN(ed.getTime())) return 0;
+  if (ed < sd) return 0;
+
+  const diffMs = ed.getTime() - sd.getTime();
+  return Math.floor(diffMs / 86400000) + 1;
 };
 
 export default function SuspensionOrder() {
@@ -62,6 +80,14 @@ export default function SuspensionOrder() {
       suspension_type: "",
       suspension_start: "",
       suspension_end: "",
+      days_of_suspension: "",
+      basic_salary: 0,
+      ecola: 0,
+      transportation: 0,
+      deduction_basic: 0,
+      deduction_ecola: 0,
+      deduction_transportation: 0,
+      total_deduction: 0,
       reason: "",
     }),
     []
@@ -98,6 +124,40 @@ export default function SuspensionOrder() {
     if (s === "approved") return "po-badge po-approved";
     if (s === "rejected") return "po-badge po-rejected";
     return "po-badge po-pending";
+  };
+
+  const computeDeductions = (next) => {
+    const days =
+      toNum(next.days_of_suspension) > 0
+        ? toNum(next.days_of_suspension)
+        : daysBetweenInclusive(next.suspension_start, next.suspension_end);
+
+    const basic = toNum(next.basic_salary);
+    const ecola = toNum(next.ecola);
+    const transportation = toNum(next.transportation);
+
+    const perDayBasic = basic / 30;
+    const perDayEcola = ecola / 30;
+    const perDayTransportation = transportation / 30;
+
+    const deduction_basic = perDayBasic * days;
+    const deduction_ecola = perDayEcola * days;
+    const deduction_transportation = perDayTransportation * days;
+    const total_deduction =
+      deduction_basic + deduction_ecola + deduction_transportation;
+
+    return {
+      ...next,
+      days_of_suspension: days > 0 ? String(days) : "",
+      deduction_basic,
+      deduction_ecola,
+      deduction_transportation,
+      total_deduction,
+    };
+  };
+
+  const setFormAndCompute = (patch) => {
+    setForm((prev) => computeDeductions({ ...prev, ...patch }));
   };
 
   const loadData = async () => {
@@ -167,11 +227,17 @@ export default function SuspensionOrder() {
 
   const onSelectEmployee = (id) => {
     const emp = staff.find((x) => String(x.id) === String(id));
-    setForm((p) => ({
-      ...p,
+
+    const next = {
+      ...form,
       employee_id: String(id),
       employee_name: emp?.fullname || displayNameParts(emp),
-    }));
+      basic_salary: toNum(emp?.salary),
+      ecola: toNum(emp?.ecola),
+      transportation: toNum(emp?.transportation),
+    };
+
+    setForm(computeDeductions(next));
 
     if (emp) {
       setEmployeeSearch(
@@ -193,6 +259,9 @@ export default function SuspensionOrder() {
     if (!toDate10(form.suspension_end)) return setErr("End date required.");
     if (!clean(form.reason)) return setErr("Reason required.");
 
+    const days = toNum(form.days_of_suspension);
+    if (days <= 0) return setErr("Days of suspension must be greater than 0.");
+
     setSaving(true);
     try {
       const formData = new FormData();
@@ -201,6 +270,17 @@ export default function SuspensionOrder() {
       formData.append("suspension_type", clean(form.suspension_type));
       formData.append("suspension_start", toDate10(form.suspension_start));
       formData.append("suspension_end", toDate10(form.suspension_end));
+      formData.append("days_of_suspension", String(days));
+      formData.append("basic_salary", String(toNum(form.basic_salary)));
+      formData.append("ecola", String(toNum(form.ecola)));
+      formData.append("transportation", String(toNum(form.transportation)));
+      formData.append("deduction_basic", String(toNum(form.deduction_basic)));
+      formData.append("deduction_ecola", String(toNum(form.deduction_ecola)));
+      formData.append(
+        "deduction_transportation",
+        String(toNum(form.deduction_transportation))
+      );
+      formData.append("total_deduction", String(toNum(form.total_deduction)));
       formData.append("reason", clean(form.reason));
 
       if (attachFile) {
@@ -317,6 +397,8 @@ export default function SuspensionOrder() {
                 <th>Type</th>
                 <th>Start</th>
                 <th>End</th>
+                <th>Days</th>
+                <th>Total Deduction</th>
                 <th>Reason</th>
                 <th>Status</th>
                 <th>Actions</th>
@@ -326,13 +408,13 @@ export default function SuspensionOrder() {
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={7} className="po-empty">
+                  <td colSpan={9} className="po-empty">
                     Loading...
                   </td>
                 </tr>
               ) : orders.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="po-empty">
+                  <td colSpan={9} className="po-empty">
                     No suspension orders found.
                   </td>
                 </tr>
@@ -347,6 +429,8 @@ export default function SuspensionOrder() {
                       <td>{o.suspension_type || "-"}</td>
                       <td>{toDate10(o.start_date || o.suspension_start)}</td>
                       <td>{toDate10(o.end_date || o.suspension_end)}</td>
+                      <td>{o.days_of_suspension ?? "-"}</td>
+                      <td>{toNum(o.total_deduction).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                       <td>{o.reason}</td>
                       <td>
                         <span className={badgeClass(o.status)}>
@@ -423,6 +507,13 @@ export default function SuspensionOrder() {
                         ...p,
                         employee_id: "",
                         employee_name: "",
+                        basic_salary: 0,
+                        ecola: 0,
+                        transportation: 0,
+                        deduction_basic: 0,
+                        deduction_ecola: 0,
+                        deduction_transportation: 0,
+                        total_deduction: 0,
                       }));
                     }}
                     onFocus={() => setShowEmployeeDropdown(true)}
@@ -492,7 +583,7 @@ export default function SuspensionOrder() {
                   <select
                     value={form.suspension_type}
                     onChange={(e) =>
-                      setForm((p) => ({ ...p, suspension_type: e.target.value }))
+                      setFormAndCompute({ suspension_type: e.target.value })
                     }
                     required
                   >
@@ -509,10 +600,9 @@ export default function SuspensionOrder() {
                     type="date"
                     value={form.suspension_start}
                     onChange={(e) =>
-                      setForm((p) => ({
-                        ...p,
+                      setFormAndCompute({
                         suspension_start: e.target.value,
-                      }))
+                      })
                     }
                     required
                   />
@@ -524,12 +614,104 @@ export default function SuspensionOrder() {
                     type="date"
                     value={form.suspension_end}
                     onChange={(e) =>
-                      setForm((p) => ({
-                        ...p,
+                      setFormAndCompute({
                         suspension_end: e.target.value,
-                      }))
+                      })
                     }
                     required
+                  />
+                </div>
+
+                <div className="po-field">
+                  <label>Days of Suspension</label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={form.days_of_suspension}
+                    onChange={(e) =>
+                      setFormAndCompute({
+                        days_of_suspension: e.target.value,
+                      })
+                    }
+                    placeholder="Enter days"
+                    required
+                  />
+                </div>
+
+                <div className="po-field">
+                  <label>Basic Salary</label>
+                  <input
+                    value={toNum(form.basic_salary).toLocaleString(undefined, {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    })}
+                    readOnly
+                  />
+                </div>
+
+                <div className="po-field">
+                  <label>Ecola</label>
+                  <input
+                    value={toNum(form.ecola).toLocaleString(undefined, {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    })}
+                    readOnly
+                  />
+                </div>
+
+                <div className="po-field">
+                  <label>Transportation</label>
+                  <input
+                    value={toNum(form.transportation).toLocaleString(undefined, {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    })}
+                    readOnly
+                  />
+                </div>
+
+                <div className="po-field">
+                  <label>Deduction in Basic</label>
+                  <input
+                    value={toNum(form.deduction_basic).toLocaleString(undefined, {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    })}
+                    readOnly
+                  />
+                </div>
+
+                <div className="po-field">
+                  <label>Deduction in Ecola</label>
+                  <input
+                    value={toNum(form.deduction_ecola).toLocaleString(undefined, {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    })}
+                    readOnly
+                  />
+                </div>
+
+                <div className="po-field">
+                  <label>Deduction in Transportation</label>
+                  <input
+                    value={toNum(form.deduction_transportation).toLocaleString(undefined, {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    })}
+                    readOnly
+                  />
+                </div>
+
+                <div className="po-field">
+                  <label>Total Deduction</label>
+                  <input
+                    value={toNum(form.total_deduction).toLocaleString(undefined, {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    })}
+                    readOnly
                   />
                 </div>
 
@@ -546,7 +728,7 @@ export default function SuspensionOrder() {
                   <textarea
                     value={form.reason}
                     onChange={(e) =>
-                      setForm((p) => ({ ...p, reason: e.target.value }))
+                      setFormAndCompute({ reason: e.target.value })
                     }
                     required
                   />

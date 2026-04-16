@@ -58,6 +58,22 @@ const isExpired = (until) => {
   return end.getTime() < Date.now();
 };
 
+const overlapsCurrentMonth = (startDate, endDate) => {
+  const start = toDate10(startDate);
+  const end = toDate10(endDate);
+  if (!start || !end) return false;
+
+  const s = new Date(`${start}T00:00:00`);
+  const e = new Date(`${end}T23:59:59`);
+  if (Number.isNaN(s.getTime()) || Number.isNaN(e.getTime())) return false;
+
+  const now = new Date();
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0);
+  const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
+
+  return s <= monthEnd && e >= monthStart;
+};
+
 export default function Transportation() {
   const params = useParams();
   const branchParam = toStr(params.branchId ?? params.id);
@@ -79,6 +95,7 @@ export default function Transportation() {
   const money = (v) => toNum(v).toLocaleString();
 
   const [overrides, setOverrides] = useState({});
+  const [approvedSuspensions, setApprovedSuspensions] = useState({});
   const [menuOpenFor, setMenuOpenFor] = useState(null);
   const menuWrapRef = useRef(null);
 
@@ -87,7 +104,6 @@ export default function Transportation() {
   const [editValues, setEditValues] = useState(() => emptyOverrideValues());
   const [savingOverride, setSavingOverride] = useState(false);
 
-  /* ---------------- Load overrides from PostgreSQL ---------------- */
   const loadOverrides = useCallback(async (resolvedBranchId) => {
     if (!resolvedBranchId) return;
 
@@ -118,7 +134,6 @@ export default function Transportation() {
     }
   }, []);
 
-  /* ---------------- Click outside menu ---------------- */
   useEffect(() => {
     const onDown = (e) => {
       if (!menuOpenFor) return;
@@ -131,7 +146,6 @@ export default function Transportation() {
     return () => document.removeEventListener("mousedown", onDown);
   }, [menuOpenFor]);
 
-  /* ---------------- Data load ---------------- */
   useEffect(() => {
     const run = async () => {
       if (!branchParam) {
@@ -144,7 +158,12 @@ export default function Transportation() {
       setError("");
 
       try {
-        const branchesRes = await api.get("/branches");
+        const [branchesRes, staffRes, suspensionRes] = await Promise.all([
+          api.get("/branches"),
+          api.get("/staff"),
+          api.get("/suspension-orders"),
+        ]);
+
         const branches = Array.isArray(branchesRes.data) ? branchesRes.data : [];
 
         const foundBranch = branches.find((x) => {
@@ -162,7 +181,6 @@ export default function Transportation() {
 
         setBranch(foundBranch);
 
-        const staffRes = await api.get("/staff");
         const all = Array.isArray(staffRes.data) ? staffRes.data : [];
 
         const byBranchId = all.filter((s) => Number(s.branch_id) === Number(foundBranch.id));
@@ -179,6 +197,29 @@ export default function Transportation() {
 
         setStaff(filtered);
         await loadOverrides(foundBranch.id);
+
+        const suspensions = Array.isArray(suspensionRes.data) ? suspensionRes.data : [];
+        const map = {};
+
+        suspensions.forEach((row) => {
+          if (norm(row.status) !== "approved") return;
+          if (!overlapsCurrentMonth(row.start_date || row.suspension_start, row.end_date || row.suspension_end)) return;
+
+          const key = String(row.employee_id ?? "").trim();
+          if (!key) return;
+
+          if (!map[key]) {
+            map[key] = {
+              deduction_transportation: 0,
+              days_of_suspension: 0,
+            };
+          }
+
+          map[key].deduction_transportation += toNum(row.deduction_transportation);
+          map[key].days_of_suspension += toNum(row.days_of_suspension);
+        });
+
+        setApprovedSuspensions(map);
       } catch (err) {
         const status = err?.response?.status;
         if (status === 404) setError("Branch not found.");
@@ -193,7 +234,6 @@ export default function Transportation() {
     run();
   }, [branchParam, loadOverrides]);
 
-  /* ---------------- Apply override (if active) ---------------- */
   const applyOverrideToStaffRow = useCallback(
     (s) => {
       const ov = overrides?.[String(s.id)];
@@ -211,7 +251,6 @@ export default function Transportation() {
     [overrides]
   );
 
-  /* ---------------- Compute rows ---------------- */
   const rows = useMemo(() => {
     return (staff || []).map((raw) => {
       const s = applyOverrideToStaffRow(raw);
@@ -225,6 +264,13 @@ export default function Transportation() {
       const motorcycle = toNum(s.motorcycle_loan);
       const other = toNum(s.other_deduction);
 
+      const suspension = approvedSuspensions[String(s.id)] || {
+        deduction_transportation: 0,
+        days_of_suspension: 0,
+      };
+
+      const suspensionTransportation = toNum(suspension.deduction_transportation);
+
       const noOfClients =
         toNum(s.no_of_clients) ||
         toNum(s.client_count) ||
@@ -232,7 +278,7 @@ export default function Transportation() {
 
       const totalAllowance =
         postage + transportation + additionalTarget + repairing + additionalMonitoring;
-      const totalDeduction = motorcycle + other;
+      const totalDeduction = motorcycle + other + suspensionTransportation;
       const netPay = totalAllowance - totalDeduction;
 
       return {
@@ -252,6 +298,8 @@ export default function Transportation() {
 
         motorcycle,
         other,
+        suspensionTransportation,
+        suspensionDays: toNum(suspension.days_of_suspension),
         totalDeduction,
 
         netPay,
@@ -259,7 +307,7 @@ export default function Transportation() {
         netPay25: netPay / 2,
       };
     });
-  }, [staff, applyOverrideToStaffRow]);
+  }, [staff, applyOverrideToStaffRow, approvedSuspensions]);
 
   const totals = useMemo(() => {
     return rows.reduce(
@@ -273,6 +321,7 @@ export default function Transportation() {
         t.totalAllowance += r.totalAllowance;
         t.motorcycle += r.motorcycle;
         t.other += r.other;
+        t.suspensionTransportation += r.suspensionTransportation;
         t.totalDeduction += r.totalDeduction;
         t.netPay += r.netPay;
         t.netPay10 += r.netPay10;
@@ -289,6 +338,7 @@ export default function Transportation() {
         totalAllowance: 0,
         motorcycle: 0,
         other: 0,
+        suspensionTransportation: 0,
         totalDeduction: 0,
         netPay: 0,
         netPay10: 0,
@@ -297,7 +347,6 @@ export default function Transportation() {
     );
   }, [rows]);
 
-  /* ---------------- Modal actions ---------------- */
   const openManualEdit = (row) => {
     if (!canManualEdit) {
       alert("Only Admin, HR, and Accounting can edit manually.");
@@ -369,7 +418,6 @@ export default function Transportation() {
     }
   };
 
-  /* ---------------- UI states ---------------- */
   if (loading) {
     return (
       <div className="transpo-page">
@@ -431,7 +479,7 @@ export default function Transportation() {
                   <th rowSpan={2}>No. of Clients</th>
 
                   <th colSpan={6}>Allowances & Incentives</th>
-                  <th colSpan={3}>Deductions</th>
+                  <th colSpan={4}>Deductions</th>
                   <th colSpan={3}>Net Pay</th>
 
                   <th rowSpan={2}>Action</th>
@@ -447,6 +495,7 @@ export default function Transportation() {
 
                   <th>Motorcycle</th>
                   <th>Other</th>
+                  <th>Suspension Transpo</th>
                   <th>Total Deduction</th>
 
                   <th>Total Net Pay</th>
@@ -458,7 +507,7 @@ export default function Transportation() {
               <tbody>
                 {rows.length === 0 ? (
                   <tr>
-                    <td colSpan={19} className="empty-state">
+                    <td colSpan={20} className="empty-state">
                       No staff found for this branch.
                     </td>
                   </tr>
@@ -493,6 +542,7 @@ export default function Transportation() {
 
                         <td>₱ {money(r.motorcycle)}</td>
                         <td>₱ {money(r.other)}</td>
+                        <td>₱ {money(r.suspensionTransportation)}</td>
                         <td className="td-strong">₱ {money(r.totalDeduction)}</td>
 
                         <td className={`td-strong ${r.netPay < 0 ? "neg" : "pos"}`}>
@@ -553,11 +603,9 @@ export default function Transportation() {
 
                 {rows.length > 0 && (
                   <tr className="totals-row">
-                    <td colSpan={5} className="totals-label">
+                    <td colSpan={6} className="totals-label">
                       Total
                     </td>
-
-                    <td>{totals.noOfClients}</td>
 
                     <td>₱ {money(totals.postage)}</td>
                     <td>₱ {money(totals.transportation)}</td>
@@ -568,6 +616,7 @@ export default function Transportation() {
 
                     <td>₱ {money(totals.motorcycle)}</td>
                     <td>₱ {money(totals.other)}</td>
+                    <td>₱ {money(totals.suspensionTransportation)}</td>
                     <td className="td-strong">₱ {money(totals.totalDeduction)}</td>
 
                     <td className="td-strong">₱ {money(totals.netPay)}</td>
@@ -693,6 +742,7 @@ export default function Transportation() {
                 <th>Total Allowance</th>
                 <th>Motorcycle</th>
                 <th>Other</th>
+                <th>Suspension Transpo</th>
                 <th>Total Deduction</th>
                 <th>Total Net Pay</th>
                 <th>10th</th>
@@ -703,7 +753,7 @@ export default function Transportation() {
             <tbody>
               {rows.length === 0 ? (
                 <tr>
-                  <td colSpan={18}>No staff found for this branch.</td>
+                  <td colSpan={19}>No staff found for this branch.</td>
                 </tr>
               ) : (
                 rows.map((r) => (
@@ -722,6 +772,7 @@ export default function Transportation() {
                     <td>{money(r.totalAllowance)}</td>
                     <td>{money(r.motorcycle)}</td>
                     <td>{money(r.other)}</td>
+                    <td>{money(r.suspensionTransportation)}</td>
                     <td>{money(r.totalDeduction)}</td>
                     <td>{money(r.netPay)}</td>
                     <td>{money(r.netPay10)}</td>
@@ -741,6 +792,7 @@ export default function Transportation() {
                   <td>{money(totals.totalAllowance)}</td>
                   <td>{money(totals.motorcycle)}</td>
                   <td>{money(totals.other)}</td>
+                  <td>{money(totals.suspensionTransportation)}</td>
                   <td>{money(totals.totalDeduction)}</td>
                   <td>{money(totals.netPay)}</td>
                   <td>{money(totals.netPay10)}</td>

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState, useCallback } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import "../styles/Payroll.css";
 import api from "../api/axiosClient";
@@ -96,6 +96,22 @@ const splitPayroll = (netPay) => {
   };
 };
 
+const overlapsCurrentMonth = (startDate, endDate) => {
+  const start = toDate10(startDate);
+  const end = toDate10(endDate);
+  if (!start || !end) return false;
+
+  const s = new Date(`${start}T00:00:00`);
+  const e = new Date(`${end}T23:59:59`);
+  if (Number.isNaN(s.getTime()) || Number.isNaN(e.getTime())) return false;
+
+  const now = new Date();
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0);
+  const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
+
+  return s <= monthEnd && e >= monthStart;
+};
+
 function Payroll() {
   const params = useParams();
   const rawBranchParam = params.branchId ?? params.id;
@@ -119,6 +135,7 @@ function Payroll() {
   const [overrides, setOverrides] = useState({});
   const [menuOpenFor, setMenuOpenFor] = useState(null);
   const [scheduleBalances, setScheduleBalances] = useState({});
+  const [approvedSuspensions, setApprovedSuspensions] = useState({});
   const [editModalStaff, setEditModalStaff] = useState(null);
   const [editUntil, setEditUntil] = useState("");
   const [editValues, setEditValues] = useState(() => {
@@ -185,9 +202,10 @@ function Payroll() {
       setError("");
 
       try {
-        const [branchesRes, staffRes] = await Promise.all([
+        const [branchesRes, staffRes, suspensionRes] = await Promise.all([
           api.get("/branches"),
           api.get("/staff"),
+          api.get("/suspension-orders"),
         ]);
 
         const branches = Array.isArray(branchesRes.data) ? branchesRes.data : [];
@@ -228,6 +246,35 @@ function Payroll() {
         const filtered = filteredRaw.filter(isActiveStaff);
 
         setStaff(filtered);
+
+        const suspensions = Array.isArray(suspensionRes.data) ? suspensionRes.data : [];
+        const map = {};
+
+        suspensions.forEach((row) => {
+          if (norm(row.status) !== "approved") return;
+          if (!overlapsCurrentMonth(row.start_date || row.suspension_start, row.end_date || row.suspension_end)) return;
+
+          const key = String(row.employee_id ?? "").trim();
+          if (!key) return;
+
+          if (!map[key]) {
+            map[key] = {
+              total_deduction: 0,
+              deduction_basic: 0,
+              deduction_ecola: 0,
+              deduction_transportation: 0,
+              days_of_suspension: 0,
+            };
+          }
+
+          map[key].total_deduction += toNum(row.total_deduction);
+          map[key].deduction_basic += toNum(row.deduction_basic);
+          map[key].deduction_ecola += toNum(row.deduction_ecola);
+          map[key].deduction_transportation += toNum(row.deduction_transportation);
+          map[key].days_of_suspension += toNum(row.days_of_suspension);
+        });
+
+        setApprovedSuspensions(map);
       } catch (err) {
         const status = err?.response?.status;
         if (status === 401) setError("Session expired. Please login again.");
@@ -345,6 +392,16 @@ function Payroll() {
           ? toNum(s.staff_accounts_payable)
           : monthlyFromWhole(balance.staff_accounts_payable);
 
+      const suspension = approvedSuspensions[String(s.id)] || {
+        total_deduction: 0,
+        deduction_basic: 0,
+        deduction_ecola: 0,
+        deduction_transportation: 0,
+        days_of_suspension: 0,
+      };
+
+      const suspensionDeduction = toNum(suspension.total_deduction);
+
       const total_deduction =
         total_ee +
         toNum(s.tax) +
@@ -357,7 +414,8 @@ function Payroll() {
         cash_advance +
         other_receivable +
         toNum(s.pagibig_mpl) +
-        staff_accounts_payable;
+        staff_accounts_payable +
+        suspensionDeduction;
 
       const netPay = totalComp - total_deduction;
       const { pay10, pay25 } = splitPayroll(netPay);
@@ -375,6 +433,11 @@ function Payroll() {
         cash_advance,
         other_receivable,
         staff_accounts_payable,
+        suspension_days: toNum(suspension.days_of_suspension),
+        suspension_deduction: suspensionDeduction,
+        suspension_basic: toNum(suspension.deduction_basic),
+        suspension_ecola: toNum(suspension.deduction_ecola),
+        suspension_transportation: toNum(suspension.deduction_transportation),
         whole_salary_advance: toNum(balance.salary_advance),
         whole_motorcycle_loan: toNum(balance.motorcycle_loan),
         whole_special_advance: toNum(balance.special_advance),
@@ -387,7 +450,7 @@ function Payroll() {
         pay25,
       };
     });
-  }, [staff, applyOverrideToStaffRow, getBalanceForStaff]);
+  }, [staff, applyOverrideToStaffRow, getBalanceForStaff, approvedSuspensions]);
 
   const sumColumn = (key) => computedRows.reduce((sum, s) => sum + toNum(s[key]), 0);
 
@@ -523,7 +586,7 @@ function Payroll() {
                 <th rowSpan={2}>Date Regularized</th>
                 <th colSpan={3}>EARNINGS</th>
                 <th colSpan={4}>EMPLOYER (ER)</th>
-                <th colSpan={4}>EMPLOYEE (EE)</th>
+                <th colSpan={5}>EMPLOYEE (EE)</th>
                 <th colSpan={11}>DEDUCTIONS</th>
                 <th rowSpan={2}>Total Deduction</th>
                 <th rowSpan={2}>Net Pay</th>
@@ -546,6 +609,7 @@ function Payroll() {
                 <th>SSS</th>
                 <th>PH</th>
                 <th>Total EE</th>
+                <th>Suspension</th>
 
                 <th>Tax</th>
                 <th>Utility</th>
@@ -593,6 +657,7 @@ function Payroll() {
                     <td className="num">{fmt(s.sss_ee)}</td>
                     <td className="num">{fmt(s.ph_ee)}</td>
                     <td className="num td-strong">{fmt(s.total_ee)}</td>
+                    <td className="num">{fmt(s.suspension_deduction)}</td>
 
                     <td className="num">{fmt(s.tax)}</td>
                     <td className="num">{fmt(s.utility_charge)}</td>
@@ -680,6 +745,7 @@ function Payroll() {
                 <td className="num">{sumColumn("sss_ee").toLocaleString()}</td>
                 <td className="num">{sumColumn("ph_ee").toLocaleString()}</td>
                 <td className="num td-strong">{sumColumn("total_ee").toLocaleString()}</td>
+                <td className="num">{sumColumn("suspension_deduction").toLocaleString()}</td>
 
                 <td className="num">{sumColumn("tax").toLocaleString()}</td>
                 <td className="num">{sumColumn("utility_charge").toLocaleString()}</td>
@@ -805,7 +871,7 @@ function Payroll() {
 
                 <th colSpan={3}>SALARIES AND WAGES</th>
                 <th colSpan={4}>EMPLOYER'S CONTRIBUTION</th>
-                <th colSpan={4}>EMPLOYEE'S CONTRIBUTION</th>
+                <th colSpan={5}>EMPLOYEE'S CONTRIBUTION</th>
                 <th colSpan={11}>OTHER STAFF'S ADVANCES AND DEDUCTION</th>
 
                 <th rowSpan={2}>Total Deductions</th>
@@ -829,6 +895,7 @@ function Payroll() {
                 <th>SSS</th>
                 <th>PH</th>
                 <th>Total E.E.</th>
+                <th>Suspension</th>
 
                 <th>Withholding Tax</th>
                 <th>Utility Charge</th>
@@ -873,6 +940,7 @@ function Payroll() {
                     <td>{fmt(s.sss_ee)}</td>
                     <td>{fmt(s.ph_ee)}</td>
                     <td>{fmt(s.total_ee)}</td>
+                    <td>{fmt(s.suspension_deduction)}</td>
 
                     <td>{fmt(s.tax)}</td>
                     <td>{fmt(s.utility_charge)}</td>
@@ -911,6 +979,7 @@ function Payroll() {
                 <td>{fmt(sumColumn("sss_ee"))}</td>
                 <td>{fmt(sumColumn("ph_ee"))}</td>
                 <td>{fmt(sumColumn("total_ee"))}</td>
+                <td>{fmt(sumColumn("suspension_deduction"))}</td>
 
                 <td>{fmt(sumColumn("tax"))}</td>
                 <td>{fmt(sumColumn("utility_charge"))}</td>

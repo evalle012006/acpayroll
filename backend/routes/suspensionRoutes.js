@@ -11,6 +11,11 @@ const toInt = (v) => {
   return Number.isFinite(n) ? Math.trunc(n) : null;
 };
 
+const toNum = (v) => {
+  const n = Number(v ?? 0);
+  return Number.isFinite(n) ? n : 0;
+};
+
 const toDate = (v) => {
   const s = String(v ?? "").trim().slice(0, 10);
   return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : null;
@@ -176,6 +181,15 @@ router.post(
       const start_date = toDate(req.body?.suspension_start ?? req.body?.start_date);
       const end_date = toDate(req.body?.suspension_end ?? req.body?.end_date);
 
+      const days_of_suspension = toNum(req.body?.days_of_suspension);
+      const basic_salary = toNum(req.body?.basic_salary);
+      const ecola = toNum(req.body?.ecola);
+      const transportation = toNum(req.body?.transportation);
+      const deduction_basic = toNum(req.body?.deduction_basic);
+      const deduction_ecola = toNum(req.body?.deduction_ecola);
+      const deduction_transportation = toNum(req.body?.deduction_transportation);
+      const total_deduction = toNum(req.body?.total_deduction);
+
       const attachment_path = req.file ? `/uploads/suspension/${req.file.filename}` : null;
       const attachment_name = req.file ? clean(req.file.originalname) : null;
       const attachment_mime = req.file ? clean(req.file.mimetype) : null;
@@ -195,6 +209,10 @@ router.post(
       if (!end_date) {
         await client.query("ROLLBACK");
         return res.status(400).json({ message: "End date is required" });
+      }
+      if (days_of_suspension <= 0) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({ message: "Days of suspension is required" });
       }
       if (!reason) {
         await client.query("ROLLBACK");
@@ -253,6 +271,14 @@ router.post(
             reason,
             start_date,
             end_date,
+            days_of_suspension,
+            basic_salary,
+            ecola,
+            transportation,
+            deduction_basic,
+            deduction_ecola,
+            deduction_transportation,
+            total_deduction,
             details,
             attachment_path,
             attachment_name,
@@ -266,7 +292,8 @@ router.post(
         VALUES
           (
             $1, $2, $3, $4, $5, $6, $7::date, $8::date, $9, $10, $11, $12,
-            'Pending', $13, $14, $15, $16
+            $13, $14, $15, $16, $17, $18, $19, $20,
+            'Pending', $21, $22, $23, $24
           )
         RETURNING *;
         `,
@@ -279,6 +306,14 @@ router.post(
           reason,
           start_date,
           end_date,
+          days_of_suspension,
+          basic_salary,
+          ecola,
+          transportation,
+          deduction_basic,
+          deduction_ecola,
+          deduction_transportation,
+          total_deduction,
           details || null,
           attachment_path,
           attachment_name,
