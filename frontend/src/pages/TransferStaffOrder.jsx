@@ -94,6 +94,111 @@ export default function TransferStaffOrder() {
   const [loadingFiles, setLoadingFiles] = useState(false);
   const [filesError, setFilesError] = useState("");
 
+  const emitNotif = (detail) => {
+    window.dispatchEvent(new CustomEvent("notify", { detail }));
+  };
+
+  const findBranchById = (branches, id) =>
+    (branches || []).find((b) => String(b?.id ?? "") === String(id ?? ""));
+
+  const makeBranchNotif = ({
+    title,
+    message,
+    branch,
+    meta = null,
+  }) => ({
+    title,
+    message,
+    type: "info",
+    scope: "branch-or-admin",
+    target_branch_id: branch?.id ?? null,
+    target_branch_code: branch?.code ?? "",
+    target_branch_name: branch?.name ?? "",
+    meta,
+  });
+
+  const notifyTransferBranches = useCallback(
+    ({
+      employee,
+      fromBranch,
+      toBranch,
+      effectiveDate,
+      createdBy,
+      orderNo,
+    }) => {
+      const employeeLabel =
+        employee?.fullname ||
+        employee?.employee_name ||
+        displayName(employee);
+
+      const effective = fmtDate(effectiveDate);
+
+      if (fromBranch?.id) {
+        emitNotif(
+          makeBranchNotif({
+            title: "Staff Transfer Out",
+            message: `${employeeLabel} will be transferred out from ${branchLabel(
+              fromBranch
+            )} to ${branchLabel(toBranch)} on ${effective}.${orderNo ? ` Order: ${orderNo}` : ""}`,
+            branch: fromBranch,
+            meta: {
+              kind: "transfer_staff_order",
+              direction: "from",
+              employee_id: employee?.id ?? null,
+              from_branch_id: fromBranch?.id ?? null,
+              to_branch_id: toBranch?.id ?? null,
+              effective_date: effectiveDate,
+              created_by: createdBy ?? null,
+              order_no: orderNo ?? null,
+            },
+          })
+        );
+      }
+
+      if (toBranch?.id) {
+        emitNotif(
+          makeBranchNotif({
+            title: "Incoming Staff Transfer",
+            message: `${employeeLabel} will be transferred to ${branchLabel(
+              toBranch
+            )} from ${branchLabel(fromBranch)} on ${effective}.${orderNo ? ` Order: ${orderNo}` : ""}`,
+            branch: toBranch,
+            meta: {
+              kind: "transfer_staff_order",
+              direction: "to",
+              employee_id: employee?.id ?? null,
+              from_branch_id: fromBranch?.id ?? null,
+              to_branch_id: toBranch?.id ?? null,
+              effective_date: effectiveDate,
+              created_by: createdBy ?? null,
+              order_no: orderNo ?? null,
+            },
+          })
+        );
+      }
+
+      emitNotif({
+        title: "Transfer Staff Order Created",
+        message: `${employeeLabel}: ${branchLabel(fromBranch)} → ${branchLabel(
+          toBranch
+        )} on ${effective}.${orderNo ? ` Order: ${orderNo}` : ""}`,
+        type: "info",
+        scope: "admins",
+        meta: {
+          kind: "transfer_staff_order",
+          direction: "summary",
+          employee_id: employee?.id ?? null,
+          from_branch_id: fromBranch?.id ?? null,
+          to_branch_id: toBranch?.id ?? null,
+          effective_date: effectiveDate,
+          created_by: createdBy ?? null,
+          order_no: orderNo ?? null,
+        },
+      });
+    },
+    [branches]
+  );
+
   const logout = useCallback(() => {
     localStorage.removeItem("token");
     localStorage.removeItem("user");
@@ -586,8 +691,29 @@ export default function TransferStaffOrder() {
         });
       }
 
-      closeModal();
-      fetchOrders();
+        const selectedEmployeeObj = staff.find(
+          (s) => Number(s.id) === Number(employeeId)
+        );
+
+        const fromBranchObj = branches.find(
+          (b) => Number(b.id) === Number(fromBranchId)
+        );
+
+        const toBranchObj = branches.find(
+          (b) => Number(b.id) === Number(toBranchId)
+        );
+
+        notifyTransferBranches({
+          employee: selectedEmployeeObj,
+          fromBranch: fromBranchObj,
+          toBranch: toBranchObj,
+          effectiveDate,
+          createdBy: user?.id ?? null,
+          orderNo: created?.order_no || created?.transaction_code || null,
+        });
+
+        closeModal();
+        fetchOrders();
     } catch (err) {
       const status = err?.response?.status;
       if (status === 401) return logout();

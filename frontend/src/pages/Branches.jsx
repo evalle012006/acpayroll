@@ -23,8 +23,13 @@ const Branches = () => {
   const isHR = role === "hr";
   const isAccounting = role === "accounting";
   const isBranchManager = role === "branch manager";
+  const isAreaManager = role === "area manager";
+  const isRegionalManager = role === "regional manager";
+  const isAssistantVicePresident = role === "assistant vice president";
+  const isVicePresident = role === "vice president";
+  const isPresident = role === "president";
 
-  const canManageBranches = isAdmin || isHR || isAccounting;
+  const canManageBranches = isAdmin || isHR || isAccounting || isBranchManager;
 
   const [branches, setBranches] = useState([]);
   const [loadingTable, setLoadingTable] = useState(false);
