@@ -205,7 +205,7 @@ function Payroll() {
         const [branchesRes, staffRes, suspensionRes] = await Promise.all([
           api.get("/branches"),
           api.get("/staff"),
-          api.get("/suspension-orders"),
+          api.get("/suspension-orders").catch(() => ({ data: [] })),
         ]);
 
         const branches = Array.isArray(branchesRes.data) ? branchesRes.data : [];

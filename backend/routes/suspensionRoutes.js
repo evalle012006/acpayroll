@@ -70,19 +70,21 @@ router.get("/suspension-orders", requireAuth, async (req, res) => {
     }
 
     if (isBranchManager(req)) {
-      const bid = getUserBranchId(req);
+      const bid = toInt(getUserBranchId(req));
       if (!bid) return res.json([]);
 
       const r = await pool.query(
         `
         SELECT so.*
         FROM public.suspension_orders so
-        JOIN public.staff s ON s.id = so.employee_id
+        LEFT JOIN public.staff s
+          ON s.id = so.employee_id
         WHERE s.branch_id = $1
         ORDER BY so.id DESC
         `,
         [bid]
       );
+
       return res.json(r.rows);
     }
 
@@ -94,19 +96,21 @@ router.get("/suspension-orders", requireAuth, async (req, res) => {
         `
         SELECT so.*
         FROM public.suspension_orders so
-        JOIN public.staff s ON s.id = so.employee_id
+        LEFT JOIN public.staff s
+          ON s.id = so.employee_id
         WHERE LOWER(TRIM(COALESCE(s.region, ''))) = LOWER(TRIM($1))
         ORDER BY so.id DESC
         `,
         [region]
       );
+
       return res.json(r.rows);
     }
 
     return res.status(403).json({ message: "Access denied" });
   } catch (e) {
-    console.error("GET /api/suspension-orders ERROR:", e.message);
-    return res.status(500).json({ message: "Server error" });
+    console.error("GET /api/suspension-orders ERROR:", e);
+    return res.status(500).json({ message: e?.message || "Server error" });
   }
 });
 

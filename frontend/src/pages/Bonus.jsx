@@ -238,6 +238,22 @@ export default function Bonus() {
 
   const [savedResults, setSavedResults] = useState({});
 
+  const readUser = () => {
+    try {
+      return JSON.parse(localStorage.getItem("user") || "null");
+    } catch {
+      return null;
+    }
+  };
+
+  const user = useMemo(() => readUser(), []);
+  const role = norm(user?.role);
+
+  const canManageBonus =
+    role === "admin" ||
+    role === "hr" ||
+    role === "accounting";
+
   const refreshBonusHistory = useCallback(async (staffRows) => {
     if (!staffRows.length) {
       setBonusHistoryMap({});
@@ -819,9 +835,11 @@ export default function Bonus() {
   if (loading) return <div className="bonus-page">Loading bonus...</div>;
   if (error) return <div className="bonus-page error">{error}</div>;
 
+  const printedAt = new Date().toLocaleString();
+
   return (
     <div className="bonus-page">
-      <div className="bonus-header">
+      <div className="bonus-header no-print">
         <div>
           <h2>Branch Bonus</h2>
           <p>
@@ -855,10 +873,14 @@ export default function Bonus() {
           <button className="btn-back" onClick={() => navigate(-1)} type="button">
             ← Back
           </button>
+
+          <button className="btn-primary" onClick={() => window.print()} type="button">
+            Print
+          </button>
         </div>
       </div>
 
-      <div className="bonus-card">
+      <div className="bonus-card no-print">
         <table className="bonus-table">
           <thead>
             <tr>
@@ -869,11 +891,11 @@ export default function Bonus() {
               <th>Salary</th>
               <th>{previousYearLabel}</th>
               <th>Result</th>
-              <th>15th Month</th>
-              <th>13th Month</th>
-              <th>14th Month</th>
+              <th>{getYearFromBonusMonth(bonusMonth)} 13th Month Pay</th>
+              <th>{getYearFromBonusMonth(bonusMonth)} 14th Month Pay</th>
+              <th>{getYearFromBonusMonth(bonusMonth)} 15th Month Pay</th>
               <th>Release Date</th>
-              <th style={{ width: 90 }}>Action</th>
+              {canManageBonus && <th style={{ width: 90 }}>Action</th>}
             </tr>
           </thead>
 
@@ -897,51 +919,53 @@ export default function Bonus() {
                   ) : null}
                 </td>
 
-                <td className="strong">{fmtMoney(s.month_15)}</td>
                 <td className="strong">{fmtMoney(s.month_13)}</td>
                 <td className="strong">{fmtMoney(s.month_14)}</td>
+                <td className="strong">{fmtMoney(s.month_15)}</td>
 
                 <td>{s.saved_is_released && s.saved_release_date ? s.saved_release_date : "-"}</td>
 
-                <td className="bonus-action-cell">
-                  <div className="bonus-action-wrap" ref={openMenuId === s.id ? menuRef : null}>
-                    <button
-                      type="button"
-                      className="bonus-kebab-btn"
-                      onClick={() => toggleMenu(s.id)}
-                    >
-                      <BsThreeDotsVertical />
-                    </button>
+                {canManageBonus && (
+                  <td className="bonus-action-cell">
+                    <div className="bonus-action-wrap" ref={openMenuId === s.id ? menuRef : null}>
+                      <button
+                        type="button"
+                        className="bonus-kebab-btn"
+                        onClick={() => toggleMenu(s.id)}
+                      >
+                        <BsThreeDotsVertical />
+                      </button>
 
-                    {openMenuId === s.id && (
-                      <div className={`bonus-menu ${index >= computed.length - 2 ? "open-up" : ""}`}>
-                        <button
-                          type="button"
-                          className="bonus-menu-item"
-                          onClick={() => openCalculateModal(s)}
-                        >
-                          Calculate
-                        </button>
+                      {openMenuId === s.id && (
+                        <div className={`bonus-menu ${index >= computed.length - 2 ? "open-up" : ""}`}>
+                          <button
+                            type="button"
+                            className="bonus-menu-item"
+                            onClick={() => openCalculateModal(s)}
+                          >
+                            Calculate
+                          </button>
 
-                        <button
-                          type="button"
-                          className="bonus-menu-item"
-                          onClick={() => openReleaseModal(s)}
-                        >
-                          {s.saved_is_released ? "Released" : "Release"}
-                        </button>
+                          <button
+                            type="button"
+                            className="bonus-menu-item"
+                            onClick={() => openReleaseModal(s)}
+                          >
+                            {s.saved_is_released ? "Released" : "Release"}
+                          </button>
 
-                        <button
-                          type="button"
-                          className="bonus-menu-item"
-                          onClick={() => handleOpen13Month(s)}
-                        >
-                          {s.previous_year_13th_month > 0 ? "Edit" : "Add"} {previousYearLabel}
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                </td>
+                          <button
+                            type="button"
+                            className="bonus-menu-item"
+                            onClick={() => handleOpen13Month(s)}
+                          >
+                            {s.previous_year_13th_month > 0 ? "Edit" : "Add"} {previousYearLabel}
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </td>
+                )}
               </tr>
             ))}
 
@@ -949,11 +973,11 @@ export default function Bonus() {
               <td colSpan={5}>TOTAL</td>
               <td className="strong">{fmtMoney(totalPreviousYear13th)}</td>
               <td className="bonus-result">{fmtMoney(totalResult)}</td>
-              <td className="strong">{fmtMoney(total15)}</td>
               <td className="strong">{fmtMoney(total13)}</td>
               <td className="strong">{fmtMoney(total14)}</td>
+              <td className="strong">{fmtMoney(total15)}</td>
               <td></td>
-              <td></td>
+              {canManageBonus && <td></td>}
             </tr>
           </tbody>
         </table>
@@ -1183,6 +1207,94 @@ export default function Bonus() {
           </div>
         </div>
       )}
+
+      <div className="print-only">
+        <div className="branch-bonus-print">
+          <div className="branch-bonus-print__title">AmberCash PH Micro Lending Corp.</div>
+          <div className="branch-bonus-print__subtitle">BONUS REPORT</div>
+          <div className="branch-bonus-print__branch">
+            {branch ? `${branch.code} ${branch.name}` : "-"}
+          </div>
+          <div className="branch-bonus-print__period">
+            {formatMonthYearLabel(bonusMonth)}
+          </div>
+
+          <div className="branch-bonus-print__meta">
+            <div>
+              <strong>AREA:</strong> {branch?.area || "-"}
+            </div>
+            <div>
+              <strong>BRANCH:</strong> {branch ? `${branch.code} - ${branch.name}` : "-"}
+            </div>
+            <div>
+              <strong>As of:</strong> {printedAt}
+            </div>
+          </div>
+
+          <table className="branch-bonus-print-table">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Employee No</th>
+                <th>Name</th>
+                <th>Position</th>
+                <th>Percent</th>
+                <th>Result</th>
+                <th>Release Date</th>
+              </tr>
+            </thead>
+
+            <tbody>
+              {computed.map((s, index) => (
+                <tr key={s.id}>
+                  <td>{index + 1}</td>
+                  <td>{s.employee_no || "-"}</td>
+                  <td>{s.fullname || "-"}</td>
+                  <td>{s.position || "-"}</td>
+
+                  <td>
+                    {s.saved_percentage > 0 ? `${s.saved_percentage}%` : "-"}
+                  </td>
+
+                  <td>
+                    {s.saved_result > 0 ? fmtMoney(s.saved_result) : "-"}
+                  </td>
+
+                  <td>
+                    {s.saved_is_released && s.saved_release_date
+                      ? s.saved_release_date
+                      : "-"}
+                  </td>
+                </tr>
+              ))}
+
+              <tr className="branch-bonus-print-total">
+                <td colSpan={4}>TOTAL</td>
+                <td></td>
+                <td>{fmtMoney(totalResult)}</td>
+                <td></td>
+              </tr>
+            </tbody>
+          </table>
+
+          <div className="branch-bonus-print__signatures">
+            <div className="branch-bonus-print__sign-box">
+              <div className="branch-bonus-print__sign-line"></div>
+              <div>Prepared by:</div>
+            </div>
+
+            <div className="branch-bonus-print__sign-box">
+              <div className="branch-bonus-print__sign-line"></div>
+              <div>Checked by:</div>
+            </div>
+
+            <div className="branch-bonus-print__sign-box">
+              <div className="branch-bonus-print__sign-line"></div>
+              <div>Approved by:</div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

@@ -23,13 +23,9 @@ const Branches = () => {
   const isHR = role === "hr";
   const isAccounting = role === "accounting";
   const isBranchManager = role === "branch manager";
-  const isAreaManager = role === "area manager";
-  const isRegionalManager = role === "regional manager";
-  const isAssistantVicePresident = role === "assistant vice president";
-  const isVicePresident = role === "vice president";
-  const isPresident = role === "president";
 
-  const canManageBranches = isAdmin || isHR || isAccounting || isBranchManager;
+  const canManageBranches = isAdmin || isHR || isAccounting;
+  const canOpenBonus = isAdmin || isHR || isAccounting || isBranchManager;
 
   const [branches, setBranches] = useState([]);
   const [loadingTable, setLoadingTable] = useState(false);
@@ -286,7 +282,7 @@ const Branches = () => {
           <h2>Branches</h2>
           <p>
             {isBranchManager
-              ? "Open payroll, transpo, or map view for your branch."
+              ? "Open payroll, transpo, bonus, or map view for your branch."
               : "Manage branch codes, names, areas, regions, and divisions."}
           </p>
         </div>
@@ -363,7 +359,7 @@ const Branches = () => {
                     <th style={{ width: 150 }}>Area</th>
                     <th style={{ width: 150 }}>Region</th>
                     <th style={{ width: 170 }}>Division</th>
-                    <th style={{ width: 440 }}>Actions</th>
+                    <th style={{ width: 500 }}>Actions</th>
                   </tr>
                 </thead>
 
@@ -411,7 +407,7 @@ const Branches = () => {
                                 View Location
                               </button>
 
-                              {canManageBranches && (
+                              {canOpenBonus && (
                                 <button
                                   className="action-btn btn-bonus"
                                   onClick={() => navigate(`/bonus/${branch.code}`)}
