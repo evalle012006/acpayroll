@@ -7,6 +7,13 @@ const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
 
+const {
+  uploadToTemp,
+  moveFromTemp,
+  deleteKey,
+  getSignedDownloadUrl,
+} = require("../services/spacesUpload");
+
 const toStr = (v) => String(v ?? "").trim();
 
 const toInt = (v) => {
@@ -1033,7 +1040,16 @@ router.post(
   "/staff/:id/photo",
   requireAuth,
   requireRole(["admin", "hr", "accounting", "branch manager", "area manager", "regional manager", "assistant vice president"]),
-  upload.single("photo"),
+  (req, res, next) => {
+    // Run multer upload first, then pass to route handler
+    uploadToTemp(req, res, (err) => {
+      if (err) {
+        console.error("[Spaces] Multer error:", err);
+        return res.status(400).json({ message: err.message || "Upload failed" });
+      }
+      next();
+    });
+  },
   async (req, res) => {
     const client = await pool.connect();
     try {
@@ -1043,15 +1059,58 @@ router.post(
 
       const allowed = await canAccessStaffById(client, req, staffId);
       if (!allowed) {
+        // Clean up temp file if auth fails
+        await deleteKey(req.file.key);
         return res.status(403).json({ message: "Access denied" });
       }
 
-      const photoUrl = `/uploads/staff/${req.file.filename}`;
-      await client.query(`UPDATE public.staff SET photo_url=$1 WHERE id=$2`, [photoUrl, staffId]);
+      // Get old key so we can delete it if needed (handled by moveFromTemp via prefix)
+      const finalKey = await moveFromTemp(
+        req.file.key,       // temp path assigned by multer-s3
+        "staff",            // origin folder
+        String(staffId),    // subfolder = staff ID
+        req.file.originalname
+      );
 
-      return res.json({ photo_url: photoUrl });
+      // Store only the key (not a URL) in the database
+      await client.query(
+        `UPDATE public.staff SET photo_url = $1 WHERE id = $2`,
+        [finalKey, staffId]
+      );
+
+      return res.json({ photo_key: finalKey });
     } catch (e) {
-      console.error("POST /api/staff/:id/photo ERROR:", e.message);
+      console.error("POST /staff/:id/photo ERROR:", e.message);
+      // Attempt cleanup of temp file on failure
+      if (req.file?.key) await deleteKey(req.file.key).catch(() => {});
+      return res.status(500).json({ message: "Server error" });
+    } finally {
+      client.release();
+    }
+  }
+);
+
+router.get(
+  "/staff/:id/photo-url",
+  requireAuth,
+  async (req, res) => {
+    const client = await pool.connect();
+    try {
+      const staffId = toInt(req.params.id);
+      if (!staffId) return res.status(400).json({ message: "Invalid staff id." });
+
+      const result = await client.query(
+        `SELECT photo_url FROM public.staff WHERE id = $1`,
+        [staffId]
+      );
+
+      const key = result.rows[0]?.photo_url;
+      if (!key) return res.status(404).json({ message: "No photo on file." });
+
+      const signedUrl = await getSignedDownloadUrl(key, 3600);
+      return res.json({ url: signedUrl, expiresIn: 3600 });
+    } catch (e) {
+      console.error("GET /staff/:id/photo-url ERROR:", e.message);
       return res.status(500).json({ message: "Server error" });
     } finally {
       client.release();
