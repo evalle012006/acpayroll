@@ -10,6 +10,12 @@ const toNum = (v) => {
   return Number.isFinite(n) ? n : 0;
 };
 
+const money = (v) =>
+  toNum(v).toLocaleString(undefined, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+
 const displayNameParts = (s) => {
   const ln = clean(s?.last_name);
   const fn = clean(s?.first_name);
@@ -56,6 +62,7 @@ export default function SuspensionOrder() {
     isAdmin || role === "branch manager" || isAssistantVicePresident;
 
   const canApprove = isAdmin || isHr || isAccounting;
+  const canEditDelete = canCreate || canApprove;
 
   const [orders, setOrders] = useState([]);
   const [staff, setStaff] = useState([]);
@@ -65,6 +72,7 @@ export default function SuspensionOrder() {
   const [err, setErr] = useState("");
 
   const [showModal, setShowModal] = useState(false);
+  const [editingOrder, setEditingOrder] = useState(null);
 
   const [rejecting, setRejecting] = useState(null);
   const [rejectReason, setRejectReason] = useState("");
@@ -84,9 +92,14 @@ export default function SuspensionOrder() {
       basic_salary: 0,
       ecola: 0,
       transportation: 0,
-      deduction_basic: 0,
-      deduction_ecola: 0,
-      deduction_transportation: 0,
+
+      prorated_salary: "",
+      prorated_ecola: "",
+      prorated_transportation: "",
+      prorated_repairing: "",
+      prorated_allowance: "",
+      prorated_postage: "",
+
       total_deduction: 0,
       reason: "",
     }),
@@ -126,38 +139,49 @@ export default function SuspensionOrder() {
     return "po-badge po-pending";
   };
 
-  const computeDeductions = (next) => {
-    const days =
-      toNum(next.days_of_suspension) > 0
-        ? toNum(next.days_of_suspension)
-        : daysBetweenInclusive(next.suspension_start, next.suspension_end);
-
-    const basic = toNum(next.basic_salary);
-    const ecola = toNum(next.ecola);
-    const transportation = toNum(next.transportation);
-
-    const perDayBasic = basic / 30;
-    const perDayEcola = ecola / 30;
-    const perDayTransportation = transportation / 30;
-
-    const deduction_basic = perDayBasic * days;
-    const deduction_ecola = perDayEcola * days;
-    const deduction_transportation = perDayTransportation * days;
+  const computeTotals = (next) => {
     const total_deduction =
-      deduction_basic + deduction_ecola + deduction_transportation;
+      toNum(next.prorated_salary) +
+      toNum(next.prorated_ecola) +
+      toNum(next.prorated_transportation) +
+      toNum(next.prorated_repairing) +
+      toNum(next.prorated_allowance) +
+      toNum(next.prorated_postage);
 
     return {
       ...next,
-      days_of_suspension: days > 0 ? String(days) : "",
-      deduction_basic,
-      deduction_ecola,
-      deduction_transportation,
       total_deduction,
     };
   };
 
   const setFormAndCompute = (patch) => {
-    setForm((prev) => computeDeductions({ ...prev, ...patch }));
+    setForm((prev) => computeTotals({ ...prev, ...patch }));
+  };
+
+  const hydrateFormFromOrder = (o) => {
+    const next = {
+      employee_id: String(o.employee_id ?? ""),
+      employee_name: clean(o.employee_name),
+      suspension_type: clean(o.suspension_type),
+      suspension_start: toDate10(o.start_date || o.suspension_start),
+      suspension_end: toDate10(o.end_date || o.suspension_end),
+      days_of_suspension: String(o.days_of_suspension ?? ""),
+      basic_salary: toNum(o.basic_salary),
+      ecola: toNum(o.ecola),
+      transportation: toNum(o.transportation),
+
+      prorated_salary: o.prorated_salary ?? "",
+      prorated_ecola: o.prorated_ecola ?? "",
+      prorated_transportation: o.prorated_transportation ?? "",
+      prorated_repairing: o.prorated_repairing ?? "",
+      prorated_allowance: o.prorated_allowance ?? "",
+      prorated_postage: o.prorated_postage ?? "",
+
+      total_deduction: toNum(o.total_deduction),
+      reason: clean(o.reason),
+    };
+
+    return computeTotals(next);
   };
 
   const loadData = async () => {
@@ -208,6 +232,7 @@ export default function SuspensionOrder() {
 
   const openCreate = () => {
     setErr("");
+    setEditingOrder(null);
     setForm(emptyForm);
     setEmployeeSearch("");
     setShowEmployeeDropdown(false);
@@ -215,8 +240,21 @@ export default function SuspensionOrder() {
     setShowModal(true);
   };
 
+  const openEdit = (order) => {
+    setErr("");
+    setEditingOrder(order);
+    setForm(hydrateFormFromOrder(order));
+    setEmployeeSearch(
+      `${order.employee_id ?? ""} — ${clean(order.employee_name)}`
+    );
+    setShowEmployeeDropdown(false);
+    setAttachFile(null);
+    setShowModal(true);
+  };
+
   const closeModal = () => {
     setShowModal(false);
+    setEditingOrder(null);
     setSaving(false);
     setErr("");
     setForm(emptyForm);
@@ -237,19 +275,21 @@ export default function SuspensionOrder() {
       transportation: toNum(emp?.transportation),
     };
 
-    setForm(computeDeductions(next));
+    setForm(computeTotals(next));
 
     if (emp) {
       setEmployeeSearch(
-        `${emp.id} — ${displayNameParts(emp)}${emp.employee_no ? ` (${emp.employee_no})` : ""}`
+        `${emp.id} — ${displayNameParts(emp)}${
+          emp.employee_no ? ` (${emp.employee_no})` : ""
+        }`
       );
     }
     setShowEmployeeDropdown(false);
   };
 
-  const submitCreate = async (e) => {
+  const submitCreateOrUpdate = async (e) => {
     e.preventDefault();
-    if (!canCreate || saving) return;
+    if ((!canCreate && !canApprove) || saving) return;
 
     setErr("");
 
@@ -263,6 +303,7 @@ export default function SuspensionOrder() {
     if (days <= 0) return setErr("Days of suspension must be greater than 0.");
 
     setSaving(true);
+
     try {
       const formData = new FormData();
       formData.append("employee_id", Number(form.employee_id));
@@ -274,12 +315,23 @@ export default function SuspensionOrder() {
       formData.append("basic_salary", String(toNum(form.basic_salary)));
       formData.append("ecola", String(toNum(form.ecola)));
       formData.append("transportation", String(toNum(form.transportation)));
-      formData.append("deduction_basic", String(toNum(form.deduction_basic)));
-      formData.append("deduction_ecola", String(toNum(form.deduction_ecola)));
+
+      formData.append("prorated_salary", String(toNum(form.prorated_salary)));
+      formData.append("prorated_ecola", String(toNum(form.prorated_ecola)));
       formData.append(
-        "deduction_transportation",
-        String(toNum(form.deduction_transportation))
+        "prorated_transportation",
+        String(toNum(form.prorated_transportation))
       );
+      formData.append(
+        "prorated_repairing",
+        String(toNum(form.prorated_repairing))
+      );
+      formData.append(
+        "prorated_allowance",
+        String(toNum(form.prorated_allowance))
+      );
+      formData.append("prorated_postage", String(toNum(form.prorated_postage)));
+
       formData.append("total_deduction", String(toNum(form.total_deduction)));
       formData.append("reason", clean(form.reason));
 
@@ -287,14 +339,23 @@ export default function SuspensionOrder() {
         formData.append("attachment", attachFile);
       }
 
-      await api.post("/suspension-orders", formData, {
-        headers: { "Content-Type": "multipart/form-data" },
-      });
+      if (editingOrder?.id) {
+        await api.put(`/suspension-orders/${editingOrder.id}`, formData, {
+          headers: { "Content-Type": "multipart/form-data" },
+        });
+      } else {
+        await api.post("/suspension-orders", formData, {
+          headers: { "Content-Type": "multipart/form-data" },
+        });
+      }
 
       closeModal();
       await loadData();
     } catch (e2) {
-      setErr(e2?.response?.data?.message || "Failed to create suspension order.");
+      setErr(
+        e2?.response?.data?.message ||
+          `Failed to ${editingOrder ? "update" : "create"} suspension order.`
+      );
     } finally {
       setSaving(false);
     }
@@ -345,6 +406,20 @@ export default function SuspensionOrder() {
       setErr(e?.response?.data?.message || "Failed to reject.");
     } finally {
       setRejectSaving(false);
+    }
+  };
+
+  const deleteOrder = async (o) => {
+    const pending = String(o.status || "").toLowerCase() === "pending";
+    if (!canEditDelete || !pending) return;
+
+    if (!window.confirm("Delete this suspension order?")) return;
+
+    try {
+      await api.delete(`/suspension-orders/${o.id}`);
+      await loadData();
+    } catch (e) {
+      setErr(e?.response?.data?.message || "Failed to delete.");
     }
   };
 
@@ -430,7 +505,7 @@ export default function SuspensionOrder() {
                       <td>{toDate10(o.start_date || o.suspension_start)}</td>
                       <td>{toDate10(o.end_date || o.suspension_end)}</td>
                       <td>{o.days_of_suspension ?? "-"}</td>
-                      <td>{toNum(o.total_deduction).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                      <td>{money(o.total_deduction)}</td>
                       <td>{o.reason}</td>
                       <td>
                         <span className={badgeClass(o.status)}>
@@ -439,12 +514,32 @@ export default function SuspensionOrder() {
                       </td>
                       <td>
                         <div className="po-row-actions">
-                          {canApprove ? (
+                          {canEditDelete && (
+                            <>
+                              <button
+                                className="po-mini-btn"
+                                onClick={() => openEdit(o)}
+                                disabled={!pending}
+                                type="button"
+                              >
+                                Edit
+                              </button>
+                              <button
+                                className="po-mini-btn po-reject"
+                                onClick={() => deleteOrder(o)}
+                                disabled={!pending}
+                                type="button"
+                              >
+                                Delete
+                              </button>
+                            </>
+                          )}
+
+                          {canApprove && pending ? (
                             <>
                               <button
                                 className="po-mini-btn po-approve"
                                 onClick={() => approveOrder(o)}
-                                disabled={!pending}
                                 type="button"
                               >
                                 Approve
@@ -452,15 +547,14 @@ export default function SuspensionOrder() {
                               <button
                                 className="po-mini-btn po-reject"
                                 onClick={() => openReject(o)}
-                                disabled={!pending}
                                 type="button"
                               >
                                 Reject
                               </button>
                             </>
-                          ) : (
+                          ) : !canEditDelete ? (
                             <span style={{ opacity: 0.7 }}>-</span>
-                          )}
+                          ) : null}
                         </div>
                       </td>
                     </tr>
@@ -481,13 +575,15 @@ export default function SuspensionOrder() {
         >
           <div className="po-modal" onMouseDown={(e) => e.stopPropagation()}>
             <div className="po-modal-head">
-              <h3 className="po-modal-title">Create Suspension</h3>
+              <h3 className="po-modal-title">
+                {editingOrder ? "Edit Suspension" : "Create Suspension"}
+              </h3>
               <button className="po-x" onClick={closeModal} type="button">
                 ✕
               </button>
             </div>
 
-            <form className="po-form" onSubmit={submitCreate}>
+            <form className="po-form" onSubmit={submitCreateOrUpdate}>
               <div className="po-grid">
                 <div
                   className="po-field"
@@ -503,18 +599,16 @@ export default function SuspensionOrder() {
                     onChange={(e) => {
                       setEmployeeSearch(e.target.value);
                       setShowEmployeeDropdown(true);
-                      setForm((p) => ({
-                        ...p,
-                        employee_id: "",
-                        employee_name: "",
-                        basic_salary: 0,
-                        ecola: 0,
-                        transportation: 0,
-                        deduction_basic: 0,
-                        deduction_ecola: 0,
-                        deduction_transportation: 0,
-                        total_deduction: 0,
-                      }));
+                      setForm((p) =>
+                        computeTotals({
+                          ...p,
+                          employee_id: "",
+                          employee_name: "",
+                          basic_salary: 0,
+                          ecola: 0,
+                          transportation: 0,
+                        })
+                      );
                     }}
                     onFocus={() => setShowEmployeeDropdown(true)}
                   />
@@ -530,7 +624,8 @@ export default function SuspensionOrder() {
                         maxHeight: 240,
                         overflowY: "auto",
                         background: "var(--card, #0f172a)",
-                        border: "1px solid var(--border, rgba(255,255,255,0.1))",
+                        border:
+                          "1px solid var(--border, rgba(255,255,255,0.1))",
                         borderRadius: 10,
                         zIndex: 50,
                         boxShadow: "0 12px 30px rgba(0,0,0,0.25)",
@@ -589,8 +684,12 @@ export default function SuspensionOrder() {
                   >
                     <option value="">Select suspension type</option>
                     <option value="Suspension">Suspension</option>
-                    <option value="Preventive Suspension">Preventive Suspension</option>
-                    <option value="Notice of Admin Hearing">Notice of Admin Hearing</option>
+                    <option value="Preventive Suspension">
+                      Preventive Suspension
+                    </option>
+                    <option value="Notice of Admin Hearing">
+                      Notice of Admin Hearing
+                    </option>
                   </select>
                 </div>
 
@@ -640,79 +739,106 @@ export default function SuspensionOrder() {
 
                 <div className="po-field">
                   <label>Basic Salary</label>
-                  <input
-                    value={toNum(form.basic_salary).toLocaleString(undefined, {
-                      minimumFractionDigits: 2,
-                      maximumFractionDigits: 2,
-                    })}
-                    readOnly
-                  />
+                  <input value={money(form.basic_salary)} readOnly />
                 </div>
 
                 <div className="po-field">
                   <label>Ecola</label>
-                  <input
-                    value={toNum(form.ecola).toLocaleString(undefined, {
-                      minimumFractionDigits: 2,
-                      maximumFractionDigits: 2,
-                    })}
-                    readOnly
-                  />
+                  <input value={money(form.ecola)} readOnly />
                 </div>
 
                 <div className="po-field">
                   <label>Transportation</label>
+                  <input value={money(form.transportation)} readOnly />
+                </div>
+
+                <div className="po-field full">
+                 <h3>Pro-rated Computation</h3>
+                </div>
+
+                <div className="po-field">
+                  <label>Pro-rated Salary</label>
                   <input
-                    value={toNum(form.transportation).toLocaleString(undefined, {
-                      minimumFractionDigits: 2,
-                      maximumFractionDigits: 2,
-                    })}
-                    readOnly
+                    type="number"
+                    step="0.01"
+                    value={form.prorated_salary}
+                    onChange={(e) =>
+                      setFormAndCompute({ prorated_salary: e.target.value })
+                    }
+                    placeholder="Enter pro-rated salary"
                   />
                 </div>
 
                 <div className="po-field">
-                  <label>Deduction in Basic</label>
+                  <label>Pro-rated Ecola</label>
                   <input
-                    value={toNum(form.deduction_basic).toLocaleString(undefined, {
-                      minimumFractionDigits: 2,
-                      maximumFractionDigits: 2,
-                    })}
-                    readOnly
-                  />
-                </div>
-
-                <div className="po-field">
-                  <label>Deduction in Ecola</label>
-                  <input
-                    value={toNum(form.deduction_ecola).toLocaleString(undefined, {
-                      minimumFractionDigits: 2,
-                      maximumFractionDigits: 2,
-                    })}
-                    readOnly
+                    type="number"
+                    step="0.01"
+                    value={form.prorated_ecola}
+                    onChange={(e) =>
+                      setFormAndCompute({ prorated_ecola: e.target.value })
+                    }
+                    placeholder="Enter pro-rated ecola"
                   />
                 </div>
 
                 <div className="po-field">
                   <label>Deduction in Transportation</label>
                   <input
-                    value={toNum(form.deduction_transportation).toLocaleString(undefined, {
-                      minimumFractionDigits: 2,
-                      maximumFractionDigits: 2,
-                    })}
-                    readOnly
+                    type="number"
+                    step="0.01"
+                    value={form.prorated_transportation}
+                    onChange={(e) =>
+                      setFormAndCompute({
+                        prorated_transportation: e.target.value,
+                      })
+                    }
+                    placeholder="Enter deduction in transportation"
+                  />
+                </div>
+
+                <div className="po-field">
+                  <label>Deduction in Repairing</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={form.prorated_repairing}
+                    onChange={(e) =>
+                      setFormAndCompute({ prorated_repairing: e.target.value })
+                    }
+                    placeholder="Enter deduction in repairing"
+                  />
+                </div>
+
+                <div className="po-field">
+                  <label>Deduction in Allowance</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={form.prorated_allowance}
+                    onChange={(e) =>
+                      setFormAndCompute({ prorated_allowance: e.target.value })
+                    }
+                    placeholder="Enter deduction in allowance"
+                  />
+                </div>
+
+                <div className="po-field">
+                  <label>Deduction in Postage</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={form.prorated_postage}
+                    onChange={(e) =>
+                      setFormAndCompute({ prorated_postage: e.target.value })
+                    }
+                    placeholder="Enter deduction in postage"
                   />
                 </div>
 
                 <div className="po-field">
                   <label>Total Deduction</label>
-                  <input
-                    value={toNum(form.total_deduction).toLocaleString(undefined, {
-                      minimumFractionDigits: 2,
-                      maximumFractionDigits: 2,
-                    })}
-                    readOnly
-                  />
+                  <input value={money(form.total_deduction)} readOnly />
                 </div>
 
                 <div className="po-field">
@@ -748,7 +874,13 @@ export default function SuspensionOrder() {
                   type="submit"
                   disabled={saving}
                 >
-                  {saving ? "Saving..." : "Create"}
+                  {saving
+                    ? editingOrder
+                      ? "Updating..."
+                      : "Saving..."
+                    : editingOrder
+                    ? "Update"
+                    : "Create"}
                 </button>
               </div>
             </form>
@@ -763,7 +895,10 @@ export default function SuspensionOrder() {
             e.target.classList.contains("po-modal-overlay") && closeReject()
           }
         >
-          <div className="po-modal po-modal-sm" onMouseDown={(e) => e.stopPropagation()}>
+          <div
+            className="po-modal po-modal-sm"
+            onMouseDown={(e) => e.stopPropagation()}
+          >
             <div className="po-modal-head">
               <h3 className="po-modal-title">Reject Suspension</h3>
               <button className="po-x" onClick={closeReject} type="button">

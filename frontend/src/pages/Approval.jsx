@@ -1,12 +1,12 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import "../styles/Approval.css";
 import api from "../api/axiosClient";
 
 const loanTypes = [
   "All",
   "Salary Advance",
-  "Special Loan",
-  "Cash Loan",
+  "Special Advance",
+  "Cash Advance",
   "Motorcycle Loan",
   "Pag-ibig Loan",
 ];
@@ -24,6 +24,9 @@ const toNum = (v) => {
   return Number.isFinite(n) ? n : 0;
 };
 
+const toStr = (v) => String(v ?? "").trim();
+const norm = (v) => toStr(v).toLowerCase();
+
 const fmtMoney = (v) =>
   Number(toNum(v)).toLocaleString(undefined, {
     minimumFractionDigits: 2,
@@ -31,7 +34,6 @@ const fmtMoney = (v) =>
   });
 
 const fmtDate = (d) => (d ? String(d).slice(0, 10) : "-");
-const norm = (v) => String(v ?? "").trim().toLowerCase();
 
 export default function Approval() {
   const user = useMemo(() => readUser(), []);
@@ -61,7 +63,7 @@ export default function Approval() {
     isSeniorVicePresident ||
     isPresident;
 
-  const canViewSAP = !( isAreaManager || isRegionalManager || isAssistantVicePresident);
+  const canViewSAP = !(isAreaManager || isRegionalManager || isAssistantVicePresident);
   const canCreateSAP = (isAdmin || isBranchManager) && !isAssistantVicePresident;
 
   const [loanRequests, setLoanRequests] = useState([]);
@@ -76,11 +78,23 @@ export default function Approval() {
   const [showCreateLoan, setShowCreateLoan] = useState(false);
   const [showCreateSAP, setShowCreateSAP] = useState(false);
 
+  const [showLoanView, setShowLoanView] = useState(false);
+  const [selectedLoan, setSelectedLoan] = useState(null);
+
   const [loadingLoan, setLoadingLoan] = useState(false);
   const [loadingSap, setLoadingSap] = useState(false);
   const [creatingLoan, setCreatingLoan] = useState(false);
   const [creatingSap, setCreatingSap] = useState(false);
   const [processingId, setProcessingId] = useState("");
+
+  const [loanEmployeeSearch, setLoanEmployeeSearch] = useState("");
+  const [showLoanEmployeeDropdown, setShowLoanEmployeeDropdown] = useState(false);
+
+  const [sapEmployeeSearch, setSapEmployeeSearch] = useState("");
+  const [showSapEmployeeDropdown, setShowSapEmployeeDropdown] = useState(false);
+
+  const loanEmployeeBoxRef = useRef(null);
+  const sapEmployeeBoxRef = useRef(null);
 
   const [loanForm, setLoanForm] = useState({
     staff_id: "",
@@ -94,6 +108,7 @@ export default function Approval() {
     reason: "",
     approved_at: "",
     disbursement_date: "",
+    attachment: null,
   });
 
   const [sapForm, setSapForm] = useState({
@@ -180,7 +195,13 @@ export default function Approval() {
   }, [user, canViewSAP, fetchStaff, fetchBranches, fetchLoan, fetchSap]);
 
   useEffect(() => {
-    const isOpen = showLoanModal || showSapModal || showCreateLoan || showCreateSAP;
+    const isOpen =
+      showLoanModal ||
+      showSapModal ||
+      showCreateLoan ||
+      showCreateSAP ||
+      showLoanView;
+
     if (!isOpen) return;
 
     const onKeyDown = (e) => {
@@ -189,17 +210,31 @@ export default function Approval() {
         setShowSapModal(false);
         setShowCreateLoan(false);
         setShowCreateSAP(false);
+        setShowLoanView(false);
+        setShowLoanEmployeeDropdown(false);
+        setShowSapEmployeeDropdown(false);
+      }
+    };
+
+    const onMouseDown = (e) => {
+      if (loanEmployeeBoxRef.current && !loanEmployeeBoxRef.current.contains(e.target)) {
+        setShowLoanEmployeeDropdown(false);
+      }
+      if (sapEmployeeBoxRef.current && !sapEmployeeBoxRef.current.contains(e.target)) {
+        setShowSapEmployeeDropdown(false);
       }
     };
 
     document.addEventListener("keydown", onKeyDown);
+    document.addEventListener("mousedown", onMouseDown);
     document.body.style.overflow = "hidden";
 
     return () => {
       document.removeEventListener("keydown", onKeyDown);
+      document.removeEventListener("mousedown", onMouseDown);
       document.body.style.overflow = "";
     };
-  }, [showLoanModal, showSapModal, showCreateLoan, showCreateSAP]);
+  }, [showLoanModal, showSapModal, showCreateLoan, showCreateSAP, showLoanView]);
 
   const branchMap = useMemo(() => {
     const m = new Map();
@@ -213,21 +248,62 @@ export default function Approval() {
     return m;
   }, [staffList]);
 
-  const staffDisplayName = useCallback(
-    (staffId) => {
-      const s = staffMap.get(String(staffId));
-      if (!s) return "-";
+  const buildStaffDisplay = useCallback((s) => {
+    if (!s) return "-";
 
-      const built = `${s.last_name || ""}${s.last_name && s.first_name ? ", " : ""}${s.first_name || ""}${
-        s.middle_name ? ` ${s.middle_name}` : ""
-      }`
+    const built =
+      s.fullname ||
+      `${s.last_name || ""}${s.last_name && s.first_name ? ", " : ""}${s.first_name || ""}${s.middle_name ? ` ${s.middle_name}` : ""}`
         .replace(/\s+/g, " ")
         .trim();
 
-      return s.fullname || built || "-";
+    return built || "-";
+  }, []);
+
+  const staffDisplayName = useCallback(
+    (staffId) => {
+      const s = staffMap.get(String(staffId));
+      return buildStaffDisplay(s);
     },
-    [staffMap]
+    [staffMap, buildStaffDisplay]
   );
+
+  const searchableStaff = useMemo(() => {
+    return staffList.map((s) => {
+      const display = buildStaffDisplay(s);
+      const searchBlob = [
+        s.id,
+        s.employee_no,
+        s.fullname,
+        s.first_name,
+        s.last_name,
+        s.middle_name,
+        display,
+        s.position,
+      ]
+        .map((x) => toStr(x))
+        .join(" ")
+        .toLowerCase();
+
+      return {
+        ...s,
+        _display: display,
+        _searchBlob: searchBlob,
+      };
+    });
+  }, [staffList, buildStaffDisplay]);
+
+  const filteredLoanEmployees = useMemo(() => {
+    const q = norm(loanEmployeeSearch);
+    if (!q) return searchableStaff.slice(0, 20);
+    return searchableStaff.filter((s) => s._searchBlob.includes(q)).slice(0, 20);
+  }, [searchableStaff, loanEmployeeSearch]);
+
+  const filteredSapEmployees = useMemo(() => {
+    const q = norm(sapEmployeeSearch);
+    if (!q) return searchableStaff.slice(0, 20);
+    return searchableStaff.filter((s) => s._searchBlob.includes(q)).slice(0, 20);
+  }, [searchableStaff, sapEmployeeSearch]);
 
   const badgeClass = (status) => {
     const s = String(status || "").trim();
@@ -235,14 +311,6 @@ export default function Approval() {
     if (s === "Rejected") return "badge badge-rejected";
     return "badge badge-pending";
   };
-
-  const renderEmployeeOptions = () =>
-    staffList.map((s) => (
-      <option key={s.id} value={s.id}>
-        {(s.employee_no ? `${s.employee_no} - ` : "") +
-          (s.fullname || `${s.last_name || ""}, ${s.first_name || ""}`)}
-      </option>
-    ));
 
   const filteredLoan = useMemo(() => {
     return loanRequests.filter((item) => {
@@ -279,15 +347,16 @@ export default function Approval() {
       branch_code: b?.code || "",
       branch_name: b?.name || "",
     }));
+
+    setLoanEmployeeSearch(
+      emp ? `${emp.employee_no ? `${emp.employee_no} - ` : ""}${buildStaffDisplay(emp)}` : ""
+    );
+    setShowLoanEmployeeDropdown(false);
   };
 
   const handleSapEmployeeSelect = (employeeId) => {
     const emp = staffList.find((s) => String(s.id) === String(employeeId));
-    const display =
-      emp?.fullname ||
-      `${emp?.last_name || ""}${emp?.last_name && emp?.first_name ? ", " : ""}${emp?.first_name || ""}${
-        emp?.middle_name ? ` ${emp.middle_name}` : ""
-      }`.trim();
+    const display = buildStaffDisplay(emp);
 
     setSapForm((prev) => ({
       ...prev,
@@ -295,6 +364,11 @@ export default function Approval() {
       employee_no: emp?.employee_no || "",
       staff_name: display || "-",
     }));
+
+    setSapEmployeeSearch(
+      emp ? `${emp.employee_no ? `${emp.employee_no} - ` : ""}${display}` : ""
+    );
+    setShowSapEmployeeDropdown(false);
   };
 
   const resetLoanForm = () => {
@@ -310,7 +384,10 @@ export default function Approval() {
       reason: "",
       approved_at: "",
       disbursement_date: "",
+      attachment: null,
     });
+    setLoanEmployeeSearch("");
+    setShowLoanEmployeeDropdown(false);
   };
 
   const resetSapForm = () => {
@@ -323,6 +400,8 @@ export default function Approval() {
       term: "",
       balance: "",
     });
+    setSapEmployeeSearch("");
+    setShowSapEmployeeDropdown(false);
   };
 
   const handleCreateLoan = async (e) => {
@@ -337,18 +416,25 @@ export default function Approval() {
     try {
       setCreatingLoan(true);
 
-      await api.post("/loan-requests", {
-        staff_id: loanForm.staff_id,
-        loan_type: loanForm.loan_type,
-        reason: loanForm.reason,
-        amount,
-        interest,
-        term,
-        total,
-        per_month,
-        status: "Pending",
-        approved_at: loanForm.approved_at || null,
-        disbursement_date: loanForm.disbursement_date || null,
+      const formData = new FormData();
+      formData.append("staff_id", loanForm.staff_id);
+      formData.append("loan_type", loanForm.loan_type);
+      formData.append("reason", loanForm.reason);
+      formData.append("amount", amount);
+      formData.append("interest", interest);
+      formData.append("term", term);
+      formData.append("total", total);
+      formData.append("per_month", per_month);
+      formData.append("status", "Pending");
+      formData.append("approved_at", loanForm.approved_at || "");
+      formData.append("disbursement_date", loanForm.disbursement_date || "");
+
+      if (loanForm.attachment) {
+        formData.append("attachment", loanForm.attachment);
+      }
+
+      await api.post("/loan-requests", formData, {
+        headers: { "Content-Type": "multipart/form-data" },
       });
 
       alert("Loan request submitted successfully.");
@@ -452,6 +538,16 @@ export default function Approval() {
     }
   };
 
+  const openLoanView = (loan) => {
+    setSelectedLoan(loan);
+    setShowLoanView(true);
+  };
+
+  const closeLoanView = () => {
+    setSelectedLoan(null);
+    setShowLoanView(false);
+  };
+
   const loanPendingCount = useMemo(
     () => loanRequests.filter((x) => x.status === "Pending").length,
     [loanRequests]
@@ -545,16 +641,46 @@ export default function Approval() {
 
             <form onSubmit={handleCreateLoan} className="modal-form">
               <div className="modal-grid">
-                <div className="form-group">
+                <div className="form-group approval-search-select" ref={loanEmployeeBoxRef}>
                   <label>Employee</label>
-                  <select
-                    value={loanForm.staff_id}
-                    onChange={(e) => handleLoanEmployeeSelect(e.target.value)}
-                    required
-                  >
-                    <option value="">Select Employee</option>
-                    {renderEmployeeOptions()}
-                  </select>
+                  <input
+                    type="text"
+                    value={loanEmployeeSearch}
+                    onChange={(e) => {
+                      setLoanEmployeeSearch(e.target.value);
+                      setShowLoanEmployeeDropdown(true);
+                      setLoanForm((p) => ({
+                        ...p,
+                        staff_id: "",
+                        branch_id: "",
+                        branch_code: "",
+                        branch_name: "",
+                      }));
+                    }}
+                    onFocus={() => setShowLoanEmployeeDropdown(true)}
+                    placeholder="Search employee no or name..."
+                    required={!loanForm.staff_id}
+                  />
+
+                  {showLoanEmployeeDropdown && (
+                    <div className="approval-search-dropdown">
+                      {filteredLoanEmployees.length === 0 ? (
+                        <div className="approval-search-empty">No employee found</div>
+                      ) : (
+                        filteredLoanEmployees.map((s) => (
+                          <button
+                            key={s.id}
+                            type="button"
+                            onClick={() => handleLoanEmployeeSelect(s.id)}
+                            className="approval-search-item"
+                          >
+                            {s.employee_no ? `${s.employee_no} - ` : ""}
+                            {s._display}
+                          </button>
+                        ))
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 <div className="form-group">
@@ -580,8 +706,8 @@ export default function Approval() {
                     <option value="">Select Loan Type</option>
                     <option value="Motorcycle Loan">Motorcycle Loan</option>
                     <option value="Salary Advance">Salary Advance</option>
-                    <option value="Cash Loan">Cash Advance</option>
-                    <option value="Special Loan">Special Loan</option>
+                    <option value="Cash Advance">Cash Advance</option>
+                    <option value="Special Advance">Special Advance</option>
                     <option value="Pag-ibig Loan">Pag-ibig Loan</option>
                   </select>
                 </div>
@@ -632,6 +758,19 @@ export default function Approval() {
                     value={loanForm.disbursement_date}
                     onChange={(e) =>
                       setLoanForm((p) => ({ ...p, disbursement_date: e.target.value }))
+                    }
+                  />
+                </div>
+
+                <div className="form-group full">
+                  <label>Attach File</label>
+                  <input
+                    type="file"
+                    onChange={(e) =>
+                      setLoanForm((p) => ({
+                        ...p,
+                        attachment: e.target.files?.[0] || null,
+                      }))
                     }
                   />
                 </div>
@@ -688,16 +827,45 @@ export default function Approval() {
 
             <form onSubmit={handleCreateSAP} className="modal-form">
               <div className="modal-grid">
-                <div className="form-group full">
+                <div className="form-group full approval-search-select" ref={sapEmployeeBoxRef}>
                   <label>Employee</label>
-                  <select
-                    value={sapForm.employee_id}
-                    onChange={(e) => handleSapEmployeeSelect(e.target.value)}
-                    required
-                  >
-                    <option value="">Select Employee</option>
-                    {renderEmployeeOptions()}
-                  </select>
+                  <input
+                    type="text"
+                    value={sapEmployeeSearch}
+                    onChange={(e) => {
+                      setSapEmployeeSearch(e.target.value);
+                      setShowSapEmployeeDropdown(true);
+                      setSapForm((p) => ({
+                        ...p,
+                        employee_id: "",
+                        employee_no: "",
+                        staff_name: "",
+                      }));
+                    }}
+                    onFocus={() => setShowSapEmployeeDropdown(true)}
+                    placeholder="Search employee no or name..."
+                    required={!sapForm.employee_id}
+                  />
+
+                  {showSapEmployeeDropdown && (
+                    <div className="approval-search-dropdown">
+                      {filteredSapEmployees.length === 0 ? (
+                        <div className="approval-search-empty">No employee found</div>
+                      ) : (
+                        filteredSapEmployees.map((s) => (
+                          <button
+                            key={s.id}
+                            type="button"
+                            onClick={() => handleSapEmployeeSelect(s.id)}
+                            className="approval-search-item"
+                          >
+                            {s.employee_no ? `${s.employee_no} - ` : ""}
+                            {s._display}
+                          </button>
+                        ))
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 <div className="form-group">
@@ -857,28 +1025,36 @@ export default function Approval() {
                             <div>Disbursed: {fmtDate(item.disbursement_date)}</div>
                           </td>
                           <td>
-                            {canApproveLoan && item.status === "Pending" ? (
-                              <div className="row-actions">
-                                <button
-                                  className="btn-success"
-                                  onClick={() => updateLoanStatus(item.id, "Approved")}
-                                  type="button"
-                                  disabled={processingId === `loan-${item.id}-Approved`}
-                                >
-                                  {processingId === `loan-${item.id}-Approved` ? "Approving..." : "Approve"}
-                                </button>
-                                <button
-                                  className="btn-danger"
-                                  onClick={() => updateLoanStatus(item.id, "Rejected")}
-                                  type="button"
-                                  disabled={processingId === `loan-${item.id}-Rejected`}
-                                >
-                                  {processingId === `loan-${item.id}-Rejected` ? "Rejecting..." : "Reject"}
-                                </button>
-                              </div>
-                            ) : (
-                              "-"
-                            )}
+                            <div className="row-actions">
+                              <button
+                                className="btn-secondary"
+                                onClick={() => openLoanView(item)}
+                                type="button"
+                              >
+                                View
+                              </button>
+
+                              {canApproveLoan && item.status === "Pending" ? (
+                                <>
+                                  <button
+                                    className="btn-success"
+                                    onClick={() => updateLoanStatus(item.id, "Approved")}
+                                    type="button"
+                                    disabled={processingId === `loan-${item.id}-Approved`}
+                                  >
+                                    {processingId === `loan-${item.id}-Approved` ? "Approving..." : "Approve"}
+                                  </button>
+                                  <button
+                                    className="btn-danger"
+                                    onClick={() => updateLoanStatus(item.id, "Rejected")}
+                                    type="button"
+                                    disabled={processingId === `loan-${item.id}-Rejected`}
+                                  >
+                                    {processingId === `loan-${item.id}-Rejected` ? "Rejecting..." : "Reject"}
+                                  </button>
+                                </>
+                              ) : null}
+                            </div>
                           </td>
                         </tr>
                       ))
@@ -892,6 +1068,122 @@ export default function Approval() {
               <button className="btn-secondary" type="button" onClick={() => setShowLoanModal(false)}>
                 Close
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showLoanView && selectedLoan && (
+        <div
+          className="modal-overlay"
+          onMouseDown={(e) => e.target.classList.contains("modal-overlay") && closeLoanView()}
+        >
+          <div className="modal saas-modal" onMouseDown={(e) => e.stopPropagation()}>
+            <div className="modal-head">
+              <div>
+                <h3 className="modal-title">Loan Application Details</h3>
+                <p className="modal-subtitle">
+                  {selectedLoan.staff_name || staffDisplayName(selectedLoan.staff_id)}
+                </p>
+              </div>
+              <button className="modal-x" type="button" onClick={closeLoanView}>
+                ✕
+              </button>
+            </div>
+
+            <div className="modal-form">
+              <div className="modal-grid">
+                <div className="form-group">
+                  <label>ID</label>
+                  <input value={selectedLoan.id ?? "-"} readOnly />
+                </div>
+
+                <div className="form-group">
+                  <label>Employee Name</label>
+                  <input
+                    value={selectedLoan.staff_name || staffDisplayName(selectedLoan.staff_id)}
+                    readOnly
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label>Employee No</label>
+                  <input value={selectedLoan.employee_no || "-"} readOnly />
+                </div>
+
+                <div className="form-group">
+                  <label>Loan Type</label>
+                  <input value={selectedLoan.loan_type || "-"} readOnly />
+                </div>
+
+                <div className="form-group">
+                  <label>Amount</label>
+                  <input value={`₱ ${fmtMoney(selectedLoan.amount)}`} readOnly />
+                </div>
+
+                <div className="form-group">
+                  <label>Interest</label>
+                  <input value={`${selectedLoan.interest || 0}%`} readOnly />
+                </div>
+
+                <div className="form-group">
+                  <label>Term</label>
+                  <input value={selectedLoan.term || "-"} readOnly />
+                </div>
+
+                <div className="form-group">
+                  <label>Per Month</label>
+                  <input value={`₱ ${fmtMoney(selectedLoan.per_month)}`} readOnly />
+                </div>
+
+                <div className="form-group">
+                  <label>Total</label>
+                  <input value={`₱ ${fmtMoney(selectedLoan.total)}`} readOnly />
+                </div>
+
+                <div className="form-group">
+                  <label>Status</label>
+                  <input value={selectedLoan.status || "-"} readOnly />
+                </div>
+
+                <div className="form-group">
+                  <label>Approved Date</label>
+                  <input value={fmtDate(selectedLoan.approved_at)} readOnly />
+                </div>
+
+                <div className="form-group">
+                  <label>Disbursement Date</label>
+                  <input value={fmtDate(selectedLoan.disbursement_date)} readOnly />
+                </div>
+
+                <div className="form-group full">
+                  <label>Attachment</label>
+                  {selectedLoan.attachment_path ? (
+                    <a
+                      href={`http://localhost:5000${selectedLoan.attachment_path}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="btn-secondary"
+                      style={{ display: "inline-block", textAlign: "center", padding: "10px 12px" }}
+                    >
+                      View Attached File
+                    </a>
+                  ) : (
+                    <input value="No attachment" readOnly />
+                  )}
+                </div>
+
+                <div className="form-group full">
+                  <label>Reason</label>
+                  <textarea value={selectedLoan.reason || "-"} readOnly />
+                </div>
+              </div>
+
+              <div className="modal-buttons">
+                <button className="btn-secondary" type="button" onClick={closeLoanView}>
+                  Close
+                </button>
+              </div>
             </div>
           </div>
         </div>

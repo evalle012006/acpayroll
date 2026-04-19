@@ -1241,6 +1241,13 @@ function StaffProfileModal({ staff, avatarUrl, onClose, branchNameById }) {
   const [balances, setBalances] = useState(null);
   const [loadingBal, setLoadingBal] = useState(false);
   const [errBal, setErrBal] = useState("");
+  const [bonus15Data, setBonus15Data] = useState({
+    percentage: 0,
+    result: 0,
+    bonus_month: "",
+  });
+  const [loadingBonus15, setLoadingBonus15] = useState(false);
+  const [errBonus15, setErrBonus15] = useState("");
 
   const childrenArr = useMemo(() => safeJsonArray(staff?.children), [staff?.children]);
   const educationArr = useMemo(() => safeJsonArray(staff?.education), [staff?.education]);
@@ -1415,6 +1422,43 @@ function StaffProfileModal({ staff, avatarUrl, onClose, branchNameById }) {
     }
   }, [staff?.id, staff?.employee_no]);
 
+  const loadBonus15Data = useCallback(async () => {
+  if (!staff?.id || !staff?.branch_id) return;
+
+  setLoadingBonus15(true);
+  setErrBonus15("");
+
+  try {
+    const now = new Date();
+    const bonusMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
+
+    const res = await api.get(`/bonus/branch/${staff.branch_id}`, {
+      params: { bonus_month: bonusMonth },
+    });
+
+    const rows = Array.isArray(res.data) ? res.data : [];
+
+    const found =
+      rows.find((r) => String(r.employee_id) === String(staff.id)) || null;
+
+    setBonus15Data({
+      base: toNum(found?.month_13),
+      percentage: toNum(found?.percentage),
+      result: toNum(found?.result),
+      bonus_month: bonusMonth,
+    });
+  } catch (e) {
+    setErrBonus15(e?.response?.data?.message || "Failed to load 15th month bonus data.");
+    setBonus15Data({
+      percentage: 0,
+      result: 0,
+      bonus_month: "",
+    });
+  } finally {
+    setLoadingBonus15(false);
+  }
+}, [staff?.id, staff?.branch_id]);
+
   useEffect(() => {
     if (tab === "leave") loadLeaves();
 
@@ -1430,6 +1474,7 @@ function StaffProfileModal({ staff, avatarUrl, onClose, branchNameById }) {
       loadLoans();
       loadOpeningLoans();
       loadSapHistory();
+      loadBonus15Data();
     }
   }, [
     tab,
@@ -1439,6 +1484,7 @@ function StaffProfileModal({ staff, avatarUrl, onClose, branchNameById }) {
     loadDemotions,
     loadSapHistory,
     loadBalances,
+    loadBonus15Data,
   ]);
 
   const historyItems = useMemo(() => {
@@ -1930,72 +1976,110 @@ function StaffProfileModal({ staff, avatarUrl, onClose, branchNameById }) {
               {errBal ? <div className="empty-state" style={{ color: "#ef4444" }}>{errBal}</div> : null}
 
               {!loadingBal && !errBal ? (
-                <table className="profile-table">
-                  <tbody>
-                    <tr><td colSpan="2"><h2>Personal Savings</h2></td></tr>
-                    <tr><td>CBU</td><td>{money(combinedBalances.cbu)}</td></tr>
-                    <tr><td>Cashbond</td><td>{money(combinedBalances.cashbond)}</td></tr>
-                    <tr><td>Utility</td><td>{money(combinedBalances.utility)}</td></tr>
-                    <tr>
-                      <td><strong>Total Personal Savings</strong></td>
-                      <td>{money(combinedBalances.cbu + combinedBalances.cashbond + combinedBalances.utility)}</td>
-                    </tr>
-
-                    <tr><td>Salary Advance</td><td>{money(combinedBalances.salary_advance)}</td></tr>
-                    <tr><td>Special Advance</td><td>{money(combinedBalances.special_advance)}</td></tr>
-                    <tr><td>Cash Advance</td><td>{money(combinedBalances.cash_advance)}</td></tr>
-                    <tr><td>Motorcycle Loan</td><td>{money(combinedBalances.motorcycle_loan)}</td></tr>
-                    <tr><td>Pag-ibig Loan</td><td>{money(combinedBalances.pag_ibig_loan)}</td></tr>
-                    <tr><td>Other Receivable</td><td>{money(combinedBalances.other_receivable)}</td></tr>
-                    <tr><td>Staff Accounts Payable</td><td>{money(combinedBalances.staff_accounts_payable)}</td></tr>
-                    <tr>
-                      <td><strong>Total Personal Balance</strong></td>
-                      <td>
-                        {money(
-                          combinedBalances.salary_advance +
-                            combinedBalances.special_advance +
-                            combinedBalances.cash_advance +
-                            combinedBalances.motorcycle_loan +
-                            combinedBalances.pag_ibig_loan +
-                            combinedBalances.other_receivable +
-                            combinedBalances.staff_accounts_payable
-                        )}
-                      </td>
-                    </tr>
-
-                    <tr><td colSpan="2"><h2>Tax Contribution (2316)</h2></td></tr>
-                    <tr><td>Basic Salary</td><td>{money(staff.salary)}</td></tr>
-                    <tr><td>Ecola</td><td>{money(staff.ecola)}</td></tr>
-                    <tr><td><strong>Total Contribution</strong></td><td>{money(toNum(staff.salary) + toNum(staff.ecola))}</td></tr>
-
-                    <tr><td colSpan="2"><h2>Remittances (EE)</h2></td></tr>
-                    <tr><td>SSS</td><td>{money(staff.sss_ee)}</td></tr>
-                    <tr><td>Philhealth</td><td>{money(staff.ph_ee)}</td></tr>
-                    <tr><td>Pag-ibig</td><td>{money(staff.hdmf_ee)}</td></tr>
-                    <tr><td><strong>Total (EE)</strong></td><td>{money(toNum(staff.sss_ee) + toNum(staff.ph_ee) + toNum(staff.hdmf_ee))}</td></tr>
-
-                    <tr><td colSpan="2"><h2>Tax</h2></td></tr>
-                    <tr><td>Tax</td><td>{money(staff.tax)}</td></tr>
-                    <tr><td><strong>Total Tax</strong></td><td>{money(toNum(staff.tax))}</td></tr>
-
-                    <tr><td colSpan="2"><h2>13th / 14th / 15th Month Computation ({thirteenthMonthData.year})</h2></td></tr>
-                    <tr><td>Basic Salary</td><td>{money(thirteenthMonthData.basicSalary)}</td></tr>
-                    <tr><td>Ecola</td><td>{money(thirteenthMonthData.ecola)}</td></tr>
-                    <tr><td><strong>Monthly Compensation</strong></td><td>{money(thirteenthMonthData.monthlyCompensation)}</td></tr>
-
-                    {thirteenthMonthData.rows.map((row) => (
-                      <tr key={row.month}>
-                        <td>{row.month}</td>
-                        <td>{row.amount == null ? "-" : money(row.amount)}</td>
+                <>
+                  <table className="profile-table">
+                    <tbody>
+                      <tr><td colSpan="2"><h2>Personal Savings</h2></td></tr>
+                      <tr><td>CBU</td><td>{money(combinedBalances.cbu)}</td></tr>
+                      <tr><td>Cashbond</td><td>{money(combinedBalances.cashbond)}</td></tr>
+                      <tr><td>Utility</td><td>{money(combinedBalances.utility)}</td></tr>
+                      <tr>
+                        <td><strong>Total Personal Savings</strong></td>
+                        <td>{money(combinedBalances.cbu + combinedBalances.cashbond + combinedBalances.utility)}</td>
                       </tr>
-                    ))}
 
-                    <tr><td><strong>Total Compensation Earned</strong></td><td>{money(thirteenthMonthData.totalCompensationEarned)}</td></tr>
-                    <tr><td><strong>13th Month Pay</strong></td><td>{money(thirteenthMonthData.thirteenthMonth)}</td></tr>
-                    <tr><td><strong>14th Month Pay</strong></td><td>{money(thirteenthMonthData.fourteenthMonth)}</td></tr>
-                    <tr><td><strong>15th Month Pay</strong></td><td>{money(thirteenthMonthData.fifteenthMonth)}</td></tr>
-                  </tbody>
-                </table>
+                      <tr><td>Salary Advance</td><td>{money(combinedBalances.salary_advance)}</td></tr>
+                      <tr><td>Special Advance</td><td>{money(combinedBalances.special_advance)}</td></tr>
+                      <tr><td>Cash Advance</td><td>{money(combinedBalances.cash_advance)}</td></tr>
+                      <tr><td>Motorcycle Loan</td><td>{money(combinedBalances.motorcycle_loan)}</td></tr>
+                      <tr><td>Pag-ibig Loan</td><td>{money(combinedBalances.pag_ibig_loan)}</td></tr>
+                      <tr><td>Other Receivable</td><td>{money(combinedBalances.other_receivable)}</td></tr>
+                      <tr><td>Staff Accounts Payable</td><td>{money(combinedBalances.staff_accounts_payable)}</td></tr>
+                      <tr>
+                        <td><strong>Total Personal Balance</strong></td>
+                        <td>
+                          {money(
+                            combinedBalances.salary_advance +
+                              combinedBalances.special_advance +
+                              combinedBalances.cash_advance +
+                              combinedBalances.motorcycle_loan +
+                              combinedBalances.pag_ibig_loan +
+                              combinedBalances.other_receivable +
+                              combinedBalances.staff_accounts_payable
+                          )}
+                        </td>
+                      </tr>
+
+                      <tr><td colSpan="2"><h2>Tax Contribution (2316)</h2></td></tr>
+                      <tr><td>Basic Salary</td><td>{money(staff.salary)}</td></tr>
+                      <tr><td>Ecola</td><td>{money(staff.ecola)}</td></tr>
+                      <tr><td><strong>Total Contribution</strong></td><td>{money(toNum(staff.salary) + toNum(staff.ecola))}</td></tr>
+
+                      <tr><td colSpan="2"><h2>Remittances (EE)</h2></td></tr>
+                      <tr><td>SSS</td><td>{money(staff.sss_ee)}</td></tr>
+                      <tr><td>Philhealth</td><td>{money(staff.ph_ee)}</td></tr>
+                      <tr><td>Pag-ibig</td><td>{money(staff.hdmf_ee)}</td></tr>
+                      <tr><td><strong>Total (EE)</strong></td><td>{money(toNum(staff.sss_ee) + toNum(staff.ph_ee) + toNum(staff.hdmf_ee))}</td></tr>
+
+                      <tr><td colSpan="2"><h2>Tax</h2></td></tr>
+                      <tr><td>Tax</td><td>{money(staff.tax)}</td></tr>
+                      <tr><td><strong>Total Tax</strong></td><td>{money(toNum(staff.tax))}</td></tr>
+
+                      <tr><td colSpan="2"><h2>13th / 14th / 15th Month Computation ({thirteenthMonthData.year})</h2></td></tr>
+                      <tr><td>Basic Salary</td><td>{money(thirteenthMonthData.basicSalary)}</td></tr>
+                      <tr><td>Ecola</td><td>{money(thirteenthMonthData.ecola)}</td></tr>
+                      <tr><td><strong>Monthly Compensation</strong></td><td>{money(thirteenthMonthData.monthlyCompensation)}</td></tr>
+
+                      {thirteenthMonthData.rows.map((row) => (
+                        <tr key={row.month}>
+                          <td>{row.month}</td>
+                          <td>{row.amount == null ? "-" : money(row.amount)}</td>
+                        </tr>
+                      ))}
+
+                      <tr><td><strong>Total Compensation Earned</strong></td><td>{money(thirteenthMonthData.totalCompensationEarned)}</td></tr>
+                      <tr><td><strong>13th Month Pay</strong></td><td>{money(thirteenthMonthData.thirteenthMonth)}</td></tr>
+                      <tr><td><strong>14th Month Pay</strong></td><td>{money(thirteenthMonthData.fourteenthMonth)}</td></tr>
+                      <tr><td><strong>15th Month Pay</strong></td><td>{money(thirteenthMonthData.fifteenthMonth)}</td></tr>
+                    </tbody>
+                  </table>
+
+                  <div style={{ marginTop: 20 }}>
+                    {loadingBonus15 ? (
+                      <div className="empty-state">Loading bonus data…</div>
+                    ) : null}
+
+                    {errBonus15 ? (
+                      <div className="empty-state" style={{ color: "#ef4444" }}>
+                        {errBonus15}
+                      </div>
+                    ) : null}
+
+                    {!loadingBonus15 && !errBonus15 ? (
+                      <table className="profile-table">
+                        <thead>
+                          <tr>
+                            <th>2025 13th Month</th>
+                            <th>Percentage</th>
+                            <th>Result</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          <tr>
+                            {/* THIS is the 2025 13th month base from bonus */}
+                            <td>{money(bonus15Data.base || 0)}</td>
+
+                            {/* percentage from bonus.jsx */}
+                            <td>{bonus15Data.percentage}%</td>
+
+                            {/* result from bonus.jsx */}
+                            <td>{money(bonus15Data.result)}</td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    ) : null}
+                  </div>
+                </>
               ) : null}
             </>
           )}

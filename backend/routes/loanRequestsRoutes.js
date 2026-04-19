@@ -2,6 +2,9 @@ const express = require("express");
 const router = express.Router();
 const pool = require("../db");
 const { requireAuth, requireRole } = require("../middlewares/authMiddleware");
+const multer = require("multer");
+const path = require("path");
+const fs = require("fs");
 
 /* ---------------- helpers ---------------- */
 const toNum = (v) => {
@@ -108,6 +111,49 @@ function loanTypeToBalanceColumn(loanType) {
   return null;
 }
 
+/* ---------------- upload config ---------------- */
+const uploadDir = path.join(__dirname, "../uploads/loans");
+
+if (!fs.existsSync(uploadDir)) {
+  fs.mkdirSync(uploadDir, { recursive: true });
+}
+
+const storage = multer.diskStorage({
+  destination: (_req, _file, cb) => {
+    cb(null, uploadDir);
+  },
+  filename: (_req, file, cb) => {
+    const unique = Date.now() + "-" + Math.round(Math.random() * 1e9);
+    cb(null, unique + path.extname(file.originalname || ""));
+  },
+});
+
+const upload = multer({ storage });
+
+/* ---------------- shared select fields ---------------- */
+const loanSelectFields = `
+  lr.id,
+  lr.staff_id,
+  lr.employee_no,
+  lr.loan_type,
+  lr.reason,
+  lr.amount,
+  lr.term,
+  lr.interest,
+  lr.total,
+  lr.per_month,
+  lr.status,
+  lr.approved_at,
+  lr.disbursement_date,
+  lr.attachment_path,
+  lr.attachment_name,
+  lr.attachment_mime,
+  COALESCE(s.fullname, '') AS staff_name,
+  s.first_name,
+  s.last_name,
+  s.middle_name
+`;
+
 /* ---------------- GET all loans ---------------- */
 router.get("/loan-requests", requireAuth, async (req, res) => {
   try {
@@ -115,23 +161,7 @@ router.get("/loan-requests", requireAuth, async (req, res) => {
       const r = await pool.query(
         `
         SELECT
-          lr.id,
-          lr.staff_id,
-          lr.employee_no,
-          lr.loan_type,
-          lr.reason,
-          lr.amount,
-          lr.term,
-          lr.interest,
-          lr.total,
-          lr.per_month,
-          lr.status,
-          lr.approved_at,
-          lr.disbursement_date,
-          COALESCE(s.fullname, '') AS staff_name,
-          s.first_name,
-          s.last_name,
-          s.middle_name
+          ${loanSelectFields}
         FROM public.loan_requests lr
         LEFT JOIN public.staff s ON s.id = lr.staff_id
         ORDER BY lr.id DESC
@@ -151,23 +181,7 @@ router.get("/loan-requests", requireAuth, async (req, res) => {
       const r = await pool.query(
         `
         SELECT
-          lr.id,
-          lr.staff_id,
-          lr.employee_no,
-          lr.loan_type,
-          lr.reason,
-          lr.amount,
-          lr.term,
-          lr.interest,
-          lr.total,
-          lr.per_month,
-          lr.status,
-          lr.approved_at,
-          lr.disbursement_date,
-          COALESCE(s.fullname, '') AS staff_name,
-          s.first_name,
-          s.last_name,
-          s.middle_name
+          ${loanSelectFields}
         FROM public.loan_requests lr
         LEFT JOIN public.staff s ON s.id = lr.staff_id
         WHERE s.branch_id = $1
@@ -186,23 +200,7 @@ router.get("/loan-requests", requireAuth, async (req, res) => {
       const r = await pool.query(
         `
         SELECT
-          lr.id,
-          lr.staff_id,
-          lr.employee_no,
-          lr.loan_type,
-          lr.reason,
-          lr.amount,
-          lr.term,
-          lr.interest,
-          lr.total,
-          lr.per_month,
-          lr.status,
-          lr.approved_at,
-          lr.disbursement_date,
-          COALESCE(s.fullname, '') AS staff_name,
-          s.first_name,
-          s.last_name,
-          s.middle_name
+          ${loanSelectFields}
         FROM public.loan_requests lr
         LEFT JOIN public.staff s ON s.id = lr.staff_id
         WHERE LOWER(TRIM(COALESCE(s.area, ''))) = LOWER(TRIM($1))
@@ -221,23 +219,7 @@ router.get("/loan-requests", requireAuth, async (req, res) => {
       const r = await pool.query(
         `
         SELECT
-          lr.id,
-          lr.staff_id,
-          lr.employee_no,
-          lr.loan_type,
-          lr.reason,
-          lr.amount,
-          lr.term,
-          lr.interest,
-          lr.total,
-          lr.per_month,
-          lr.status,
-          lr.approved_at,
-          lr.disbursement_date,
-          COALESCE(s.fullname, '') AS staff_name,
-          s.first_name,
-          s.last_name,
-          s.middle_name
+          ${loanSelectFields}
         FROM public.loan_requests lr
         LEFT JOIN public.staff s ON s.id = lr.staff_id
         WHERE LOWER(TRIM(COALESCE(s.region, ''))) = LOWER(TRIM($1))
@@ -251,7 +233,7 @@ router.get("/loan-requests", requireAuth, async (req, res) => {
 
     return res.status(403).json({ message: "Access denied" });
   } catch (e) {
-    console.error("GET /api/loan-requests ERROR:", e.message);
+    console.error("GET /api/loan-requests ERROR:", e);
     return res.status(500).json({ message: e?.message || "Server error" });
   }
 });
@@ -303,23 +285,7 @@ router.get("/loan-requests/staff/:staffId", requireAuth, async (req, res) => {
     const r = await pool.query(
       `
       SELECT
-        lr.id,
-        lr.staff_id,
-        lr.employee_no,
-        lr.loan_type,
-        lr.reason,
-        lr.amount,
-        lr.term,
-        lr.interest,
-        lr.total,
-        lr.per_month,
-        lr.status,
-        lr.approved_at,
-        lr.disbursement_date,
-        COALESCE(s.fullname, '') AS staff_name,
-        s.first_name,
-        s.last_name,
-        s.middle_name
+        ${loanSelectFields}
       FROM public.loan_requests lr
       LEFT JOIN public.staff s ON s.id = lr.staff_id
       WHERE lr.staff_id = $1::int
@@ -330,7 +296,7 @@ router.get("/loan-requests/staff/:staffId", requireAuth, async (req, res) => {
 
     return res.json(r.rows);
   } catch (e) {
-    console.error("GET /api/loan-requests/staff/:staffId ERROR:", e.message);
+    console.error("GET /api/loan-requests/staff/:staffId ERROR:", e);
     return res.status(500).json({ message: e?.message || "Server error" });
   }
 });
@@ -339,7 +305,18 @@ router.get("/loan-requests/staff/:staffId", requireAuth, async (req, res) => {
 router.post(
   "/loan-requests",
   requireAuth,
-  requireRole(["admin", "hr", "accounting", "branch manager", "area manager", "regional manager","assistant vice president", "vice president", "senior vice president"]),
+  requireRole([
+    "admin",
+    "hr",
+    "accounting",
+    "branch manager",
+    "area manager",
+    "regional manager",
+    "assistant vice president",
+    "vice president",
+    "senior vice president",
+  ]),
+  upload.single("attachment"),
   async (req, res) => {
     const client = await pool.connect();
 
@@ -359,7 +336,13 @@ router.post(
       const status = String(req.body?.status || "Pending").trim() || "Pending";
 
       const approved_at = req.body?.approved_at ? toDate(req.body.approved_at) : null;
-      const disbursement_date = req.body?.disbursement_date ? toDate(req.body.disbursement_date) : null;
+      const disbursement_date = req.body?.disbursement_date
+        ? toDate(req.body.disbursement_date)
+        : null;
+
+      const attachment_path = req.file ? `/uploads/loans/${req.file.filename}` : null;
+      const attachment_name = req.file ? req.file.originalname : null;
+      const attachment_mime = req.file ? req.file.mimetype : null;
 
       if (!staff_id) return res.status(400).json({ message: "staff_id is required" });
       if (!loan_type) return res.status(400).json({ message: "loan_type is required" });
@@ -426,7 +409,10 @@ router.post(
             per_month,
             status,
             approved_at,
-            disbursement_date
+            disbursement_date,
+            attachment_path,
+            attachment_name,
+            attachment_mime
           )
         VALUES
           (
@@ -441,7 +427,10 @@ router.post(
             $9::numeric,
             $10::varchar,
             $11::date,
-            $12::date
+            $12::date,
+            $13::text,
+            $14::text,
+            $15::text
           )
         RETURNING *;
         `,
@@ -458,6 +447,9 @@ router.post(
           status,
           approved_at,
           disbursement_date,
+          attachment_path,
+          attachment_name,
+          attachment_mime,
         ]
       );
 
@@ -467,7 +459,7 @@ router.post(
       try {
         await client.query("ROLLBACK");
       } catch {}
-      console.error("POST /api/loan-requests ERROR:", e.message);
+      console.error("POST /api/loan-requests ERROR:", e);
       return res.status(500).json({ message: e?.message || "Server error" });
     } finally {
       client.release();

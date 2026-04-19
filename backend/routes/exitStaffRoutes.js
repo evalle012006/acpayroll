@@ -10,8 +10,13 @@ const toInt = (v) => {
 };
 
 const toDate = (v) => {
-  const s = String(v ?? "").slice(0, 10);
-  return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : null;
+  if (!v) return null;
+
+  const d = new Date(v);
+
+  if (isNaN(d.getTime())) return null;
+
+  return d.toISOString().slice(0, 10); // always YYYY-MM-DD
 };
 
 const clean = (v) => String(v ?? "").trim();
@@ -30,6 +35,7 @@ const normalizeExitType = (v) => {
   if (s === "awol") return "AWOL";
   if (s === "resign" || s === "resigned") return "Resigned";
   if (s === "termination" || s === "terminated") return "Terminated";
+  if (s === "deceased" || s === "death") return "Deceased";
 
   return clean(v);
 };
@@ -61,7 +67,7 @@ router.get("/exit-staff", requireAuth, async (req, res) => {
       FROM public.staff s
       LEFT JOIN public.branches b ON b.id = s.branch_id
       WHERE LOWER(TRIM(COALESCE(s.status, ''))) = 'inactive'
-        AND LOWER(TRIM(COALESCE(s.exit_type, ''))) IN ('awol', 'resigned', 'terminated')
+        AND LOWER(TRIM(COALESCE(s.exit_type, ''))) IN ('awol', 'resigned', 'terminated', 'deceased')
     `;
 
     if (isBranchManager(req)) {
@@ -136,7 +142,9 @@ router.post(
       const employee_id = toInt(req.body?.employee_no);
       const exit_type = normalizeExitType(req.body?.exit_type);
       const date_created = toDate(req.body?.date_created) || toDate(new Date().toISOString());
-      const effective_date = toDate(req.body?.effective_date);
+      const effectiveDate =
+        toDate(existing.effective_date) ||
+        toDate(existing.date_created);
 
       const settlement_date = toDate(req.body?.settlement_date);
       const settlement_branch_id = toInt(req.body?.settlement_branch_id);
@@ -147,9 +155,9 @@ router.post(
         return res.status(400).json({ message: "Employee required" });
       }
 
-      if (!exit_type || !["AWOL", "Resigned", "Terminated"].includes(exit_type)) {
+      if (!exit_type || !["AWOL", "Resigned", "Terminated", "Deceased"].includes(exit_type)) {
         await client.query("ROLLBACK");
-        return res.status(400).json({ message: "Exit type must be AWOL, Resigned, or Terminated" });
+        return res.status(400).json({ message: "Exit type must be AWOL, Resigned, Terminated, or Deceased" });
       }
 
       if (!date_created) {
@@ -316,7 +324,7 @@ router.post(
     } catch (e) {
       await client.query("ROLLBACK");
       console.error("POST /exit-staff-orders ERROR:", e.message);
-      return res.status(500).json({ message: "Server error" });
+      return res.status(500).json({ message: e?.message || "Server error" });
     } finally {
       client.release();
     }
@@ -339,28 +347,73 @@ router.put(
         return res.status(400).json({ message: "Invalid id" });
       }
 
-      const r = await client.query(
+      const orderRes = await client.query(
+        `
+        SELECT *
+        FROM public.exit_staff_orders
+        WHERE id = $1
+        FOR UPDATE
+        `,
+        [id]
+      );
+
+      if (orderRes.rowCount === 0) {
+        await client.query("ROLLBACK");
+        return res.status(404).json({ message: "Exit staff order not found" });
+      }
+
+      const existing = orderRes.rows[0];
+
+      if (String(existing.status || "").toLowerCase() !== "pending") {
+        await client.query("ROLLBACK");
+        return res.status(400).json({ message: "Only pending orders can be approved" });
+      }
+
+      const employeeNo = clean(existing.employee_no);
+      const effectiveDate = toDate(existing.effective_date);
+      const exitType = normalizeExitType(existing.exit_type);
+      const remarks = clean(existing.remarks) || null;
+
+      if (!employeeNo) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({ message: "Order has no employee number" });
+      }
+
+      if (!effectiveDate) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({ message: "Order has invalid effective date" });
+      }
+
+      const staffRes = await client.query(
+        `
+        SELECT id, employee_no
+        FROM public.staff
+        WHERE employee_no = $1
+        FOR UPDATE
+        `,
+        [employeeNo]
+      );
+
+      if (staffRes.rowCount === 0) {
+        await client.query("ROLLBACK");
+        return res.status(404).json({ message: "Staff record not found for this employee number" });
+      }
+
+      const orderUpdate = await client.query(
         `
         UPDATE public.exit_staff_orders
         SET
           status = 'Approved',
           approved_by = $2,
-          approved_at = NOW()
+          approved_at = NOW(),
+          rejected_by = NULL,
+          rejected_at = NULL,
+          rejection_reason = NULL
         WHERE id = $1
-          AND status = 'Pending'
         RETURNING *;
         `,
         [id, req.user?.id ?? null]
       );
-
-      if (r.rowCount === 0) {
-        await client.query("ROLLBACK");
-        return res.status(400).json({ message: "Not found or not Pending" });
-      }
-
-      const order = r.rows[0];
-      const employeeNo = clean(order.employee_no);
-      const effectiveDate = toDate(order.effective_date);
 
       await client.query(
         `
@@ -372,36 +425,32 @@ router.put(
           exit_remarks = $4
         WHERE employee_no = $1
         `,
-        [
-          employeeNo,
-          normalizeExitType(order.exit_type),
-          effectiveDate,
-          clean(order.remarks) || null,
-        ]
+        [employeeNo, exitType, effectiveDate, remarks]
       );
 
-      await client.query(
-        `
-        INSERT INTO public.status_history
-          (employee_no, effective_date, status, reason, remarks)
-        VALUES
-          ($1, $2::date, 'Inactive', $3, $4)
-        ON CONFLICT DO NOTHING
-        `,
-        [
-          employeeNo,
-          effectiveDate,
-          normalizeExitType(order.exit_type),
-          clean(order.remarks) || null,
-        ]
-      );
+      /* Optional status_history insert.
+         If your table structure is different, this block will no longer break approval. */
+      try {
+        await client.query(
+          `
+          INSERT INTO public.status_history
+            (employee_no, effective_date, status, reason, remarks)
+          VALUES
+            ($1, $2::date, 'Inactive', $3, $4)
+          ON CONFLICT DO NOTHING
+          `,
+          [employeeNo, effectiveDate, exitType, remarks]
+        );
+      } catch (historyErr) {
+        console.warn("status_history insert skipped:", historyErr.message);
+      }
 
       await client.query("COMMIT");
-      return res.json(order);
+      return res.json(orderUpdate.rows[0]);
     } catch (e) {
       await client.query("ROLLBACK");
       console.error("PUT /exit-staff-orders/:id/approve ERROR:", e.message);
-      return res.status(500).json({ message: "Server error" });
+      return res.status(500).json({ message: e?.message || "Server error" });
     } finally {
       client.release();
     }
@@ -427,7 +476,9 @@ router.put(
           status = 'Rejected',
           rejected_by = $2,
           rejected_at = NOW(),
-          rejection_reason = $3
+          rejection_reason = $3,
+          approved_by = NULL,
+          approved_at = NULL
         WHERE id = $1
           AND status = 'Pending'
         RETURNING *;
@@ -442,7 +493,7 @@ router.put(
       return res.json(r.rows[0]);
     } catch (e) {
       console.error("PUT /exit-staff-orders/:id/reject ERROR:", e.message);
-      return res.status(500).json({ message: "Server error" });
+      return res.status(500).json({ message: e?.message || "Server error" });
     }
   }
 );
@@ -456,23 +507,35 @@ router.delete(
       const id = toInt(req.params.id);
       if (!id) return res.status(400).json({ message: "Invalid id" });
 
-      const r = await pool.query(
+      const check = await pool.query(
         `
-        DELETE FROM public.exit_staff_orders
+        SELECT status
+        FROM public.exit_staff_orders
         WHERE id = $1
-        RETURNING id
         `,
         [id]
       );
 
-      if (r.rowCount === 0) {
+      if (check.rowCount === 0) {
         return res.status(404).json({ message: "Order not found" });
       }
+
+      if (String(check.rows[0].status || "").toLowerCase() === "approved") {
+        return res.status(400).json({ message: "Approved orders cannot be deleted" });
+      }
+
+      await pool.query(
+        `
+        DELETE FROM public.exit_staff_orders
+        WHERE id = $1
+        `,
+        [id]
+      );
 
       return res.json({ message: "Deleted" });
     } catch (e) {
       console.error("DELETE /exit-staff-orders/:id ERROR:", e.message);
-      return res.status(500).json({ message: "Server error" });
+      return res.status(500).json({ message: e?.message || "Server error" });
     }
   }
 );

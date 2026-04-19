@@ -251,3 +251,30 @@
   overflow-x: auto;
 }
 
+.dept-view-search {
+  margin-bottom: 12px;
+}
+
+.dept-view-filters-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(180px, 1fr));
+  gap: 10px;
+  margin-bottom: 12px;
+  align-items: center;
+}
+
+.dept-view-pill {
+  width: fit-content;
+}
+
+@media (max-width: 1100px) {
+  .dept-view-filters-grid {
+    grid-template-columns: repeat(2, minmax(180px, 1fr));
+  }
+}
+
+@media (max-width: 680px) {
+  .dept-view-filters-grid {
+    grid-template-columns: 1fr;
+  }
+}

@@ -11,6 +11,7 @@ const leaveTypes = [
   "Paternity Leave",
   "Emergency Leave",
   "Indefinite Leave",
+  "Leave Without Pay",
 ];
 
 const readUser = () => {
@@ -695,6 +696,7 @@ export default function LeaveTransactions() {
                     <option value="Paternity Leave">Paternity Leave</option>
                     <option value="Emergency Leave">Emergency Leave</option>
                     <option value="Indefinite Leave">Indefinite Leave</option>
+                    <option value="Leave Without Pay">Leave Without Pay</option>
                   </select>
                 </div>
 

@@ -203,19 +203,32 @@ export default function Transportation() {
 
         suspensions.forEach((row) => {
           if (norm(row.status) !== "approved") return;
-          if (!overlapsCurrentMonth(row.start_date || row.suspension_start, row.end_date || row.suspension_end)) return;
+          if (
+            !overlapsCurrentMonth(
+              row.start_date || row.suspension_start,
+              row.end_date || row.suspension_end
+            )
+          ) {
+            return;
+          }
 
           const key = String(row.employee_id ?? "").trim();
           if (!key) return;
 
           if (!map[key]) {
             map[key] = {
-              deduction_transportation: 0,
+              prorated_transportation: 0,
+              prorated_repairing: 0,
+              prorated_allowance: 0,
+              prorated_postage: 0,
               days_of_suspension: 0,
             };
           }
 
-          map[key].deduction_transportation += toNum(row.deduction_transportation);
+          map[key].prorated_transportation += toNum(row.prorated_transportation);
+          map[key].prorated_repairing += toNum(row.prorated_repairing);
+          map[key].prorated_allowance += toNum(row.prorated_allowance);
+          map[key].prorated_postage += toNum(row.prorated_postage);
           map[key].days_of_suspension += toNum(row.days_of_suspension);
         });
 
@@ -255,21 +268,32 @@ export default function Transportation() {
     return (staff || []).map((raw) => {
       const s = applyOverrideToStaffRow(raw);
 
-      const postage = toNum(s.postage);
-      const transportation = toNum(s.transportation);
-      const additionalTarget = toNum(s.additional_target);
-      const repairing = toNum(s.repairing);
-      const additionalMonitoring = toNum(s.additional_monitoring);
-
-      const motorcycle = toNum(s.motorcycle_loan);
-      const other = toNum(s.other_deduction);
-
       const suspension = approvedSuspensions[String(s.id)] || {
-        deduction_transportation: 0,
+        prorated_transportation: 0,
+        prorated_repairing: 0,
+        prorated_allowance: 0,
+        prorated_postage: 0,
         days_of_suspension: 0,
       };
 
-      const suspensionTransportation = toNum(suspension.deduction_transportation);
+      const basePostage = toNum(s.postage);
+      const baseTransportation = toNum(s.transportation);
+      const baseAdditionalTarget = toNum(s.additional_target);
+      const baseRepairing = toNum(s.repairing);
+      const additionalMonitoring = toNum(s.additional_monitoring);
+
+      const suspensionTransportation = toNum(suspension.prorated_transportation);
+      const suspensionRepairing = toNum(suspension.prorated_repairing);
+      const suspensionAllowance = toNum(suspension.prorated_allowance);
+      const suspensionPostage = toNum(suspension.prorated_postage);
+
+      const postage = Math.max(0, basePostage - suspensionPostage);
+      const transportation = Math.max(0, baseTransportation - suspensionTransportation);
+      const repairing = Math.max(0, baseRepairing - suspensionRepairing);
+      const additionalTarget = Math.max(0, baseAdditionalTarget - suspensionAllowance);
+
+      const motorcycle = toNum(s.motorcycle_loan);
+      const other = toNum(s.other_deduction);
 
       const noOfClients =
         toNum(s.no_of_clients) ||
@@ -278,7 +302,8 @@ export default function Transportation() {
 
       const totalAllowance =
         postage + transportation + additionalTarget + repairing + additionalMonitoring;
-      const totalDeduction = motorcycle + other + suspensionTransportation;
+
+      const totalDeduction = motorcycle + other;
       const netPay = totalAllowance - totalDeduction;
 
       return {
@@ -289,6 +314,11 @@ export default function Transportation() {
         regularization_date: s.regularization_date,
         noOfClients,
 
+        originalPostage: basePostage,
+        originalTransportation: baseTransportation,
+        originalAdditionalTarget: baseAdditionalTarget,
+        originalRepairing: baseRepairing,
+
         postage,
         transportation,
         additionalTarget,
@@ -298,8 +328,11 @@ export default function Transportation() {
 
         motorcycle,
         other,
-        suspensionTransportation,
         suspensionDays: toNum(suspension.days_of_suspension),
+        suspensionTransportationOnly: suspensionTransportation,
+        suspensionRepairingOnly: suspensionRepairing,
+        suspensionAllowanceOnly: suspensionAllowance,
+        suspensionPostageOnly: suspensionPostage,
         totalDeduction,
 
         netPay,
@@ -321,7 +354,6 @@ export default function Transportation() {
         t.totalAllowance += r.totalAllowance;
         t.motorcycle += r.motorcycle;
         t.other += r.other;
-        t.suspensionTransportation += r.suspensionTransportation;
         t.totalDeduction += r.totalDeduction;
         t.netPay += r.netPay;
         t.netPay10 += r.netPay10;
@@ -338,7 +370,6 @@ export default function Transportation() {
         totalAllowance: 0,
         motorcycle: 0,
         other: 0,
-        suspensionTransportation: 0,
         totalDeduction: 0,
         netPay: 0,
         netPay10: 0,
@@ -479,7 +510,7 @@ export default function Transportation() {
                   <th rowSpan={2}>No. of Clients</th>
 
                   <th colSpan={6}>Allowances & Incentives</th>
-                  <th colSpan={4}>Deductions</th>
+                  <th colSpan={3}>Deductions</th>
                   <th colSpan={3}>Net Pay</th>
 
                   <th rowSpan={2}>Action</th>
@@ -495,7 +526,6 @@ export default function Transportation() {
 
                   <th>Motorcycle</th>
                   <th>Other</th>
-                  <th>Suspension Transpo</th>
                   <th>Total Deduction</th>
 
                   <th>Total Net Pay</th>
@@ -507,7 +537,7 @@ export default function Transportation() {
               <tbody>
                 {rows.length === 0 ? (
                   <tr>
-                    <td colSpan={20} className="empty-state">
+                    <td colSpan={19} className="empty-state">
                       No staff found for this branch.
                     </td>
                   </tr>
@@ -542,7 +572,6 @@ export default function Transportation() {
 
                         <td>₱ {money(r.motorcycle)}</td>
                         <td>₱ {money(r.other)}</td>
-                        <td>₱ {money(r.suspensionTransportation)}</td>
                         <td className="td-strong">₱ {money(r.totalDeduction)}</td>
 
                         <td className={`td-strong ${r.netPay < 0 ? "neg" : "pos"}`}>
@@ -616,7 +645,6 @@ export default function Transportation() {
 
                     <td>₱ {money(totals.motorcycle)}</td>
                     <td>₱ {money(totals.other)}</td>
-                    <td>₱ {money(totals.suspensionTransportation)}</td>
                     <td className="td-strong">₱ {money(totals.totalDeduction)}</td>
 
                     <td className="td-strong">₱ {money(totals.netPay)}</td>
@@ -648,46 +676,36 @@ export default function Transportation() {
                     Employee: <b>{editModalStaff.fullname}</b> (ID:{" "}
                     <span className="mono">{editModalStaff.id}</span>)
                   </div>
-                  <div style={{ fontSize: 12, opacity: 0.85, marginTop: 6 }}>
-                    Note: Values start at <b>0</b>. This is a temporary override and will
-                    revert automatically.
+                  <div style={{ fontSize: 12, opacity: 0.8 }}>
+                    This override only affects the Transportation report.
                   </div>
                 </div>
-                <button
-                  type="button"
-                  className="transpo-modal-x"
-                  onClick={closeModal}
-                  disabled={savingOverride}
-                >
-                  ✕
-                </button>
               </div>
 
               <div className="transpo-modal-body">
-                <div className="transpo-modal-row">
+                <div className="transpo-field">
                   <label>Effective date until</label>
                   <input
                     type="date"
                     value={editUntil}
                     onChange={(e) => setEditUntil(e.target.value)}
-                    disabled={savingOverride}
                   />
                 </div>
 
-                <div className="transpo-modal-grid">
+                <div className="transpo-grid-2">
                   {OVERRIDE_FIELDS.map((k) => (
-                    <div key={k} className="transpo-modal-field">
+                    <div key={k} className="transpo-field">
                       <label>{LABELS[k] || k}</label>
                       <input
                         type="number"
-                        value={toNum(editValues[k])}
+                        step="0.01"
+                        value={editValues[k]}
                         onChange={(e) =>
                           setEditValues((p) => ({
                             ...p,
                             [k]: toNum(e.target.value),
                           }))
                         }
-                        disabled={savingOverride}
                       />
                     </div>
                   ))}
@@ -695,12 +713,7 @@ export default function Transportation() {
               </div>
 
               <div className="transpo-modal-actions">
-                <button
-                  type="button"
-                  className="btn-secondary"
-                  onClick={closeModal}
-                  disabled={savingOverride}
-                >
+                <button type="button" className="btn-secondary" onClick={closeModal}>
                   Cancel
                 </button>
                 <button
@@ -715,55 +728,48 @@ export default function Transportation() {
             </div>
           </div>
         ) : null}
-      </div>
 
-      <div className="print-only">
-        <div className="branch-transpo-print">
-          <div className="branch-transpo-print__title">TRANSPORTATION REPORT</div>
-          <div className="branch-transpo-print__branch">
-            {branch ? `${branch.code} • ${branch.name}` : ""}
-          </div>
-          <div className="branch-transpo-print__period">{branch?.area || ""}</div>
+        <div className="print-only">
+          <div className="branch-transpo-print">
+            <div className="branch-transpo-print__title">AmberCash PH Micro Lending Corp.</div>
+            <div className="branch-transpo-print__subtitle">TRANSPORTATION / ALLOWANCES</div>
+            <div className="branch-transpo-print__branch">
+              {branch ? `${branch.code} ${branch.name}` : "-"}
+            </div>
+            <div className="branch-transpo-print__period">
+              {new Date().toLocaleDateString(undefined, { year: "numeric", month: "short" })}
+            </div>
 
-          <table className="branch-transpo-print-table">
-            <thead>
-              <tr>
-                <th>ID</th>
-                <th>Employee No</th>
-                <th>Name</th>
-                <th>Position</th>
-                <th>Date Regularized</th>
-                <th>Clients</th>
-                <th>Postage</th>
-                <th>Transportation</th>
-                <th>Target</th>
-                <th>Repairing</th>
-                <th>Monitoring</th>
-                <th>Total Allowance</th>
-                <th>Motorcycle</th>
-                <th>Other</th>
-                <th>Suspension Transpo</th>
-                <th>Total Deduction</th>
-                <th>Total Net Pay</th>
-                <th>10th</th>
-                <th>25th</th>
-              </tr>
-            </thead>
-
-            <tbody>
-              {rows.length === 0 ? (
+            <table className="branch-transpo-print-table">
+              <thead>
                 <tr>
-                  <td colSpan={19}>No staff found for this branch.</td>
+                  <th>#</th>
+                  <th>ID</th>
+                  <th>Employee No</th>
+                  <th>Staff Name</th>
+                  <th>Position</th>
+                  <th>Postage</th>
+                  <th>Transportation</th>
+                  <th>Target</th>
+                  <th>Repairing</th>
+                  <th>Monitoring</th>
+                  <th>Total Allowance</th>
+                  <th>Motorcycle</th>
+                  <th>Other</th>
+                  <th>Total Deduction</th>
+                  <th>Net Pay</th>
+                  <th>10th</th>
+                  <th>25th</th>
                 </tr>
-              ) : (
-                rows.map((r) => (
-                  <tr key={`print-${r.id}`}>
+              </thead>
+              <tbody>
+                {rows.map((r, idx) => (
+                  <tr key={r.id}>
+                    <td>{idx + 1}</td>
                     <td>{r.id}</td>
                     <td>{r.employee_no || "-"}</td>
                     <td>{r.fullname}</td>
                     <td>{r.position || "-"}</td>
-                    <td>{r.regularization_date ? String(r.regularization_date).split("T")[0] : "-"}</td>
-                    <td>{r.noOfClients || 0}</td>
                     <td>{money(r.postage)}</td>
                     <td>{money(r.transportation)}</td>
                     <td>{money(r.additionalTarget)}</td>
@@ -772,18 +778,15 @@ export default function Transportation() {
                     <td>{money(r.totalAllowance)}</td>
                     <td>{money(r.motorcycle)}</td>
                     <td>{money(r.other)}</td>
-                    <td>{money(r.suspensionTransportation)}</td>
                     <td>{money(r.totalDeduction)}</td>
                     <td>{money(r.netPay)}</td>
                     <td>{money(r.netPay10)}</td>
                     <td>{money(r.netPay25)}</td>
                   </tr>
-                ))
-              )}
+                ))}
 
-              {rows.length > 0 && (
-                <tr className="branch-transpo-print-total">
-                  <td colSpan={6}>TOTAL</td>
+                <tr className="totals-row">
+                  <td colSpan={5}>TOTAL</td>
                   <td>{money(totals.postage)}</td>
                   <td>{money(totals.transportation)}</td>
                   <td>{money(totals.additionalTarget)}</td>
@@ -792,30 +795,13 @@ export default function Transportation() {
                   <td>{money(totals.totalAllowance)}</td>
                   <td>{money(totals.motorcycle)}</td>
                   <td>{money(totals.other)}</td>
-                  <td>{money(totals.suspensionTransportation)}</td>
                   <td>{money(totals.totalDeduction)}</td>
                   <td>{money(totals.netPay)}</td>
                   <td>{money(totals.netPay10)}</td>
                   <td>{money(totals.netPay25)}</td>
                 </tr>
-              )}
-            </tbody>
-          </table>
-          <div className="branch-payroll-print__signatures">
-            <div className="branch-payroll-print__sign-box">
-              <div className="branch-payroll-print__sign-line"></div>
-              <div>Prepared by:</div>
-            </div>
-
-            <div className="branch-payroll-print__sign-box">
-              <div className="branch-payroll-print__sign-line"></div>
-              <div>Checked by:</div>
-            </div>
-
-            <div className="branch-payroll-print__sign-box">
-              <div className="branch-payroll-print__sign-line"></div>
-              <div>Approved by:</div>
-            </div>
+              </tbody>
+            </table>
           </div>
         </div>
       </div>

@@ -41,6 +41,7 @@ import { CompRatesProvider } from "./context/CompRatesContext";
 import Logistic from "./pages/Logistic";
 import DetailsCompensation from "./pages/DetailsCompensation";
 import OpeningLoanBalances from "./pages/OpeningLoanBalances";
+import RegularizationOrders from "./pages/RegularizationOrders";
 
 const readUser = () => {
   try {
@@ -159,6 +160,7 @@ function AppShell() {
       <Route path="/exit-staff" element={ <ProtectedRoute allowedRoles={["admin", "accounting", "hr", "vice president", "senior vice president", "president"]}><ProtectedLayout><ExitStaff /></ProtectedLayout></ProtectedRoute>}/>
       <Route path="/exit-staff-orders" element={ <ProtectedRoute allowedRoles={["admin", "accounting", "hr", "vice president", "senior vice president", "president"]}><ProtectedLayout><ExitStaffOrders /></ProtectedLayout></ProtectedRoute>}/>
       <Route path="/transactions/sbf" element={ <ProtectedRoute allowedRoles={["admin", "accounting", "hr", "vice president", "senior vice president", "president"]}><ProtectedLayout><SbfOrder /></ProtectedLayout></ProtectedRoute>}/>
+      <Route path="/transactions/regularization" element={<ProtectedRoute allowedRoles={["admin", "hr", "accounting"]}><ProtectedLayout><RegularizationOrders /></ProtectedLayout></ProtectedRoute>} />
       <Route path="/reports" element={ <ProtectedRoute allowedRoles={["admin", "accounting", "hr", "vice president", "senior vice president", "president"]}><ProtectedLayout><Reports /></ProtectedLayout></ProtectedRoute>}/>
       <Route path="/system-update/area-configurations" element={ <ProtectedRoute allowedRoles={["admin", "accounting", "hr", "president"]}><ProtectedLayout><AreaConfigurations /></ProtectedLayout></ProtectedRoute>}/>
       <Route path="/system-update/consolidation" element={ <ProtectedRoute allowedRoles={["admin", "accounting", "hr", "president"]}><ProtectedLayout><Consolidation /></ProtectedLayout></ProtectedRoute>}/>

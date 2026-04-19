@@ -9,6 +9,7 @@ const toNum = (v) => {
 };
 
 const toStr = (v) => String(v ?? "").trim();
+const norm = (v) => toStr(v).toLowerCase();
 
 const displayName = (row) => {
   const ln = toStr(row?.last_name);
@@ -22,6 +23,11 @@ const displayName = (row) => {
   return built || toStr(row?.fullname) || "-";
 };
 
+const uniqueSorted = (arr) =>
+  Array.from(new Set(arr.map(toStr).filter(Boolean))).sort((a, b) =>
+    a.localeCompare(b)
+  );
+
 export default function Consolidation() {
   const navigate = useNavigate();
 
@@ -29,6 +35,11 @@ export default function Consolidation() {
   const [branches, setBranches] = useState([]);
   const [loadingStaff, setLoadingStaff] = useState(false);
   const [search, setSearch] = useState("");
+
+  const [divisionFilter, setDivisionFilter] = useState("");
+  const [regionFilter, setRegionFilter] = useState("");
+  const [areaFilter, setAreaFilter] = useState("");
+  const [branchFilter, setBranchFilter] = useState("");
 
   const fetchSources = async () => {
     try {
@@ -61,23 +72,98 @@ export default function Consolidation() {
     return map;
   }, [branches]);
 
+  const enrichedStaff = useMemo(() => {
+    return staff.map((s) => {
+      const branch = branchMap.get(String(s.branch_id));
+
+      const division = toStr(s.division || branch?.division);
+      const region = toStr(s.region || branch?.region);
+      const area = toStr(s.area || branch?.area);
+      const branchCode = toStr(branch?.code);
+      const branchName = toStr(branch?.name);
+      const branchLabel =
+        branchCode || branchName ? `${branchCode} - ${branchName}`.trim() : "-";
+
+      return {
+        ...s,
+        _division: division,
+        _region: region,
+        _area: area,
+        _branchCode: branchCode,
+        _branchName: branchName,
+        _branchLabel: branchLabel,
+      };
+    });
+  }, [staff, branchMap]);
+
+  const divisionOptions = useMemo(() => {
+    return uniqueSorted(enrichedStaff.map((s) => s._division));
+  }, [enrichedStaff]);
+
+  const regionOptions = useMemo(() => {
+    return uniqueSorted(
+      enrichedStaff
+        .filter((s) => !divisionFilter || norm(s._division) === norm(divisionFilter))
+        .map((s) => s._region)
+    );
+  }, [enrichedStaff, divisionFilter]);
+
+  const areaOptions = useMemo(() => {
+    return uniqueSorted(
+      enrichedStaff
+        .filter((s) => {
+          if (divisionFilter && norm(s._division) !== norm(divisionFilter)) return false;
+          if (regionFilter && norm(s._region) !== norm(regionFilter)) return false;
+          return true;
+        })
+        .map((s) => s._area)
+    );
+  }, [enrichedStaff, divisionFilter, regionFilter]);
+
+  const branchOptions = useMemo(() => {
+    return uniqueSorted(
+      enrichedStaff
+        .filter((s) => {
+          if (divisionFilter && norm(s._division) !== norm(divisionFilter)) return false;
+          if (regionFilter && norm(s._region) !== norm(regionFilter)) return false;
+          if (areaFilter && norm(s._area) !== norm(areaFilter)) return false;
+          return true;
+        })
+        .map((s) => s._branchLabel)
+    );
+  }, [enrichedStaff, divisionFilter, regionFilter, areaFilter]);
+
   const filteredStaff = useMemo(() => {
     const q = search.toLowerCase().trim();
 
-    return staff.filter((s) => {
+    return enrichedStaff.filter((s) => {
+      if (divisionFilter && norm(s._division) !== norm(divisionFilter)) return false;
+      if (regionFilter && norm(s._region) !== norm(regionFilter)) return false;
+      if (areaFilter && norm(s._area) !== norm(areaFilter)) return false;
+      if (branchFilter && norm(s._branchLabel) !== norm(branchFilter)) return false;
+
       const employeeNo = toStr(s.employee_no);
       const employeeName = displayName(s);
       const position = toStr(s.position);
-      const branch = branchMap.get(String(s.branch_id));
-      const branchName = toStr(branch?.name);
-      const branchCode = toStr(branch?.code);
+      const branchName = toStr(s._branchName);
+      const branchCode = toStr(s._branchCode);
+      const division = toStr(s._division);
+      const region = toStr(s._region);
+      const area = toStr(s._area);
 
       const hay =
-        `${employeeNo} ${employeeName} ${position} ${branchName} ${branchCode}`.toLowerCase();
+        `${employeeNo} ${employeeName} ${position} ${branchName} ${branchCode} ${division} ${region} ${area}`.toLowerCase();
 
       return !q || hay.includes(q);
     });
-  }, [staff, search, branchMap]);
+  }, [
+    enrichedStaff,
+    search,
+    divisionFilter,
+    regionFilter,
+    areaFilter,
+    branchFilter,
+  ]);
 
   const totals = useMemo(() => {
     return filteredStaff.reduce(
@@ -114,6 +200,14 @@ export default function Consolidation() {
     );
   }, [filteredStaff]);
 
+  const clearFilters = () => {
+    setDivisionFilter("");
+    setRegionFilter("");
+    setAreaFilter("");
+    setBranchFilter("");
+    setSearch("");
+  };
+
   return (
     <div className="sys-page">
       <div className="sys-header">
@@ -144,14 +238,96 @@ export default function Consolidation() {
         </div>
 
         <div className="sys-card-body">
-          <div style={{ marginBottom: 14 }}>
+          <div className="conso-filters-grid">
+            <div>
+              <input
+                className="conso-input"
+                list="conso-division-list"
+                placeholder="Division..."
+                value={divisionFilter}
+                onChange={(e) => {
+                  setDivisionFilter(e.target.value);
+                  setRegionFilter("");
+                  setAreaFilter("");
+                  setBranchFilter("");
+                }}
+              />
+              <datalist id="conso-division-list">
+                {divisionOptions.map((item) => (
+                  <option key={item} value={item} />
+                ))}
+              </datalist>
+            </div>
+
+            <div>
+              <input
+                className="conso-input"
+                list="conso-region-list"
+                placeholder="Region..."
+                value={regionFilter}
+                onChange={(e) => {
+                  setRegionFilter(e.target.value);
+                  setAreaFilter("");
+                  setBranchFilter("");
+                }}
+              />
+              <datalist id="conso-region-list">
+                {regionOptions.map((item) => (
+                  <option key={item} value={item} />
+                ))}
+              </datalist>
+            </div>
+
+            <div>
+              <input
+                className="conso-input"
+                list="conso-area-list"
+                placeholder="Area..."
+                value={areaFilter}
+                onChange={(e) => {
+                  setAreaFilter(e.target.value);
+                  setBranchFilter("");
+                }}
+              />
+              <datalist id="conso-area-list">
+                {areaOptions.map((item) => (
+                  <option key={item} value={item} />
+                ))}
+              </datalist>
+            </div>
+
+            <div>
+              <input
+                className="conso-input"
+                list="conso-branch-list"
+                placeholder="Branch..."
+                value={branchFilter}
+                onChange={(e) => setBranchFilter(e.target.value)}
+              />
+              <datalist id="conso-branch-list">
+                {branchOptions.map((item) => (
+                  <option key={item} value={item} />
+                ))}
+              </datalist>
+            </div>
+          </div>
+
+          <div className="conso-search-row">
             <input
-              className="conso-input"
+              className="conso-input conso-search-grow"
               type="text"
               placeholder="Search employee no, name, position, or branch..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
+
+            <button
+              type="button"
+              className="conso-btn conso-btn-secondary"
+              onClick={clearFilters}
+            >
+              Clear Filters
+            </button>
           </div>
 
           {loadingStaff ? (
@@ -177,6 +353,9 @@ export default function Consolidation() {
                       <th rowSpan={2}>Employee No</th>
                       <th rowSpan={2}>Full Name</th>
                       <th rowSpan={2}>Position</th>
+                      <th rowSpan={2}>Division</th>
+                      <th rowSpan={2}>Region</th>
+                      <th rowSpan={2}>Area</th>
                       <th rowSpan={2}>Branch</th>
                       <th colSpan={3}>Earnings</th>
                       <th colSpan={5}>Employee (EE)</th>
@@ -195,7 +374,6 @@ export default function Consolidation() {
 
                   <tbody>
                     {filteredStaff.map((item, idx) => {
-                      const branch = branchMap.get(String(item.branch_id));
                       const salary = toNum(item.salary);
                       const ecola = toNum(item.ecola);
                       const sssEe = toNum(item.sss_ee);
@@ -209,7 +387,10 @@ export default function Consolidation() {
                           <td>{toStr(item.employee_no) || "-"}</td>
                           <td className="td-strong">{displayName(item)}</td>
                           <td>{item.position || "-"}</td>
-                          <td>{branch ? `${branch.code} - ${branch.name}` : "-"}</td>
+                          <td>{item._division || "-"}</td>
+                          <td>{item._region || "-"}</td>
+                          <td>{item._area || "-"}</td>
+                          <td>{item._branchLabel || "-"}</td>
 
                           <td>{salary.toLocaleString()}</td>
                           <td>{ecola.toLocaleString()}</td>
@@ -225,7 +406,7 @@ export default function Consolidation() {
                     })}
 
                     <tr className="conso-total-row">
-                      <td colSpan={5}>Totals</td>
+                      <td colSpan={8}>Totals</td>
                       <td>{totals.salary.toLocaleString()}</td>
                       <td>{totals.ecola.toLocaleString()}</td>
                       <td>{totals.total_compensation.toLocaleString()}</td>

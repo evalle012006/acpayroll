@@ -870,7 +870,7 @@ export default function Bonus() {
             ))}
           </select>
 
-          <button className="btn-back" onClick={() => navigate(-1)} type="button">
+          <button className="btn-secondary" onClick={() => navigate(-1)} type="button">
             ← Back
           </button>
 

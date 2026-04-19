@@ -7,8 +7,13 @@ const norm = (v) => toStr(v).toLowerCase();
 
 const getBase = () => {
   const base = api.defaults.baseURL || "";
-  return base.endsWith("/api") ? base.slice(0, -4) : base; // remove trailing /api if present
+  return base.endsWith("/api") ? base.slice(0, -4) : base;
 };
+
+const uniqSorted = (arr) =>
+  Array.from(new Set((arr || []).map((x) => toStr(x)).filter(Boolean))).sort((a, b) =>
+    a.localeCompare(b)
+  );
 
 export default function Departments() {
   const [departments, setDepartments] = useState([]);
@@ -30,6 +35,7 @@ export default function Departments() {
   const [regionFilter, setRegionFilter] = useState("All");
   const [areaFilter, setAreaFilter] = useState("All");
   const [branchFilter, setBranchFilter] = useState("All");
+  const [staffSearch, setStaffSearch] = useState("");
 
   const [form, setForm] = useState({
     code: "",
@@ -46,8 +52,6 @@ export default function Departments() {
     return `${base}${p}`;
   };
 
-  const uniq = (arr) => Array.from(new Set((arr || []).map((x) => toStr(x)).filter(Boolean)));
-
   const branchLabel = (s) => {
     const code = toStr(s?.branch_code);
     const name = toStr(s?.branch_name);
@@ -55,20 +59,100 @@ export default function Departments() {
     return name || code || "-";
   };
 
-  const divisionOptions = useMemo(() => ["All", ...uniq(deptStaff.map((x) => x.division))], [deptStaff]);
-  const regionOptions = useMemo(() => ["All", ...uniq(deptStaff.map((x) => x.region))], [deptStaff]);
-  const areaOptions = useMemo(() => ["All", ...uniq(deptStaff.map((x) => x.area))], [deptStaff]);
-  const branchOptions = useMemo(() => ["All", ...uniq(deptStaff.map((x) => branchLabel(x)))], [deptStaff]);
+  const enrichedDeptStaff = useMemo(() => {
+    return (deptStaff || []).map((s) => ({
+      ...s,
+      _division: toStr(s.division),
+      _region: toStr(s.region),
+      _area: toStr(s.area),
+      _branchLabel: branchLabel(s),
+    }));
+  }, [deptStaff]);
+
+  const divisionOptions = useMemo(() => {
+    return ["All", ...uniqSorted(enrichedDeptStaff.map((x) => x._division))];
+  }, [enrichedDeptStaff]);
+
+  const regionOptions = useMemo(() => {
+    return [
+      "All",
+      ...uniqSorted(
+        enrichedDeptStaff
+          .filter((x) => divisionFilter === "All" || x._division === divisionFilter)
+          .map((x) => x._region)
+      ),
+    ];
+  }, [enrichedDeptStaff, divisionFilter]);
+
+  const areaOptions = useMemo(() => {
+    return [
+      "All",
+      ...uniqSorted(
+        enrichedDeptStaff
+          .filter((x) => {
+            if (divisionFilter !== "All" && x._division !== divisionFilter) return false;
+            if (regionFilter !== "All" && x._region !== regionFilter) return false;
+            return true;
+          })
+          .map((x) => x._area)
+      ),
+    ];
+  }, [enrichedDeptStaff, divisionFilter, regionFilter]);
+
+  const branchOptions = useMemo(() => {
+    return [
+      "All",
+      ...uniqSorted(
+        enrichedDeptStaff
+          .filter((x) => {
+            if (divisionFilter !== "All" && x._division !== divisionFilter) return false;
+            if (regionFilter !== "All" && x._region !== regionFilter) return false;
+            if (areaFilter !== "All" && x._area !== areaFilter) return false;
+            return true;
+          })
+          .map((x) => x._branchLabel)
+      ),
+    ];
+  }, [enrichedDeptStaff, divisionFilter, regionFilter, areaFilter]);
 
   const filteredDeptStaff = useMemo(() => {
-    return (deptStaff || []).filter((s) => {
-      if (divisionFilter !== "All" && toStr(s.division) !== divisionFilter) return false;
-      if (regionFilter !== "All" && toStr(s.region) !== regionFilter) return false;
-      if (areaFilter !== "All" && toStr(s.area) !== areaFilter) return false;
-      if (branchFilter !== "All" && branchLabel(s) !== branchFilter) return false;
-      return true;
+    const q = norm(staffSearch);
+
+    return enrichedDeptStaff.filter((s) => {
+      if (divisionFilter !== "All" && s._division !== divisionFilter) return false;
+      if (regionFilter !== "All" && s._region !== regionFilter) return false;
+      if (areaFilter !== "All" && s._area !== areaFilter) return false;
+      if (branchFilter !== "All" && s._branchLabel !== branchFilter) return false;
+
+      const hay = [
+        s.id,
+        s.employee_no,
+        s.fullname,
+        s.first_name,
+        s.last_name,
+        s.middle_name,
+        s.position,
+        s.status,
+        s._division,
+        s._region,
+        s._area,
+        s._branchLabel,
+        s.branch_name,
+        s.branch_code,
+      ]
+        .map((x) => norm(x))
+        .join(" ");
+
+      return !q || hay.includes(q);
     });
-  }, [deptStaff, divisionFilter, regionFilter, areaFilter, branchFilter]);
+  }, [
+    enrichedDeptStaff,
+    divisionFilter,
+    regionFilter,
+    areaFilter,
+    branchFilter,
+    staffSearch,
+  ]);
 
   const loadDepartments = async () => {
     try {
@@ -117,6 +201,7 @@ export default function Departments() {
     setRegionFilter("All");
     setAreaFilter("All");
     setBranchFilter("All");
+    setStaffSearch("");
   };
 
   const closeView = () => {
@@ -198,7 +283,9 @@ export default function Departments() {
     const q = norm(search);
     if (!q) return departments;
 
-    return departments.filter((d) => [d.id, d.code, d.name, d.description].map((x) => norm(x)).join(" ").includes(q));
+    return departments.filter((d) =>
+      [d.id, d.code, d.name, d.description].map((x) => norm(x)).join(" ").includes(q)
+    );
   }, [departments, search]);
 
   return (
@@ -352,42 +439,98 @@ export default function Departments() {
             </div>
 
             <div className="modal-body" style={{ padding: 10 }}>
-              <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 12, alignItems: "center" }}>
-                <div className="pill">
+              <div className="dept-view-search">
+                <input
+                  className="input"
+                  type="text"
+                  placeholder="Search employee no, name, position, division, region, area, or branch..."
+                  value={staffSearch}
+                  onChange={(e) => setStaffSearch(e.target.value)}
+                />
+              </div>
+
+              <div className="dept-view-filters-grid">
+                <div className="pill dept-view-pill">
                   Showing: <strong>{filteredDeptStaff.length}</strong>
                 </div>
 
-                <select className="input" value={divisionFilter} onChange={(e) => setDivisionFilter(e.target.value)} style={{ width: 220 }}>
-                  {divisionOptions.map((v) => (
-                    <option key={`div-${v}`} value={v}>
-                      {v === "All" ? "Division: All" : `Division: ${v}`}
-                    </option>
-                  ))}
-                </select>
+                <input
+                  className="input"
+                  list="dept-division-list"
+                  placeholder="Division: All"
+                  value={divisionFilter === "All" ? "" : divisionFilter}
+                  onChange={(e) => {
+                    const value = toStr(e.target.value) || "All";
+                    setDivisionFilter(value);
+                    setRegionFilter("All");
+                    setAreaFilter("All");
+                    setBranchFilter("All");
+                  }}
+                />
+                <datalist id="dept-division-list">
+                  {divisionOptions
+                    .filter((v) => v !== "All")
+                    .map((v) => (
+                      <option key={`div-${v}`} value={v} />
+                    ))}
+                </datalist>
 
-                <select className="input" value={regionFilter} onChange={(e) => setRegionFilter(e.target.value)} style={{ width: 240 }}>
-                  {regionOptions.map((v) => (
-                    <option key={`reg-${v}`} value={v}>
-                      {v === "All" ? "Region: All" : `Region: ${v}`}
-                    </option>
-                  ))}
-                </select>
+                <input
+                  className="input"
+                  list="dept-region-list"
+                  placeholder="Region: All"
+                  value={regionFilter === "All" ? "" : regionFilter}
+                  onChange={(e) => {
+                    const value = toStr(e.target.value) || "All";
+                    setRegionFilter(value);
+                    setAreaFilter("All");
+                    setBranchFilter("All");
+                  }}
+                />
+                <datalist id="dept-region-list">
+                  {regionOptions
+                    .filter((v) => v !== "All")
+                    .map((v) => (
+                      <option key={`reg-${v}`} value={v} />
+                    ))}
+                </datalist>
 
-                <select className="input" value={areaFilter} onChange={(e) => setAreaFilter(e.target.value)} style={{ width: 240 }}>
-                  {areaOptions.map((v) => (
-                    <option key={`area-${v}`} value={v}>
-                      {v === "All" ? "Area: All" : `Area: ${v}`}
-                    </option>
-                  ))}
-                </select>
+                <input
+                  className="input"
+                  list="dept-area-list"
+                  placeholder="Area: All"
+                  value={areaFilter === "All" ? "" : areaFilter}
+                  onChange={(e) => {
+                    const value = toStr(e.target.value) || "All";
+                    setAreaFilter(value);
+                    setBranchFilter("All");
+                  }}
+                />
+                <datalist id="dept-area-list">
+                  {areaOptions
+                    .filter((v) => v !== "All")
+                    .map((v) => (
+                      <option key={`area-${v}`} value={v} />
+                    ))}
+                </datalist>
 
-                <select className="input" value={branchFilter} onChange={(e) => setBranchFilter(e.target.value)} style={{ width: 280 }}>
-                  {branchOptions.map((v) => (
-                    <option key={`br-${v}`} value={v}>
-                      {v === "All" ? "Branch: All" : `Branch: ${v}`}
-                    </option>
-                  ))}
-                </select>
+                <input
+                  className="input"
+                  list="dept-branch-list"
+                  placeholder="Branch: All"
+                  value={branchFilter === "All" ? "" : branchFilter}
+                  onChange={(e) => {
+                    const value = toStr(e.target.value) || "All";
+                    setBranchFilter(value);
+                  }}
+                />
+                <datalist id="dept-branch-list">
+                  {branchOptions
+                    .filter((v) => v !== "All")
+                    .map((v) => (
+                      <option key={`br-${v}`} value={v} />
+                    ))}
+                </datalist>
 
                 <button className="btn btn-ghost" type="button" onClick={resetViewFilters}>
                   Clear Filters
@@ -406,14 +549,17 @@ export default function Departments() {
                         <th style={{ width: 140 }}>Employee No</th>
                         <th>Name</th>
                         <th style={{ width: 200 }}>Position</th>
-                        <th style={{ width: 180 }}>Branch</th>
+                        <th style={{ width: 160 }}>Division</th>
+                        <th style={{ width: 160 }}>Region</th>
+                        <th style={{ width: 160 }}>Area</th>
+                        <th style={{ width: 220 }}>Branch</th>
                         <th style={{ width: 120 }}>Status</th>
                       </tr>
                     </thead>
                     <tbody>
                       {filteredDeptStaff.length === 0 ? (
                         <tr>
-                          <td colSpan={7}>No staff found for this filter.</td>
+                          <td colSpan={10}>No staff found for this filter.</td>
                         </tr>
                       ) : (
                         filteredDeptStaff.map((s) => (
@@ -445,7 +591,10 @@ export default function Departments() {
                             <td className="mono">{s.employee_no || "-"}</td>
                             <td className="strong">{s.fullname}</td>
                             <td>{s.position || "-"}</td>
-                            <td>{s.branch_name || "-"}</td>
+                            <td>{s._division || "-"}</td>
+                            <td>{s._region || "-"}</td>
+                            <td>{s._area || "-"}</td>
+                            <td>{s._branchLabel || "-"}</td>
                             <td>{s.status || "Active"}</td>
                           </tr>
                         ))

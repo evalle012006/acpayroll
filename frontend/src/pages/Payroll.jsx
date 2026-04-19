@@ -252,25 +252,28 @@ function Payroll() {
 
         suspensions.forEach((row) => {
           if (norm(row.status) !== "approved") return;
-          if (!overlapsCurrentMonth(row.start_date || row.suspension_start, row.end_date || row.suspension_end)) return;
+          if (
+            !overlapsCurrentMonth(
+              row.start_date || row.suspension_start,
+              row.end_date || row.suspension_end
+            )
+          ) {
+            return;
+          }
 
           const key = String(row.employee_id ?? "").trim();
           if (!key) return;
 
           if (!map[key]) {
             map[key] = {
-              total_deduction: 0,
-              deduction_basic: 0,
-              deduction_ecola: 0,
-              deduction_transportation: 0,
+              prorated_salary: 0,
+              prorated_ecola: 0,
               days_of_suspension: 0,
             };
           }
 
-          map[key].total_deduction += toNum(row.total_deduction);
-          map[key].deduction_basic += toNum(row.deduction_basic);
-          map[key].deduction_ecola += toNum(row.deduction_ecola);
-          map[key].deduction_transportation += toNum(row.deduction_transportation);
+          map[key].prorated_salary += toNum(row.prorated_salary);
+          map[key].prorated_ecola += toNum(row.prorated_ecola);
           map[key].days_of_suspension += toNum(row.days_of_suspension);
         });
 
@@ -365,8 +368,20 @@ function Payroll() {
       const s = applyOverrideToStaffRow(raw);
       const balance = getBalanceForStaff(s);
 
-      const salary = toNum(s.salary);
-      const ecola = toNum(s.ecola);
+      const suspension = approvedSuspensions[String(s.id)] || {
+        prorated_salary: 0,
+        prorated_ecola: 0,
+        days_of_suspension: 0,
+      };
+
+      const baseSalary = toNum(s.salary);
+      const baseEcola = toNum(s.ecola);
+
+      const suspensionSalary = toNum(suspension.prorated_salary);
+      const suspensionEcola = toNum(suspension.prorated_ecola);
+
+      const salary = Math.max(0, baseSalary - suspensionSalary);
+      const ecola = Math.max(0, baseEcola - suspensionEcola);
       const totalComp = salary + ecola;
 
       const total_er = toNum(s.hdmf_er) + toNum(s.sss_er) + toNum(s.ph_er);
@@ -392,16 +407,6 @@ function Payroll() {
           ? toNum(s.staff_accounts_payable)
           : monthlyFromWhole(balance.staff_accounts_payable);
 
-      const suspension = approvedSuspensions[String(s.id)] || {
-        total_deduction: 0,
-        deduction_basic: 0,
-        deduction_ecola: 0,
-        deduction_transportation: 0,
-        days_of_suspension: 0,
-      };
-
-      const suspensionDeduction = toNum(suspension.total_deduction);
-
       const total_deduction =
         total_ee +
         toNum(s.tax) +
@@ -414,14 +419,18 @@ function Payroll() {
         cash_advance +
         other_receivable +
         toNum(s.pagibig_mpl) +
-        staff_accounts_payable +
-        suspensionDeduction;
+        staff_accounts_payable;
 
       const netPay = totalComp - total_deduction;
       const { pay10, pay25 } = splitPayroll(netPay);
 
       return {
         ...s,
+        original_salary: baseSalary,
+        original_ecola: baseEcola,
+        suspension_days: toNum(suspension.days_of_suspension),
+        suspension_basic: suspensionSalary,
+        suspension_ecola: suspensionEcola,
         salary,
         ecola,
         totalComp,
@@ -433,11 +442,6 @@ function Payroll() {
         cash_advance,
         other_receivable,
         staff_accounts_payable,
-        suspension_days: toNum(suspension.days_of_suspension),
-        suspension_deduction: suspensionDeduction,
-        suspension_basic: toNum(suspension.deduction_basic),
-        suspension_ecola: toNum(suspension.deduction_ecola),
-        suspension_transportation: toNum(suspension.deduction_transportation),
         whole_salary_advance: toNum(balance.salary_advance),
         whole_motorcycle_loan: toNum(balance.motorcycle_loan),
         whole_special_advance: toNum(balance.special_advance),
@@ -586,7 +590,7 @@ function Payroll() {
                 <th rowSpan={2}>Date Regularized</th>
                 <th colSpan={3}>EARNINGS</th>
                 <th colSpan={4}>EMPLOYER (ER)</th>
-                <th colSpan={5}>EMPLOYEE (EE)</th>
+                <th colSpan={4}>EMPLOYEE (EE)</th>
                 <th colSpan={11}>DEDUCTIONS</th>
                 <th rowSpan={2}>Total Deduction</th>
                 <th rowSpan={2}>Net Pay</th>
@@ -609,7 +613,6 @@ function Payroll() {
                 <th>SSS</th>
                 <th>PH</th>
                 <th>Total EE</th>
-                <th>Suspension</th>
 
                 <th>Tax</th>
                 <th>Utility</th>
@@ -657,7 +660,6 @@ function Payroll() {
                     <td className="num">{fmt(s.sss_ee)}</td>
                     <td className="num">{fmt(s.ph_ee)}</td>
                     <td className="num td-strong">{fmt(s.total_ee)}</td>
-                    <td className="num">{fmt(s.suspension_deduction)}</td>
 
                     <td className="num">{fmt(s.tax)}</td>
                     <td className="num">{fmt(s.utility_charge)}</td>
@@ -732,9 +734,7 @@ function Payroll() {
 
                 <td className="num">{sumColumn("salary").toLocaleString()}</td>
                 <td className="num">{sumColumn("ecola").toLocaleString()}</td>
-                <td className="num td-strong">
-                  {(sumColumn("salary") + sumColumn("ecola")).toLocaleString()}
-                </td>
+                <td className="num td-strong">{sumColumn("totalComp").toLocaleString()}</td>
 
                 <td className="num">{sumColumn("hdmf_er").toLocaleString()}</td>
                 <td className="num">{sumColumn("sss_er").toLocaleString()}</td>
@@ -745,7 +745,6 @@ function Payroll() {
                 <td className="num">{sumColumn("sss_ee").toLocaleString()}</td>
                 <td className="num">{sumColumn("ph_ee").toLocaleString()}</td>
                 <td className="num td-strong">{sumColumn("total_ee").toLocaleString()}</td>
-                <td className="num">{sumColumn("suspension_deduction").toLocaleString()}</td>
 
                 <td className="num">{sumColumn("tax").toLocaleString()}</td>
                 <td className="num">{sumColumn("utility_charge").toLocaleString()}</td>
@@ -787,17 +786,11 @@ function Payroll() {
                   Employee: <b>{editModalStaff.fullname}</b> (ID:{" "}
                   <span className="mono">{editModalStaff.id}</span>)
                 </div>
-                <div style={{ fontSize: 12, opacity: 0.85, marginTop: 6 }}>
-                  Note: Values start at <b>0</b>. This is a temporary override.
-                </div>
               </div>
-              <button type="button" className="payroll-modal-x" onClick={closeModal}>
-                ✕
-              </button>
             </div>
 
             <div className="payroll-modal-body">
-              <div className="payroll-modal-row">
+              <div className="payroll-field">
                 <label>Effective date until</label>
                 <input
                   type="date"
@@ -806,13 +799,14 @@ function Payroll() {
                 />
               </div>
 
-              <div className="payroll-modal-grid">
+              <div className="payroll-grid-2">
                 {OVERRIDE_FIELDS.map((k) => (
-                  <div key={k} className="payroll-modal-field">
+                  <div key={k} className="payroll-field">
                     <label>{LABELS[k] || k}</label>
                     <input
                       type="number"
-                      value={toNum(editValues[k])}
+                      step="0.01"
+                      value={editValues[k]}
                       onChange={(e) =>
                         setEditValues((p) => ({
                           ...p,
@@ -871,58 +865,55 @@ function Payroll() {
 
                 <th colSpan={3}>SALARIES AND WAGES</th>
                 <th colSpan={4}>EMPLOYER'S CONTRIBUTION</th>
-                <th colSpan={5}>EMPLOYEE'S CONTRIBUTION</th>
+                <th colSpan={4}>EMPLOYEE'S CONTRIBUTION</th>
                 <th colSpan={11}>OTHER STAFF'S ADVANCES AND DEDUCTION</th>
 
                 <th rowSpan={2}>Total Deductions</th>
                 <th rowSpan={2}>Total Net Pay</th>
-                <th rowSpan={2}>Every 10th</th>
-                <th rowSpan={2}>Every 25th</th>
-                <th rowSpan={2}>Signature</th>
+                <th rowSpan={2}>10th</th>
+                <th rowSpan={2}>25th</th>
               </tr>
-
               <tr>
-                <th>Basic Salary</th>
-                <th>ECOLA</th>
-                <th>Total Compensation</th>
+                <th>Salary</th>
+                <th>Ecola</th>
+                <th>Total</th>
 
                 <th>HDMF</th>
                 <th>SSS</th>
                 <th>PH</th>
-                <th>Total E.R.</th>
+                <th>Total</th>
 
                 <th>HDMF</th>
                 <th>SSS</th>
                 <th>PH</th>
-                <th>Total E.E.</th>
-                <th>Suspension</th>
+                <th>Total</th>
 
-                <th>Withholding Tax</th>
-                <th>Utility Charge</th>
+                <th>Tax</th>
+                <th>Utility</th>
                 <th>CBU</th>
                 <th>Cash Bond</th>
-                <th>Salary Advance</th>
-                <th>Special Advance</th>
-                <th>Cash Advance</th>
+                <th>Salary Adv</th>
                 <th>Motorcycle</th>
-                <th>Pag-IBIG MPL</th>
-                <th>Other Receivable</th>
-                <th>Staff Accounts Payable</th>
+                <th>Special Adv</th>
+                <th>Cash Adv</th>
+                <th>Other Rec</th>
+                <th>Pag-IBIG</th>
+                <th>Staff A/P</th>
               </tr>
             </thead>
 
             <tbody>
-              {computedRows.map((s, index) => {
-                const familyName = String(s.last_name || "").trim();
-                const firstGiven = String(s.first_name || "").trim();
-                const middleGiven = String(s.middle_name || "").trim();
+              {computedRows.map((s, idx) => {
+                const family = toStr(s.last_name);
+                const first = toStr(s.first_name);
+                const middle = toStr(s.middle_name);
 
                 return (
                   <tr key={s.id}>
-                    <td>{index + 1}</td>
-                    <td>{familyName || "-"}</td>
-                    <td>{firstGiven || "-"}</td>
-                    <td>{middleGiven || "-"}</td>
+                    <td>{idx + 1}</td>
+                    <td>{family || "-"}</td>
+                    <td>{first || "-"}</td>
+                    <td>{middle || "-"}</td>
                     <td>{s.employee_no || s.id}</td>
                     <td>{s.position || "-"}</td>
                     <td>{fmtDate(s.regularization_date)}</td>
@@ -940,32 +931,29 @@ function Payroll() {
                     <td>{fmt(s.sss_ee)}</td>
                     <td>{fmt(s.ph_ee)}</td>
                     <td>{fmt(s.total_ee)}</td>
-                    <td>{fmt(s.suspension_deduction)}</td>
 
                     <td>{fmt(s.tax)}</td>
                     <td>{fmt(s.utility_charge)}</td>
                     <td>{fmt(s.cbu)}</td>
                     <td>{fmt(s.cashbond)}</td>
                     <td>{fmt(s.salary_advance)}</td>
+                    <td>{fmt(s.motorcycle_loan)}</td>
                     <td>{fmt(s.special_advance)}</td>
                     <td>{fmt(s.cash_advance)}</td>
-                    <td>{fmt(s.motorcycle_loan)}</td>
-                    <td>{fmt(s.pagibig_mpl)}</td>
                     <td>{fmt(s.other_receivable)}</td>
+                    <td>{fmt(s.pagibig_mpl)}</td>
                     <td>{fmt(s.staff_accounts_payable)}</td>
 
                     <td>{fmt(s.total_deduction)}</td>
                     <td>{fmt(s.netPay)}</td>
                     <td>{fmt(s.pay10)}</td>
                     <td>{fmt(s.pay25)}</td>
-                    <td></td>
                   </tr>
                 );
               })}
 
-              <tr className="branch-payroll-print-total">
+              <tr className="totals-row">
                 <td colSpan={7}>TOTAL</td>
-
                 <td>{fmt(sumColumn("salary"))}</td>
                 <td>{fmt(sumColumn("ecola"))}</td>
                 <td>{fmt(sumColumn("totalComp"))}</td>
@@ -979,45 +967,26 @@ function Payroll() {
                 <td>{fmt(sumColumn("sss_ee"))}</td>
                 <td>{fmt(sumColumn("ph_ee"))}</td>
                 <td>{fmt(sumColumn("total_ee"))}</td>
-                <td>{fmt(sumColumn("suspension_deduction"))}</td>
 
                 <td>{fmt(sumColumn("tax"))}</td>
                 <td>{fmt(sumColumn("utility_charge"))}</td>
                 <td>{fmt(sumColumn("cbu"))}</td>
                 <td>{fmt(sumColumn("cashbond"))}</td>
                 <td>{fmt(sumColumn("salary_advance"))}</td>
+                <td>{fmt(sumColumn("motorcycle_loan"))}</td>
                 <td>{fmt(sumColumn("special_advance"))}</td>
                 <td>{fmt(sumColumn("cash_advance"))}</td>
-                <td>{fmt(sumColumn("motorcycle_loan"))}</td>
-                <td>{fmt(sumColumn("pagibig_mpl"))}</td>
                 <td>{fmt(sumColumn("other_receivable"))}</td>
+                <td>{fmt(sumColumn("pagibig_mpl"))}</td>
                 <td>{fmt(sumColumn("staff_accounts_payable"))}</td>
 
                 <td>{fmt(sumColumn("total_deduction"))}</td>
                 <td>{fmt(sumColumn("netPay"))}</td>
                 <td>{fmt(sumColumn("pay10"))}</td>
                 <td>{fmt(sumColumn("pay25"))}</td>
-                <td></td>
               </tr>
             </tbody>
           </table>
-
-          <div className="branch-payroll-print__signatures">
-            <div className="branch-payroll-print__sign-box">
-              <div className="branch-payroll-print__sign-line"></div>
-              <div>Prepared by:</div>
-            </div>
-
-            <div className="branch-payroll-print__sign-box">
-              <div className="branch-payroll-print__sign-line"></div>
-              <div>Checked by:</div>
-            </div>
-
-            <div className="branch-payroll-print__sign-box">
-              <div className="branch-payroll-print__sign-line"></div>
-              <div>Approved by:</div>
-            </div>
-          </div>
         </div>
       </div>
     </div>
