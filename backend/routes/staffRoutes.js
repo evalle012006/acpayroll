@@ -752,7 +752,15 @@ router.put(
 router.put(
   "/staff/:id",
   requireAuth,
-  requireRole(["admin", "hr", "accounting", "branch manager", "area manager", "regional manager", "assistant vice president"]),
+  requireRole([
+    "admin",
+    "hr",
+    "accounting",
+    "branch manager",
+    "area manager",
+    "regional manager",
+    "assistant vice president",
+  ]),
   async (req, res) => {
     const client = await pool.connect();
     try {
@@ -787,20 +795,30 @@ router.put(
 
       const body = req.body || {};
 
+      console.log("PUT /api/staff/:id BODY =", body);
+
       const last_name = toStr(body.last_name);
       const first_name = toStr(body.first_name);
       const middle_name = toStr(body.middle_name);
-
-      const fullname = buildFullname({ last_name, first_name, middle_name, fullname: body.fullname });
+      const fullname = buildFullname({
+        last_name,
+        first_name,
+        middle_name,
+        fullname: body.fullname,
+      });
       const position = toStr(body.position);
 
       if (!last_name || !first_name || !position) {
         await client.query("ROLLBACK");
-        return res.status(400).json({ message: "last_name, first_name, and position are required" });
+        return res
+          .status(400)
+          .json({ message: "last_name, first_name, and position are required" });
       }
 
       const employeeNo = toStr(body.employee_no) || null;
-      if (employeeNo) {
+      const finalEmployeeNo = employeeNo || toStr(existing.rows[0]?.employee_no) || null;
+
+      if (finalEmployeeNo) {
         const dup = await client.query(
           `
           SELECT 1
@@ -809,8 +827,9 @@ router.put(
             AND id <> $2
           LIMIT 1
           `,
-          [employeeNo, id]
+          [finalEmployeeNo, id]
         );
+
         if (dup.rowCount > 0) {
           await client.query("ROLLBACK");
           return res.status(409).json({ message: "Employee No already exists" });
@@ -826,7 +845,31 @@ router.put(
 
       const oldStatus = toStr(existing.rows[0]?.status || "Active");
       const newStatus = toStr(body.status || oldStatus || "Active");
-      const finalEmployeeNo = employeeNo || toStr(existing.rows[0]?.employee_no);
+
+      const branchId = toInt(body.branch_id);
+
+      let finalArea = toStr(body.area) || null;
+      let finalRegion = toStr(body.region) || null;
+      let finalDivision = toStr(body.division) || null;
+
+      if (branchId) {
+        const branchRes = await client.query(
+          `
+          SELECT area, region, division
+          FROM public.branches
+          WHERE id = $1
+          LIMIT 1
+          `,
+          [branchId]
+        );
+
+        if (branchRes.rowCount > 0) {
+          const b = branchRes.rows[0];
+          finalArea = toStr(b.area) || finalArea;
+          finalRegion = toStr(b.region) || finalRegion;
+          finalDivision = toStr(b.division) || finalDivision;
+        }
+      }
 
       const r = await client.query(
         `
@@ -864,10 +907,10 @@ router.put(
           sss_no=$73, philhealth_no=$74, pagibig_no=$75, tin_no=$76,
           children=$77::jsonb, education=$78::jsonb, employment_history=$79::jsonb, beneficiaries=$80::jsonb
         WHERE id=$81
-        RETURNING id, employee_no, status;
+        RETURNING id, employee_no, status
         `,
         [
-          employeeNo,
+          finalEmployeeNo,
           last_name,
           first_name,
           middle_name || null,
@@ -892,11 +935,11 @@ router.put(
 
           position,
           toStr(body.department) || null,
-          toStr(body.area) || null,
-          toStr(body.region) || null,
-          toStr(body.division) || null,
+          finalArea,
+          finalRegion,
+          finalDivision,
 
-          toInt(body.branch_id),
+          branchId,
           newStatus || "Active",
 
           toDateOrNull(body.start_date),
@@ -1006,8 +1049,11 @@ router.put(
       return res.json({ message: "Staff updated" });
     } catch (e) {
       await client.query("ROLLBACK");
-      console.error("PUT /api/staff/:id ERROR:", e.message);
-      return res.status(500).json({ message: e?.message || "Server error" });
+      console.error("PUT /api/staff/:id ERROR:", e);
+      return res.status(500).json({
+        message: e?.message || "Server error",
+        detail: e?.detail || null,
+      });
     } finally {
       client.release();
     }

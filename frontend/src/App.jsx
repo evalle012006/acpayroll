@@ -42,6 +42,7 @@ import Logistic from "./pages/Logistic";
 import DetailsCompensation from "./pages/DetailsCompensation";
 import OpeningLoanBalances from "./pages/OpeningLoanBalances";
 import RegularizationOrders from "./pages/RegularizationOrders";
+import ResignationRequests from "./pages/ResignationRequests";
 
 const readUser = () => {
   try {
@@ -168,6 +169,7 @@ function AppShell() {
       <Route path="/logistic"element={<ProtectedRoute allowedRoles={["admin", "accounting", "hr", "area manager", "regional manager", "assitant vice president", "vice president", "senior vice president", "president"]}><ProtectedLayout><Logistic /></ProtectedLayout></ProtectedRoute>}/>
       <Route path="/system-update/details-compensation" element={<ProtectedRoute allowedRoles={["admin", "accounting", "hr", "president"]}><ProtectedLayout><DetailsCompensation /></ProtectedLayout></ProtectedRoute>}/>
       <Route path="/opening-loan-balances" element={ <ProtectedRoute allowedRoles={["admin", "hr", "accounting", "branch manager", "area manager", "regional manager", "assistant vice president", "vice president", "president"]}><ProtectedLayout><OpeningLoanBalances /></ProtectedLayout></ProtectedRoute>}/>
+      <Route path="/transactions/resignation" element={ <ProtectedRoute allowedRoles={["admin", "hr", "accounting", "branch manager", "area manager", "regional manager", "assistant vice president", "vice president", "president"]}><ProtectedLayout><ResignationRequests /></ProtectedLayout></ProtectedRoute>}/>
       <Route path="*" element={<Navigate to={homeRedirect()} replace />} />
     </Routes>
   );

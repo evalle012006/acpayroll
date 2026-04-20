@@ -40,6 +40,7 @@ export default function Consolidation() {
   const [regionFilter, setRegionFilter] = useState("");
   const [areaFilter, setAreaFilter] = useState("");
   const [branchFilter, setBranchFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState("All");
 
   const fetchSources = async () => {
     try {
@@ -92,6 +93,7 @@ export default function Consolidation() {
         _branchCode: branchCode,
         _branchName: branchName,
         _branchLabel: branchLabel,
+        _status: toStr(s.status || "Active"),
       };
     });
   }, [staff, branchMap]);
@@ -133,6 +135,27 @@ export default function Consolidation() {
     );
   }, [enrichedStaff, divisionFilter, regionFilter, areaFilter]);
 
+  const totalBeforeSearch = useMemo(() => {
+    return enrichedStaff.filter((s) => {
+      if (divisionFilter && norm(s._division) !== norm(divisionFilter)) return false;
+      if (regionFilter && norm(s._region) !== norm(regionFilter)) return false;
+      if (areaFilter && norm(s._area) !== norm(areaFilter)) return false;
+      if (branchFilter && norm(s._branchLabel) !== norm(branchFilter)) return false;
+
+      const status = norm(s._status || "active");
+      if (statusFilter !== "All" && status !== norm(statusFilter)) return false;
+
+      return true;
+    }).length;
+  }, [
+    enrichedStaff,
+    divisionFilter,
+    regionFilter,
+    areaFilter,
+    branchFilter,
+    statusFilter,
+  ]);
+
   const filteredStaff = useMemo(() => {
     const q = search.toLowerCase().trim();
 
@@ -141,6 +164,9 @@ export default function Consolidation() {
       if (regionFilter && norm(s._region) !== norm(regionFilter)) return false;
       if (areaFilter && norm(s._area) !== norm(areaFilter)) return false;
       if (branchFilter && norm(s._branchLabel) !== norm(branchFilter)) return false;
+
+      const status = norm(s._status || "active");
+      if (statusFilter !== "All" && status !== norm(statusFilter)) return false;
 
       const employeeNo = toStr(s.employee_no);
       const employeeName = displayName(s);
@@ -152,7 +178,7 @@ export default function Consolidation() {
       const area = toStr(s._area);
 
       const hay =
-        `${employeeNo} ${employeeName} ${position} ${branchName} ${branchCode} ${division} ${region} ${area}`.toLowerCase();
+        `${employeeNo} ${employeeName} ${position} ${branchName} ${branchCode} ${division} ${region} ${area} ${status}`.toLowerCase();
 
       return !q || hay.includes(q);
     });
@@ -163,6 +189,7 @@ export default function Consolidation() {
     regionFilter,
     areaFilter,
     branchFilter,
+    statusFilter,
   ]);
 
   const totals = useMemo(() => {
@@ -205,6 +232,7 @@ export default function Consolidation() {
     setRegionFilter("");
     setAreaFilter("");
     setBranchFilter("");
+    setStatusFilter("All");
     setSearch("");
   };
 
@@ -310,9 +338,73 @@ export default function Consolidation() {
                 ))}
               </datalist>
             </div>
+
+            <div>
+              <select
+                className="conso-input"
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+              >
+                <option value="All">Status: All</option>
+                <option value="Active">Active</option>
+                <option value="Inactive">Inactive</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="conso-summary">
+            <div className="summary-card">
+              <div className="summary-label">Salary</div>
+              <div className="summary-value">{totals.salary.toLocaleString()}</div>
+            </div>
+
+            <div className="summary-card">
+              <div className="summary-label">ECOLA</div>
+              <div className="summary-value">{totals.ecola.toLocaleString()}</div>
+            </div>
+
+            <div className="summary-card">
+              <div className="summary-label">Total Compensation</div>
+              <div className="summary-value">
+                {totals.total_compensation.toLocaleString()}
+              </div>
+            </div>
+
+            <div className="summary-card">
+              <div className="summary-label">SSS</div>
+              <div className="summary-value">{totals.sss_ee.toLocaleString()}</div>
+            </div>
+
+            <div className="summary-card">
+              <div className="summary-label">PH</div>
+              <div className="summary-value">
+                {totals.philhealth_ee.toLocaleString()}
+              </div>
+            </div>
+
+            <div className="summary-card">
+              <div className="summary-label">Pag-IBIG</div>
+              <div className="summary-value">
+                {totals.pagibig_ee.toLocaleString()}
+              </div>
+            </div>
+
+            <div className="summary-card">
+              <div className="summary-label">Total EE</div>
+              <div className="summary-value">{totals.total_ee.toLocaleString()}</div>
+            </div>
+
+            <div className="summary-card">
+              <div className="summary-label">Tax</div>
+              <div className="summary-value">{totals.tax.toLocaleString()}</div>
+            </div>
           </div>
 
           <div className="conso-search-row">
+            <div className="pill">
+              Total before search: <strong>{totalBeforeSearch}</strong>
+            </div>
+
             <input
               className="conso-input conso-search-grow"
               type="text"
@@ -357,6 +449,7 @@ export default function Consolidation() {
                       <th rowSpan={2}>Region</th>
                       <th rowSpan={2}>Area</th>
                       <th rowSpan={2}>Branch</th>
+                      <th rowSpan={2}>Status</th>
                       <th colSpan={3}>Earnings</th>
                       <th colSpan={5}>Employee (EE)</th>
                     </tr>
@@ -391,6 +484,7 @@ export default function Consolidation() {
                           <td>{item._region || "-"}</td>
                           <td>{item._area || "-"}</td>
                           <td>{item._branchLabel || "-"}</td>
+                          <td>{item._status || "-"}</td>
 
                           <td>{salary.toLocaleString()}</td>
                           <td>{ecola.toLocaleString()}</td>
@@ -406,7 +500,7 @@ export default function Consolidation() {
                     })}
 
                     <tr className="conso-total-row">
-                      <td colSpan={8}>Totals</td>
+                      <td colSpan={9}>Totals</td>
                       <td>{totals.salary.toLocaleString()}</td>
                       <td>{totals.ecola.toLocaleString()}</td>
                       <td>{totals.total_compensation.toLocaleString()}</td>

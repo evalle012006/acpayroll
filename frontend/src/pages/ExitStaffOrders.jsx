@@ -733,7 +733,7 @@ export default function ExitStaffOrders() {
                       <option value="Resigned">Resigned</option>
                       <option value="AWOL">AWOL</option>
                       <option value="Terminated">Terminated</option>
-                      <option value="Terminated">Deceased</option>
+                      <option value="Deceased">Deceased</option>
                     </select>
                   </div>
 

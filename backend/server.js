@@ -36,6 +36,8 @@ const statusHistoryRoutes = require("./routes/statusHistoryRoutes");
 const staffLoanOpeningBalancesRoutes = require("./routes/staffLoanOpeningBalancesRoutes");
 const staffBonusHistoryRoutes = require("./routes/staffBonusHistoryRoutes");
 const regularizationOrdersRoutes = require("./routes/regularizationOrdersRoutes");
+const resignationRequestsRoutes = require("./routes/resignationRequestsRoutes");
+const reimbursementRequestsRoutes = require("./routes/reimbursementRequestsRoutes");
 
 const app = express();
 
@@ -86,7 +88,8 @@ app.use("/api", staffLoanOpeningBalancesRoutes);
 app.use("/api", staffBonusHistoryRoutes);
 app.use("/api", notificationRoutes);
 app.use("/api", regularizationOrdersRoutes);
-
+app.use("/api", resignationRequestsRoutes);
+app.use("/api/reimbursement-requests", reimbursementRequestsRoutes);
 
 app.get("/test", (_req, res) => {
   res.send("Backend is working!");

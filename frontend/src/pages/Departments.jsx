@@ -318,7 +318,14 @@ export default function Departments() {
           <button className="btn btn-outline" onClick={() => setSearch(searchInput)} type="button">
             Search
           </button>
-          <button className="btn btn-ghost" onClick={() => (setSearch(""), setSearchInput(""))} type="button">
+          <button
+            className="btn btn-ghost"
+            onClick={() => {
+              setSearch("");
+              setSearchInput("");
+            }}
+            type="button"
+          >
             Clear
           </button>
 
@@ -427,7 +434,11 @@ export default function Departments() {
 
       {viewDept && (
         <div className="modal-overlay" onMouseDown={closeView}>
-          <div className="modal staff-profile-modal" onMouseDown={(e) => e.stopPropagation()} style={{ maxWidth: 1100 }}>
+          <div
+            className="modal staff-profile-modal"
+            onMouseDown={(e) => e.stopPropagation()}
+            style={{ maxWidth: 1100 }}
+          >
             <div className="modal-head">
               <div>
                 <h3>Department: {viewDept.name}</h3>
@@ -454,87 +465,97 @@ export default function Departments() {
                   Showing: <strong>{filteredDeptStaff.length}</strong>
                 </div>
 
-                <input
-                  className="input"
-                  list="dept-division-list"
-                  placeholder="Division: All"
-                  value={divisionFilter === "All" ? "" : divisionFilter}
-                  onChange={(e) => {
-                    const value = toStr(e.target.value) || "All";
-                    setDivisionFilter(value);
-                    setRegionFilter("All");
-                    setAreaFilter("All");
-                    setBranchFilter("All");
-                  }}
-                />
-                <datalist id="dept-division-list">
-                  {divisionOptions
-                    .filter((v) => v !== "All")
-                    .map((v) => (
-                      <option key={`div-${v}`} value={v} />
-                    ))}
-                </datalist>
+                <div>
+                  <input
+                    className="input"
+                    list="dept-division-list"
+                    placeholder="Division: All"
+                    value={divisionFilter === "All" ? "" : divisionFilter}
+                    onChange={(e) => {
+                      const value = toStr(e.target.value) || "All";
+                      setDivisionFilter(value);
+                      setRegionFilter("All");
+                      setAreaFilter("All");
+                      setBranchFilter("All");
+                    }}
+                  />
+                  <datalist id="dept-division-list">
+                    {divisionOptions
+                      .filter((v) => v !== "All")
+                      .map((v) => (
+                        <option key={`div-${v}`} value={v} />
+                      ))}
+                  </datalist>
+                </div>
 
-                <input
-                  className="input"
-                  list="dept-region-list"
-                  placeholder="Region: All"
-                  value={regionFilter === "All" ? "" : regionFilter}
-                  onChange={(e) => {
-                    const value = toStr(e.target.value) || "All";
-                    setRegionFilter(value);
-                    setAreaFilter("All");
-                    setBranchFilter("All");
-                  }}
-                />
-                <datalist id="dept-region-list">
-                  {regionOptions
-                    .filter((v) => v !== "All")
-                    .map((v) => (
-                      <option key={`reg-${v}`} value={v} />
-                    ))}
-                </datalist>
+                <div>
+                  <input
+                    className="input"
+                    list="dept-region-list"
+                    placeholder="Region: All"
+                    value={regionFilter === "All" ? "" : regionFilter}
+                    onChange={(e) => {
+                      const value = toStr(e.target.value) || "All";
+                      setRegionFilter(value);
+                      setAreaFilter("All");
+                      setBranchFilter("All");
+                    }}
+                  />
+                  <datalist id="dept-region-list">
+                    {regionOptions
+                      .filter((v) => v !== "All")
+                      .map((v) => (
+                        <option key={`reg-${v}`} value={v} />
+                      ))}
+                  </datalist>
+                </div>
 
-                <input
-                  className="input"
-                  list="dept-area-list"
-                  placeholder="Area: All"
-                  value={areaFilter === "All" ? "" : areaFilter}
-                  onChange={(e) => {
-                    const value = toStr(e.target.value) || "All";
-                    setAreaFilter(value);
-                    setBranchFilter("All");
-                  }}
-                />
-                <datalist id="dept-area-list">
-                  {areaOptions
-                    .filter((v) => v !== "All")
-                    .map((v) => (
-                      <option key={`area-${v}`} value={v} />
-                    ))}
-                </datalist>
+                <div>
+                  <input
+                    className="input"
+                    list="dept-area-list"
+                    placeholder="Area: All"
+                    value={areaFilter === "All" ? "" : areaFilter}
+                    onChange={(e) => {
+                      const value = toStr(e.target.value) || "All";
+                      setAreaFilter(value);
+                      setBranchFilter("All");
+                    }}
+                  />
+                  <datalist id="dept-area-list">
+                    {areaOptions
+                      .filter((v) => v !== "All")
+                      .map((v) => (
+                        <option key={`area-${v}`} value={v} />
+                      ))}
+                  </datalist>
+                </div>
 
-                <input
-                  className="input"
-                  list="dept-branch-list"
-                  placeholder="Branch: All"
-                  value={branchFilter === "All" ? "" : branchFilter}
-                  onChange={(e) => {
-                    const value = toStr(e.target.value) || "All";
-                    setBranchFilter(value);
-                  }}
-                />
-                <datalist id="dept-branch-list">
-                  {branchOptions
-                    .filter((v) => v !== "All")
-                    .map((v) => (
-                      <option key={`br-${v}`} value={v} />
-                    ))}
-                </datalist>
+                <div>
+                  <input
+                    className="input"
+                    list="dept-branch-list"
+                    placeholder="Branch: All"
+                    value={branchFilter === "All" ? "" : branchFilter}
+                    onChange={(e) => {
+                      const value = toStr(e.target.value) || "All";
+                      setBranchFilter(value);
+                    }}
+                  />
+                  <datalist id="dept-branch-list">
+                    {branchOptions
+                      .filter((v) => v !== "All")
+                      .map((v) => (
+                        <option key={`br-${v}`} value={v} />
+                      ))}
+                  </datalist>
+                </div>
 
-                <button className="btn btn-ghost" type="button" onClick={resetViewFilters}>
-                  Clear Filters
-                </button>
+                <div>
+                  <button className="btn btn-ghost" type="button" onClick={resetViewFilters}>
+                    Clear Filters
+                  </button>
+                </div>
               </div>
 
               <div className="table-scroll">
@@ -569,7 +590,12 @@ export default function Departments() {
                                 <img
                                   src={avatarUrl(s)}
                                   alt="staff"
-                                  style={{ width: 38, height: 38, borderRadius: "50%", objectFit: "cover" }}
+                                  style={{
+                                    width: 38,
+                                    height: 38,
+                                    borderRadius: "50%",
+                                    objectFit: "cover",
+                                  }}
                                 />
                               ) : (
                                 <div

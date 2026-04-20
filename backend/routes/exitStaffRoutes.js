@@ -11,12 +11,9 @@ const toInt = (v) => {
 
 const toDate = (v) => {
   if (!v) return null;
-
   const d = new Date(v);
-
-  if (isNaN(d.getTime())) return null;
-
-  return d.toISOString().slice(0, 10); // always YYYY-MM-DD
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toISOString().slice(0, 10);
 };
 
 const clean = (v) => String(v ?? "").trim();
@@ -40,6 +37,9 @@ const normalizeExitType = (v) => {
   return clean(v);
 };
 
+/* =========================================================
+   EXIT STAFF (inactive list)
+========================================================= */
 router.get("/exit-staff", requireAuth, async (req, res) => {
   try {
     if (!isAdmin(req) && !isBranchManager(req) && !isHr(req) && !isAccounting(req)) {
@@ -141,11 +141,9 @@ router.post(
 
       const employee_id = toInt(req.body?.employee_no);
       const exit_type = normalizeExitType(req.body?.exit_type);
-      const date_created = toDate(req.body?.date_created) || toDate(new Date().toISOString());
-      const effectiveDate =
-        toDate(existing.effective_date) ||
-        toDate(existing.date_created);
-
+      const date_created =
+        toDate(req.body?.date_created) || toDate(new Date().toISOString());
+      const effective_date = toDate(req.body?.effective_date);
       const settlement_date = toDate(req.body?.settlement_date);
       const settlement_branch_id = toInt(req.body?.settlement_branch_id);
       const remarks = clean(req.body?.remarks);
@@ -155,9 +153,14 @@ router.post(
         return res.status(400).json({ message: "Employee required" });
       }
 
-      if (!exit_type || !["AWOL", "Resigned", "Terminated", "Deceased"].includes(exit_type)) {
+      if (
+        !exit_type ||
+        !["AWOL", "Resigned", "Terminated", "Deceased"].includes(exit_type)
+      ) {
         await client.query("ROLLBACK");
-        return res.status(400).json({ message: "Exit type must be AWOL, Resigned, Terminated, or Deceased" });
+        return res.status(400).json({
+          message: "Exit type must be AWOL, Resigned, Terminated, or Deceased",
+        });
       }
 
       if (!date_created) {
@@ -197,7 +200,9 @@ router.post(
         const userBranchId = getUserBranchId(req);
         if (!userBranchId || Number(userBranchId) !== Number(staff.branch_id)) {
           await client.query("ROLLBACK");
-          return res.status(403).json({ message: "You can only create exit staff orders for your branch." });
+          return res
+            .status(403)
+            .json({ message: "You can only create exit staff orders for your branch." });
         }
       }
 
@@ -242,7 +247,9 @@ router.post(
           .filter(Boolean)
           .join(", ");
 
-      const seq = await client.query(`SELECT nextval('public.exit_staff_orders_id_seq') AS n`);
+      const seq = await client.query(
+        `SELECT nextval('public.exit_staff_orders_id_seq') AS n`
+      );
       const n = Number(seq.rows[0].n);
       const order_no = `EXIT-${String(n).padStart(8, "0")}`;
 
@@ -396,7 +403,9 @@ router.put(
 
       if (staffRes.rowCount === 0) {
         await client.query("ROLLBACK");
-        return res.status(404).json({ message: "Staff record not found for this employee number" });
+        return res
+          .status(404)
+          .json({ message: "Staff record not found for this employee number" });
       }
 
       const orderUpdate = await client.query(
@@ -428,8 +437,6 @@ router.put(
         [employeeNo, exitType, effectiveDate, remarks]
       );
 
-      /* Optional status_history insert.
-         If your table structure is different, this block will no longer break approval. */
       try {
         await client.query(
           `
@@ -467,7 +474,9 @@ router.put(
       const reason = clean(req.body?.reason);
 
       if (!id) return res.status(400).json({ message: "Invalid id" });
-      if (!reason) return res.status(400).json({ message: "Rejection reason required" });
+      if (!reason) {
+        return res.status(400).json({ message: "Rejection reason required" });
+      }
 
       const r = await pool.query(
         `
