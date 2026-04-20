@@ -10,6 +10,22 @@ const loanTypes = [
   "Pag-ibig Loan",
 ];
 
+const APPROVAL_CHAIN = [
+  "branch manager",
+  "area manager",
+  "regional manager",
+  "assistant vice president",
+  "admin",
+];
+
+const STAGE_LABELS = {
+  "branch manager": "Branch Manager",
+  "area manager": "Area Manager",
+  "regional manager": "Regional Manager",
+  "assistant vice president": "Assistant Vice President",
+  admin: "Admin",
+};
+
 const readUser = () => {
   try {
     return JSON.parse(localStorage.getItem("user") || "null");
@@ -39,6 +55,47 @@ const getBaseUrl = () => {
   return base.endsWith("/api") ? base.slice(0, -4) : base;
 };
 
+const getChainStatus = (item, role) => {
+  if (!item) return "Pending";
+
+  const keyMap = {
+    "branch manager": item.branch_manager_status,
+    "area manager": item.area_manager_status,
+    "regional manager": item.regional_manager_status,
+    "assistant vice president": item.assistant_vice_president_status,
+    admin: item.admin_status,
+  };
+
+  return toStr(keyMap[role] || "Pending") || "Pending";
+};
+
+const getCurrentStage = (item) => {
+  const explicit = norm(item?.approval_stage);
+  if (APPROVAL_CHAIN.includes(explicit)) return explicit;
+
+  for (const role of APPROVAL_CHAIN) {
+    const status = norm(getChainStatus(item, role));
+    if (status !== "approved") return role;
+  }
+
+  return "admin";
+};
+
+const canUserActOnLoan = (item, role) => {
+  const overall = norm(item?.status);
+  if (overall === "approved" || overall === "rejected") return false;
+
+  const stage = getCurrentStage(item);
+  return role === stage;
+};
+
+const renderChainSummary = (item) => {
+  return APPROVAL_CHAIN.map((role) => {
+    const status = getChainStatus(item, role);
+    return `${STAGE_LABELS[role]}: ${status || "Pending"}`;
+  }).join(" | ");
+};
+
 export default function LoanApprovalTab() {
   const user = useMemo(() => readUser(), []);
   const role = norm(user?.role);
@@ -55,7 +112,6 @@ export default function LoanApprovalTab() {
   const isSeniorVicePresident = role === "senior vice president";
   const isPresident = role === "president";
 
-  const canApproveLoan = isAdmin || isHr || isAccounting;
   const canCreateLoan =
     isAdmin ||
     isHr ||
@@ -67,6 +123,13 @@ export default function LoanApprovalTab() {
     isVicePresident ||
     isSeniorVicePresident ||
     isPresident;
+
+  const canParticipateInLoanApproval =
+    isAdmin ||
+    isBranchManager ||
+    isAreaManager ||
+    isRegionalManager ||
+    isAssistantVicePresident;
 
   const [loanRequests, setLoanRequests] = useState([]);
   const [staffList, setStaffList] = useState([]);
@@ -260,9 +323,9 @@ export default function LoanApprovalTab() {
   }, [searchableStaff, loanEmployeeSearch]);
 
   const badgeClass = (status) => {
-    const s = String(status || "").trim();
-    if (s === "Approved") return "badge badge-approved";
-    if (s === "Rejected") return "badge badge-rejected";
+    const s = String(status || "").trim().toLowerCase();
+    if (s === "approved") return "badge badge-approved";
+    if (s === "rejected") return "badge badge-rejected";
     return "badge badge-pending";
   };
 
@@ -342,6 +405,7 @@ export default function LoanApprovalTab() {
       formData.append("total", total);
       formData.append("per_month", per_month);
       formData.append("status", "Pending");
+      formData.append("approval_stage", "branch manager");
       formData.append("approved_at", loanForm.approved_at || "");
       formData.append("disbursement_date", loanForm.disbursement_date || "");
 
@@ -367,21 +431,21 @@ export default function LoanApprovalTab() {
     }
   };
 
-  const updateLoanStatus = async (id, status) => {
+  const updateLoanStatus = async (id, action) => {
     if (!id) {
       alert("Loan record has no valid id.");
       return;
     }
 
     const ok = window.confirm(
-      `Are you sure you want to ${String(status).toLowerCase()} this loan request?`
+      `Are you sure you want to ${String(action).toLowerCase()} this loan request?`
     );
     if (!ok) return;
 
     try {
-      setProcessingId(`loan-${id}-${status}`);
-      await api.put(`/loan-requests/${id}`, { status });
-      alert(`Loan request ${status.toLowerCase()} successfully.`);
+      setProcessingId(`loan-${id}-${action}`);
+      await api.put(`/loan-requests/${id}`, { action });
+      alert(`Loan request ${String(action).toLowerCase()}d successfully.`);
       await fetchLoan();
     } catch (err) {
       console.error("Loan update error:", err?.response?.data || err.message);
@@ -404,7 +468,7 @@ export default function LoanApprovalTab() {
   };
 
   const loanPendingCount = useMemo(
-    () => loanRequests.filter((x) => x.status === "Pending").length,
+    () => loanRequests.filter((x) => norm(x.status) === "pending").length,
     [loanRequests]
   );
 
@@ -438,7 +502,9 @@ export default function LoanApprovalTab() {
 
           <div className="approval-card-body">
             <div className="mini">
-              {loadingLoan ? "Loading loan requests..." : "Filter by loan type and view requests."}
+              {loadingLoan
+                ? "Loading loan requests..."
+                : "Loan requests follow Branch Manager → Area Manager → Regional Manager → Assistant Vice President → Admin."}
             </div>
           </div>
         </div>
@@ -455,7 +521,9 @@ export default function LoanApprovalTab() {
             <div className="modal-head">
               <div>
                 <h3 className="modal-title">Add Loan Request</h3>
-                <p className="modal-subtitle">This request will be submitted with status: Pending</p>
+                <p className="modal-subtitle">
+                  This request will start at Branch Manager approval stage
+                </p>
               </div>
               <button className="modal-x" type="button" onClick={() => setShowCreateLoan(false)}>
                 ✕
@@ -647,7 +715,7 @@ export default function LoanApprovalTab() {
             <div className="modal-head">
               <div>
                 <h3 className="modal-title">Loan Requests</h3>
-                <p className="modal-subtitle">Filter by type and view requests</p>
+                <p className="modal-subtitle">Filter by type and follow approval chain</p>
               </div>
               <button className="modal-x" type="button" onClick={() => setShowLoanModal(false)}>
                 ✕
@@ -681,6 +749,8 @@ export default function LoanApprovalTab() {
                       <th>Per Month</th>
                       <th>Total</th>
                       <th>Status</th>
+                      <th>Current Stage</th>
+                      <th>Approval Chain</th>
                       <th>Dates</th>
                       <th>Action</th>
                     </tr>
@@ -688,71 +758,80 @@ export default function LoanApprovalTab() {
                   <tbody>
                     {filteredLoan.length === 0 ? (
                       <tr>
-                        <td colSpan={11} className="empty-state">
+                        <td colSpan={13} className="empty-state">
                           No requests found.
                         </td>
                       </tr>
                     ) : (
-                      filteredLoan.map((item) => (
-                        <tr key={item.id}>
-                          <td>{item.id ?? "-"}</td>
-                          <td className="td-strong">
-                            {item.staff_name || staffDisplayName(item.staff_id)}
-                            <div style={{ fontSize: 12, opacity: 0.75 }}>
-                              Emp No: {item.employee_no || "-"}
-                            </div>
-                          </td>
-                          <td>{item.loan_type}</td>
-                          <td>₱ {fmtMoney(item.amount)}</td>
-                          <td>{item.term}</td>
-                          <td>{item.interest}%</td>
-                          <td>₱ {fmtMoney(item.per_month)}</td>
-                          <td>₱ {fmtMoney(item.total)}</td>
-                          <td>
-                            <span className={badgeClass(item.status)}>{item.status}</span>
-                          </td>
-                          <td style={{ fontSize: 12, opacity: 0.85 }}>
-                            <div>Approved: {fmtDate(item.approved_at)}</div>
-                            <div>Disbursed: {fmtDate(item.disbursement_date)}</div>
-                          </td>
-                          <td>
-                            <div className="row-actions">
-                              <button
-                                className="btn-secondary"
-                                onClick={() => openLoanView(item)}
-                                type="button"
-                              >
-                                View
-                              </button>
+                      filteredLoan.map((item) => {
+                        const currentStage = getCurrentStage(item);
+                        const canAct = canParticipateInLoanApproval && canUserActOnLoan(item, role);
 
-                              {canApproveLoan && item.status === "Pending" ? (
-                                <>
-                                  <button
-                                    className="btn-success"
-                                    onClick={() => updateLoanStatus(item.id, "Approved")}
-                                    type="button"
-                                    disabled={processingId === `loan-${item.id}-Approved`}
-                                  >
-                                    {processingId === `loan-${item.id}-Approved`
-                                      ? "Approving..."
-                                      : "Approve"}
-                                  </button>
-                                  <button
-                                    className="btn-danger"
-                                    onClick={() => updateLoanStatus(item.id, "Rejected")}
-                                    type="button"
-                                    disabled={processingId === `loan-${item.id}-Rejected`}
-                                  >
-                                    {processingId === `loan-${item.id}-Rejected`
-                                      ? "Rejecting..."
-                                      : "Reject"}
-                                  </button>
-                                </>
-                              ) : null}
-                            </div>
-                          </td>
-                        </tr>
-                      ))
+                        return (
+                          <tr key={item.id}>
+                            <td>{item.id ?? "-"}</td>
+                            <td className="td-strong">
+                              {item.staff_name || staffDisplayName(item.staff_id)}
+                              <div style={{ fontSize: 12, opacity: 0.75 }}>
+                                Emp No: {item.employee_no || "-"}
+                              </div>
+                            </td>
+                            <td>{item.loan_type}</td>
+                            <td>₱ {fmtMoney(item.amount)}</td>
+                            <td>{item.term}</td>
+                            <td>{item.interest}%</td>
+                            <td>₱ {fmtMoney(item.per_month)}</td>
+                            <td>₱ {fmtMoney(item.total)}</td>
+                            <td>
+                              <span className={badgeClass(item.status)}>{item.status}</span>
+                            </td>
+                            <td>{STAGE_LABELS[currentStage] || "-"}</td>
+                            <td style={{ fontSize: 12, lineHeight: 1.5 }}>
+                              {renderChainSummary(item)}
+                            </td>
+                            <td style={{ fontSize: 12, opacity: 0.85 }}>
+                              <div>Approved: {fmtDate(item.approved_at)}</div>
+                              <div>Disbursed: {fmtDate(item.disbursement_date)}</div>
+                            </td>
+                            <td>
+                              <div className="row-actions">
+                                <button
+                                  className="btn-secondary"
+                                  onClick={() => openLoanView(item)}
+                                  type="button"
+                                >
+                                  View
+                                </button>
+
+                                {canAct ? (
+                                  <>
+                                    <button
+                                      className="btn-success"
+                                      onClick={() => updateLoanStatus(item.id, "approve")}
+                                      type="button"
+                                      disabled={processingId === `loan-${item.id}-approve`}
+                                    >
+                                      {processingId === `loan-${item.id}-approve`
+                                        ? "Approving..."
+                                        : "Approve"}
+                                    </button>
+                                    <button
+                                      className="btn-danger"
+                                      onClick={() => updateLoanStatus(item.id, "reject")}
+                                      type="button"
+                                      disabled={processingId === `loan-${item.id}-reject`}
+                                    >
+                                      {processingId === `loan-${item.id}-reject`
+                                        ? "Rejecting..."
+                                        : "Reject"}
+                                    </button>
+                                  </>
+                                ) : null}
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })
                     )}
                   </tbody>
                 </table>
@@ -842,6 +921,11 @@ export default function LoanApprovalTab() {
                 </div>
 
                 <div className="form-group">
+                  <label>Current Approval Stage</label>
+                  <input value={STAGE_LABELS[getCurrentStage(selectedLoan)] || "-"} readOnly />
+                </div>
+
+                <div className="form-group">
                   <label>Approved Date</label>
                   <input value={fmtDate(selectedLoan.approved_at)} readOnly />
                 </div>
@@ -849,6 +933,11 @@ export default function LoanApprovalTab() {
                 <div className="form-group">
                   <label>Disbursement Date</label>
                   <input value={fmtDate(selectedLoan.disbursement_date)} readOnly />
+                </div>
+
+                <div className="form-group full">
+                  <label>Approval Chain</label>
+                  <textarea value={renderChainSummary(selectedLoan)} readOnly />
                 </div>
 
                 <div className="form-group full">

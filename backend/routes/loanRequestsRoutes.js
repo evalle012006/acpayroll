@@ -473,87 +473,137 @@ router.put("/loan-requests/:id", requireAuth, async (req, res) => {
 
   try {
     const id = toInt(req.params.id);
+    const action = String(req.body?.action || "").toLowerCase();
+
     if (!id) return res.status(400).json({ message: "Invalid id" });
-
-    const newStatus = String(req.body?.status || "").trim();
-    if (!newStatus) return res.status(400).json({ message: "status is required" });
-
-    const sLower = newStatus.toLowerCase();
-    if ((sLower === "approved" || sLower === "rejected") && !isAdmin(req)) {
-      return res.status(403).json({ message: "Access denied" });
+    if (!["approve", "reject"].includes(action)) {
+      return res.status(400).json({ message: "Invalid action" });
     }
+
+    const role = roleLower(req);
 
     await client.query("BEGIN");
 
     const cur = await client.query(
-      `
-      SELECT
-        id,
-        staff_id,
-        employee_no,
-        status,
-        loan_type,
-        total,
-        amount
-      FROM public.loan_requests
-      WHERE id = $1::int
-      FOR UPDATE
-      `,
+      `SELECT * FROM loan_requests WHERE id = $1 FOR UPDATE`,
       [id]
     );
 
     if (cur.rowCount === 0) {
       await client.query("ROLLBACK");
-      return res.status(404).json({ message: "Loan request not found" });
+      return res.status(404).json({ message: "Loan not found" });
     }
 
-    const row = cur.rows[0];
-    const prevStatus = String(row.status || "").trim();
+    const loan = cur.rows[0];
 
-    const upd = await client.query(
-      `
-      UPDATE public.loan_requests
-      SET
-        status = $1::varchar,
-        approved_at = CASE
-          WHEN $1::varchar = 'Approved' THEN COALESCE(approved_at, CURRENT_DATE)
-          ELSE approved_at
-        END
-      WHERE id = $2::int
-      RETURNING *;
-      `,
-      [newStatus, id]
-    );
+    if (loan.status === "Approved" || loan.status === "Rejected") {
+      await client.query("ROLLBACK");
+      return res.status(400).json({ message: "Already finalized" });
+    }
 
-    if (prevStatus !== "Approved" && newStatus === "Approved") {
-      const employeeNo = row.employee_no;
-      const total = toNum(row.total) || toNum(row.amount);
-      const col = loanTypeToBalanceColumn(row.loan_type);
+    const chain = [
+      "branch manager",
+      "area manager",
+      "regional manager",
+      "assistant vice president",
+      "admin",
+    ];
+
+    let currentStage = loan.approval_stage || "branch manager";
+
+    if (role !== currentStage) {
+      await client.query("ROLLBACK");
+      return res.status(403).json({ message: "Not your approval stage" });
+    }
+
+    const statusColumnMap = {
+      "branch manager": "branch_manager_status",
+      "area manager": "area_manager_status",
+      "regional manager": "regional_manager_status",
+      "assistant vice president": "assistant_vice_president_status",
+      admin: "admin_status",
+    };
+
+    const column = statusColumnMap[role];
+
+    if (action === "reject") {
+      await client.query(
+        `
+        UPDATE loan_requests
+        SET
+          status = 'Rejected',
+          ${column} = 'Rejected'
+        WHERE id = $1
+        `,
+        [id]
+      );
+
+      await client.query("COMMIT");
+      return res.json({ message: "Rejected successfully" });
+    }
+
+    // APPROVE FLOW
+    const currentIndex = chain.indexOf(role);
+    const nextStage = chain[currentIndex + 1];
+
+    if (!nextStage) {
+      // FINAL APPROVAL (ADMIN)
+      await client.query(
+        `
+        UPDATE loan_requests
+        SET
+          status = 'Approved',
+          ${column} = 'Approved',
+          approved_at = CURRENT_DATE
+        WHERE id = $1
+        `,
+        [id]
+      );
+
+      // APPLY TO BALANCE
+      const employeeNo = loan.employee_no;
+      const total = toNum(loan.total) || toNum(loan.amount);
+      const col = loanTypeToBalanceColumn(loan.loan_type);
 
       if (employeeNo && col) {
         await ensureBalanceRow(client, employeeNo);
 
         await client.query(
           `
-          UPDATE public.staff_balances
-          SET
-            ${col} = COALESCE(${col}, 0) + $1::numeric,
-            updated_at = NOW()
+          UPDATE staff_balances
+          SET ${col} = COALESCE(${col}, 0) + $1,
+              updated_at = NOW()
           WHERE employee_no = $2
           `,
           [total, employeeNo]
         );
       }
+
+      await client.query("COMMIT");
+      return res.json({ message: "Fully Approved" });
     }
 
+    // MOVE TO NEXT STAGE
+    await client.query(
+      `
+      UPDATE loan_requests
+      SET
+        ${column} = 'Approved',
+        approval_stage = $1
+      WHERE id = $2
+      `,
+      [nextStage, id]
+    );
+
     await client.query("COMMIT");
-    return res.json(upd.rows[0]);
+    return res.json({ message: `Moved to ${nextStage}` });
   } catch (err) {
     try {
       await client.query("ROLLBACK");
     } catch {}
-    console.error("PUT /api/loan-requests/:id ERROR:", err?.message || err);
-    return res.status(500).json({ message: err?.message || "Server error" });
+
+    console.error("Loan approval chain error:", err);
+    return res.status(500).json({ message: err.message });
   } finally {
     client.release();
   }

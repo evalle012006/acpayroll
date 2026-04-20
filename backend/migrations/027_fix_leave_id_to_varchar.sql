@@ -1,23 +1,19 @@
 BEGIN;
 
-ALTER TABLE public.leave_attachments
-DROP CONSTRAINT IF EXISTS leave_attachments_leave_request_id_fkey;
+-- Keep the primary key id as integer.
+-- Add a readable leave number instead.
 
 ALTER TABLE public.leave_requests
-ALTER COLUMN id TYPE VARCHAR(50)
-USING id::VARCHAR(50);
+ADD COLUMN IF NOT EXISTS leave_no VARCHAR(50);
 
-ALTER TABLE public.leave_attachments
-ALTER COLUMN leave_request_id TYPE VARCHAR(50)
-USING leave_request_id::VARCHAR(50);
+UPDATE public.leave_requests
+SET leave_no = COALESCE(
+  leave_no,
+  'LR-' || TO_CHAR(COALESCE(created_at, NOW()), 'YYYYMMDD') || '-' || LPAD(id::text, 6, '0')
+)
+WHERE leave_no IS NULL OR leave_no = '';
 
-ALTER TABLE public.leave_attachments
-ADD CONSTRAINT leave_attachments_leave_request_id_fkey
-FOREIGN KEY (leave_request_id)
-REFERENCES public.leave_requests(id)
-ON DELETE CASCADE;
-
-CREATE INDEX IF NOT EXISTS idx_leave_attachments_leave_request_id
-ON public.leave_attachments(leave_request_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_leave_requests_leave_no
+ON public.leave_requests(leave_no);
 
 COMMIT;

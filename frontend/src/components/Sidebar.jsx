@@ -164,6 +164,7 @@ const Sidebar = ({ collapsed }) => {
           "admin",
           "hr",
           "accounting",
+          "branch manager",
           "area manager",
           "regional manager",
           "assistant vice president",
