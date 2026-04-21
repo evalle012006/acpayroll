@@ -27,7 +27,13 @@ router.get("/departments", requireAuth, async (_req, res) => {
 router.get(
   "/departments/:id/staff",
   requireAuth,
-  requireRole(["admin", "branch manager"]),
+  requireRole([
+    "admin",
+    "branch manager",
+    "vice president",
+    "senior vice president",
+    "president",
+  ]),
   async (req, res) => {
     try {
       const id = toInt(req.params.id);
@@ -44,7 +50,12 @@ router.get(
       const role = String(req.user?.role || "").trim().toLowerCase();
       const bid = req.user?.branch_id ?? null;
 
-      if (role === "admin") {
+      if (
+        role === "admin" ||
+        role === "vice president" ||
+        role === "senior vice president" ||
+        role === "president"
+      ) {
         const r = await pool.query(
           `
           SELECT

@@ -13,7 +13,18 @@ const clean = (v) => String(v ?? "").trim();
 router.get(
   "/comp-rates",
   requireAuth,
-  requireRole(["admin", "branch manager", "hr", "accounting", "area manager", "regional manager", "assistant vice president"]),
+  requireRole([
+    "admin",
+    "branch manager",
+    "hr",
+    "accounting",
+    "area manager",
+    "regional manager",
+    "assistant vice president",
+    "vice president",
+    "senior vice president",
+    "president",
+  ]),
   async (_req, res) => {
     try {
       const r = await pool.query(`

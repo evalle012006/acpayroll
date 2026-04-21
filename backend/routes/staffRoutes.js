@@ -59,10 +59,14 @@ const isAccounting = (req) => roleLower(req) === "accounting";
 const isAreaManager = (req) => roleLower(req) === "area manager";
 const isRegionalManager = (req) => roleLower(req) === "regional manager";
 const isAssistantVicePresident = (req) => roleLower(req) === "assistant vice president";
+const isVicePresident = (req) => roleLower(req) === "vice president";
+const isSeniorVicePresident = (req) => roleLower(req) === "senior vice president";
+const isPresident = (req) => roleLower(req) === "president";
 
 const getUserArea = (req) => toStr(req.user?.area);
 const getUserBranchCode = (req) => toStr(req.user?.branch_id);
 const getUserDivision = (req) => toStr(req.user?.division);
+const getUserRegion = (req) => toStr(req.user?.region);
 
 const toJsonbArray = (v) => {
   try {
@@ -149,11 +153,20 @@ async function canAccessStaffById(client, req, staffId) {
   const id = toInt(staffId);
   if (!id) return false;
 
-  if (isAdmin(req) || isHr(req) || isAccounting(req)) return true;
+  if (
+    isAdmin(req) ||
+    isHr(req) ||
+    isAccounting(req) ||
+    isVicePresident(req) ||
+    isSeniorVicePresident(req) ||
+    isPresident(req)
+  ) {
+    return true;
+  }
 
   const r = await client.query(
     `
-    SELECT id, branch_id, area, division
+    SELECT id, branch_id, area, region, division
     FROM public.staff
     WHERE id = $1
     LIMIT 1
@@ -176,7 +189,12 @@ async function canAccessStaffById(client, req, staffId) {
     return !!area && toStr(row.area).toLowerCase() === area.toLowerCase();
   }
 
-  if (isRegionalManager(req) || isAssistantVicePresident(req)) {
+  if (isRegionalManager(req)) {
+    const region = getUserRegion(req);
+    return !!region && toStr(row.region).toLowerCase() === region.toLowerCase();
+  }
+
+  if (isAssistantVicePresident(req)) {
     const division = getUserDivision(req);
     return !!division && toStr(row.division).toLowerCase() === division.toLowerCase();
   }
@@ -241,28 +259,28 @@ async function insertStaffFromBody(client, body) {
 
   const status = String(body.status || "Active");
   const branchId = toInt(body.branch_id);
-    let finalArea = toStr(body.area) || null;
-    let finalRegion = toStr(body.region) || null;
-    let finalDivision = toStr(body.division) || null;
+  let finalArea = toStr(body.area) || null;
+  let finalRegion = toStr(body.region) || null;
+  let finalDivision = toStr(body.division) || null;
 
-    if (branchId) {
-      const branchRes = await client.query(
-        `
-        SELECT area, region, division
-        FROM public.branches
-        WHERE id = $1
-        LIMIT 1
-        `,
-        [branchId]
-      );
+  if (branchId) {
+    const branchRes = await client.query(
+      `
+      SELECT area, region, division
+      FROM public.branches
+      WHERE id = $1
+      LIMIT 1
+      `,
+      [branchId]
+    );
 
-      if (branchRes.rowCount > 0) {
-        const b = branchRes.rows[0];
-        finalArea = toStr(b.area) || finalArea;
-        finalRegion = toStr(b.region) || finalRegion;
-        finalDivision = toStr(b.division) || finalDivision;
-      }
+    if (branchRes.rowCount > 0) {
+      const b = branchRes.rows[0];
+      finalArea = toStr(b.area) || finalArea;
+      finalRegion = toStr(b.region) || finalRegion;
+      finalDivision = toStr(b.division) || finalDivision;
     }
+  }
 
   const ins = await client.query(
     `
@@ -453,7 +471,14 @@ async function insertStaffFromBody(client, body) {
 
 router.get("/staff", requireAuth, async (req, res) => {
   try {
-    if (isAdmin(req) || isHr(req) || isAccounting(req)) {
+    if (
+      isAdmin(req) ||
+      isHr(req) ||
+      isAccounting(req) ||
+      isVicePresident(req) ||
+      isSeniorVicePresident(req) ||
+      isPresident(req)
+    ) {
       const r = await pool.query(`
         SELECT s.*,
                b.name AS branch_name,
@@ -506,7 +531,26 @@ router.get("/staff", requireAuth, async (req, res) => {
       return res.json(r.rows);
     }
 
-    if (isRegionalManager(req) || isAssistantVicePresident(req)) {
+    if (isRegionalManager(req)) {
+      const region = getUserRegion(req);
+      if (!region) return res.json([]);
+
+      const r = await pool.query(
+        `
+        SELECT s.*,
+               b.name AS branch_name,
+               b.code AS branch_code
+        FROM public.staff s
+        LEFT JOIN public.branches b ON b.id = s.branch_id
+        WHERE LOWER(TRIM(COALESCE(s.region, ''))) = LOWER(TRIM($1))
+        ORDER BY s.id DESC
+        `,
+        [region]
+      );
+      return res.json(r.rows);
+    }
+
+    if (isAssistantVicePresident(req)) {
       const division = getUserDivision(req);
       if (!division) return res.json([]);
 
@@ -556,7 +600,18 @@ router.post(
 router.get(
   "/pending-staff",
   requireAuth,
-  requireRole(["admin", "hr", "accounting", "branch manager", "area manager", "regional manager", "assistant vice president"]),
+  requireRole([
+    "admin",
+    "hr",
+    "accounting",
+    "branch manager",
+    "area manager",
+    "regional manager",
+    "assistant vice president",
+    "vice president",
+    "senior vice president",
+    "president",
+  ]),
   async (_req, res) => {
     try {
       const r = await pool.query(`
@@ -585,7 +640,18 @@ router.get(
 router.post(
   "/pending-staff",
   requireAuth,
-  requireRole(["admin", "hr", "accounting", "branch manager", "area manager", "regional manager", "assistant vice president"]),
+  requireRole([
+    "admin",
+    "hr",
+    "accounting",
+    "branch manager",
+    "area manager",
+    "regional manager",
+    "assistant vice president",
+    "vice president",
+    "senior vice president",
+    "president",
+  ]),
   async (req, res) => {
     try {
       const body = req.body || {};
@@ -760,6 +826,9 @@ router.put(
     "area manager",
     "regional manager",
     "assistant vice president",
+    "vice president",
+    "senior vice president",
+    "president",
   ]),
   async (req, res) => {
     const client = await pool.connect();
@@ -1078,7 +1147,18 @@ router.delete("/staff/:id", requireAuth, requireRole(["admin"]), async (req, res
 router.post(
   "/staff/:id/photo",
   requireAuth,
-  requireRole(["admin", "hr", "accounting", "branch manager", "area manager", "regional manager", "assistant vice president"]),
+  requireRole([
+    "admin",
+    "hr",
+    "accounting",
+    "branch manager",
+    "area manager",
+    "regional manager",
+    "assistant vice president",
+    "vice president",
+    "senior vice president",
+    "president",
+  ]),
   upload.single("photo"),
   async (req, res) => {
     const client = await pool.connect();

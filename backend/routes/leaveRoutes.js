@@ -28,14 +28,70 @@ const isBranchManager = (req) => roleLower(req) === "branch manager";
 const isAreaManager = (req) => roleLower(req) === "area manager";
 const isRegionalManager = (req) => roleLower(req) === "regional manager";
 const isAssistantVicePresident = (req) => roleLower(req) === "assistant vice president";
+const isVicePresident = (req) => roleLower(req) === "vice president";
+const isSeniorVicePresident = (req) => roleLower(req) === "senior vice president";
+const isPresident = (req) => roleLower(req) === "president";
 
 const getUserBranchCode = (req) => toStr(req.user?.branch_id);
 const getUserArea = (req) => toStr(req.user?.area);
+const getUserRegion = (req) => toStr(req.user?.region);
+const getUserDivision = (req) => toStr(req.user?.division);
+
+const FULL_ACCESS_ROLES = [
+  "admin",
+  "hr",
+  "accounting",
+  "vice president",
+  "senior vice president",
+  "president",
+];
+
+const VIEW_OR_CREATE_ROLES = [
+  "admin",
+  "hr",
+  "accounting",
+  "branch manager",
+  "area manager",
+  "regional manager",
+  "assistant vice president",
+  "vice president",
+  "senior vice president",
+  "president",
+];
+
+const APPROVER_ROLES = [
+  "admin",
+  "hr",
+  "accounting",
+  "area manager",
+  "regional manager",
+  "assistant vice president",
+  "vice president",
+  "senior vice president",
+  "president",
+];
+
+const isFullViewer = (req) =>
+  isAdmin(req) ||
+  isHr(req) ||
+  isAccounting(req) ||
+  isVicePresident(req) ||
+  isSeniorVicePresident(req) ||
+  isPresident(req);
 
 const isRequestViewer = (req) =>
-  isAdmin(req) || isRegionalManager(req) || isAssistantVicePresident(req);
+  isAdmin(req) ||
+  isRegionalManager(req) ||
+  isAssistantVicePresident(req) ||
+  isVicePresident(req) ||
+  isSeniorVicePresident(req) ||
+  isPresident(req);
 
-const canUploadApprovedLeave = (req) => isAdmin(req);
+const canUploadApprovedLeave = (req) =>
+  isAdmin(req) ||
+  isVicePresident(req) ||
+  isSeniorVicePresident(req) ||
+  isPresident(req);
 
 async function getBranchIdFromCode(branchCode) {
   const code = toStr(branchCode);
@@ -171,7 +227,16 @@ const initialPendingStatusForRequester = (req) => {
   if (isAreaManager(req)) return "Pending Regional Manager";
   if (isRegionalManager(req)) return "Pending Assistant Vice President";
   if (isAssistantVicePresident(req)) return "Pending Admin";
-  if (isAdmin(req) || isHr(req) || isAccounting(req)) return "Pending Admin";
+  if (
+    isAdmin(req) ||
+    isHr(req) ||
+    isAccounting(req) ||
+    isVicePresident(req) ||
+    isSeniorVicePresident(req) ||
+    isPresident(req)
+  ) {
+    return "Pending Admin";
+  }
   return "Pending Area Manager";
 };
 
@@ -183,7 +248,9 @@ const canActOnLeave = async (req, leaveId) => {
       lr.status,
       lr.employee_id,
       s.area,
-      s.branch_id
+      s.branch_id,
+      s.region,
+      s.division
     FROM public.leave_requests lr
     JOIN public.staff s ON s.id = lr.employee_id
     WHERE lr.id = $1
@@ -203,6 +270,17 @@ const canActOnLeave = async (req, leaveId) => {
     return { ok: false, code: 400, message: `Leave already ${status.toLowerCase()}` };
   }
 
+  if (
+    isAdmin(req) ||
+    isHr(req) ||
+    isAccounting(req) ||
+    isVicePresident(req) ||
+    isSeniorVicePresident(req) ||
+    isPresident(req)
+  ) {
+    return { ok: true, row };
+  }
+
   if (status === "Pending Area Manager") {
     if (!isAreaManager(req)) {
       return { ok: false, code: 403, message: "Only area manager can act on this stage" };
@@ -219,7 +297,7 @@ const canActOnLeave = async (req, leaveId) => {
   }
 
   if (status === "Pending Regional Manager") {
-    if (!isRegionalManager(req) && !isAdmin(req)) {
+    if (!isRegionalManager(req)) {
       return {
         ok: false,
         code: 403,
@@ -227,11 +305,18 @@ const canActOnLeave = async (req, leaveId) => {
       };
     }
 
+    const userRegion = toStr(getUserRegion(req)).toLowerCase();
+    const rowRegion = toStr(row.region).toLowerCase();
+
+    if (!userRegion || userRegion !== rowRegion) {
+      return { ok: false, code: 403, message: "Access denied" };
+    }
+
     return { ok: true, row };
   }
 
   if (status === "Pending Assistant Vice President") {
-    if (!isAssistantVicePresident(req) && !isAdmin(req)) {
+    if (!isAssistantVicePresident(req)) {
       return {
         ok: false,
         code: 403,
@@ -239,15 +324,18 @@ const canActOnLeave = async (req, leaveId) => {
       };
     }
 
+    const userDivision = toStr(getUserDivision(req)).toLowerCase();
+    const rowDivision = toStr(row.division).toLowerCase();
+
+    if (!userDivision || userDivision !== rowDivision) {
+      return { ok: false, code: 403, message: "Access denied" };
+    }
+
     return { ok: true, row };
   }
 
   if (status === "Pending Admin") {
-    if (!isAdmin(req) && !isHr(req) && !isAccounting(req)) {
-      return { ok: false, code: 403, message: "Only admin/hr/accounting can act on this stage" };
-    }
-
-    return { ok: true, row };
+    return { ok: false, code: 403, message: "Only admin/hr/accounting or higher roles can act on this stage" };
   }
 
   return { ok: false, code: 400, message: "Unsupported leave status" };
@@ -256,9 +344,7 @@ const canActOnLeave = async (req, leaveId) => {
 router.get("/leave-requests", requireAuth, async (req, res) => {
   try {
     if (
-      isAdmin(req) ||
-      isHr(req) ||
-      isAccounting(req) ||
+      isFullViewer(req) ||
       isRegionalManager(req) ||
       isAssistantVicePresident(req)
     ) {
@@ -316,15 +402,7 @@ router.get("/leave-requests", requireAuth, async (req, res) => {
 router.get(
   "/leave-requests/staff/:staffId",
   requireAuth,
-  requireRole([
-    "admin",
-    "branch manager",
-    "hr",
-    "accounting",
-    "area manager",
-    "regional manager",
-    "assistant vice president",
-  ]),
+  requireRole(VIEW_OR_CREATE_ROLES),
   async (req, res) => {
     try {
       const staffId = toInt(req.params.staffId);
@@ -367,6 +445,40 @@ router.get(
         if (chk.rowCount === 0) return res.status(403).json({ message: "Access denied" });
       }
 
+      if (isRegionalManager(req)) {
+        const region = getUserRegion(req);
+        if (!region) return res.status(403).json({ message: "Access denied" });
+
+        const chk = await pool.query(
+          `
+          SELECT id
+          FROM public.staff
+          WHERE id = $1
+            AND LOWER(TRIM(COALESCE(region, ''))) = LOWER(TRIM($2))
+          `,
+          [staffId, region]
+        );
+
+        if (chk.rowCount === 0) return res.status(403).json({ message: "Access denied" });
+      }
+
+      if (isAssistantVicePresident(req)) {
+        const division = getUserDivision(req);
+        if (!division) return res.status(403).json({ message: "Access denied" });
+
+        const chk = await pool.query(
+          `
+          SELECT id
+          FROM public.staff
+          WHERE id = $1
+            AND LOWER(TRIM(COALESCE(division, ''))) = LOWER(TRIM($2))
+          `,
+          [staffId, division]
+        );
+
+        if (chk.rowCount === 0) return res.status(403).json({ message: "Access denied" });
+      }
+
       const r = await pool.query(
         `
         ${baseLeaveSelect}
@@ -387,14 +499,7 @@ router.get(
 router.post(
   "/leave-requests",
   requireAuth,
-  requireRole([
-    "admin",
-    "hr",
-    "accounting",
-    "area manager",
-    "regional manager",
-    "assistant vice president",
-  ]),
+  requireRole(VIEW_OR_CREATE_ROLES),
   upload.single("attachment"),
   async (req, res) => {
     const client = await pool.connect();
@@ -430,7 +535,7 @@ router.post(
 
       const s = await client.query(
         `
-        SELECT id, fullname, branch_id, area, division
+        SELECT id, fullname, branch_id, area, region, division
         FROM public.staff
         WHERE id = $1
         `,
@@ -457,6 +562,22 @@ router.post(
       if (isAreaManager(req)) {
         const area = getUserArea(req);
         if (!area || toStr(staffRow.area).toLowerCase() !== area.toLowerCase()) {
+          await client.query("ROLLBACK");
+          return res.status(403).json({ message: "Access denied" });
+        }
+      }
+
+      if (isRegionalManager(req)) {
+        const region = getUserRegion(req);
+        if (!region || toStr(staffRow.region).toLowerCase() !== region.toLowerCase()) {
+          await client.query("ROLLBACK");
+          return res.status(403).json({ message: "Access denied" });
+        }
+      }
+
+      if (isAssistantVicePresident(req)) {
+        const division = getUserDivision(req);
+        if (!division || toStr(staffRow.division).toLowerCase() !== division.toLowerCase()) {
           await client.query("ROLLBACK");
           return res.status(403).json({ message: "Access denied" });
         }
@@ -557,7 +678,7 @@ router.post(
 router.post(
   "/leave-requests/:id/approved-file",
   requireAuth,
-  requireRole(["admin"]),
+  requireRole(["admin", "vice president", "senior vice president", "president"]),
   upload.single("attachment"),
   async (req, res) => {
     const client = await pool.connect();
@@ -677,7 +798,10 @@ router.get("/leave-requests/:id/download/:type", requireAuth, async (req, res) =
           isAdmin(req) ||
           isRegionalManager(req) ||
           isAssistantVicePresident(req) ||
-          isAreaManager(req)
+          isAreaManager(req) ||
+          isVicePresident(req) ||
+          isSeniorVicePresident(req) ||
+          isPresident(req)
         )
       ) {
         return res.status(403).json({ message: "Access denied" });
@@ -718,14 +842,7 @@ router.get("/leave-requests/:id/download/:type", requireAuth, async (req, res) =
 router.put(
   "/leave-requests/:id",
   requireAuth,
-  requireRole([
-    "admin",
-    "hr",
-    "accounting",
-    "area manager",
-    "regional manager",
-    "assistant vice president",
-  ]),
+  requireRole(APPROVER_ROLES),
   async (req, res) => {
     try {
       const id = String(req.params.id || "").trim();
@@ -762,7 +879,6 @@ router.put(
         if (r.rowCount === 0) return res.status(404).json({ message: "Not found" });
       } else {
         let sql = "";
-        let params = [id, req.user?.id ?? null];
 
         if (currentStatus === "Pending Area Manager") {
           sql = `
@@ -788,11 +904,12 @@ router.put(
           sql = `
             UPDATE public.leave_requests
             SET
-              status = 'Pending Admin'
+              status = 'Pending Admin',
+              division_approved_by = $2,
+              division_approved_at = NOW()
             WHERE id = $1
             RETURNING id
           `;
-          params = [id];
         } else if (currentStatus === "Pending Admin") {
           sql = `
             UPDATE public.leave_requests
@@ -807,7 +924,7 @@ router.put(
           return res.status(400).json({ message: "Invalid current status for approval" });
         }
 
-        const r = await pool.query(sql, params);
+        const r = await pool.query(sql, [id, req.user?.id ?? null]);
         if (r.rowCount === 0) return res.status(404).json({ message: "Not found" });
       }
 

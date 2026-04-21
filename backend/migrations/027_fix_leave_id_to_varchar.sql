@@ -8,8 +8,8 @@ ADD COLUMN IF NOT EXISTS leave_no VARCHAR(50);
 
 UPDATE public.leave_requests
 SET leave_no = COALESCE(
-  leave_no,
-  'LR-' || TO_CHAR(COALESCE(created_at, NOW()), 'YYYYMMDD') || '-' || LPAD(id::text, 6, '0')
+  NULLIF(leave_no, ''),
+  'LR-' || TO_CHAR(COALESCE(date_created, NOW()), 'YYYYMMDD') || '-' || LPAD(id::text, 6, '0')
 )
 WHERE leave_no IS NULL OR leave_no = '';
 

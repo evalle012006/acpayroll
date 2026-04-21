@@ -1,12 +1,30 @@
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import "../styles/Approval.css";
 
 import LoanApprovalTab from "../components/approvals/LoanApprovalTab";
 import SAPApprovalTab from "../components/approvals/SAPApprovalTab";
 import ReimbursementApprovalTab from "../components/approvals/ReimbursementApprovalTab";
 
+const readUser = () => {
+  try {
+    return JSON.parse(localStorage.getItem("user") || "null");
+  } catch {
+    return null;
+  }
+};
+
+const norm = (v) => String(v ?? "").trim().toLowerCase();
+
 export default function Approval() {
+  const user = useMemo(() => readUser(), []);
+  const role = norm(user?.role);
+
+  const canSeeSAP = role === "admin" || role === "president";
+
   const [activeTab, setActiveTab] = useState("loan");
+
+  const safeActiveTab =
+    activeTab === "sap" && !canSeeSAP ? "loan" : activeTab;
 
   return (
     <div className="approval-page">
@@ -22,23 +40,25 @@ export default function Approval() {
       <div className="approval-tabs">
         <button
           type="button"
-          className={activeTab === "loan" ? "active" : ""}
+          className={safeActiveTab === "loan" ? "active" : ""}
           onClick={() => setActiveTab("loan")}
         >
           Loan Requests
         </button>
 
-        <button
-          type="button"
-          className={activeTab === "sap" ? "active" : ""}
-          onClick={() => setActiveTab("sap")}
-        >
-          Staff Accounts Payable
-        </button>
+        {canSeeSAP && (
+          <button
+            type="button"
+            className={safeActiveTab === "sap" ? "active" : ""}
+            onClick={() => setActiveTab("sap")}
+          >
+            Staff Accounts Payable
+          </button>
+        )}
 
         <button
           type="button"
-          className={activeTab === "reimbursement" ? "active" : ""}
+          className={safeActiveTab === "reimbursement" ? "active" : ""}
           onClick={() => setActiveTab("reimbursement")}
         >
           Reimbursement Requests
@@ -46,9 +66,9 @@ export default function Approval() {
       </div>
 
       <div className="approval-content">
-        {activeTab === "loan" && <LoanApprovalTab />}
-        {activeTab === "sap" && <SAPApprovalTab />}
-        {activeTab === "reimbursement" && <ReimbursementApprovalTab />}
+        {safeActiveTab === "loan" && <LoanApprovalTab />}
+        {safeActiveTab === "sap" && canSeeSAP && <SAPApprovalTab />}
+        {safeActiveTab === "reimbursement" && <ReimbursementApprovalTab />}
       </div>
     </div>
   );

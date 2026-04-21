@@ -9,6 +9,20 @@ const REQUEST_TYPE_OPTIONS = [
   "Other Reimbursement",
 ];
 
+const APPROVAL_CHAIN = [
+  "area manager",
+  "regional manager",
+  "assistant vice president",
+  "admin",
+];
+
+const STAGE_LABELS = {
+  "area manager": "Area Manager",
+  "regional manager": "Regional Manager",
+  "assistant vice president": "Assistant Vice President",
+  admin: "Admin",
+};
+
 const readUser = () => {
   try {
     return JSON.parse(localStorage.getItem("user") || "null");
@@ -38,6 +52,46 @@ const getBaseUrl = () => {
   return base.endsWith("/api") ? base.slice(0, -4) : base;
 };
 
+const getChainStatus = (item, role) => {
+  if (!item) return "Pending";
+
+  const keyMap = {
+    "area manager": item.area_manager_status,
+    "regional manager": item.regional_manager_status,
+    "assistant vice president": item.assistant_vice_president_status,
+    admin: item.admin_status,
+  };
+
+  return toStr(keyMap[role] || "Pending") || "Pending";
+};
+
+const getCurrentStage = (item) => {
+  const explicit = norm(item?.approval_stage);
+  if (APPROVAL_CHAIN.includes(explicit)) return explicit;
+
+  for (const role of APPROVAL_CHAIN) {
+    const status = norm(getChainStatus(item, role));
+    if (status !== "approved") return role;
+  }
+
+  return "admin";
+};
+
+const canUserActOnReimbursement = (item, role) => {
+  const overall = norm(item?.status);
+  if (overall === "approved" || overall === "rejected") return false;
+
+  const stage = getCurrentStage(item);
+  return role === stage;
+};
+
+const renderChainSummary = (item) => {
+  return APPROVAL_CHAIN.map((role) => {
+    const status = getChainStatus(item, role);
+    return `${STAGE_LABELS[role]}: ${status || "Pending"}`;
+  }).join(" | ");
+};
+
 export default function ReimbursementApprovalTab() {
   const user = useMemo(() => readUser(), []);
   const role = norm(user?.role);
@@ -55,6 +109,7 @@ export default function ReimbursementApprovalTab() {
   const isPresident = role === "president";
 
   const canViewReimbursement = true;
+
   const canCreateReimbursement =
     isAdmin ||
     isHr ||
@@ -67,13 +122,16 @@ export default function ReimbursementApprovalTab() {
     isSeniorVicePresident ||
     isPresident;
 
-  const canApproveReimbursement = isAdmin || isHr || isAccounting;
+  const canParticipateInApproval =
+    isAdmin || isAreaManager || isRegionalManager || isAssistantVicePresident;
 
   const [reimbursementRows, setReimbursementRows] = useState([]);
   const [staffList, setStaffList] = useState([]);
 
   const [showReimbursementModal, setShowReimbursementModal] = useState(false);
   const [showCreateReimbursement, setShowCreateReimbursement] = useState(false);
+  const [showReimbursementView, setShowReimbursementView] = useState(false);
+  const [selectedReimbursement, setSelectedReimbursement] = useState(null);
 
   const [loadingReimbursement, setLoadingReimbursement] = useState(false);
   const [creatingReimbursement, setCreatingReimbursement] = useState(false);
@@ -92,9 +150,10 @@ export default function ReimbursementApprovalTab() {
     amount: "",
     request_date: "",
     request_type: "",
-    reimbursement_date: "",
     attachment: null,
   });
+
+  const [adminReimbursementDate, setAdminReimbursementDate] = useState("");
 
   const logout = useCallback(() => {
     localStorage.removeItem("token");
@@ -147,13 +206,16 @@ export default function ReimbursementApprovalTab() {
   }, [user, fetchStaff, fetchReimbursement]);
 
   useEffect(() => {
-    const isOpen = showReimbursementModal || showCreateReimbursement;
+    const isOpen =
+      showReimbursementModal || showCreateReimbursement || showReimbursementView;
+
     if (!isOpen) return;
 
     const onKeyDown = (e) => {
       if (e.key === "Escape") {
         setShowReimbursementModal(false);
         setShowCreateReimbursement(false);
+        setShowReimbursementView(false);
         setShowReimbursementEmployeeDropdown(false);
       }
     };
@@ -176,7 +238,7 @@ export default function ReimbursementApprovalTab() {
       document.removeEventListener("mousedown", onMouseDown);
       document.body.style.overflow = "";
     };
-  }, [showReimbursementModal, showCreateReimbursement]);
+  }, [showReimbursementModal, showCreateReimbursement, showReimbursementView]);
 
   const buildStaffDisplay = useCallback((s) => {
     if (!s) return "-";
@@ -224,9 +286,9 @@ export default function ReimbursementApprovalTab() {
   }, [searchableStaff, reimbursementEmployeeSearch]);
 
   const badgeClass = (status) => {
-    const s = String(status || "").trim();
-    if (s === "Approved") return "badge badge-approved";
-    if (s === "Rejected") return "badge badge-rejected";
+    const s = String(status || "").trim().toLowerCase();
+    if (s === "approved") return "badge badge-approved";
+    if (s === "rejected") return "badge badge-rejected";
     return "badge badge-pending";
   };
 
@@ -256,7 +318,6 @@ export default function ReimbursementApprovalTab() {
       amount: "",
       request_date: "",
       request_type: "",
-      reimbursement_date: "",
       attachment: null,
     });
     setReimbursementEmployeeSearch("");
@@ -277,8 +338,8 @@ export default function ReimbursementApprovalTab() {
       formData.append("amount", toNum(reimbursementForm.amount));
       formData.append("request_date", reimbursementForm.request_date || "");
       formData.append("request_type", reimbursementForm.request_type || "");
-      formData.append("reimbursement_date", reimbursementForm.reimbursement_date || "");
       formData.append("status", "Pending");
+      formData.append("approval_stage", "area manager");
 
       if (reimbursementForm.attachment) {
         formData.append("attachment", reimbursementForm.attachment);
@@ -302,21 +363,29 @@ export default function ReimbursementApprovalTab() {
     }
   };
 
-  const updateReimbursementStatus = async (id, status) => {
+  const updateReimbursementStatus = async (id, action, reimbursementDate = "") => {
     if (!id) {
       alert("Reimbursement record has no valid id.");
       return;
     }
 
     const ok = window.confirm(
-      `Are you sure you want to ${String(status).toLowerCase()} this reimbursement request?`
+      `Are you sure you want to ${String(action).toLowerCase()} this reimbursement request?`
     );
     if (!ok) return;
 
     try {
-      setProcessingId(`reimbursement-${id}-${status}`);
-      await api.put(`/reimbursement-requests/${id}`, { status });
-      alert(`Reimbursement request ${status.toLowerCase()} successfully.`);
+      setProcessingId(`reimbursement-${id}-${action}`);
+
+      const payload = { action };
+      if (isAdmin && action === "approve" && reimbursementDate) {
+        payload.reimbursement_date = reimbursementDate;
+      }
+
+      await api.put(`/reimbursement-requests/${id}`, payload);
+
+      alert(`Reimbursement request ${action === "approve" ? "approved" : "rejected"} successfully.`);
+      setAdminReimbursementDate("");
       await fetchReimbursement();
     } catch (err) {
       console.error("Reimbursement update error:", err?.response?.data || err.message);
@@ -329,9 +398,19 @@ export default function ReimbursementApprovalTab() {
   };
 
   const reimbursementPendingCount = useMemo(
-    () => reimbursementRows.filter((x) => x.status === "Pending").length,
+    () => reimbursementRows.filter((x) => norm(x.status) === "pending").length,
     [reimbursementRows]
   );
+
+  const openReimbursementView = (item) => {
+    setSelectedReimbursement(item);
+    setShowReimbursementView(true);
+  };
+
+  const closeReimbursementView = () => {
+    setSelectedReimbursement(null);
+    setShowReimbursementView(false);
+  };
 
   if (!canViewReimbursement) {
     return null;
@@ -373,7 +452,7 @@ export default function ReimbursementApprovalTab() {
             <div className="mini">
               {loadingReimbursement
                 ? "Loading reimbursement requests..."
-                : "Create and approve reimbursement requests."}
+                : "Reimbursement requests follow Area Manager → Regional Manager → Assistant Vice President → Admin."}
             </div>
           </div>
         </div>
@@ -503,13 +582,9 @@ export default function ReimbursementApprovalTab() {
                   <label>Date of Reimbursement</label>
                   <input
                     type="date"
-                    value={reimbursementForm.reimbursement_date}
-                    onChange={(e) =>
-                      setReimbursementForm((p) => ({
-                        ...p,
-                        reimbursement_date: e.target.value,
-                      }))
-                    }
+                    value=""
+                    readOnly
+                    placeholder="Admin will set after final approval"
                   />
                 </div>
 
@@ -590,6 +665,8 @@ export default function ReimbursementApprovalTab() {
                       <th>Request Date</th>
                       <th>Reimbursement Date</th>
                       <th>Status</th>
+                      <th>Current Stage</th>
+                      <th>Approval Chain</th>
                       <th>Attachment</th>
                       <th>Action</th>
                     </tr>
@@ -597,72 +674,111 @@ export default function ReimbursementApprovalTab() {
                   <tbody>
                     {reimbursementRows.length === 0 ? (
                       <tr>
-                        <td colSpan={10} className="empty-state">
+                        <td colSpan={12} className="empty-state">
                           No reimbursement requests found.
                         </td>
                       </tr>
                     ) : (
-                      reimbursementRows.map((item) => (
-                        <tr key={item.id}>
-                          <td>{item.id ?? "-"}</td>
-                          <td className="td-strong">
-                            {item.staff_name || "-"}
-                            <div style={{ fontSize: 12, opacity: 0.75 }}>
-                              Emp No: {item.employee_no || "-"}
-                            </div>
-                          </td>
-                          <td>{item.request_type || "-"}</td>
-                          <td title={item.description || ""}>{item.description || "-"}</td>
-                          <td>₱ {fmtMoney(item.amount)}</td>
-                          <td>{fmtDate(item.request_date)}</td>
-                          <td>{fmtDate(item.reimbursement_date)}</td>
-                          <td>
-                            <span className={badgeClass(item.status)}>{item.status}</span>
-                          </td>
-                          <td>
-                            {item.attachment_path ? (
-                              <a
-                                href={`${baseUrl}${item.attachment_path}`}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="btn-secondary"
-                              >
-                                View File
-                              </a>
-                            ) : (
-                              "-"
-                            )}
-                          </td>
-                          <td>
-                            {canApproveReimbursement && item.status === "Pending" ? (
+                      reimbursementRows.map((item) => {
+                        const currentStage = getCurrentStage(item);
+                        const canAct =
+                          canParticipateInApproval &&
+                          canUserActOnReimbursement(item, role);
+
+                        return (
+                          <tr key={item.id}>
+                            <td>{item.id ?? "-"}</td>
+                            <td className="td-strong">
+                              {item.staff_name || "-"}
+                              <div style={{ fontSize: 12, opacity: 0.75 }}>
+                                Emp No: {item.employee_no || "-"}
+                              </div>
+                            </td>
+                            <td>{item.request_type || "-"}</td>
+                            <td title={item.description || ""}>{item.description || "-"}</td>
+                            <td>₱ {fmtMoney(item.amount)}</td>
+                            <td>{fmtDate(item.request_date)}</td>
+                            <td>{fmtDate(item.reimbursement_date)}</td>
+                            <td>
+                              <span className={badgeClass(item.status)}>{item.status}</span>
+                            </td>
+                            <td>{STAGE_LABELS[currentStage] || "-"}</td>
+                            <td style={{ fontSize: 12, lineHeight: 1.5 }}>
+                              {renderChainSummary(item)}
+                            </td>
+                            <td>
+                              {item.attachment_path ? (
+                                <a
+                                  href={`${baseUrl}${item.attachment_path}`}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="btn-secondary"
+                                >
+                                  View File
+                                </a>
+                              ) : (
+                                "-"
+                              )}
+                            </td>
+                            <td>
                               <div className="row-actions">
                                 <button
-                                  className="btn-success"
-                                  onClick={() => updateReimbursementStatus(item.id, "Approved")}
+                                  className="btn-secondary"
+                                  onClick={() => openReimbursementView(item)}
                                   type="button"
-                                  disabled={processingId === `reimbursement-${item.id}-Approved`}
                                 >
-                                  {processingId === `reimbursement-${item.id}-Approved`
-                                    ? "Approving..."
-                                    : "Approve"}
+                                  View
                                 </button>
-                                <button
-                                  className="btn-danger"
-                                  onClick={() => updateReimbursementStatus(item.id, "Rejected")}
-                                  type="button"
-                                  disabled={processingId === `reimbursement-${item.id}-Rejected`}
-                                >
-                                  {processingId === `reimbursement-${item.id}-Rejected`
-                                    ? "Rejecting..."
-                                    : "Reject"}
-                                </button>
+
+                                {canAct ? (
+                                  <>
+                                    {isAdmin && (
+                                      <input
+                                        type="date"
+                                        value={selectedReimbursement?.id === item.id ? adminReimbursementDate : ""}
+                                        onChange={(e) => {
+                                          setSelectedReimbursement(item);
+                                          setAdminReimbursementDate(e.target.value);
+                                        }}
+                                        style={{ minWidth: 150 }}
+                                      />
+                                    )}
+
+                                    <button
+                                      className="btn-success"
+                                      onClick={() =>
+                                        updateReimbursementStatus(
+                                          item.id,
+                                          "approve",
+                                          selectedReimbursement?.id === item.id
+                                            ? adminReimbursementDate
+                                            : ""
+                                        )
+                                      }
+                                      type="button"
+                                      disabled={processingId === `reimbursement-${item.id}-approve`}
+                                    >
+                                      {processingId === `reimbursement-${item.id}-approve`
+                                        ? "Approving..."
+                                        : "Approve"}
+                                    </button>
+                                    <button
+                                      className="btn-danger"
+                                      onClick={() => updateReimbursementStatus(item.id, "reject")}
+                                      type="button"
+                                      disabled={processingId === `reimbursement-${item.id}-reject`}
+                                    >
+                                      {processingId === `reimbursement-${item.id}-reject`
+                                        ? "Rejecting..."
+                                        : "Reject"}
+                                    </button>
+                                  </>
+                                ) : null}
                               </div>
-                            ) : (
-                              "-"
-                            )}
-                          </td>
-                        </tr>
-                      ))
+                            </td>
+                          </tr>
+                        );
+                      })
                     )}
                   </tbody>
                 </table>
@@ -677,6 +793,113 @@ export default function ReimbursementApprovalTab() {
               >
                 Close
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showReimbursementView && selectedReimbursement && (
+        <div
+          className="modal-overlay"
+          onMouseDown={(e) =>
+            e.target.classList.contains("modal-overlay") && closeReimbursementView()
+          }
+        >
+          <div className="modal saas-modal" onMouseDown={(e) => e.stopPropagation()}>
+            <div className="modal-head">
+              <div>
+                <h3 className="modal-title">Reimbursement Request Details</h3>
+                <p className="modal-subtitle">{selectedReimbursement.staff_name || "-"}</p>
+              </div>
+              <button className="modal-x" type="button" onClick={closeReimbursementView}>
+                ✕
+              </button>
+            </div>
+
+            <div className="modal-form">
+              <div className="modal-grid">
+                <div className="form-group">
+                  <label>ID</label>
+                  <input value={selectedReimbursement.id ?? "-"} readOnly />
+                </div>
+
+                <div className="form-group">
+                  <label>Employee No</label>
+                  <input value={selectedReimbursement.employee_no || "-"} readOnly />
+                </div>
+
+                <div className="form-group">
+                  <label>Staff Name</label>
+                  <input value={selectedReimbursement.staff_name || "-"} readOnly />
+                </div>
+
+                <div className="form-group">
+                  <label>Request Type</label>
+                  <input value={selectedReimbursement.request_type || "-"} readOnly />
+                </div>
+
+                <div className="form-group">
+                  <label>Amount</label>
+                  <input value={`₱ ${fmtMoney(selectedReimbursement.amount)}`} readOnly />
+                </div>
+
+                <div className="form-group">
+                  <label>Request Date</label>
+                  <input value={fmtDate(selectedReimbursement.request_date)} readOnly />
+                </div>
+
+                <div className="form-group">
+                  <label>Reimbursement Date</label>
+                  <input value={fmtDate(selectedReimbursement.reimbursement_date)} readOnly />
+                </div>
+
+                <div className="form-group">
+                  <label>Status</label>
+                  <input value={selectedReimbursement.status || "-"} readOnly />
+                </div>
+
+                <div className="form-group">
+                  <label>Current Approval Stage</label>
+                  <input value={STAGE_LABELS[getCurrentStage(selectedReimbursement)] || "-"} readOnly />
+                </div>
+
+                <div className="form-group full">
+                  <label>Approval Chain</label>
+                  <textarea value={renderChainSummary(selectedReimbursement)} readOnly />
+                </div>
+
+                <div className="form-group full">
+                  <label>Attachment</label>
+                  {selectedReimbursement.attachment_path ? (
+                    <a
+                      href={`${baseUrl}${selectedReimbursement.attachment_path}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="btn-secondary"
+                      style={{
+                        display: "inline-block",
+                        textAlign: "center",
+                        padding: "10px 12px",
+                      }}
+                    >
+                      View Attached File
+                    </a>
+                  ) : (
+                    <input value="No attachment" readOnly />
+                  )}
+                </div>
+
+                <div className="form-group full">
+                  <label>Description</label>
+                  <textarea value={selectedReimbursement.description || "-"} readOnly />
+                </div>
+              </div>
+
+              <div className="modal-buttons">
+                <button className="btn-secondary" type="button" onClick={closeReimbursementView}>
+                  Close
+                </button>
+              </div>
             </div>
           </div>
         </div>

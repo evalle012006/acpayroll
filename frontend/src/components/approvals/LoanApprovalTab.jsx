@@ -11,7 +11,6 @@ const loanTypes = [
 ];
 
 const APPROVAL_CHAIN = [
-  "branch manager",
   "area manager",
   "regional manager",
   "assistant vice president",
@@ -19,7 +18,6 @@ const APPROVAL_CHAIN = [
 ];
 
 const STAGE_LABELS = {
-  "branch manager": "Branch Manager",
   "area manager": "Area Manager",
   "regional manager": "Regional Manager",
   "assistant vice president": "Assistant Vice President",
@@ -41,6 +39,7 @@ const toNum = (v) => {
 
 const toStr = (v) => String(v ?? "").trim();
 const norm = (v) => toStr(v).toLowerCase();
+const todayDate = () => new Date().toISOString().slice(0, 10);
 
 const fmtMoney = (v) =>
   Number(toNum(v)).toLocaleString(undefined, {
@@ -59,7 +58,6 @@ const getChainStatus = (item, role) => {
   if (!item) return "Pending";
 
   const keyMap = {
-    "branch manager": item.branch_manager_status,
     "area manager": item.area_manager_status,
     "regional manager": item.regional_manager_status,
     "assistant vice president": item.assistant_vice_president_status,
@@ -126,10 +124,17 @@ export default function LoanApprovalTab() {
 
   const canParticipateInLoanApproval =
     isAdmin ||
-    isBranchManager ||
     isAreaManager ||
     isRegionalManager ||
     isAssistantVicePresident;
+
+  const canDownloadRequestFile =
+    isAdmin || isAreaManager || isRegionalManager || isAssistantVicePresident;
+
+  const canDownloadApprovedFile =
+    isAdmin || isAreaManager || isRegionalManager || isAssistantVicePresident;
+
+  const canUploadApprovedFile = isAdmin;
 
   const [loanRequests, setLoanRequests] = useState([]);
   const [staffList, setStaffList] = useState([]);
@@ -145,6 +150,7 @@ export default function LoanApprovalTab() {
   const [loadingLoan, setLoadingLoan] = useState(false);
   const [creatingLoan, setCreatingLoan] = useState(false);
   const [processingId, setProcessingId] = useState("");
+  const [uploadingApproved, setUploadingApproved] = useState({});
 
   const [loanEmployeeSearch, setLoanEmployeeSearch] = useState("");
   const [showLoanEmployeeDropdown, setShowLoanEmployeeDropdown] = useState(false);
@@ -152,6 +158,14 @@ export default function LoanApprovalTab() {
 
   const [loanForm, setLoanForm] = useState({
     staff_id: "",
+    employee_no: "",
+    staff_name: "",
+    position: "",
+    area: "",
+    salary: "",
+    ecola: "",
+    cbu: "",
+    date_created: todayDate(),
     branch_id: "",
     branch_code: "",
     branch_name: "",
@@ -160,8 +174,6 @@ export default function LoanApprovalTab() {
     term: "",
     interest: "",
     reason: "",
-    approved_at: "",
-    disbursement_date: "",
     attachment: null,
   });
 
@@ -303,6 +315,7 @@ export default function LoanApprovalTab() {
         s.middle_name,
         display,
         s.position,
+        s.area,
       ]
         .map((x) => toStr(x))
         .join(" ")
@@ -353,6 +366,19 @@ export default function LoanApprovalTab() {
     setLoanForm((prev) => ({
       ...prev,
       staff_id: String(staffId || ""),
+      employee_no: emp?.employee_no || "",
+      staff_name: emp?.fullname || buildStaffDisplay(emp),
+      position: emp?.position || "",
+      area: emp?.area || "",
+      salary: emp?.salary ?? "",
+      ecola: emp?.ecola ?? "",
+      cbu:
+        emp?.cbu ??
+        emp?.current_cbu ??
+        emp?.staff_cbu ??
+        emp?.cbu_balance ??
+        "",
+      date_created: todayDate(),
       branch_id: bid,
       branch_code: b?.code || "",
       branch_name: b?.name || "",
@@ -367,6 +393,14 @@ export default function LoanApprovalTab() {
   const resetLoanForm = () => {
     setLoanForm({
       staff_id: "",
+      employee_no: "",
+      staff_name: "",
+      position: "",
+      area: "",
+      salary: "",
+      ecola: "",
+      cbu: "",
+      date_created: todayDate(),
       branch_id: "",
       branch_code: "",
       branch_name: "",
@@ -375,8 +409,6 @@ export default function LoanApprovalTab() {
       term: "",
       interest: "",
       reason: "",
-      approved_at: "",
-      disbursement_date: "",
       attachment: null,
     });
     setLoanEmployeeSearch("");
@@ -405,9 +437,8 @@ export default function LoanApprovalTab() {
       formData.append("total", total);
       formData.append("per_month", per_month);
       formData.append("status", "Pending");
-      formData.append("approval_stage", "branch manager");
-      formData.append("approved_at", loanForm.approved_at || "");
-      formData.append("disbursement_date", loanForm.disbursement_date || "");
+      formData.append("approval_stage", "area manager");
+      formData.append("date_created", loanForm.date_created || todayDate());
 
       if (loanForm.attachment) {
         formData.append("attachment", loanForm.attachment);
@@ -454,6 +485,48 @@ export default function LoanApprovalTab() {
       alert(err?.response?.data?.message || "Failed to update loan request.");
     } finally {
       setProcessingId("");
+    }
+  };
+
+  const downloadLoanFile = async (id, type, fallbackName = "") => {
+    try {
+      const res = await api.get(`/loan-requests/${id}/download/${type}`, {
+        responseType: "blob",
+      });
+
+      const blob = new Blob([res.data]);
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = fallbackName || `loan-${id}-${type}`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      alert(err?.response?.data?.message || "Failed to download file.");
+    }
+  };
+
+  const uploadApprovedLoanFile = async (loanId, file) => {
+    if (!file) return;
+
+    try {
+      setUploadingApproved((prev) => ({ ...prev, [loanId]: true }));
+
+      const formData = new FormData();
+      formData.append("attachment", file);
+
+      await api.post(`/loan-requests/${loanId}/approved-file`, formData, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+
+      alert("Approved signed loan file uploaded.");
+      await fetchLoan();
+    } catch (err) {
+      alert(err?.response?.data?.message || "Failed to upload approved signed file.");
+    } finally {
+      setUploadingApproved((prev) => ({ ...prev, [loanId]: false }));
     }
   };
 
@@ -504,7 +577,7 @@ export default function LoanApprovalTab() {
             <div className="mini">
               {loadingLoan
                 ? "Loading loan requests..."
-                : "Loan requests follow Branch Manager → Area Manager → Regional Manager → Assistant Vice President → Admin."}
+                : "Area Manager and Regional Manager can download the request file to sign. Admin uploads the final approved signed file."}
             </div>
           </div>
         </div>
@@ -522,7 +595,7 @@ export default function LoanApprovalTab() {
               <div>
                 <h3 className="modal-title">Add Loan Request</h3>
                 <p className="modal-subtitle">
-                  This request will start at Branch Manager approval stage
+                  This request will start at Area Manager approval stage
                 </p>
               </div>
               <button className="modal-x" type="button" onClick={() => setShowCreateLoan(false)}>
@@ -543,6 +616,13 @@ export default function LoanApprovalTab() {
                       setLoanForm((p) => ({
                         ...p,
                         staff_id: "",
+                        employee_no: "",
+                        staff_name: "",
+                        position: "",
+                        area: "",
+                        salary: "",
+                        ecola: "",
+                        cbu: "",
                         branch_id: "",
                         branch_code: "",
                         branch_name: "",
@@ -572,6 +652,65 @@ export default function LoanApprovalTab() {
                       )}
                     </div>
                   )}
+                </div>
+
+                <div className="form-group">
+                  <label>Employee No</label>
+                  <input value={loanForm.employee_no} readOnly placeholder="Auto-filled" />
+                </div>
+
+                <div className="form-group">
+                  <label>Employee Name</label>
+                  <input value={loanForm.staff_name} readOnly placeholder="Auto-filled" />
+                </div>
+
+                <div className="form-group">
+                  <label>Position</label>
+                  <input value={loanForm.position} readOnly placeholder="Auto-filled" />
+                </div>
+
+                <div className="form-group">
+                  <label>Area</label>
+                  <input value={loanForm.area} readOnly placeholder="Auto-filled" />
+                </div>
+
+                <div className="form-group">
+                  <label>Basic Salary</label>
+                  <input
+                    value={loanForm.salary === "" ? "" : `₱ ${fmtMoney(loanForm.salary)}`}
+                    readOnly
+                    placeholder="Auto-filled"
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label>ECOLA</label>
+                  <input
+                    value={loanForm.ecola === "" ? "" : `₱ ${fmtMoney(loanForm.ecola)}`}
+                    readOnly
+                    placeholder="Auto-filled"
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label>Current Staff CBU</label>
+                  <input
+                    value={loanForm.cbu === "" ? "" : `₱ ${fmtMoney(loanForm.cbu)}`}
+                    readOnly
+                    placeholder="Auto-filled"
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label>Date Created</label>
+                  <input
+                    type="date"
+                    value={loanForm.date_created}
+                    onChange={(e) =>
+                      setLoanForm((p) => ({ ...p, date_created: e.target.value }))
+                    }
+                    required
+                  />
                 </div>
 
                 <div className="form-group">
@@ -633,28 +772,8 @@ export default function LoanApprovalTab() {
                   />
                 </div>
 
-                <div className="form-group">
-                  <label>Approved Date (Optional)</label>
-                  <input
-                    type="date"
-                    value={loanForm.approved_at}
-                    onChange={(e) => setLoanForm((p) => ({ ...p, approved_at: e.target.value }))}
-                  />
-                </div>
-
-                <div className="form-group">
-                  <label>Disbursement Date (Optional)</label>
-                  <input
-                    type="date"
-                    value={loanForm.disbursement_date}
-                    onChange={(e) =>
-                      setLoanForm((p) => ({ ...p, disbursement_date: e.target.value }))
-                    }
-                  />
-                </div>
-
                 <div className="form-group full">
-                  <label>Attach File</label>
+                  <label>Attach Request File</label>
                   <input
                     type="file"
                     onChange={(e) =>
@@ -751,6 +870,7 @@ export default function LoanApprovalTab() {
                       <th>Status</th>
                       <th>Current Stage</th>
                       <th>Approval Chain</th>
+                      <th>Files</th>
                       <th>Dates</th>
                       <th>Action</th>
                     </tr>
@@ -758,7 +878,7 @@ export default function LoanApprovalTab() {
                   <tbody>
                     {filteredLoan.length === 0 ? (
                       <tr>
-                        <td colSpan={13} className="empty-state">
+                        <td colSpan={14} className="empty-state">
                           No requests found.
                         </td>
                       </tr>
@@ -789,9 +909,71 @@ export default function LoanApprovalTab() {
                             <td style={{ fontSize: 12, lineHeight: 1.5 }}>
                               {renderChainSummary(item)}
                             </td>
+                            <td>
+                              <div className="row-actions" style={{ flexWrap: "wrap" }}>
+                                {item.attachment_path && canDownloadRequestFile ? (
+                                  <button
+                                    className="btn-secondary"
+                                    type="button"
+                                    onClick={() =>
+                                      downloadLoanFile(
+                                        item.id,
+                                        "request",
+                                        item.attachment_name || ""
+                                      )
+                                    }
+                                  >
+                                    Download Request File
+                                  </button>
+                                ) : null}
+
+                                {item.approved_attachment_path && canDownloadApprovedFile ? (
+                                  <button
+                                    className="btn-secondary"
+                                    type="button"
+                                    onClick={() =>
+                                      downloadLoanFile(
+                                        item.id,
+                                        "approved",
+                                        item.approved_attachment_name || ""
+                                      )
+                                    }
+                                  >
+                                    Download Approved File
+                                  </button>
+                                ) : null}
+
+                                {canUploadApprovedFile && norm(item.status) === "approved" ? (
+                                  <label className="btn-secondary" style={{ cursor: "pointer" }}>
+                                    {uploadingApproved[item.id]
+                                      ? "Uploading..."
+                                      : "Upload Approved Signed File"}
+                                    <input
+                                      type="file"
+                                      style={{ display: "none" }}
+                                      onChange={(e) =>
+                                        uploadApprovedLoanFile(
+                                          item.id,
+                                          e.target.files?.[0] || null
+                                        )
+                                      }
+                                    />
+                                  </label>
+                                ) : null}
+                              </div>
+                            </td>
                             <td style={{ fontSize: 12, opacity: 0.85 }}>
-                              <div>Approved: {fmtDate(item.approved_at)}</div>
-                              <div>Disbursed: {fmtDate(item.disbursement_date)}</div>
+                              {norm(item.status) === "approved" ? (
+                                <>
+                                  <div>Approved: {fmtDate(item.approved_at)}</div>
+                                  <div>Disbursed: {fmtDate(item.disbursement_date)}</div>
+                                </>
+                              ) : (
+                                <>
+                                  <div>Approved: -</div>
+                                  <div>Disbursed: -</div>
+                                </>
+                              )}
                             </td>
                             <td>
                               <div className="row-actions">
@@ -941,23 +1123,44 @@ export default function LoanApprovalTab() {
                 </div>
 
                 <div className="form-group full">
-                  <label>Attachment</label>
+                  <label>Original Request File</label>
                   {selectedLoan.attachment_path ? (
-                    <a
-                      href={`${baseUrl}${selectedLoan.attachment_path}`}
-                      target="_blank"
-                      rel="noreferrer"
+                    <button
+                      type="button"
                       className="btn-secondary"
-                      style={{
-                        display: "inline-block",
-                        textAlign: "center",
-                        padding: "10px 12px",
-                      }}
+                      onClick={() =>
+                        downloadLoanFile(
+                          selectedLoan.id,
+                          "request",
+                          selectedLoan.attachment_name || ""
+                        )
+                      }
                     >
-                      View Attached File
-                    </a>
+                      Download Request File
+                    </button>
                   ) : (
-                    <input value="No attachment" readOnly />
+                    <input value="No request file" readOnly />
+                  )}
+                </div>
+
+                <div className="form-group full">
+                  <label>Approved Signed File</label>
+                  {selectedLoan.approved_attachment_path ? (
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      onClick={() =>
+                        downloadLoanFile(
+                          selectedLoan.id,
+                          "approved",
+                          selectedLoan.approved_attachment_name || ""
+                        )
+                      }
+                    >
+                      Download Approved File
+                    </button>
+                  ) : (
+                    <input value="No approved signed file" readOnly />
                   )}
                 </div>
 

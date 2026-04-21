@@ -30,13 +30,11 @@ export default function SAPApprovalTab() {
   const role = norm(user?.role);
 
   const isAdmin = role === "admin";
-  const isAreaManager = role === "area manager";
-  const isBranchManager = role === "branch manager";
-  const isRegionalManager = role === "regional manager";
-  const isAssistantVicePresident = role === "assistant vice president";
+  const isPresident = role === "president";
 
-  const canViewSAP = !(isAreaManager || isRegionalManager || isAssistantVicePresident);
-  const canCreateSAP = (isAdmin || isBranchManager) && !isAssistantVicePresident;
+  const canViewSAP = isAdmin || isPresident;
+  const canCreateSAP = isAdmin || isPresident;
+  const canApproveSAP = isAdmin || isPresident;
 
   const [sapRows, setSapRows] = useState([]);
   const [staffList, setStaffList] = useState([]);
@@ -108,13 +106,10 @@ export default function SAPApprovalTab() {
       return;
     }
 
-    fetchStaff();
+    if (!canViewSAP) return;
 
-    if (canViewSAP) {
-      fetchSap();
-    } else {
-      setSapRows([]);
-    }
+    fetchStaff();
+    fetchSap();
   }, [user, canViewSAP, fetchStaff, fetchSap]);
 
   useEffect(() => {
@@ -317,15 +312,7 @@ export default function SAPApprovalTab() {
   );
 
   if (!canViewSAP) {
-    return (
-      <div className="approval-grid">
-        <div className="approval-card">
-          <div className="approval-card-body">
-            <div className="mini">Access denied for Staff Accounts Payable.</div>
-          </div>
-        </div>
-      </div>
-    );
+    return null;
   }
 
   return (
@@ -517,7 +504,7 @@ export default function SAPApprovalTab() {
             <div className="modal-head">
               <div>
                 <h3 className="modal-title">Staff Accounts Payable</h3>
-                <p className="modal-subtitle">Approve/Reject is Admin only</p>
+                <p className="modal-subtitle">Approve/Reject is Admin and President only</p>
               </div>
               <button className="modal-x" type="button" onClick={() => setShowSapModal(false)}>
                 ✕
@@ -572,7 +559,7 @@ export default function SAPApprovalTab() {
                           </td>
                           <td>
                             {x.status === "Pending" ? (
-                              isAdmin ? (
+                              canApproveSAP ? (
                                 <div className="row-actions">
                                   <button
                                     className="btn-success"
