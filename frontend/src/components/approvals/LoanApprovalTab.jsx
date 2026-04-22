@@ -102,6 +102,7 @@ export default function LoanApprovalTab() {
   const isAdmin = role === "admin";
   const isHr = role === "hr";
   const isAccounting = role === "accounting";
+  const isTread = role === "tread";
   const isAreaManager = role === "area manager";
   const isBranchManager = role === "branch manager";
   const isRegionalManager = role === "regional manager";
@@ -114,6 +115,7 @@ export default function LoanApprovalTab() {
     isAdmin ||
     isHr ||
     isAccounting ||
+    isTread ||
     isBranchManager ||
     isAreaManager ||
     isRegionalManager ||
@@ -129,10 +131,22 @@ export default function LoanApprovalTab() {
     isAssistantVicePresident;
 
   const canDownloadRequestFile =
-    isAdmin || isAreaManager || isRegionalManager || isAssistantVicePresident;
+    isAdmin ||
+    isHr ||
+    isAccounting ||
+    isTread ||
+    isAreaManager ||
+    isRegionalManager ||
+    isAssistantVicePresident;
 
   const canDownloadApprovedFile =
-    isAdmin || isAreaManager || isRegionalManager || isAssistantVicePresident;
+    isAdmin ||
+    isHr ||
+    isAccounting ||
+    isTread ||
+    isAreaManager ||
+    isRegionalManager ||
+    isAssistantVicePresident;
 
   const canUploadApprovedFile = isAdmin;
 

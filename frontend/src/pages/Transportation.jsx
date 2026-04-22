@@ -74,6 +74,43 @@ const overlapsCurrentMonth = (startDate, endDate) => {
   return s <= monthEnd && e >= monthStart;
 };
 
+const POSITION_ORDER = [
+  "president",
+  "senior vice president",
+  "vice president",
+  "assistant vice president",
+  "regional manager",
+  "acting regional manager",
+  "area manager",
+  "acting area manager",
+  "branch manager",
+  "acting branch manager",
+  "loan officer",
+  "probationary loan officer",
+];
+
+const getPositionRank = (position) => {
+  const idx = POSITION_ORDER.indexOf(norm(position));
+  return idx === -1 ? 999 : idx;
+};
+
+const sortByPosition = (rows) => {
+  return [...rows].sort((a, b) => {
+    const rankA = getPositionRank(a?.position);
+    const rankB = getPositionRank(b?.position);
+
+    if (rankA !== rankB) return rankA - rankB;
+
+    const posCompare = toStr(a?.position).localeCompare(toStr(b?.position));
+    if (posCompare !== 0) return posCompare;
+
+    const nameCompare = toStr(a?.fullname).localeCompare(toStr(b?.fullname));
+    if (nameCompare !== 0) return nameCompare;
+
+    return toStr(a?.employee_no).localeCompare(toStr(b?.employee_no));
+  });
+};
+
 export default function Transportation() {
   const params = useParams();
   const branchParam = toStr(params.branchId ?? params.id);
@@ -265,7 +302,7 @@ export default function Transportation() {
   );
 
   const rows = useMemo(() => {
-    return (staff || []).map((raw) => {
+    const mapped = (staff || []).map((raw) => {
       const s = applyOverrideToStaffRow(raw);
 
       const suspension = approvedSuspensions[String(s.id)] || {
@@ -340,6 +377,8 @@ export default function Transportation() {
         netPay25: netPay / 2,
       };
     });
+
+    return sortByPosition(mapped);
   }, [staff, applyOverrideToStaffRow, approvedSuspensions]);
 
   const totals = useMemo(() => {

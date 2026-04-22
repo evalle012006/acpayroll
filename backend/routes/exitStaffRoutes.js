@@ -24,6 +24,22 @@ const isAdmin = (req) => roleLower(req) === "admin";
 const isHr = (req) => roleLower(req) === "hr";
 const isAccounting = (req) => roleLower(req) === "accounting";
 const isBranchManager = (req) => roleLower(req) === "branch manager";
+const isAssistantVicePresident = (req) =>
+  roleLower(req) === "assistant vice president";
+const isVicePresident = (req) => roleLower(req) === "vice president";
+const isSeniorVicePresident = (req) =>
+  roleLower(req) === "senior vice president";
+const isPresident = (req) => roleLower(req) === "president";
+
+const isTopManagement = (req) =>
+  isAdmin(req) ||
+  isHr(req) ||
+  isAccounting(req) ||
+  isAssistantVicePresident(req) ||
+  isVicePresident(req) ||
+  isSeniorVicePresident(req) ||
+  isPresident(req);
+
 const getUserBranchId = (req) => req.user?.branch_id ?? null;
 
 const normalizeExitType = (v) => {
@@ -42,7 +58,7 @@ const normalizeExitType = (v) => {
 ========================================================= */
 router.get("/exit-staff", requireAuth, async (req, res) => {
   try {
-    if (!isAdmin(req) && !isBranchManager(req) && !isHr(req) && !isAccounting(req)) {
+    if (!isTopManagement(req) && !isBranchManager(req)) {
       return res.status(403).json({ message: "Access denied" });
     }
 
@@ -97,7 +113,7 @@ router.get("/exit-staff", requireAuth, async (req, res) => {
 ========================================================= */
 router.get("/exit-staff-orders", requireAuth, async (req, res) => {
   try {
-    if (isAdmin(req) || isHr(req) || isAccounting(req)) {
+    if (isTopManagement(req)) {
       const r = await pool.query(`
         SELECT *
         FROM public.exit_staff_orders
@@ -132,14 +148,22 @@ router.get("/exit-staff-orders", requireAuth, async (req, res) => {
 router.post(
   "/exit-staff-orders",
   requireAuth,
-  requireRole(["admin", "branch manager"]),
+  requireRole([
+    "admin",
+    "branch manager",
+    "assistant vice president",
+    "vice president",
+    "senior vice president",
+    "president",
+  ]),
   async (req, res) => {
     const client = await pool.connect();
 
     try {
       await client.query("BEGIN");
 
-      const employee_id = toInt(req.body?.employee_no);
+      const staff_id = toInt(req.body?.staff_id);
+      const employee_no_input = clean(req.body?.employee_no);
       const exit_type = normalizeExitType(req.body?.exit_type);
       const date_created =
         toDate(req.body?.date_created) || toDate(new Date().toISOString());
@@ -148,9 +172,9 @@ router.post(
       const settlement_branch_id = toInt(req.body?.settlement_branch_id);
       const remarks = clean(req.body?.remarks);
 
-      if (!employee_id) {
+      if (!staff_id && !employee_no_input) {
         await client.query("ROLLBACK");
-        return res.status(400).json({ message: "Employee required" });
+        return res.status(400).json({ message: "Staff is required" });
       }
 
       if (
@@ -173,21 +197,43 @@ router.post(
         return res.status(400).json({ message: "Effective date required" });
       }
 
-      const s = await client.query(
-        `
-        SELECT
-          id,
-          employee_no,
-          fullname,
-          first_name,
-          last_name,
-          middle_name,
-          branch_id
-        FROM public.staff
-        WHERE id = $1
-        `,
-        [employee_id]
-      );
+      let s;
+
+      if (staff_id) {
+        s = await client.query(
+          `
+          SELECT
+            id,
+            employee_no,
+            fullname,
+            last_name,
+            first_name,
+            middle_name,
+            branch_id,
+            status
+          FROM public.staff
+          WHERE id = $1
+          `,
+          [staff_id]
+        );
+      } else {
+        s = await client.query(
+          `
+          SELECT
+            id,
+            employee_no,
+            fullname,
+            last_name,
+            first_name,
+            middle_name,
+            branch_id,
+            status
+          FROM public.staff
+          WHERE employee_no = $1
+          `,
+          [employee_no_input]
+        );
+      }
 
       if (s.rowCount === 0) {
         await client.query("ROLLBACK");
@@ -200,9 +246,9 @@ router.post(
         const userBranchId = getUserBranchId(req);
         if (!userBranchId || Number(userBranchId) !== Number(staff.branch_id)) {
           await client.query("ROLLBACK");
-          return res
-            .status(403)
-            .json({ message: "You can only create exit staff orders for your branch." });
+          return res.status(403).json({
+            message: "You can only create exit staff orders for your branch.",
+          });
         }
       }
 
@@ -330,7 +376,7 @@ router.post(
       return res.json(ins.rows[0]);
     } catch (e) {
       await client.query("ROLLBACK");
-      console.error("POST /exit-staff-orders ERROR:", e.message);
+      console.error("POST /exit-staff-orders ERROR:", e);
       return res.status(500).json({ message: e?.message || "Server error" });
     } finally {
       client.release();
@@ -341,7 +387,13 @@ router.post(
 router.put(
   "/exit-staff-orders/:id/approve",
   requireAuth,
-  requireRole(["admin"]),
+  requireRole([
+    "admin",
+    "assistant vice president",
+    "vice president",
+    "senior vice president",
+    "president",
+  ]),
   async (req, res) => {
     const client = await pool.connect();
 
@@ -456,7 +508,7 @@ router.put(
       return res.json(orderUpdate.rows[0]);
     } catch (e) {
       await client.query("ROLLBACK");
-      console.error("PUT /exit-staff-orders/:id/approve ERROR:", e.message);
+      console.error("PUT /exit-staff-orders/:id/approve ERROR:", e);
       return res.status(500).json({ message: e?.message || "Server error" });
     } finally {
       client.release();
@@ -467,7 +519,13 @@ router.put(
 router.put(
   "/exit-staff-orders/:id/reject",
   requireAuth,
-  requireRole(["admin"]),
+  requireRole([
+    "admin",
+    "assistant vice president",
+    "vice president",
+    "senior vice president",
+    "president",
+  ]),
   async (req, res) => {
     try {
       const id = toInt(req.params.id);

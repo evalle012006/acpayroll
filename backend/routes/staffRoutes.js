@@ -63,6 +63,14 @@ const isVicePresident = (req) => roleLower(req) === "vice president";
 const isSeniorVicePresident = (req) => roleLower(req) === "senior vice president";
 const isPresident = (req) => roleLower(req) === "president";
 
+const isTopManagement = (req) =>
+  isAdmin(req) ||
+  isHr(req) ||
+  isAccounting(req) ||
+  isVicePresident(req) ||
+  isSeniorVicePresident(req) ||
+  isPresident(req);
+
 const getUserArea = (req) => toStr(req.user?.area);
 const getUserBranchCode = (req) => toStr(req.user?.branch_id);
 const getUserDivision = (req) => toStr(req.user?.division);
@@ -153,14 +161,7 @@ async function canAccessStaffById(client, req, staffId) {
   const id = toInt(staffId);
   if (!id) return false;
 
-  if (
-    isAdmin(req) ||
-    isHr(req) ||
-    isAccounting(req) ||
-    isVicePresident(req) ||
-    isSeniorVicePresident(req) ||
-    isPresident(req)
-  ) {
+  if (isTopManagement(req)) {
     return true;
   }
 
@@ -471,14 +472,7 @@ async function insertStaffFromBody(client, body) {
 
 router.get("/staff", requireAuth, async (req, res) => {
   try {
-    if (
-      isAdmin(req) ||
-      isHr(req) ||
-      isAccounting(req) ||
-      isVicePresident(req) ||
-      isSeniorVicePresident(req) ||
-      isPresident(req)
-    ) {
+    if (isTopManagement(req)) {
       const r = await pool.query(`
         SELECT s.*,
                b.name AS branch_name,

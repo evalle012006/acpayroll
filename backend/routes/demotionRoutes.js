@@ -26,6 +26,18 @@ const isAreaManager = (req) => roleLower(req) === "area manager";
 const isRegionalManager = (req) => roleLower(req) === "regional manager";
 const isAssistantVicePresident = (req) =>
   roleLower(req) === "assistant vice president";
+const isVicePresident = (req) => roleLower(req) === "vice president";
+const isSeniorVicePresident = (req) =>
+  roleLower(req) === "senior vice president";
+const isPresident = (req) => roleLower(req) === "president";
+
+const isTopManagement = (req) =>
+  isAdmin(req) ||
+  isHr(req) ||
+  isAccounting(req) ||
+  isVicePresident(req) ||
+  isSeniorVicePresident(req) ||
+  isPresident(req);
 
 const getUserArea = (req) => toStr(req.user?.area);
 const getUserRegion = (req) => toStr(req.user?.region);
@@ -138,9 +150,7 @@ router.get("/demotion-orders/staff/:id", requireAuth, async (req, res) => {
     }
 
     if (
-      !isAdmin(req) &&
-      !isHr(req) &&
-      !isAccounting(req) &&
+      !isTopManagement(req) &&
       !isBranchManager(req) &&
       !isAreaManager(req) &&
       !isRegionalManager(req) &&
@@ -171,7 +181,7 @@ router.get("/demotion-orders/staff/:id", requireAuth, async (req, res) => {
 ========================================================= */
 router.get("/demotion-orders", requireAuth, async (req, res) => {
   try {
-    if (isAdmin(req) || isHr(req) || isAccounting(req)) {
+    if (isTopManagement(req)) {
       const r = await pool.query(
         `
         SELECT *
@@ -255,6 +265,9 @@ router.post(
     "area manager",
     "regional manager",
     "assistant vice president",
+    "vice president",
+    "senior vice president",
+    "president",
   ]),
   async (req, res) => {
     const client = await pool.connect();
@@ -426,7 +439,7 @@ router.post(
 router.put(
   "/demotion-orders/:id/approve",
   requireAuth,
-  requireRole(["admin"]),
+  requireRole(["admin", "vice president", "senior vice president", "president"]),
   async (req, res) => {
     const client = await pool.connect();
     try {
@@ -513,7 +526,7 @@ router.put(
 router.put(
   "/demotion-orders/:id/reject",
   requireAuth,
-  requireRole(["admin"]),
+  requireRole(["admin", "vice president", "senior vice president", "president"]),
   async (req, res) => {
     try {
       const id = toInt(req.params.id);

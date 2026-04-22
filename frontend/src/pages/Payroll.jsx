@@ -15,6 +15,46 @@ const fmt = (n) => toNum(n).toLocaleString();
 const fmtDate = (d) => (d ? String(d).split("T")[0] : "-");
 const toDate10 = (v) => (v ? String(v).slice(0, 10) : "");
 
+const POSITION_ORDER = [
+  "president",
+  "senior vice president",
+  "vice president",
+  "assistant vice president",
+  "regional manager",
+  "acting regional manager",
+  "area manager",
+  "acting area manager",
+  "branch manager",
+  "acting branch manager",
+  "loan officer",
+  "probationary loan officer",
+];
+
+const getPositionRank = (position) => {
+  const idx = POSITION_ORDER.indexOf(norm(position));
+  return idx === -1 ? 999 : idx;
+};
+
+const sortByPosition = (rows) => {
+  return [...rows].sort((a, b) => {
+    const rankA = getPositionRank(a?.position);
+    const rankB = getPositionRank(b?.position);
+
+    if (rankA !== rankB) return rankA - rankB;
+
+    const posCompare = toStr(a?.position).localeCompare(toStr(b?.position));
+    if (posCompare !== 0) return posCompare;
+
+    const lastCompare = toStr(a?.last_name).localeCompare(toStr(b?.last_name));
+    if (lastCompare !== 0) return lastCompare;
+
+    const firstCompare = toStr(a?.first_name).localeCompare(toStr(b?.first_name));
+    if (firstCompare !== 0) return firstCompare;
+
+    return toStr(a?.employee_no).localeCompare(toStr(b?.employee_no));
+  });
+};
+
 const monthlyFromWhole = (v) => {
   const n = toNum(v);
   if (n <= 0) return 0;
@@ -364,7 +404,7 @@ function Payroll() {
   );
 
   const computedRows = useMemo(() => {
-    return (staff || []).map((raw) => {
+    const rows = (staff || []).map((raw) => {
       const s = applyOverrideToStaffRow(raw);
       const balance = getBalanceForStaff(s);
 
@@ -454,6 +494,8 @@ function Payroll() {
         pay25,
       };
     });
+
+    return sortByPosition(rows);
   }, [staff, applyOverrideToStaffRow, getBalanceForStaff, approvedSuspensions]);
 
   const sumColumn = (key) => computedRows.reduce((sum, s) => sum + toNum(s[key]), 0);
@@ -674,9 +716,15 @@ function Payroll() {
                     <td className="num">{fmt(s.staff_accounts_payable)}</td>
 
                     <td className="num td-strong">{fmt(s.total_deduction)}</td>
-                    <td className={`num td-strong ${s.netPay < 0 ? "neg" : "pos"}`}>{fmt(s.netPay)}</td>
-                    <td className={`num td-strong ${s.pay10 < 0 ? "neg" : "pos"}`}>{fmt(s.pay10)}</td>
-                    <td className={`num td-strong ${s.pay25 < 0 ? "neg" : "pos"}`}>{fmt(s.pay25)}</td>
+                    <td className={`num td-strong ${s.netPay < 0 ? "neg" : "pos"}`}>
+                      {fmt(s.netPay)}
+                    </td>
+                    <td className={`num td-strong ${s.pay10 < 0 ? "neg" : "pos"}`}>
+                      {fmt(s.pay10)}
+                    </td>
+                    <td className={`num td-strong ${s.pay25 < 0 ? "neg" : "pos"}`}>
+                      {fmt(s.pay25)}
+                    </td>
 
                     <td style={{ position: "relative" }}>
                       <div

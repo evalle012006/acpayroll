@@ -100,6 +100,7 @@ export default function ReimbursementApprovalTab() {
   const isAdmin = role === "admin";
   const isHr = role === "hr";
   const isAccounting = role === "accounting";
+  const isTread = role === "tread";
   const isAreaManager = role === "area manager";
   const isBranchManager = role === "branch manager";
   const isRegionalManager = role === "regional manager";
@@ -114,6 +115,7 @@ export default function ReimbursementApprovalTab() {
     isAdmin ||
     isHr ||
     isAccounting ||
+    isTread ||
     isBranchManager ||
     isAreaManager ||
     isRegionalManager ||

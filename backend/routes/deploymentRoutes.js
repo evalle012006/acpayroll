@@ -14,12 +14,14 @@ const toDate = (v) => {
 };
 
 const toStr = (v) => String(v ?? "").trim();
+
 const toNum = (v) => {
   const n = Number(v ?? 0);
   return Number.isFinite(n) ? n : 0;
 };
 
 const roleLower = (req) => String(req.user?.role || "").trim().toLowerCase();
+
 const isAdmin = (req) => roleLower(req) === "admin";
 const isHr = (req) => roleLower(req) === "hr";
 const isAccounting = (req) => roleLower(req) === "accounting";
@@ -28,6 +30,23 @@ const isAreaManager = (req) => roleLower(req) === "area manager";
 const isRegionalManager = (req) => roleLower(req) === "regional manager";
 const isAssistantVicePresident = (req) =>
   roleLower(req) === "assistant vice president";
+const isVicePresident = (req) => roleLower(req) === "vice president";
+const isSeniorVicePresident = (req) =>
+  roleLower(req) === "senior vice president";
+const isPresident = (req) => roleLower(req) === "president";
+
+const isTopManagement = (req) =>
+  isAssistantVicePresident(req) ||
+  isVicePresident(req) ||
+  isSeniorVicePresident(req) ||
+  isPresident(req);
+
+const canApproveDeployment = (req) =>
+  isAdmin(req) ||
+  isAssistantVicePresident(req) ||
+  isVicePresident(req) ||
+  isSeniorVicePresident(req) ||
+  isPresident(req);
 
 const getUserRegion = (req) => toStr(req.user?.region);
 const getUserBranchCode = (req) => toStr(req.user?.branch_id);
@@ -176,7 +195,12 @@ router.get("/deployments", requireAuth, async (req, res) => {
   const client = await pool.connect();
 
   try {
-    if (isAdmin(req) || isHr(req) || isAccounting(req)) {
+    if (
+      isAdmin(req) ||
+      isHr(req) ||
+      isAccounting(req) ||
+      isTopManagement(req)
+    ) {
       const r = await client.query(`
         SELECT *
         FROM public.deployment_orders
@@ -239,18 +263,6 @@ router.get("/deployments", requireAuth, async (req, res) => {
       return res.json(r.rows);
     }
 
-    if (isAssistantVicePresident(req)) {
-      const r = await client.query(
-        `
-        SELECT *
-        FROM public.deployment_orders
-        ORDER BY id DESC
-        `
-      );
-
-      return res.json(r.rows);
-    }
-
     return res.status(403).json({ message: "Access denied" });
   } catch (e) {
     console.error("GET /api/deployments ERROR:", e.message);
@@ -270,7 +282,12 @@ router.get("/deployments/:id", requireAuth, async (req, res) => {
     const id = toInt(req.params.id);
     if (!id) return res.status(400).json({ message: "Invalid id" });
 
-    if (isAdmin(req) || isHr(req) || isAccounting(req) || isAssistantVicePresident(req)) {
+    if (
+      isAdmin(req) ||
+      isHr(req) ||
+      isAccounting(req) ||
+      isTopManagement(req)
+    ) {
       const r = await client.query(
         `
         SELECT *
@@ -377,6 +394,9 @@ router.get(
     "area manager",
     "regional manager",
     "assistant vice president",
+    "vice president",
+    "senior vice president",
+    "president",
   ]),
   async (req, res) => {
     const client = await pool.connect();
@@ -440,6 +460,9 @@ router.post(
     "area manager",
     "regional manager",
     "assistant vice president",
+    "vice president",
+    "senior vice president",
+    "president",
   ]),
   async (req, res) => {
     const client = await pool.connect();
@@ -575,6 +598,9 @@ router.put(
     "area manager",
     "regional manager",
     "assistant vice president",
+    "vice president",
+    "senior vice president",
+    "president",
   ]),
   async (req, res) => {
     const client = await pool.connect();
@@ -606,7 +632,9 @@ router.put(
 
       if (String(row.status || "").toLowerCase() === "approved") {
         await client.query("ROLLBACK");
-        return res.status(400).json({ message: "Approved deployments cannot be edited" });
+        return res
+          .status(400)
+          .json({ message: "Approved deployments cannot be edited" });
       }
 
       if (isBranchManager(req)) {
@@ -666,7 +694,14 @@ router.put(
         WHERE id = $6
         RETURNING *;
         `,
-        [branchRow.id, branchRow.code, branchRow.name, deployment_date, details || null, id]
+        [
+          branchRow.id,
+          branchRow.code,
+          branchRow.name,
+          deployment_date,
+          details || null,
+          id,
+        ]
       );
 
       await client.query("COMMIT");
@@ -720,7 +755,13 @@ router.delete(
 router.put(
   "/deployments/:id/approve",
   requireAuth,
-  requireRole(["admin"]),
+  requireRole([
+    "admin",
+    "assistant vice president",
+    "vice president",
+    "senior vice president",
+    "president",
+  ]),
   async (req, res) => {
     const client = await pool.connect();
 
@@ -731,6 +772,11 @@ router.put(
       if (!id) {
         await client.query("ROLLBACK");
         return res.status(400).json({ message: "Invalid id" });
+      }
+
+      if (!canApproveDeployment(req)) {
+        await client.query("ROLLBACK");
+        return res.status(403).json({ message: "Access denied" });
       }
 
       const r = await client.query(

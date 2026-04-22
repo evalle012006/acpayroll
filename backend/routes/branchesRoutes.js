@@ -24,6 +24,17 @@ const isBranchManager = (req) => roleLower(req) === "branch manager";
 const isAreaManager = (req) => roleLower(req) === "area manager";
 const isRegionalManager = (req) => roleLower(req) === "regional manager";
 const isAssistantVicePresident = (req) => roleLower(req) === "assistant vice president";
+const isVicePresident = (req) => roleLower(req) === "vice president";
+const isSeniorVicePresident = (req) => roleLower(req) === "senior vice president";
+const isPresident = (req) => roleLower(req) === "president";
+
+const isTopManagement = (req) =>
+  isAdmin(req) ||
+  isHr(req) ||
+  isAccounting(req) ||
+  isVicePresident(req) ||
+  isSeniorVicePresident(req) ||
+  isPresident(req);
 
 const getUserBranchCode = (req) => toStr(req.user?.branch_id);
 const getUserArea = (req) => toStr(req.user?.area);
@@ -32,7 +43,7 @@ const getUserDivision = (req) => toStr(req.user?.division);
 
 router.get("/branches", requireAuth, async (req, res) => {
   try {
-    if (isAdmin(req) || isHr(req) || isAccounting(req)) {
+    if (isTopManagement(req)) {
       const r = await pool.query(`
         SELECT id, code, name, area, region, division, address, latitude, longitude
         FROM public.branches
@@ -121,7 +132,7 @@ router.get("/branches/:id", requireAuth, async (req, res) => {
     const id = toInt(req.params.id);
     if (!id) return res.status(400).json({ message: "Invalid branch id" });
 
-    if (isAdmin(req) || isHr(req) || isAccounting(req)) {
+    if (isTopManagement(req)) {
       const r = await pool.query(
         `
         SELECT id, code, name, area, region, division, address, latitude, longitude

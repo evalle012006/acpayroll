@@ -44,7 +44,17 @@ export default function ExitStaffOrders() {
   const navigate = useNavigate();
 
   const user = useMemo(() => readUser(), []);
-  const isAdmin = norm(user?.role) === "admin";
+  const userRole = norm(user?.role);
+
+  const canApprove = [
+    "admin",
+    "assistant vice president",
+    "vice president",
+    "senior vice president",
+    "president",
+  ].includes(userRole);
+
+  const canDelete = userRole === "admin";
 
   const [showCreate, setShowCreate] = useState(false);
 
@@ -92,7 +102,6 @@ export default function ExitStaffOrders() {
 
   const filteredStaff = useMemo(() => {
     const q = norm(employeeSearch);
-
     if (!q) return staff;
 
     return staff.filter((s) => {
@@ -359,12 +368,16 @@ export default function ExitStaffOrders() {
     if (!toStr(form.effective_date)) return setErr("Effective date is required.");
 
     const payload = {
-      employee_no: staffId,
+      staff_id: staffId,
+      employee_no: toStr(form.employee_no),
+      employee_name: selectedStaff ? displayNameParts(selectedStaff) : "",
       exit_type: toStr(form.exit_type),
       date_created: toDate10(form.date_created),
       effective_date: toDate10(form.effective_date),
       settlement_date: form.settlement_date ? toDate10(form.settlement_date) : null,
-      settlement_branch_id: form.settlement_branch_id ? Number(form.settlement_branch_id) : null,
+      settlement_branch_id: form.settlement_branch_id
+        ? Number(form.settlement_branch_id)
+        : null,
       remarks: toStr(form.remarks) || null,
     };
 
@@ -375,14 +388,18 @@ export default function ExitStaffOrders() {
       await loadOrders();
       alert("Exit staff order created (Pending).");
     } catch (e2) {
-      setErr(e2?.response?.data?.message || e2?.message || "Failed to create exit staff order.");
+      setErr(
+        e2?.response?.data?.message ||
+          e2?.message ||
+          "Failed to create exit staff order."
+      );
     } finally {
       setSaving(false);
     }
   };
 
   const approve = async (o) => {
-    if (!isAdmin) return alert("Admin only.");
+    if (!canApprove) return alert("Access denied.");
     if (!o?.id) return;
 
     const ok = window.confirm(
@@ -403,7 +420,7 @@ export default function ExitStaffOrders() {
   };
 
   const reject = async (o) => {
-    if (!isAdmin) return alert("Admin only.");
+    if (!canApprove) return alert("Access denied.");
     if (!o?.id) return;
 
     const reason = prompt("Enter rejection reason:");
@@ -422,7 +439,7 @@ export default function ExitStaffOrders() {
   };
 
   const del = async (o) => {
-    if (!isAdmin) return alert("Admin only.");
+    if (!canDelete) return alert("Admin only.");
     if (!o?.id) return;
     if (String(o.status || "").toLowerCase() === "approved") return;
 
@@ -524,7 +541,7 @@ export default function ExitStaffOrders() {
                 orders.map((o) => {
                   const pending = String(o.status || "").toLowerCase() === "pending";
                   const approved = String(o.status || "").toLowerCase() === "approved";
-                  const canAct = isAdmin && pending;
+                  const canAct = canApprove && pending;
 
                   const settlementText =
                     o.settlement_date || o.settlement_branch_name || o.settlement_branch_id
@@ -574,7 +591,7 @@ export default function ExitStaffOrders() {
                             <span className="exit-dash">-</span>
                           )}
 
-                          {isAdmin && (
+                          {canDelete && (
                             <button
                               className="po-mini-btn"
                               type="button"
@@ -619,7 +636,7 @@ export default function ExitStaffOrders() {
             <div className="exit-modal-head">
               <div>
                 <h3 className="exit-modal-title">Create Exit Staff</h3>
-                <p className="exit-modal-sub">Order will be Pending until approved by Admin.</p>
+                <p className="exit-modal-sub">Order will be Pending until approved.</p>
               </div>
               <button className="exit-x" type="button" onClick={closeModal}>
                 ✕

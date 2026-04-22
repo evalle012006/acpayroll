@@ -29,6 +29,9 @@ router.get(
   requireAuth,
   requireRole([
     "admin",
+    "hr",
+    "accounting",
+    "tread",
     "branch manager",
     "vice president",
     "senior vice president",
@@ -43,7 +46,9 @@ router.get(
         `SELECT id, name FROM public.departments WHERE id=$1`,
         [id]
       );
-      if (dep.rowCount === 0) return res.status(404).json({ message: "Department not found" });
+      if (dep.rowCount === 0) {
+        return res.status(404).json({ message: "Department not found" });
+      }
 
       const depName = String(dep.rows[0].name || "").trim();
 
@@ -52,6 +57,9 @@ router.get(
 
       if (
         role === "admin" ||
+        role === "hr" ||
+        role === "accounting" ||
+        role === "tread" ||
         role === "vice president" ||
         role === "senior vice president" ||
         role === "president"

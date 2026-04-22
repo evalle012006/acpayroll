@@ -28,6 +28,27 @@ const uniqueSorted = (arr) =>
     a.localeCompare(b)
   );
 
+const POSITION_ORDER = [
+  "president",
+  "senior vice president",
+  "vice president",
+  "assistant vice president",
+  "regional manager",
+  "acting regional manager",
+  "area manager",
+  "acting area manager",
+  "branch manager",
+  "acting branch manager",
+  "loan officer",
+  "probationary loan officer",
+];
+
+const getPositionRank = (position) => {
+  const value = norm(position);
+  const idx = POSITION_ORDER.indexOf(value);
+  return idx === -1 ? 999 : idx;
+};
+
 export default function Consolidation() {
   const navigate = useNavigate();
 
@@ -159,7 +180,7 @@ export default function Consolidation() {
   const filteredStaff = useMemo(() => {
     const q = search.toLowerCase().trim();
 
-    return enrichedStaff.filter((s) => {
+    const filtered = enrichedStaff.filter((s) => {
       if (divisionFilter && norm(s._division) !== norm(divisionFilter)) return false;
       if (regionFilter && norm(s._region) !== norm(regionFilter)) return false;
       if (areaFilter && norm(s._area) !== norm(areaFilter)) return false;
@@ -181,6 +202,21 @@ export default function Consolidation() {
         `${employeeNo} ${employeeName} ${position} ${branchName} ${branchCode} ${division} ${region} ${area} ${status}`.toLowerCase();
 
       return !q || hay.includes(q);
+    });
+
+    return [...filtered].sort((a, b) => {
+      const rankA = getPositionRank(a.position);
+      const rankB = getPositionRank(b.position);
+
+      if (rankA !== rankB) return rankA - rankB;
+
+      const posCompare = toStr(a.position).localeCompare(toStr(b.position));
+      if (posCompare !== 0) return posCompare;
+
+      const nameCompare = displayName(a).localeCompare(displayName(b));
+      if (nameCompare !== 0) return nameCompare;
+
+      return toStr(a.employee_no).localeCompare(toStr(b.employee_no));
     });
   }, [
     enrichedStaff,

@@ -31,10 +31,12 @@ export default function SAPApprovalTab() {
 
   const isAdmin = role === "admin";
   const isPresident = role === "president";
+  const isHr = role === "hr";
+  const isAccounting = role === "accounting";
 
-  const canViewSAP = isAdmin || isPresident;
-  const canCreateSAP = isAdmin || isPresident;
-  const canApproveSAP = isAdmin || isPresident;
+  const canViewSAP = isAdmin || isPresident || isHr || isAccounting;
+  const canCreateSAP = isAdmin || isPresident || isHr || isAccounting;
+  const canApproveSAP = isAdmin || isPresident || isHr || isAccounting;
 
   const [sapRows, setSapRows] = useState([]);
   const [staffList, setStaffList] = useState([]);
@@ -504,7 +506,7 @@ export default function SAPApprovalTab() {
             <div className="modal-head">
               <div>
                 <h3 className="modal-title">Staff Accounts Payable</h3>
-                <p className="modal-subtitle">Approve/Reject is Admin and President only</p>
+                <p className="modal-subtitle">Approve/Reject is Admin, President, HR, and Accounting</p>
               </div>
               <button className="modal-x" type="button" onClick={() => setShowSapModal(false)}>
                 ✕

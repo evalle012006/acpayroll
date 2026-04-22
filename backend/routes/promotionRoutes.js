@@ -34,6 +34,18 @@ const isAreaManager = (req) => roleLower(req) === "area manager";
 const isRegionalManager = (req) => roleLower(req) === "regional manager";
 const isAssistantVicePresident = (req) =>
   roleLower(req) === "assistant vice president";
+const isVicePresident = (req) => roleLower(req) === "vice president";
+const isSeniorVicePresident = (req) =>
+  roleLower(req) === "senior vice president";
+const isPresident = (req) => roleLower(req) === "president";
+
+const isTopManagement = (req) =>
+  isAdmin(req) ||
+  isHr(req) ||
+  isAccounting(req) ||
+  isVicePresident(req) ||
+  isSeniorVicePresident(req) ||
+  isPresident(req);
 
 const getUserBranchId = (req) => req.user?.branch_id ?? null;
 const getUserArea = (req) => toStr(req.user?.area);
@@ -107,7 +119,7 @@ async function generateOrderNo(client, prefix) {
 
 router.get("/promotion-orders", requireAuth, async (req, res) => {
   try {
-    if (isAdmin(req) || isHr(req) || isAccounting(req)) {
+    if (isTopManagement(req)) {
       const r = await pool.query(
         `SELECT * FROM public.promotion_orders ORDER BY created_at DESC`
       );
@@ -183,6 +195,9 @@ router.get(
     "area manager",
     "regional manager",
     "assistant vice president",
+    "vice president",
+    "senior vice president",
+    "president",
   ]),
   async (req, res) => {
     try {
@@ -255,6 +270,9 @@ router.post(
     "area manager",
     "regional manager",
     "assistant vice president",
+    "vice president",
+    "senior vice president",
+    "president",
   ]),
   upload.single("attachment"),
   async (req, res) => {
@@ -426,7 +444,7 @@ router.post(
 router.put(
   "/promotion-orders/:id/approve",
   requireAuth,
-  requireRole(["admin"]),
+  requireRole(["admin", "vice president", "senior vice president", "president"]),
   async (req, res) => {
     const client = await pool.connect();
     try {
@@ -495,7 +513,7 @@ router.put(
 router.put(
   "/promotion-orders/:id/reject",
   requireAuth,
-  requireRole(["admin"]),
+  requireRole(["admin", "vice president", "senior vice president", "president"]),
   async (req, res) => {
     try {
       const id = toInt(req.params.id);

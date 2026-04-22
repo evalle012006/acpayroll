@@ -31,6 +31,18 @@ const isAccounting = (req) => roleLower(req) === "accounting";
 const isBranchManager = (req) => roleLower(req) === "branch manager";
 const isAssistantVicePresident = (req) =>
   roleLower(req) === "assistant vice president";
+const isVicePresident = (req) => roleLower(req) === "vice president";
+const isSeniorVicePresident = (req) =>
+  roleLower(req) === "senior vice president";
+const isPresident = (req) => roleLower(req) === "president";
+
+const isTopManagement = (req) =>
+  isAdmin(req) ||
+  isHr(req) ||
+  isAccounting(req) ||
+  isVicePresident(req) ||
+  isSeniorVicePresident(req) ||
+  isPresident(req);
 
 const getUserBranchId = (req) => req.user?.branch_id ?? null;
 const getUserRegion = (req) => toStr(req.user?.region);
@@ -71,7 +83,7 @@ const removeStoredFile = (storedPath) => {
 };
 
 const canAccessStaffRecord = (req, staff) => {
-  if (isAdmin(req) || isHr(req) || isAccounting(req)) return true;
+  if (isTopManagement(req)) return true;
 
   if (isBranchManager(req)) {
     const bid = toInt(getUserBranchId(req));
@@ -87,7 +99,7 @@ const canAccessStaffRecord = (req, staff) => {
 };
 
 const canMutateOrder = (req, row) => {
-  if (isAdmin(req)) return true;
+  if (isTopManagement(req)) return true;
 
   if (isBranchManager(req)) {
     const bid = toInt(getUserBranchId(req));
@@ -104,7 +116,7 @@ const canMutateOrder = (req, row) => {
 
 router.get("/suspension-orders", requireAuth, async (req, res) => {
   try {
-    if (isAdmin(req) || isHr(req) || isAccounting(req)) {
+    if (isTopManagement(req)) {
       const r = await pool.query(`
         SELECT *
         FROM public.suspension_orders
@@ -204,7 +216,14 @@ router.get("/suspension-orders/staff/:id", requireAuth, async (req, res) => {
 router.post(
   "/suspension-orders",
   requireAuth,
-  requireRole(["admin", "branch manager", "assistant vice president"]),
+  requireRole([
+    "admin",
+    "branch manager",
+    "assistant vice president",
+    "vice president",
+    "senior vice president",
+    "president",
+  ]),
   upload.single("attachment"),
   async (req, res) => {
     const client = await pool.connect();
@@ -377,7 +396,14 @@ router.post(
 router.put(
   "/suspension-orders/:id",
   requireAuth,
-  requireRole(["admin", "branch manager", "assistant vice president"]),
+  requireRole([
+    "admin",
+    "branch manager",
+    "assistant vice president",
+    "vice president",
+    "senior vice president",
+    "president",
+  ]),
   upload.single("attachment"),
   async (req, res) => {
     const client = await pool.connect();
@@ -579,7 +605,14 @@ router.put(
 router.delete(
   "/suspension-orders/:id",
   requireAuth,
-  requireRole(["admin", "branch manager", "assistant vice president"]),
+  requireRole([
+    "admin",
+    "branch manager",
+    "assistant vice president",
+    "vice president",
+    "senior vice president",
+    "president",
+  ]),
   async (req, res) => {
     const client = await pool.connect();
     try {
@@ -691,7 +724,7 @@ router.get(
 router.put(
   "/suspension-orders/:id/approve",
   requireAuth,
-  requireRole(["admin"]),
+  requireRole(["admin", "vice president", "senior vice president", "president"]),
   async (req, res) => {
     try {
       const id = toInt(req.params.id);
@@ -728,7 +761,7 @@ router.put(
 router.put(
   "/suspension-orders/:id/reject",
   requireAuth,
-  requireRole(["admin"]),
+  requireRole(["admin", "vice president", "senior vice president", "president"]),
   async (req, res) => {
     try {
       const id = toInt(req.params.id);

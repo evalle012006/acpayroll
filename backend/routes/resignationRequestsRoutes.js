@@ -23,19 +23,31 @@ const clean = (v) => String(v ?? "").trim();
 const norm = (v) => clean(v).toLowerCase();
 
 const roleLower = (req) => norm(req.user?.role);
+
 const isAdmin = (req) => roleLower(req) === "admin";
 const isHr = (req) => roleLower(req) === "hr";
 const isAccounting = (req) => roleLower(req) === "accounting";
 const isAreaManager = (req) => roleLower(req) === "area manager";
 const isRegionalManager = (req) => roleLower(req) === "regional manager";
-const isAssistantVicePresident = (req) => roleLower(req) === "assistant vice president";
+const isAssistantVicePresident = (req) =>
+  roleLower(req) === "assistant vice president";
+const isVicePresident = (req) => roleLower(req) === "vice president";
+const isSeniorVicePresident = (req) =>
+  roleLower(req) === "senior vice president";
+const isPresident = (req) => roleLower(req) === "president";
+
+const isExecutiveApprover = (req) =>
+  isAssistantVicePresident(req) ||
+  isVicePresident(req) ||
+  isSeniorVicePresident(req) ||
+  isPresident(req);
 
 const getUserBranchId = (req) => req.user?.branch_id ?? null;
 const getUserArea = (req) => clean(req.user?.area);
 const getUserRegion = (req) => clean(req.user?.region);
 
 const STATUS_RM = "Pending Regional Manager";
-const STATUS_AVP = "Pending Assistant Vice President";
+const STATUS_EXEC = "Pending Executive Approval";
 const STATUS_ADMIN = "Pending Admin";
 const STATUS_APPROVED = "Approved";
 const STATUS_REJECTED = "Rejected";
@@ -72,7 +84,14 @@ router.get("/resignation-requests", requireAuth, async (req, res) => {
       WHERE 1=1
     `;
 
-    if (isAdmin(req) || isHr(req) || isAccounting(req)) {
+    if (
+      isAdmin(req) ||
+      isHr(req) ||
+      isAccounting(req) ||
+      isVicePresident(req) ||
+      isSeniorVicePresident(req) ||
+      isPresident(req)
+    ) {
       // full access
     } else if (isAreaManager(req)) {
       const area = getUserArea(req);
@@ -85,8 +104,7 @@ router.get("/resignation-requests", requireAuth, async (req, res) => {
       params.push(region);
       sql += ` AND COALESCE(region, '') = $${params.length}`;
     } else if (isAssistantVicePresident(req)) {
-      // AVP can view all requests that reached AVP/Admin stage
-      sql += ` AND status IN ('${STATUS_AVP}', '${STATUS_ADMIN}', '${STATUS_APPROVED}', '${STATUS_REJECTED}')`;
+      sql += ` AND status IN ('${STATUS_EXEC}', '${STATUS_ADMIN}', '${STATUS_APPROVED}', '${STATUS_REJECTED}')`;
     } else {
       return res.status(403).json({ message: "Access denied" });
     }
@@ -171,14 +189,28 @@ router.post(
 
       if (norm(staff.status || "active") !== "active") {
         await client.query("ROLLBACK");
-        return res.status(400).json({ message: "Only active staff can file resignation request" });
+        return res
+          .status(400)
+          .json({ message: "Only active staff can file resignation request" });
       }
 
       if (isAreaManager(req)) {
         const userArea = getUserArea(req);
         if (!userArea || norm(userArea) !== norm(staff.area)) {
           await client.query("ROLLBACK");
-          return res.status(403).json({ message: "You can only create resignation requests for your area" });
+          return res.status(403).json({
+            message: "You can only create resignation requests for your area",
+          });
+        }
+      }
+
+      if (isRegionalManager(req)) {
+        const userRegion = getUserRegion(req);
+        if (!userRegion || norm(userRegion) !== norm(staff.region)) {
+          await client.query("ROLLBACK");
+          return res.status(403).json({
+            message: "You can only create resignation requests for your region",
+          });
         }
       }
 
@@ -190,7 +222,7 @@ router.post(
           AND status IN ($2, $3, $4)
         LIMIT 1
         `,
-        [clean(staff.employee_no), STATUS_RM, STATUS_AVP, STATUS_ADMIN]
+        [clean(staff.employee_no), STATUS_RM, STATUS_EXEC, STATUS_ADMIN]
       );
 
       if (duplicateCheck.rowCount > 0) {
@@ -221,7 +253,10 @@ router.post(
       const n = Number(seq.rows[0].n);
       const request_no = `RES-${String(n).padStart(8, "0")}`;
 
-      const initialStatus = isAreaManager(req) ? STATUS_RM : STATUS_ADMIN;
+      let initialStatus = STATUS_ADMIN;
+      if (isAreaManager(req)) initialStatus = STATUS_RM;
+      else if (isRegionalManager(req)) initialStatus = STATUS_EXEC;
+      else if (isExecutiveApprover(req)) initialStatus = STATUS_ADMIN;
 
       const ins = await client.query(
         `
@@ -346,31 +381,51 @@ router.put("/resignation-requests/:id/approve", requireAuth, async (req, res) =>
     if (isRegionalManager(req)) {
       if (currentStatus !== STATUS_RM) {
         await client.query("ROLLBACK");
-        return res.status(400).json({ message: "This request is not pending Regional Manager approval" });
+        return res.status(400).json({
+          message: "This request is not pending Regional Manager approval",
+        });
       }
 
       const userRegion = getUserRegion(req);
       if (!userRegion || norm(userRegion) !== norm(existing.region)) {
         await client.query("ROLLBACK");
-        return res.status(403).json({ message: "You can only approve resignation requests within your region" });
+        return res.status(403).json({
+          message: "You can only approve resignation requests within your region",
+        });
       }
 
-      nextStatus = STATUS_AVP;
+      nextStatus = STATUS_EXEC;
       approverField = "regional_manager_approved_by";
       approverAtField = "regional_manager_approved_at";
-    } else if (isAssistantVicePresident(req)) {
-      if (currentStatus !== STATUS_AVP) {
+    } else if (isExecutiveApprover(req)) {
+      if (currentStatus !== STATUS_EXEC) {
         await client.query("ROLLBACK");
-        return res.status(400).json({ message: "This request is not pending Assistant Vice President approval" });
+        return res.status(400).json({
+          message: "This request is not pending Executive approval",
+        });
       }
 
       nextStatus = STATUS_ADMIN;
-      approverField = "avp_approved_by";
-      approverAtField = "avp_approved_at";
+
+      if (isAssistantVicePresident(req)) {
+        approverField = "avp_approved_by";
+        approverAtField = "avp_approved_at";
+      } else if (isVicePresident(req)) {
+        approverField = "vp_approved_by";
+        approverAtField = "vp_approved_at";
+      } else if (isSeniorVicePresident(req)) {
+        approverField = "svp_approved_by";
+        approverAtField = "svp_approved_at";
+      } else if (isPresident(req)) {
+        approverField = "president_approved_by";
+        approverAtField = "president_approved_at";
+      }
     } else if (isAdmin(req)) {
       if (currentStatus !== STATUS_ADMIN) {
         await client.query("ROLLBACK");
-        return res.status(400).json({ message: "This request is not pending Admin approval" });
+        return res.status(400).json({
+          message: "This request is not pending Admin approval",
+        });
       }
 
       const employeeNo = clean(existing.employee_no);
@@ -399,7 +454,9 @@ router.put("/resignation-requests/:id/approve", requireAuth, async (req, res) =>
 
       if (staffRes.rowCount === 0) {
         await client.query("ROLLBACK");
-        return res.status(404).json({ message: "Staff record not found for this employee number" });
+        return res.status(404).json({
+          message: "Staff record not found for this employee number",
+        });
       }
 
       const updateRequest = await client.query(
@@ -451,6 +508,11 @@ router.put("/resignation-requests/:id/approve", requireAuth, async (req, res) =>
     } else {
       await client.query("ROLLBACK");
       return res.status(403).json({ message: "Access denied" });
+    }
+
+    if (!approverField || !approverAtField) {
+      await client.query("ROLLBACK");
+      return res.status(500).json({ message: "Approver fields not configured" });
     }
 
     const sql = `
@@ -513,19 +575,27 @@ router.put("/resignation-requests/:id/reject", requireAuth, async (req, res) => 
 
     if (isRegionalManager(req)) {
       if (currentStatus !== STATUS_RM) {
-        return res.status(400).json({ message: "This request is not pending Regional Manager approval" });
+        return res.status(400).json({
+          message: "This request is not pending Regional Manager approval",
+        });
       }
       const userRegion = getUserRegion(req);
       if (!userRegion || norm(userRegion) !== norm(existing.region)) {
-        return res.status(403).json({ message: "You can only reject resignation requests within your region" });
+        return res.status(403).json({
+          message: "You can only reject resignation requests within your region",
+        });
       }
-    } else if (isAssistantVicePresident(req)) {
-      if (currentStatus !== STATUS_AVP) {
-        return res.status(400).json({ message: "This request is not pending Assistant Vice President approval" });
+    } else if (isExecutiveApprover(req)) {
+      if (currentStatus !== STATUS_EXEC) {
+        return res.status(400).json({
+          message: "This request is not pending Executive approval",
+        });
       }
     } else if (isAdmin(req)) {
       if (currentStatus !== STATUS_ADMIN) {
-        return res.status(400).json({ message: "This request is not pending Admin approval" });
+        return res.status(400).json({
+          message: "This request is not pending Admin approval",
+        });
       }
     } else {
       return res.status(403).json({ message: "Access denied" });
@@ -565,6 +635,7 @@ router.delete(
     "hr",
     "accounting",
     "area manager",
+    "assistant vice president",
     "vice president",
     "senior vice president",
     "president",
@@ -596,7 +667,9 @@ router.delete(
       if (isAreaManager(req)) {
         const userArea = getUserArea(req);
         if (!userArea || norm(userArea) !== norm(row.area)) {
-          return res.status(403).json({ message: "You can only delete resignation requests within your area" });
+          return res.status(403).json({
+            message: "You can only delete resignation requests within your area",
+          });
         }
       }
 
@@ -611,7 +684,10 @@ router.delete(
       );
 
       if (attachmentPath) {
-        const absolutePath = path.join(process.cwd(), attachmentPath.replace(/^\/+/, ""));
+        const absolutePath = path.join(
+          process.cwd(),
+          attachmentPath.replace(/^\/+/, "")
+        );
         fs.unlink(absolutePath, () => {});
       }
 

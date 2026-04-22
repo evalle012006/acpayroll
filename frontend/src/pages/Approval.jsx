@@ -19,7 +19,11 @@ export default function Approval() {
   const user = useMemo(() => readUser(), []);
   const role = norm(user?.role);
 
-  const canSeeSAP = role === "admin" || role === "president";
+  const canSeeSAP =
+    role === "admin" ||
+    role === "president" ||
+    role === "hr" ||
+    role === "accounting";
 
   const [activeTab, setActiveTab] = useState("loan");
 
