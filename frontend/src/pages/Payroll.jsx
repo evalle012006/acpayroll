@@ -72,6 +72,8 @@ const readUser = () => {
 };
 
 const overrideKey = (branchKey) => `payroll_manual_overrides::branch_${branchKey}`;
+const receivedKey = (branchKey) => `payroll_received::branch_${branchKey}`;
+const makeReceivedId = (staffId, payrollMonth) => `${staffId}__${payrollMonth}`;
 
 const OVERRIDE_FIELDS = [
   "salary",
@@ -136,18 +138,20 @@ const splitPayroll = (netPay) => {
   };
 };
 
-const overlapsCurrentMonth = (startDate, endDate) => {
+const overlapsMonth = (startDate, endDate, selectedMonth) => {
   const start = toDate10(startDate);
   const end = toDate10(endDate);
-  if (!start || !end) return false;
+  if (!start || !end || !selectedMonth) return false;
 
   const s = new Date(`${start}T00:00:00`);
   const e = new Date(`${end}T23:59:59`);
   if (Number.isNaN(s.getTime()) || Number.isNaN(e.getTime())) return false;
 
-  const now = new Date();
-  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0);
-  const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
+  const [year, month] = selectedMonth.split("-").map(Number);
+  if (!year || !month) return false;
+
+  const monthStart = new Date(year, month - 1, 1, 0, 0, 0);
+  const monthEnd = new Date(year, month, 0, 23, 59, 59);
 
   return s <= monthEnd && e >= monthStart;
 };
@@ -167,13 +171,19 @@ function Payroll() {
     role === "hr" ||
     role === "accounting";
 
+  const [selectedMonth, setSelectedMonth] = useState(
+    new Date().toISOString().slice(0, 7)
+  );
+
   const [staff, setStaff] = useState([]);
   const [branch, setBranch] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
   const [overrides, setOverrides] = useState({});
+  const [receivedMap, setReceivedMap] = useState({});
   const [menuOpenFor, setMenuOpenFor] = useState(null);
+  const [menuPos, setMenuPos] = useState({ top: 0, left: 0 });
   const [scheduleBalances, setScheduleBalances] = useState({});
   const [approvedSuspensions, setApprovedSuspensions] = useState({});
   const [editModalStaff, setEditModalStaff] = useState(null);
@@ -184,6 +194,8 @@ function Payroll() {
     return obj;
   });
 
+  const menuWrapRef = useRef(null);
+
   const closeMenu = useCallback(() => setMenuOpenFor(null), []);
   const closeModal = useCallback(() => {
     setEditModalStaff(null);
@@ -191,6 +203,17 @@ function Payroll() {
     const obj = {};
     for (const k of OVERRIDE_FIELDS) obj[k] = 0;
     setEditValues(obj);
+  }, []);
+
+  const openMenuFor = useCallback((staffId, event) => {
+    const rect = event.currentTarget.getBoundingClientRect();
+
+    setMenuPos({
+      top: rect.bottom + 6,
+      left: Math.max(8, rect.right - 190),
+    });
+
+    setMenuOpenFor((prev) => (prev === staffId ? null : staffId));
   }, []);
 
   useEffect(() => {
@@ -203,11 +226,31 @@ function Payroll() {
     }
   }, [branchParam]);
 
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(receivedKey(branchParam));
+      const parsed = raw ? JSON.parse(raw) : {};
+      setReceivedMap(parsed && typeof parsed === "object" ? parsed : {});
+    } catch {
+      setReceivedMap({});
+    }
+  }, [branchParam]);
+
   const persistOverrides = useCallback(
     (next) => {
       setOverrides(next);
       try {
         localStorage.setItem(overrideKey(branchParam), JSON.stringify(next));
+      } catch {}
+    },
+    [branchParam]
+  );
+
+  const persistReceivedMap = useCallback(
+    (next) => {
+      setReceivedMap(next);
+      try {
+        localStorage.setItem(receivedKey(branchParam), JSON.stringify(next));
       } catch {}
     },
     [branchParam]
@@ -280,8 +323,8 @@ function Payroll() {
           byBranchId.length > 0
             ? byBranchId
             : byBranchCode.length > 0
-            ? byBranchCode
-            : allStaff.filter((s) => norm(s.area) === norm(foundBranch.area));
+              ? byBranchCode
+              : allStaff.filter((s) => norm(s.area) === norm(foundBranch.area));
 
         const filtered = filteredRaw.filter(isActiveStaff);
 
@@ -293,9 +336,10 @@ function Payroll() {
         suspensions.forEach((row) => {
           if (norm(row.status) !== "approved") return;
           if (
-            !overlapsCurrentMonth(
+            !overlapsMonth(
               row.start_date || row.suspension_start,
-              row.end_date || row.suspension_end
+              row.end_date || row.suspension_end,
+              selectedMonth
             )
           ) {
             return;
@@ -329,7 +373,7 @@ function Payroll() {
     };
 
     run();
-  }, [branchParam]);
+  }, [branchParam, selectedMonth]);
 
   useEffect(() => {
     const loadBalances = async () => {
@@ -339,10 +383,8 @@ function Payroll() {
           return;
         }
 
-        const month = new Date().toISOString().slice(0, 7);
-
         const res = await api.get("/schedule-balances/live", {
-          params: { month, branchId: branch.id },
+          params: { month: selectedMonth, branchId: branch.id },
         });
 
         const rows = Array.isArray(res.data) ? res.data : [];
@@ -368,7 +410,7 @@ function Payroll() {
     };
 
     loadBalances();
-  }, [branch]);
+  }, [branch, selectedMonth]);
 
   const applyOverrideToStaffRow = useCallback(
     (s) => {
@@ -500,7 +542,49 @@ function Payroll() {
 
   const sumColumn = (key) => computedRows.reduce((sum, s) => sum + toNum(s[key]), 0);
 
-  const menuWrapRef = useRef(null);
+  const getReceivedRecord = useCallback(
+    (staffId) => {
+      const id = makeReceivedId(staffId, selectedMonth);
+      return receivedMap?.[id] || null;
+    },
+    [receivedMap, selectedMonth]
+  );
+
+  const isAlreadyReceived = useCallback(
+    (staffId, cutOff) => {
+      const rec = receivedMap?.[makeReceivedId(staffId, selectedMonth)];
+      if (!rec) return false;
+      return cutOff === "10th"
+        ? toNum(rec.received_10th) > 0
+        : toNum(rec.received_25th) > 0;
+    },
+    [receivedMap, selectedMonth]
+  );
+
+  const getRemainingPay10 = useCallback(
+    (row) => {
+      const rec = getReceivedRecord(row.id);
+      return toNum(row.pay10) - toNum(rec?.received_10th);
+    },
+    [getReceivedRecord]
+  );
+
+  const getRemainingPay25 = useCallback(
+    (row) => {
+      const rec = getReceivedRecord(row.id);
+      return toNum(row.pay25) - toNum(rec?.received_25th);
+    },
+    [getReceivedRecord]
+  );
+
+  const getTotalReceived = useCallback(
+    (row) => {
+      const rec = getReceivedRecord(row.id);
+      return toNum(rec?.total_received);
+    },
+    [getReceivedRecord]
+  );
+
   useEffect(() => {
     const onDown = (e) => {
       if (!menuOpenFor) return;
@@ -564,6 +648,59 @@ function Payroll() {
     persistOverrides(next);
   };
 
+  const markAsReceived = (row, cutOff) => {
+    const recordId = makeReceivedId(row.id, selectedMonth);
+    const existing = receivedMap?.[recordId] || {
+      id: recordId,
+      staff_id: row.id,
+      employee_no: row.employee_no || "",
+      fullname: row.fullname || "",
+      position: row.position || "",
+      regularization_date: row.regularization_date || "",
+      payroll_month: selectedMonth,
+      received_10th: 0,
+      received_25th: 0,
+      total_received: 0,
+      received_at: null,
+      branch_id: branch?.id || "",
+      branch_code: branch?.code || "",
+      branch_name: branch?.name || "",
+    };
+
+    if (cutOff === "10th" && toNum(existing.received_10th) > 0) {
+      closeMenu();
+      return alert("10th already received.");
+    }
+
+    if (cutOff === "25th" && toNum(existing.received_25th) > 0) {
+      closeMenu();
+      return alert("25th already received.");
+    }
+
+    const amount = cutOff === "10th" ? toNum(row.pay10) : toNum(row.pay25);
+
+    const nextRecord = {
+      ...existing,
+      received_10th:
+        cutOff === "10th" ? amount : toNum(existing.received_10th),
+      received_25th:
+        cutOff === "25th" ? amount : toNum(existing.received_25th),
+      total_received:
+        (cutOff === "10th" ? amount : toNum(existing.received_10th)) +
+        (cutOff === "25th" ? amount : toNum(existing.received_25th)),
+      received_at: new Date().toISOString(),
+    };
+
+    const next = {
+      ...(receivedMap || {}),
+      [recordId]: nextRecord,
+    };
+
+    persistReceivedMap(next);
+    closeMenu();
+    alert(`${cutOff} marked as received.`);
+  };
+
   if (loading) {
     return (
       <div className="payroll-page">
@@ -588,7 +725,7 @@ function Payroll() {
   }
 
   const printedAt = new Date().toLocaleString();
-  const payrollMonth = new Date().toLocaleDateString(undefined, {
+  const payrollMonth = new Date(`${selectedMonth}-01T00:00:00`).toLocaleDateString(undefined, {
     year: "numeric",
     month: "short",
   });
@@ -604,6 +741,13 @@ function Payroll() {
         </div>
 
         <div className="payroll-actions">
+          <input
+            type="month"
+            value={selectedMonth}
+            onChange={(e) => setSelectedMonth(e.target.value)}
+            className="btn-secondary"
+            style={{ padding: "9px 12px" }}
+          />
           <button className="btn-secondary" onClick={() => navigate(-1)} type="button">
             ← Back
           </button>
@@ -617,7 +761,7 @@ function Payroll() {
         <div className="payroll-card-head">
           <div className="payroll-card-title">Salary and Wages</div>
           <div className="payroll-meta">
-            Employees: <strong>{computedRows.length}</strong>
+            Month: <strong>{selectedMonth}</strong> • Employees: <strong>{computedRows.length}</strong>
           </div>
         </div>
 
@@ -638,6 +782,7 @@ function Payroll() {
                 <th rowSpan={2}>Net Pay</th>
                 <th rowSpan={2}>10th</th>
                 <th rowSpan={2}>25th</th>
+                <th rowSpan={2}>Received</th>
                 <th rowSpan={2}>Action</th>
               </tr>
 
@@ -719,57 +864,25 @@ function Payroll() {
                     <td className={`num td-strong ${s.netPay < 0 ? "neg" : "pos"}`}>
                       {fmt(s.netPay)}
                     </td>
-                    <td className={`num td-strong ${s.pay10 < 0 ? "neg" : "pos"}`}>
-                      {fmt(s.pay10)}
+                    <td className={`num td-strong ${getRemainingPay10(s) < 0 ? "neg" : "pos"}`}>
+                      {fmt(getRemainingPay10(s))}
                     </td>
-                    <td className={`num td-strong ${s.pay25 < 0 ? "neg" : "pos"}`}>
-                      {fmt(s.pay25)}
+                    <td className={`num td-strong ${getRemainingPay25(s) < 0 ? "neg" : "pos"}`}>
+                      {fmt(getRemainingPay25(s))}
+                    </td>
+                    <td className="num td-strong">
+                      {fmt(getTotalReceived(s))}
                     </td>
 
-                    <td style={{ position: "relative" }}>
-                      <div
-                        ref={menuOpenFor === s.id ? menuWrapRef : null}
-                        style={{ display: "inline-block" }}
+                    <td>
+                      <button
+                        type="button"
+                        className="payroll-dots-btn"
+                        onClick={(e) => openMenuFor(s.id, e)}
+                        title="Actions"
                       >
-                        <button
-                          type="button"
-                          className="payroll-dots-btn"
-                          onClick={() => setMenuOpenFor((p) => (p === s.id ? null : s.id))}
-                          title="Actions"
-                        >
-                          <HiDotsVertical />
-                        </button>
-
-                        {menuOpenFor === s.id ? (
-                          <div className="payroll-action-menu">
-                            {canManualEdit ? (
-                              <button
-                                type="button"
-                                className="payroll-action-item"
-                                onClick={() => openManualEdit(s)}
-                              >
-                                Edit manually
-                              </button>
-                            ) : null}
-
-                            {canManualEdit && overrides?.[String(s.id)] ? (
-                              <button
-                                type="button"
-                                className="payroll-action-item danger"
-                                onClick={() => {
-                                  closeMenu();
-                                  const ok = window.confirm(
-                                    "Remove manual override and revert to normal?"
-                                  );
-                                  if (ok) clearOverrideForStaff(s.id);
-                                }}
-                              >
-                                Remove manual edit
-                              </button>
-                            ) : null}
-                          </div>
-                        ) : null}
-                      </div>
+                        <HiDotsVertical />
+                      </button>
                     </td>
                   </tr>
                 );
@@ -808,8 +921,15 @@ function Payroll() {
 
                 <td className="num td-strong">{sumColumn("total_deduction").toLocaleString()}</td>
                 <td className="num td-strong">{sumColumn("netPay").toLocaleString()}</td>
-                <td className="num td-strong">{sumColumn("pay10").toLocaleString()}</td>
-                <td className="num td-strong">{sumColumn("pay25").toLocaleString()}</td>
+                <td className="num td-strong">
+                  {computedRows.reduce((sum, s) => sum + getRemainingPay10(s), 0).toLocaleString()}
+                </td>
+                <td className="num td-strong">
+                  {computedRows.reduce((sum, s) => sum + getRemainingPay25(s), 0).toLocaleString()}
+                </td>
+                <td className="num td-strong">
+                  {computedRows.reduce((sum, s) => sum + getTotalReceived(s), 0).toLocaleString()}
+                </td>
                 <td />
               </tr>
             </tbody>
@@ -818,6 +938,70 @@ function Payroll() {
 
         <div className="payroll-hint">Tip: scroll horizontally to view all columns.</div>
       </div>
+
+      {menuOpenFor ? (
+        <div
+          ref={menuWrapRef}
+          className="payroll-action-menu payroll-action-menu--floating"
+          style={{
+            top: `${menuPos.top}px`,
+            left: `${menuPos.left}px`,
+          }}
+        >
+          {(() => {
+            const s = computedRows.find((row) => row.id === menuOpenFor);
+            if (!s) return null;
+
+            return (
+              <>
+                <button
+                  type="button"
+                  className="payroll-action-item"
+                  onClick={() => markAsReceived(s, "10th")}
+                  disabled={isAlreadyReceived(s.id, "10th")}
+                >
+                  {isAlreadyReceived(s.id, "10th") ? "10th Received" : "Received 10th"}
+                </button>
+
+                <button
+                  type="button"
+                  className="payroll-action-item"
+                  onClick={() => markAsReceived(s, "25th")}
+                  disabled={isAlreadyReceived(s.id, "25th")}
+                >
+                  {isAlreadyReceived(s.id, "25th") ? "25th Received" : "Received 25th"}
+                </button>
+
+                {canManualEdit ? (
+                  <button
+                    type="button"
+                    className="payroll-action-item"
+                    onClick={() => openManualEdit(s)}
+                  >
+                    Edit manually
+                  </button>
+                ) : null}
+
+                {canManualEdit && overrides?.[String(s.id)] ? (
+                  <button
+                    type="button"
+                    className="payroll-action-item danger"
+                    onClick={() => {
+                      closeMenu();
+                      const ok = window.confirm(
+                        "Remove manual override and revert to normal?"
+                      );
+                      if (ok) clearOverrideForStaff(s.id);
+                    }}
+                  >
+                    Remove manual edit
+                  </button>
+                ) : null}
+              </>
+            );
+          })()}
+        </div>
+      ) : null}
 
       {editModalStaff && canManualEdit ? (
         <div
@@ -920,6 +1104,7 @@ function Payroll() {
                 <th rowSpan={2}>Total Net Pay</th>
                 <th rowSpan={2}>10th</th>
                 <th rowSpan={2}>25th</th>
+                <th rowSpan={2}>Received</th>
               </tr>
               <tr>
                 <th>Salary</th>
@@ -994,8 +1179,9 @@ function Payroll() {
 
                     <td>{fmt(s.total_deduction)}</td>
                     <td>{fmt(s.netPay)}</td>
-                    <td>{fmt(s.pay10)}</td>
-                    <td>{fmt(s.pay25)}</td>
+                    <td>{fmt(getRemainingPay10(s))}</td>
+                    <td>{fmt(getRemainingPay25(s))}</td>
+                    <td>{fmt(getTotalReceived(s))}</td>
                   </tr>
                 );
               })}
@@ -1030,8 +1216,9 @@ function Payroll() {
 
                 <td>{fmt(sumColumn("total_deduction"))}</td>
                 <td>{fmt(sumColumn("netPay"))}</td>
-                <td>{fmt(sumColumn("pay10"))}</td>
-                <td>{fmt(sumColumn("pay25"))}</td>
+                <td>{fmt(computedRows.reduce((sum, s) => sum + getRemainingPay10(s), 0))}</td>
+                <td>{fmt(computedRows.reduce((sum, s) => sum + getRemainingPay25(s), 0))}</td>
+                <td>{fmt(computedRows.reduce((sum, s) => sum + getTotalReceived(s), 0))}</td>
               </tr>
             </tbody>
           </table>

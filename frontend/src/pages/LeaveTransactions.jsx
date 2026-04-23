@@ -48,6 +48,7 @@ export default function LeaveTransactions() {
   const isAdmin = role === "admin";
   const isHr = role === "hr";
   const isAccounting = role === "accounting";
+  const isTread = role === "tread";
   const isAreaManager = role === "area manager";
   const isBranchManager = role === "branch manager";
   const isRegionalManager = role === "regional manager";
@@ -60,6 +61,7 @@ export default function LeaveTransactions() {
     isAdmin ||
     isHr ||
     isAccounting ||
+    isTread ||
     isBranchManager ||
     isAreaManager ||
     isRegionalManager ||
@@ -68,10 +70,19 @@ export default function LeaveTransactions() {
     isSeniorVicePresident ||
     isPresident;
 
-  const canViewRequestFile = isAdmin || isRegionalManager || isAssistantVicePresident;
+  const canViewRequestFile =
+    isAdmin || isHr || isAccounting || isTread || isRegionalManager || isAssistantVicePresident;
+
   const canViewApprovedFile =
-    isAdmin || isRegionalManager || isAssistantVicePresident || isAreaManager;
-  const canUploadApprovedFile = isAdmin;
+    isAdmin ||
+    isHr ||
+    isAccounting ||
+    isTread ||
+    isRegionalManager ||
+    isAssistantVicePresident ||
+    isAreaManager;
+
+  const canUploadApprovedFile = isAdmin || isHr || isAccounting || isTread;
 
   const employeePickerRef = useRef(null);
 
@@ -307,7 +318,7 @@ export default function LeaveTransactions() {
     if (status === "Pending Area Manager") return isAreaManager;
     if (status === "Pending Regional Manager") return isRegionalManager;
     if (status === "Pending Assistant Vice President") return isAssistantVicePresident;
-    if (status === "Pending Admin") return isAdmin || isHr || isAccounting;
+    if (status === "Pending Admin") return isAdmin || isHr || isAccounting || isTread;
 
     return false;
   };

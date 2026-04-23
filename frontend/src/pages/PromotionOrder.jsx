@@ -24,15 +24,25 @@ const fmtDate = (d) => (d ? String(d).slice(0, 10) : "-");
 export default function PromotionOrder() {
   const navigate = useNavigate();
   const user = useMemo(() => readUser(), []);
-  const isAdmin = String(user?.role || "").trim().toLowerCase() === "admin";
+  const role = String(user?.role || "").trim().toLowerCase();
+
+  const isAdmin = role === "admin";
+  const isHr = role === "hr";
+  const isAccounting = role === "accounting";
+  const isTread = role === "tread";
+
+  const canCreatePromotion = isAdmin || isHr || isAccounting;
+  const canApprovePromotion = isAdmin || isHr || isAccounting;
 
   const [staff, setStaff] = useState([]);
   const [branches, setBranches] = useState([]);
   const [orders, setOrders] = useState([]);
+  const [positionRates, setPositionRates] = useState([]);
 
   const [loadingStaff, setLoadingStaff] = useState(false);
   const [loadingBranches, setLoadingBranches] = useState(false);
   const [loadingOrders, setLoadingOrders] = useState(false);
+  const [loadingRates, setLoadingRates] = useState(false);
   const [saving, setSaving] = useState(false);
 
   const [showCreate, setShowCreate] = useState(false);
@@ -63,7 +73,11 @@ export default function PromotionOrder() {
   const [attachmentFile, setAttachmentFile] = useState(null);
   const [selectedEmployee, setSelectedEmployee] = useState(null);
 
+  const [branchSearch, setBranchSearch] = useState("");
+  const [showBranchResults, setShowBranchResults] = useState(false);
+
   const employeePickerRef = useRef(null);
+  const branchPickerRef = useRef(null);
 
   const branchMap = useMemo(() => {
     const m = new Map();
@@ -71,7 +85,26 @@ export default function PromotionOrder() {
     return m;
   }, [branches]);
 
-  const branchLabel = (b) => (b ? `${b.code} - ${b.name}` : "-");
+  const rateMap = useMemo(() => {
+    const m = new Map();
+    (positionRates || []).forEach((r) => {
+      const key = norm(r.position);
+      if (key) m.set(key, r);
+    });
+    return m;
+  }, [positionRates]);
+
+  const positionOptions = useMemo(() => {
+    const seen = new Set();
+    return (positionRates || [])
+      .filter((r) => {
+        const key = norm(r.position);
+        if (!key || seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      })
+      .sort((a, b) => toStr(a.position).localeCompare(toStr(b.position)));
+  }, [positionRates]);
 
   const filteredStaff = useMemo(() => {
     const q = norm(employeeQuery);
@@ -99,6 +132,20 @@ export default function PromotionOrder() {
       .slice(0, 50);
   }, [staff, employeeQuery]);
 
+  const filteredBranches = useMemo(() => {
+    const q = norm(branchSearch);
+    if (!q) return branches.slice(0, 30);
+
+    return branches
+      .filter((b) => {
+        const hay = [b.id, b.code, b.name, b.area, b.region, b.division]
+          .map((x) => norm(x))
+          .join(" ");
+        return hay.includes(q);
+      })
+      .slice(0, 50);
+  }, [branches, branchSearch]);
+
   const closeModal = () => {
     setShowCreate(false);
     setForm({
@@ -122,8 +169,10 @@ export default function PromotionOrder() {
     });
     setEmployeeSearch("");
     setEmployeeQuery("");
+    setBranchSearch("");
     setSelectedEmployee(null);
     setShowEmployeeResults(false);
+    setShowBranchResults(false);
     setAttachmentFile(null);
   };
 
@@ -163,11 +212,24 @@ export default function PromotionOrder() {
     }
   }, []);
 
+  const loadRates = useCallback(async () => {
+    try {
+      setLoadingRates(true);
+      const res = await api.get("/comp-rates");
+      setPositionRates(Array.isArray(res.data) ? res.data : []);
+    } catch {
+      setPositionRates([]);
+    } finally {
+      setLoadingRates(false);
+    }
+  }, []);
+
   useEffect(() => {
     loadStaff();
     loadBranches();
     loadOrders();
-  }, [loadStaff, loadBranches, loadOrders]);
+    loadRates();
+  }, [loadStaff, loadBranches, loadOrders, loadRates]);
 
   useEffect(() => {
     if (!showCreate) return;
@@ -186,6 +248,9 @@ export default function PromotionOrder() {
     const onMouseDown = (e) => {
       if (employeePickerRef.current && !employeePickerRef.current.contains(e.target)) {
         setShowEmployeeResults(false);
+      }
+      if (branchPickerRef.current && !branchPickerRef.current.contains(e.target)) {
+        setShowBranchResults(false);
       }
     };
 
@@ -208,8 +273,11 @@ export default function PromotionOrder() {
       employee_id: idStr,
       employee_name: s?.fullname || "",
       old_position: s?.position || "",
+      new_position: "",
       old_salary: String(toNum(s?.salary)),
+      new_salary: "",
       old_ecola: String(toNum(s?.ecola)),
+      new_ecola: "",
 
       prev_branch_id: prevBranchId ? String(prevBranchId) : "",
       prev_branch_code: prevBranch?.code || "",
@@ -223,6 +291,10 @@ export default function PromotionOrder() {
     const label = `${s.employee_no ? `${s.employee_no} - ` : ""}${s.fullname || ""}`;
     setEmployeeSearch(label);
     setEmployeeQuery(label);
+
+    const presentBranchLabel = prevBranch ? `${prevBranch.code || ""} - ${prevBranch.name || ""}`.trim() : "";
+    setBranchSearch(presentBranchLabel);
+
     setShowEmployeeResults(false);
   };
 
@@ -231,9 +303,23 @@ export default function PromotionOrder() {
     const b = bid ? branchMap.get(bid) : null;
     setForm((p) => ({
       ...p,
-      present_branch_id: branchId,
+      present_branch_id: branchId ? String(branchId) : "",
       present_branch_code: b?.code || "",
       present_branch_name: b?.name || "",
+    }));
+    setBranchSearch(b ? `${b.code || ""} - ${b.name || ""}`.trim() : "");
+    setShowBranchResults(false);
+  };
+
+  const onSelectNewPosition = (positionValue) => {
+    const picked = toStr(positionValue);
+    const rate = rateMap.get(norm(picked));
+
+    setForm((p) => ({
+      ...p,
+      new_position: picked,
+      new_salary: rate ? String(toNum(rate.salary)) : "",
+      new_ecola: rate ? String(toNum(rate.ecola)) : "",
     }));
   };
 
@@ -330,7 +416,7 @@ export default function PromotionOrder() {
       return `${o.prev_branch_code || ""} - ${o.prev_branch_name || ""}`.trim();
     }
     const b = o.prev_branch_id ? branchMap.get(Number(o.prev_branch_id)) : null;
-    return branchLabel(b);
+    return b ? `${b.code || ""} - ${b.name || ""}`.trim() : "-";
   };
 
   const resolvePresentBranchText = (o) => {
@@ -338,7 +424,7 @@ export default function PromotionOrder() {
       return `${o.present_branch_code || ""} - ${o.present_branch_name || ""}`.trim();
     }
     const b = o.present_branch_id ? branchMap.get(Number(o.present_branch_id)) : null;
-    return branchLabel(b);
+    return b ? `${b.code || ""} - ${b.name || ""}`.trim() : "-";
   };
 
   return (
@@ -356,9 +442,11 @@ export default function PromotionOrder() {
           <button className="po-btn po-btn-outline" type="button" onClick={loadOrders} disabled={loadingOrders}>
             {loadingOrders ? "Refreshing..." : "Refresh"}
           </button>
-          <button className="po-btn po-btn-primary" type="button" onClick={() => setShowCreate(true)}>
-            + Create Promotion Order
-          </button>
+          {canCreatePromotion && (
+            <button className="po-btn po-btn-primary" type="button" onClick={() => setShowCreate(true)}>
+              + Create Promotion Order
+            </button>
+          )}
         </div>
       </div>
 
@@ -406,8 +494,8 @@ export default function PromotionOrder() {
                     <tr key={o.id}>
                       <td className="mono">{o.order_no || `PRO-${o.id}`}</td>
                       <td className="td-strong">{o.employee_name}</td>
-                      <td>{resolvePrevBranchText(o) || "-"}</td>
-                      <td>{resolvePresentBranchText(o) || "-"}</td>
+                      <td>{resolvePrevBranchText(o)}</td>
+                      <td>{resolvePresentBranchText(o)}</td>
                       <td>{o.old_position || "-"}</td>
                       <td>{o.new_position || "-"}</td>
                       <td className="num">{toNum(o.old_salary).toLocaleString()}</td>
@@ -417,7 +505,7 @@ export default function PromotionOrder() {
                         <span className={badgeClass(o.status)}>{o.status || "Pending"}</span>
                       </td>
                       <td>
-                        {isAdmin && isPending ? (
+                        {canApprovePromotion && isPending ? (
                           <div className="po-row-actions">
                             <button className="po-mini-btn po-approve" type="button" onClick={() => approve(o.id)}>
                               Approve
@@ -439,7 +527,7 @@ export default function PromotionOrder() {
         </div>
       </div>
 
-      {showCreate && (
+      {canCreatePromotion && showCreate && (
         <div
           className="po-modal-overlay"
           onMouseDown={(e) => e.target.classList.contains("po-modal-overlay") && closeModal()}
@@ -448,7 +536,7 @@ export default function PromotionOrder() {
             <div className="po-modal-head">
               <div>
                 <h3 className="po-modal-title">Create Promotion Order</h3>
-                <p className="po-modal-sub">Order will be Pending until approved by Admin.</p>
+                <p className="po-modal-sub">Order will be Pending until approved by Admin/HR/Accounting.</p>
               </div>
               <button className="po-x" type="button" onClick={closeModal}>
                 ✕
@@ -478,8 +566,11 @@ export default function PromotionOrder() {
                         employee_id: "",
                         employee_name: "",
                         old_position: "",
+                        new_position: "",
                         old_salary: "",
+                        new_salary: "",
                         old_ecola: "",
+                        new_ecola: "",
                         prev_branch_id: "",
                         prev_branch_code: "",
                         prev_branch_name: "",
@@ -487,6 +578,7 @@ export default function PromotionOrder() {
                         present_branch_code: "",
                         present_branch_name: "",
                       }));
+                      setBranchSearch("");
                     }}
                     onFocus={() => setShowEmployeeResults(true)}
                     placeholder="Search employee no or name..."
@@ -565,22 +657,77 @@ export default function PromotionOrder() {
                   />
                 </div>
 
-                <div className="po-field">
+                <div
+                  className="po-field"
+                  ref={branchPickerRef}
+                  style={{ position: "relative", overflow: "visible" }}
+                >
                   <label>Present Branch</label>
-                  <select
-                    value={form.present_branch_id}
-                    onChange={(e) => onSelectPresentBranch(e.target.value)}
+
+                  <input
+                    value={branchSearch}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      setBranchSearch(value);
+                      setShowBranchResults(true);
+
+                      setForm((p) => ({
+                        ...p,
+                        present_branch_id: "",
+                        present_branch_code: "",
+                        present_branch_name: "",
+                      }));
+                    }}
+                    onFocus={() => setShowBranchResults(true)}
+                    placeholder={loadingBranches ? "Loading branches..." : "Search branch code or name..."}
                     required
-                  >
-                    <option value="">
-                      {loadingBranches ? "Loading branches..." : "Select Branch"}
-                    </option>
-                    {branches.map((b) => (
-                      <option key={b.id} value={b.id}>
-                        {b.code} - {b.name}
-                      </option>
-                    ))}
-                  </select>
+                  />
+
+                  {showBranchResults && (
+                    <div
+                      style={{
+                        position: "absolute",
+                        top: "100%",
+                        left: 0,
+                        right: 0,
+                        marginTop: 6,
+                        maxHeight: 240,
+                        overflowY: "auto",
+                        background: "#0f1a2e",
+                        border: "1px solid rgba(255,255,255,0.1)",
+                        borderRadius: 10,
+                        zIndex: 9999,
+                        boxShadow: "0 12px 30px rgba(0,0,0,0.35)",
+                      }}
+                    >
+                      {loadingBranches ? (
+                        <div style={{ padding: 12, color: "#9aa7bd" }}>Loading branches...</div>
+                      ) : filteredBranches.length === 0 ? (
+                        <div style={{ padding: 12, color: "#9aa7bd" }}>No branch found.</div>
+                      ) : (
+                        filteredBranches.map((b) => (
+                          <div
+                            key={b.id}
+                            style={{
+                              padding: "10px 12px",
+                              cursor: "pointer",
+                              borderBottom: "1px solid rgba(255,255,255,0.05)",
+                              color: "#e7edf7",
+                            }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.background = "#1e293b";
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.background = "transparent";
+                            }}
+                            onClick={() => onSelectPresentBranch(b.id)}
+                          >
+                            {`${b.code || ""} - ${b.name || ""}`.trim()}
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 <div className="po-field">
@@ -590,12 +737,20 @@ export default function PromotionOrder() {
 
                 <div className="po-field">
                   <label>New Position</label>
-                  <input
+                  <select
                     value={form.new_position}
-                    onChange={(e) => setForm((p) => ({ ...p, new_position: e.target.value }))}
-                    placeholder="Enter new position"
+                    onChange={(e) => onSelectNewPosition(e.target.value)}
                     required
-                  />
+                  >
+                    <option value="">
+                      {loadingRates ? "Loading positions..." : "Select New Position"}
+                    </option>
+                    {positionOptions.map((r) => (
+                      <option key={r.id || r.position} value={r.position}>
+                        {r.position}
+                      </option>
+                    ))}
+                  </select>
                 </div>
 
                 <div className="po-field">
@@ -609,7 +764,7 @@ export default function PromotionOrder() {
                     type="number"
                     value={form.new_salary}
                     onChange={(e) => setForm((p) => ({ ...p, new_salary: e.target.value }))}
-                    placeholder="Enter new salary"
+                    placeholder="Auto-filled from System Rates"
                   />
                 </div>
 
@@ -624,7 +779,7 @@ export default function PromotionOrder() {
                     type="number"
                     value={form.new_ecola}
                     onChange={(e) => setForm((p) => ({ ...p, new_ecola: e.target.value }))}
-                    placeholder="Enter new ecola"
+                    placeholder="Auto-filled from System Rates"
                   />
                 </div>
 

@@ -36,7 +36,7 @@ import SbfOrder from "./pages/SbfOrder";
 import Reports from "./pages/Reports";
 import AreaConfigurations from "./pages/AreaConfigurations";
 import Consolidation from "./pages/Consolidation";
-import TaxCalculator from "./pages/TaxCalculator";
+import TaxCalculator from "./pages/TaxCalculator";  
 import { CompRatesProvider } from "./context/CompRatesContext";
 import Logistic from "./pages/Logistic";
 import DetailsCompensation from "./pages/DetailsCompensation";

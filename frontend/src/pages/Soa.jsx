@@ -14,6 +14,25 @@ export default function Soa() {
   const navigate = useNavigate();
   const staffBoxRef = useRef(null);
 
+  const user = useMemo(() => {
+    try {
+      return JSON.parse(localStorage.getItem("user") || "null");
+    } catch {
+      return null;
+    }
+  }, []);
+
+  const role = String(user?.role || "").trim().toLowerCase();
+  const isAdmin = role === "admin";
+  const isHr = role === "hr";
+  const isAccounting = role === "accounting";
+  const isTread = role === "tread";
+  const isBranchManager = role === "branch manager";
+
+  const canView = isAdmin || isHr || isAccounting || isTread || isBranchManager;
+  const canCreate = isAdmin || isHr || isAccounting || isBranchManager;
+  const canDelete = isAdmin || isHr || isAccounting;
+
   const [staffList, setStaffList] = useState([]);
   const [branches, setBranches] = useState([]);
 
@@ -103,10 +122,12 @@ export default function Soa() {
   }, []);
 
   useEffect(() => {
+    if (!canView) return;
+
     loadStaff();
     loadBranches();
     loadSettlements();
-  }, [loadStaff, loadBranches, loadSettlements]);
+  }, [canView, loadStaff, loadBranches, loadSettlements]);
 
   useEffect(() => {
     if (!showCreate) return;
@@ -202,6 +223,7 @@ export default function Soa() {
   const createSettlement = async (e) => {
     e.preventDefault();
 
+    if (!canCreate) return alert("Access denied.");
     if (!toStr(form.staff_id)) return alert("Select staff.");
     if (!toStr(form.employee_no) || !toStr(form.employee_name)) {
       return alert("Employee fields not set.");
@@ -242,7 +264,9 @@ export default function Soa() {
   };
 
   const deleteSettlement = async (id) => {
+    if (!canDelete) return alert("Access denied.");
     if (!window.confirm("Delete this settlement record?")) return;
+
     try {
       await api.delete(`/settlements/${id}`);
       await loadSettlements();
@@ -252,6 +276,19 @@ export default function Soa() {
   };
 
   const money = (v) => toNum(v).toLocaleString();
+
+  if (!canView) {
+    return (
+      <div className="approval-page">
+        <div className="approval-page-header">
+          <div>
+            <h2 className="approval-title">Statement of Accounts</h2>
+            <p className="approval-subtitle">Access denied</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="approval-page">
@@ -266,9 +303,11 @@ export default function Soa() {
             ← Back
           </button>
 
-          <button className="btn-primary" onClick={() => setShowCreate(true)} type="button">
-            + Create Settlement
-          </button>
+          {canCreate && (
+            <button className="btn-primary" onClick={() => setShowCreate(true)} type="button">
+              + Create Settlement
+            </button>
+          )}
         </div>
       </div>
 
@@ -321,9 +360,12 @@ export default function Soa() {
                         <button className="btn-secondary" type="button" onClick={() => setViewRow(r)}>
                           View
                         </button>
-                        <button className="btn-danger" type="button" onClick={() => deleteSettlement(r.id)}>
-                          Delete
-                        </button>
+
+                        {canDelete && (
+                          <button className="btn-danger" type="button" onClick={() => deleteSettlement(r.id)}>
+                            Delete
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -334,7 +376,7 @@ export default function Soa() {
         </div>
       </div>
 
-      {showCreate && (
+      {showCreate && canCreate && (
         <div
           className="modal-overlay"
           onMouseDown={(e) => e.target.classList.contains("modal-overlay") && setShowCreate(false)}

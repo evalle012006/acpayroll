@@ -27,6 +27,7 @@ const roleLower = (req) => norm(req.user?.role);
 const isAdmin = (req) => roleLower(req) === "admin";
 const isHr = (req) => roleLower(req) === "hr";
 const isAccounting = (req) => roleLower(req) === "accounting";
+const isTread = (req) => roleLower(req) === "tread";
 const isAreaManager = (req) => roleLower(req) === "area manager";
 const isRegionalManager = (req) => roleLower(req) === "regional manager";
 const isAssistantVicePresident = (req) =>
@@ -88,11 +89,12 @@ router.get("/resignation-requests", requireAuth, async (req, res) => {
       isAdmin(req) ||
       isHr(req) ||
       isAccounting(req) ||
+      isTread(req) ||
       isVicePresident(req) ||
       isSeniorVicePresident(req) ||
       isPresident(req)
     ) {
-      // full access
+      // full view access
     } else if (isAreaManager(req)) {
       const area = getUserArea(req);
       if (!area) return res.json([]);
@@ -129,6 +131,7 @@ router.post(
     "admin",
     "hr",
     "accounting",
+    "tread",
     "area manager",
     "regional manager",
     "assistant vice president",
@@ -257,6 +260,9 @@ router.post(
       if (isAreaManager(req)) initialStatus = STATUS_RM;
       else if (isRegionalManager(req)) initialStatus = STATUS_EXEC;
       else if (isExecutiveApprover(req)) initialStatus = STATUS_ADMIN;
+      else if (isAdmin(req) || isHr(req) || isAccounting(req) || isTread(req)) {
+        initialStatus = STATUS_ADMIN;
+      }
 
       const ins = await client.query(
         `
@@ -420,7 +426,7 @@ router.put("/resignation-requests/:id/approve", requireAuth, async (req, res) =>
         approverField = "president_approved_by";
         approverAtField = "president_approved_at";
       }
-    } else if (isAdmin(req)) {
+    } else if (isAdmin(req) || isHr(req) || isAccounting(req)) {
       if (currentStatus !== STATUS_ADMIN) {
         await client.query("ROLLBACK");
         return res.status(400).json({
@@ -591,7 +597,7 @@ router.put("/resignation-requests/:id/reject", requireAuth, async (req, res) => 
           message: "This request is not pending Executive approval",
         });
       }
-    } else if (isAdmin(req)) {
+    } else if (isAdmin(req) || isHr(req) || isAccounting(req)) {
       if (currentStatus !== STATUS_ADMIN) {
         return res.status(400).json({
           message: "This request is not pending Admin approval",
@@ -634,6 +640,7 @@ router.delete(
     "admin",
     "hr",
     "accounting",
+    "tread",
     "area manager",
     "assistant vice president",
     "vice president",

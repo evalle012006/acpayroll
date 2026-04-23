@@ -1,10 +1,31 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import "../styles/SbfOrder.css";
 import api from "../api/axiosClient";
 
+const readUser = () => {
+  try {
+    return JSON.parse(localStorage.getItem("user") || "null");
+  } catch {
+    return null;
+  }
+};
+
+const norm = (v) => String(v ?? "").trim().toLowerCase();
+
 export default function SbfOrder() {
   const navigate = useNavigate();
+  const user = useMemo(() => readUser(), []);
+  const role = norm(user?.role);
+
+  const isAdmin = role === "admin";
+  const isHr = role === "hr";
+  const isAccounting = role === "accounting";
+  const isBranchManager = role === "branch manager";
+
+  const canView = isAdmin || isHr || isAccounting || isBranchManager;
+  const canCreate = isAdmin || isHr || isAccounting || isBranchManager;
+  const canApprove = isAdmin || isHr || isAccounting;
 
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("All");
@@ -89,11 +110,18 @@ export default function SbfOrder() {
   };
 
   useEffect(() => {
-    fetchOrders();
-  }, []);
+    if (canView) {
+      fetchOrders();
+    }
+  }, [canView]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+
+    if (!canCreate) {
+      alert("Access denied");
+      return;
+    }
 
     try {
       setSubmitting(true);
@@ -116,6 +144,11 @@ export default function SbfOrder() {
   };
 
   const handleApprove = async (id) => {
+    if (!canApprove) {
+      alert("Access denied");
+      return;
+    }
+
     try {
       await api.put(`/sbf-orders/${id}/approve`);
       alert("SBF Order approved");
@@ -127,6 +160,11 @@ export default function SbfOrder() {
   };
 
   const handleReject = async (id) => {
+    if (!canApprove) {
+      alert("Access denied");
+      return;
+    }
+
     const ok = window.confirm("Are you sure you want to reject this SBF order?");
     if (!ok) return;
 
@@ -148,6 +186,35 @@ export default function SbfOrder() {
     return value ? String(value).slice(0, 10) : "";
   };
 
+  if (!canView) {
+    return (
+      <div className="exit-page">
+        <div className="exit-topbar">
+          <div>
+            <h2 className="exit-title">SBF Order</h2>
+            <p className="exit-subtitle">
+              Access denied
+            </p>
+          </div>
+
+          <div className="exit-actions">
+            <button
+              className="exit-btn exit-btn-ghost"
+              type="button"
+              onClick={() => navigate(-1)}
+            >
+              ← Back
+            </button>
+          </div>
+        </div>
+
+        <div className="exit-card">
+          <div className="exit-empty">You do not have access to this page.</div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="exit-page">
       <div className="exit-topbar">
@@ -167,13 +234,15 @@ export default function SbfOrder() {
             ← Back
           </button>
 
-          <button
-            className="exit-btn exit-btn-primary"
-            type="button"
-            onClick={() => setShowCreate(true)}
-          >
-            + Create SBF
-          </button>
+          {canCreate && (
+            <button
+              className="exit-btn exit-btn-primary"
+              type="button"
+              onClick={() => setShowCreate(true)}
+            >
+              + Create SBF
+            </button>
+          )}
         </div>
       </div>
 
@@ -182,14 +251,13 @@ export default function SbfOrder() {
           <div className="exit-card-title">Staff Benevolent Fund</div>
           <div className="exit-card-meta">{orders.length} Records</div>
         </div>
-        <br/>
+        <br />
         {loading ? (
           <div className="exit-empty">Loading...</div>
         ) : orders.length === 0 ? (
           <div className="exit-empty">No SBF orders found.</div>
         ) : (
           <div className="exit-table-wrap">
-
             <div className="exit-filters">
               <input
                 className="exit-field exit-search"
@@ -258,7 +326,7 @@ export default function SbfOrder() {
                           View
                         </button>
 
-                        {item.status === "Pending" ? (
+                        {canApprove && item.status === "Pending" ? (
                           <>
                             <button
                               className="sbf-btn sbf-btn-approve"
@@ -275,6 +343,8 @@ export default function SbfOrder() {
                               Reject
                             </button>
                           </>
+                        ) : item.status === "Pending" ? (
+                          <span className="sbf-done">Pending</span>
                         ) : (
                           <span className="sbf-done">Done</span>
                         )}
@@ -288,7 +358,7 @@ export default function SbfOrder() {
         )}
       </div>
 
-      {showCreate && (
+      {showCreate && canCreate && (
         <div
           className="exit-modal-overlay"
           onMouseDown={(e) => {

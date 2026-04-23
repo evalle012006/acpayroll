@@ -81,7 +81,7 @@
   border: 1px solid var(--border);
   border-radius: 16px;
   box-shadow: var(--shadow-soft);
-  overflow: hidden;
+  overflow: visible;
   min-width: 0;
 }
 
@@ -120,8 +120,10 @@
 
 .payroll-table-wrap {
   width: 100%;
-  overflow: auto;
-  max-height: 72vh;
+  overflow-x: auto;
+  overflow-y: visible;
+  max-height: none;
+  position: relative;
 }
 
 /* Table */
@@ -212,16 +214,17 @@
 }
 
 .payroll-action-menu {
-  position: absolute;
-  right: 6px;
-  top: 38px;
-  min-width: 170px;
+  min-width: 190px;
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: 12px;
   box-shadow: var(--shadow-soft);
   overflow: hidden;
-  z-index: 10;
+  z-index: 99999;
+}
+
+.payroll-action-menu--floating {
+  position: fixed;
 }
 
 .payroll-action-item {
@@ -237,6 +240,11 @@
 
 .payroll-action-item:hover {
   background: color-mix(in srgb, var(--panel-2) 70%, transparent);
+}
+
+.payroll-action-item:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 
 .payroll-action-item.danger {
@@ -395,12 +403,12 @@
   }
 
   .no-print,
-.payroll-page-header,
-.payroll-card,
-.sidebar,
-.header {
-  display: none !important;
-}
+  .payroll-page-header,
+  .payroll-card,
+  .sidebar,
+  .header {
+    display: none !important;
+  }
 
   .print-only {
     display: block !important;

@@ -46,15 +46,28 @@ export default function ExitStaffOrders() {
   const user = useMemo(() => readUser(), []);
   const userRole = norm(user?.role);
 
-  const canApprove = [
+  const canCreate = [
     "admin",
+    "hr",
+    "accounting",
+    "branch manager",
     "assistant vice president",
     "vice president",
     "senior vice president",
     "president",
   ].includes(userRole);
 
-  const canDelete = userRole === "admin";
+  const canApprove = [
+    "admin",
+    "hr",
+    "accounting",
+    "assistant vice president",
+    "vice president",
+    "senior vice president",
+    "president",
+  ].includes(userRole);
+
+  const canDelete = ["admin", "hr", "accounting"].includes(userRole);
 
   const [showCreate, setShowCreate] = useState(false);
 
@@ -358,6 +371,7 @@ export default function ExitStaffOrders() {
   const createOrder = async (e) => {
     e.preventDefault();
     if (saving) return;
+    if (!canCreate) return alert("Access denied.");
 
     setErr("");
 
@@ -439,7 +453,7 @@ export default function ExitStaffOrders() {
   };
 
   const del = async (o) => {
-    if (!canDelete) return alert("Admin only.");
+    if (!canDelete) return alert("Access denied.");
     if (!o?.id) return;
     if (String(o.status || "").toLowerCase() === "approved") return;
 
@@ -493,9 +507,11 @@ export default function ExitStaffOrders() {
             {loadingBalances ? "Refreshing balances..." : "Refresh Balances"}
           </button>
 
-          <button className="exit-btn exit-btn-primary" type="button" onClick={() => setShowCreate(true)}>
-            + Create Exit Staff
-          </button>
+          {canCreate && (
+            <button className="exit-btn exit-btn-primary" type="button" onClick={() => setShowCreate(true)}>
+              + Create Exit Staff
+            </button>
+          )}
         </div>
       </div>
 
@@ -618,7 +634,7 @@ export default function ExitStaffOrders() {
         </div>
       </div>
 
-      {showCreate && (
+      {showCreate && canCreate && (
         <div
           className="exit-modal-overlay"
           onMouseDown={(e) => e.target.classList.contains("exit-modal-overlay") && closeModal()}

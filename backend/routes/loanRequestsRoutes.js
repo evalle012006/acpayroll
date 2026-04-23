@@ -5,6 +5,21 @@ const { requireAuth, requireRole } = require("../middlewares/authMiddleware");
 const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
+const {
+  getRole,
+  isAdmin,
+  isHr,
+  isAccounting,
+  isTread,
+  isBranchManager,
+  isAreaManager,
+  isRegionalManager,
+  isAssistantVicePresident,
+  isVicePresident,
+  isSeniorVicePresident,
+  isPresident,
+  canViewAll,
+} = require("../middlewares/roleAccess");
 
 /* ---------------- helpers ---------------- */
 const toNum = (v) => {
@@ -18,20 +33,6 @@ const toInt = (v) => {
 };
 
 const toStr = (v) => String(v ?? "").trim();
-
-const roleLower = (req) => String(req.user?.role || "").trim().toLowerCase();
-const isAdmin = (req) => roleLower(req) === "admin";
-const isHr = (req) => roleLower(req) === "hr";
-const isAccounting = (req) => roleLower(req) === "accounting";
-const isBranchManager = (req) => roleLower(req) === "branch manager";
-const isAreaManager = (req) => roleLower(req) === "area manager";
-const isRegionalManager = (req) => roleLower(req) === "regional manager";
-const isAssistantVicePresident = (req) =>
-  roleLower(req) === "assistant vice president";
-const isVicePresident = (req) => roleLower(req) === "vice president";
-const isSeniorVicePresident = (req) =>
-  roleLower(req) === "senior vice president";
-const isPresident = (req) => roleLower(req) === "president";
 
 const getUserBranchCode = (req) => toStr(req.user?.branch_id);
 const getUserArea = (req) => toStr(req.user?.area);
@@ -143,15 +144,12 @@ const loanSelectFields = `
   lr.status,
   lr.approved_at,
   lr.disbursement_date,
-
   lr.attachment_path,
   lr.attachment_name,
   lr.attachment_mime,
-
   lr.approved_attachment_path,
   lr.approved_attachment_name,
   lr.approved_attachment_mime,
-
   lr.approval_stage,
   lr.area_manager_status,
   lr.regional_manager_status,
@@ -166,15 +164,7 @@ const loanSelectFields = `
 /* ---------------- GET all loans ---------------- */
 router.get("/loan-requests", requireAuth, async (req, res) => {
   try {
-    if (
-      isAdmin(req) ||
-      isHr(req) ||
-      isAccounting(req) ||
-      isAssistantVicePresident(req) ||
-      isVicePresident(req) ||
-      isSeniorVicePresident(req) ||
-      isPresident(req)
-    ) {
+    if (canViewAll(req)) {
       const r = await pool.query(
         `
         SELECT
@@ -666,7 +656,7 @@ router.put("/loan-requests/:id", requireAuth, async (req, res) => {
       return res.status(400).json({ message: "Invalid action" });
     }
 
-    const role = roleLower(req);
+    const role = getRole(req);
 
     await client.query("BEGIN");
 

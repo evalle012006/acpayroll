@@ -933,13 +933,182 @@ function StaffDetailsStep({ form, onChange }) {
   );
 }
 
-function ContractDetailsStep({ form, branches, onChange }) {
+function ContractDetailsStep({form, branches, positionRates = [], onChange, branchSearch, setBranchSearch, }) {
+  const positionOptions = Array.isArray(positionRates)
+    ? [...new Map(
+        positionRates
+          .filter((r) => String(r?.position || "").trim())
+          .map((r) => [String(r.position).trim().toLowerCase(), r])
+      ).values()].sort((a, b) =>
+        String(a.position || "").localeCompare(String(b.position || ""))
+      )
+    : [];
+
+    const filteredBranches = useMemo(() => {
+    const q = norm(branchSearch);
+    if (!q) return branches.slice(0, 30);
+
+    return branches.filter((b) => {
+      const hay = [b.id, b.code, b.name, b.area, b.region, b.division]
+        .map((x) => norm(x))
+        .join(" ");
+      return hay.includes(q);
+    });
+  }, [branches, branchSearch]);
+
+  const handleBranchSelect = (branch) => {
+    onChange({
+      target: {
+        name: "branch_id",
+        value: String(branch?.id ?? ""),
+      },
+    });
+
+    onChange({
+      target: {
+        name: "area",
+        value: branch?.area ?? "",
+      },
+    });
+
+    onChange({
+      target: {
+        name: "region",
+        value: branch?.region ?? "",
+      },
+    });
+
+    onChange({
+      target: {
+        name: "division",
+        value: branch?.division ?? "",
+      },
+    });
+
+    setBranchSearch(
+      `${toStr(branch?.code)}${branch?.name ? ` - ${toStr(branch.name)}` : ""}`.trim()
+    );
+  };
+
+  const handlePositionChange = (e) => {
+    const selectedPosition = String(e.target.value || "").trim();
+    const matched = positionOptions.find(
+      (r) => String(r.position || "").trim().toLowerCase() === selectedPosition.toLowerCase()
+    );
+
+    onChange({
+      target: {
+        name: "position",
+        value: selectedPosition,
+      },
+    });
+
+    if (matched) {
+      onChange({
+        target: {
+          name: "salary",
+          value: matched.salary ?? "",
+        },
+      });
+
+      onChange({
+        target: {
+          name: "ecola",
+          value: matched.ecola ?? "",
+        },
+      });
+
+      onChange({
+        target: {
+          name: "cbu",
+          value: matched.cbu ?? "",
+        },
+      });
+
+      onChange({
+        target: {
+          name: "cashbond",
+          value: matched.cashbond ?? "",
+        },
+      });
+
+      onChange({
+        target: {
+          name: "utility",
+          value: matched.utility ?? "",
+        },
+      });
+
+      onChange({
+        target: {
+          name: "sss_er",
+          value: matched.sss_er ?? "",
+        },
+      });
+
+      onChange({
+        target: {
+          name: "ph_er",
+          value: matched.philhealth_er ?? matched.ph_er ?? "",
+        },
+      });
+
+      onChange({
+        target: {
+          name: "hdmf_er",
+          value: matched.pagibig_er ?? matched.hdmf_er ?? "",
+        },
+      });
+
+      onChange({
+        target: {
+          name: "sss_ee",
+          value: matched.sss_ee ?? "",
+        },
+      });
+
+      onChange({
+        target: {
+          name: "ph_ee",
+          value: matched.philhealth_ee ?? matched.ph_ee ?? "",
+        },
+      });
+
+      onChange({
+        target: {
+          name: "hdmf_ee",
+          value: matched.pagibig_ee ?? matched.hdmf_ee ?? "",
+        },
+      });
+
+      onChange({
+        target: {
+          name: "tax",
+          value: matched.tax ?? "",
+        },
+      });
+    }
+  };
+
   return (
     <div className="modal-body staff-add-grid">
       <div className="staff-add-left" style={{ width: "100%" }}>
         <div className="field">
           <label>Position *</label>
-          <input className="input" name="position" value={form.position} onChange={onChange} required />
+          <select
+            className="input"
+            name="position"
+            value={form.position}
+            onChange={handlePositionChange}
+            required
+          >
+            <option value="">Select position...</option>
+            {positionOptions.map((r) => (
+              <option key={r.id || r.position} value={r.position}>
+                {r.position}
+              </option>
+            ))}
+          </select>
         </div>
 
         <div className="field">
@@ -949,29 +1118,87 @@ function ContractDetailsStep({ form, branches, onChange }) {
 
         <div className="field">
           <label>Area</label>
-          <input className="input" name="area" value={form.area} onChange={onChange} />
+          <input className="input" name="area" value={form.area} onChange={onChange} readOnly />
         </div>
 
         <div className="field">
           <label>Region</label>
-          <input className="input" name="region" value={form.region} onChange={onChange} />
+          <input className="input" name="region" value={form.region} onChange={onChange} readOnly />
         </div>
 
         <div className="field">
           <label>Division</label>
-          <input className="input" name="division" value={form.division} onChange={onChange} />
+          <input className="input" name="division" value={form.division} onChange={onChange} readOnly />
         </div>
 
-        <div className="field">
+        <div className="field" style={{ position: "relative" }}>
           <label>Branch</label>
-          <select className="input" name="branch_id" value={form.branch_id} onChange={onChange}>
-            <option value="">Select branch...</option>
-            {branches.map((b) => (
-              <option key={b.id} value={b.id}>
-                {b.name}
-              </option>
-            ))}
-          </select>
+          <input
+            className="input"
+            value={branchSearch}
+            onChange={(e) => {
+              setBranchSearch(e.target.value);
+              onChange({
+                target: {
+                  name: "branch_id",
+                  value: "",
+                },
+              });
+              onChange({
+                target: {
+                  name: "area",
+                  value: "",
+                },
+              });
+              onChange({
+                target: {
+                  name: "region",
+                  value: "",
+                },
+              });
+              onChange({
+                target: {
+                  name: "division",
+                  value: "",
+                },
+              });
+            }}
+            placeholder="Search branch code or name..."
+          />
+
+          {!!filteredBranches.length && (
+            <div
+              style={{
+                position: "absolute",
+                top: "100%",
+                left: 0,
+                right: 0,
+                zIndex: 50,
+                marginTop: 6,
+                maxHeight: 240,
+                overflowY: "auto",
+                borderRadius: 10,
+                border: "1px solid rgba(255,255,255,0.12)",
+                background: "#0f1a2e",
+                boxShadow: "0 12px 30px rgba(0,0,0,0.35)",
+              }}
+            >
+              {filteredBranches.map((b) => (
+                <div
+                  key={b.id}
+                  onClick={() => handleBranchSelect(b)}
+                  style={{
+                    padding: "10px 12px",
+                    cursor: "pointer",
+                    borderBottom: "1px solid rgba(255,255,255,0.05)",
+                    color: "#e7edf7",
+                  }}
+                >
+                  {`${toStr(b.code)} - ${toStr(b.name)}`.trim()}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         <div className="field">
@@ -1241,6 +1468,7 @@ function StaffProfileModal({ staff, avatarUrl, onClose, branchNameById }) {
   const [balances, setBalances] = useState(null);
   const [loadingBal, setLoadingBal] = useState(false);
   const [errBal, setErrBal] = useState("");
+
   const [bonus15Data, setBonus15Data] = useState({
     percentage: 0,
     result: 0,
@@ -2118,8 +2346,10 @@ export default function StaffInformation() {
 
   const [staff, setStaff] = useState([]);
   const [branches, setBranches] = useState([]);
+  const [positionRates, setPositionRates] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [branchSearch, setBranchSearch] = useState("");
 
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
@@ -2396,9 +2626,19 @@ export default function StaffInformation() {
     }
   }, []);
 
+  const loadPositionRates = useCallback(async () => {
+    try {
+      const res = await api.get("/comp-rates");
+      setPositionRates(Array.isArray(res.data) ? res.data : []);
+    } catch {
+      setPositionRates([]);
+    }
+  }, []);
+
   useEffect(() => {
     loadAll();
-  }, [loadAll]);
+    loadPositionRates();
+  }, [loadAll, loadPositionRates]);
 
   useEffect(() => {
     const isAnyModalOpen = !!viewStaff || !!editStaff;
@@ -2471,10 +2711,11 @@ export default function StaffInformation() {
   };
 
   const openEdit = async (s) => {
-      if (!canEditStaff) {
-        alert("Only Admin, HR, Accounting, and Branch Manager can edit staff.");
-        return;
-      }
+    if (!canEditStaff) {
+      alert("Only Admin, HR, Accounting, and Branch Manager can edit staff.");
+      return;
+    }
+
     setEditStaff(s);
 
     setForm({
@@ -2487,7 +2728,7 @@ export default function StaffInformation() {
       province: String(s.province ?? ""),
       contact: String(s.contact ?? ""),
       email: String(s.email ?? ""),
-      date_of_birth: s.date_of_birth ? String(s.date_of_birth).split("T")[0] : "",
+      date_of_birth: s.date_of_birth ? String(s.date_of_birth).slice(0, 10) : "",
       place_of_birth: String(s.place_of_birth ?? ""),
       gender: String(s.gender ?? ""),
       civil_status: String(s.civil_status ?? ""),
@@ -2519,28 +2760,35 @@ export default function StaffInformation() {
       guardian_occupation: String(s.guardian_occupation ?? ""),
       guardian_employer: String(s.guardian_employer ?? ""),
       guardian_contact: String(s.guardian_contact ?? ""),
-      children: jsonText(s.children),
-      education: jsonText(s.education),
-      employment_history: jsonText(s.employment_history),
-      beneficiaries: jsonText(s.beneficiaries),
-      position: s.position || "",
-      department: s.department || "",
+      children: typeof s.children === "string" ? s.children : JSON.stringify(s.children ?? [], null, 2),
+      education: typeof s.education === "string" ? s.education : JSON.stringify(s.education ?? [], null, 2),
+      employment_history:
+        typeof s.employment_history === "string"
+          ? s.employment_history
+          : JSON.stringify(s.employment_history ?? [], null, 2),
+      beneficiaries:
+        typeof s.beneficiaries === "string"
+          ? s.beneficiaries
+          : JSON.stringify(s.beneficiaries ?? [], null, 2),
+
+      position: String(s.position ?? ""),
+      department: String(s.department ?? ""),
       area: String(s.area ?? ""),
       region: String(s.region ?? ""),
       division: String(s.division ?? ""),
-      branch_id: String(s.branch_id ?? ""),
-      status: String(s.status || "Active"),
-      start_date: s.start_date ? String(s.start_date).split("T")[0] : "",
-      regularization_date: s.regularization_date ? String(s.regularization_date).split("T")[0] : "",
+      branch_id: s.branch_id ? String(s.branch_id) : "",
+      status: String(s.status ?? "Active"),
+      start_date: s.start_date ? String(s.start_date).slice(0, 10) : "",
+      regularization_date: s.regularization_date ? String(s.regularization_date).slice(0, 10) : "",
       salary: String(s.salary ?? ""),
       ecola: String(s.ecola ?? ""),
       cbu: String(s.cbu ?? ""),
       cashbond: String(s.cashbond ?? ""),
-      utility: String(s.utility_charge ?? s.utility ?? ""),
+      utility: String(s.utility ?? ""),
       transportation: String(s.transportation ?? ""),
+      repairing: String(s.repairing ?? ""),
       postage: String(s.postage ?? ""),
       additional_target: String(s.additional_target ?? ""),
-      repairing: String(s.repairing ?? ""),
       additional_monitoring: String(s.additional_monitoring ?? ""),
       other_deduction: String(s.other_deduction ?? ""),
       sss_er: String(s.sss_er ?? ""),
@@ -2552,38 +2800,17 @@ export default function StaffInformation() {
       tax: String(s.tax ?? ""),
     });
 
-    try {
-      const res = await api.get(`/staff-balances/${s.employee_no}`);
-      const bal = res.data || {};
-      setBalanceForm({
-        cbu: String(bal.cbu ?? ""),
-        cashbond: String(bal.cashbond ?? ""),
-        utility: String(bal.utility ?? ""),
-        salary_advance: String(bal.salary_advance ?? ""),
-        special_advance: String(bal.special_advance ?? ""),
-        cash_advance: String(bal.cash_advance ?? ""),
-        motorcycle_loan: String(bal.motorcycle_loan ?? ""),
-        pag_ibig_loan: String(bal.pag_ibig_loan ?? ""),
-        other_receivable: String(bal.other_receivable ?? ""),
-        staff_accounts_payable: String(bal.staff_accounts_payable ?? ""),
-      });
-    } catch {
-      setBalanceForm({
-        cbu: "",
-        cashbond: "",
-        utility: "",
-        salary_advance: "",
-        special_advance: "",
-        cash_advance: "",
-        motorcycle_loan: "",
-        pag_ibig_loan: "",
-        other_receivable: "",
-        staff_accounts_payable: "",
-      });
-    }
+    const selectedBranch = branches.find(
+      (b) => String(b.id) === String(s.branch_id)
+    );
 
-    setPhotoPreview(s.photo_url ? avatarUrl(s) : "");
-    setPhotoFile(null);
+    setBranchSearch(
+      selectedBranch
+        ? `${toStr(selectedBranch.code)} - ${toStr(selectedBranch.name)}`.trim()
+        : ""
+    );
+
+    setPhotoPreview();
     setFormStep(1);
   };
 
@@ -2903,7 +3130,18 @@ export default function StaffInformation() {
                 <br />
 
                 {formStep === 1 && <StaffDetailsStep form={form} onChange={onChange} />}
-                {formStep === 2 && <ContractDetailsStep form={form} branches={branches} onChange={onChange} />}
+                
+                {formStep === 2 && (
+                  <ContractDetailsStep
+                    form={form}
+                    branches={branches}
+                    positionRates={positionRates}
+                    onChange={onChange}
+                    branchSearch={branchSearch}
+                    setBranchSearch={setBranchSearch}
+                  />
+                )}
+                
                 {formStep === 3 && <PersonalBalancesStep balanceForm={balanceForm} onBalanceChange={onBalanceChange} />}
               </div>
 

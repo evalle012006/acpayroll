@@ -24,6 +24,7 @@ const roleLower = (req) => String(req.user?.role || "").trim().toLowerCase();
 const isAdmin = (req) => roleLower(req) === "admin";
 const isHr = (req) => roleLower(req) === "hr";
 const isAccounting = (req) => roleLower(req) === "accounting";
+const isTread = (req) => roleLower(req) === "tread";
 const isBranchManager = (req) => roleLower(req) === "branch manager";
 const isAreaManager = (req) => roleLower(req) === "area manager";
 const isRegionalManager = (req) => roleLower(req) === "regional manager";
@@ -41,6 +42,7 @@ const FULL_ACCESS_ROLES = [
   "admin",
   "hr",
   "accounting",
+  "tread",
   "vice president",
   "senior vice president",
   "president",
@@ -50,6 +52,7 @@ const VIEW_OR_CREATE_ROLES = [
   "admin",
   "hr",
   "accounting",
+  "tread",
   "branch manager",
   "area manager",
   "regional manager",
@@ -63,6 +66,7 @@ const APPROVER_ROLES = [
   "admin",
   "hr",
   "accounting",
+  "tread",
   "area manager",
   "regional manager",
   "assistant vice president",
@@ -75,12 +79,16 @@ const isFullViewer = (req) =>
   isAdmin(req) ||
   isHr(req) ||
   isAccounting(req) ||
+  isTread(req) ||
   isVicePresident(req) ||
   isSeniorVicePresident(req) ||
   isPresident(req);
 
 const isRequestViewer = (req) =>
   isAdmin(req) ||
+  isHr(req) ||
+  isAccounting(req) ||
+  isTread(req) ||
   isRegionalManager(req) ||
   isAssistantVicePresident(req) ||
   isVicePresident(req) ||
@@ -89,6 +97,9 @@ const isRequestViewer = (req) =>
 
 const canUploadApprovedLeave = (req) =>
   isAdmin(req) ||
+  isHr(req) ||
+  isAccounting(req) ||
+  isTread(req) ||
   isVicePresident(req) ||
   isSeniorVicePresident(req) ||
   isPresident(req);
@@ -231,6 +242,7 @@ const initialPendingStatusForRequester = (req) => {
     isAdmin(req) ||
     isHr(req) ||
     isAccounting(req) ||
+    isTread(req) ||
     isVicePresident(req) ||
     isSeniorVicePresident(req) ||
     isPresident(req)
@@ -274,6 +286,7 @@ const canActOnLeave = async (req, leaveId) => {
     isAdmin(req) ||
     isHr(req) ||
     isAccounting(req) ||
+    isTread(req) ||
     isVicePresident(req) ||
     isSeniorVicePresident(req) ||
     isPresident(req)
@@ -335,7 +348,11 @@ const canActOnLeave = async (req, leaveId) => {
   }
 
   if (status === "Pending Admin") {
-    return { ok: false, code: 403, message: "Only admin/hr/accounting or higher roles can act on this stage" };
+    return {
+      ok: false,
+      code: 403,
+      message: "Only admin/hr/accounting/tread or higher roles can act on this stage",
+    };
   }
 
   return { ok: false, code: 400, message: "Unsupported leave status" };
@@ -678,7 +695,7 @@ router.post(
 router.post(
   "/leave-requests/:id/approved-file",
   requireAuth,
-  requireRole(["admin", "vice president", "senior vice president", "president"]),
+  requireRole(["admin", "hr", "accounting", "tread", "vice president", "senior vice president", "president"]),
   upload.single("attachment"),
   async (req, res) => {
     const client = await pool.connect();
@@ -796,6 +813,9 @@ router.get("/leave-requests/:id/download/:type", requireAuth, async (req, res) =
       if (
         !(
           isAdmin(req) ||
+          isHr(req) ||
+          isAccounting(req) ||
+          isTread(req) ||
           isRegionalManager(req) ||
           isAssistantVicePresident(req) ||
           isAreaManager(req) ||

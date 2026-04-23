@@ -29,6 +29,7 @@ const roleLower = (req) => String(req.user?.role || "").trim().toLowerCase();
 const isAdmin = (req) => roleLower(req) === "admin";
 const isHr = (req) => roleLower(req) === "hr";
 const isAccounting = (req) => roleLower(req) === "accounting";
+const isTread = (req) => roleLower(req) === "tread";
 const isBranchManager = (req) => roleLower(req) === "branch manager";
 const isAreaManager = (req) => roleLower(req) === "area manager";
 const isRegionalManager = (req) => roleLower(req) === "regional manager";
@@ -43,6 +44,7 @@ const isTopManagement = (req) =>
   isAdmin(req) ||
   isHr(req) ||
   isAccounting(req) ||
+  isTread(req) ||
   isVicePresident(req) ||
   isSeniorVicePresident(req) ||
   isPresident(req);
@@ -191,6 +193,7 @@ router.get(
     "admin",
     "hr",
     "accounting",
+    "tread",
     "branch manager",
     "area manager",
     "regional manager",
@@ -266,6 +269,8 @@ router.post(
   requireAuth,
   requireRole([
     "admin",
+    "hr",
+    "accounting",
     "branch manager",
     "area manager",
     "regional manager",
@@ -444,7 +449,7 @@ router.post(
 router.put(
   "/promotion-orders/:id/approve",
   requireAuth,
-  requireRole(["admin", "vice president", "senior vice president", "president"]),
+  requireRole(["admin", "hr", "accounting", "vice president", "senior vice president", "president"]),
   async (req, res) => {
     const client = await pool.connect();
     try {
@@ -513,7 +518,7 @@ router.put(
 router.put(
   "/promotion-orders/:id/reject",
   requireAuth,
-  requireRole(["admin", "vice president", "senior vice president", "president"]),
+  requireRole(["admin", "hr", "accounting", "vice president", "senior vice president", "president"]),
   async (req, res) => {
     try {
       const id = toInt(req.params.id);

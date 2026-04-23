@@ -23,7 +23,7 @@ const getBaseUrl = () => {
 };
 
 const STATUS_RM = "Pending Regional Manager";
-const STATUS_AVP = "Pending Assistant Vice President";
+const STATUS_AVP = "Pending Executive Approval";
 const STATUS_ADMIN = "Pending Admin";
 const STATUS_APPROVED = "Approved";
 const STATUS_REJECTED = "Rejected";
@@ -41,6 +41,7 @@ export default function ResignationRequests() {
   const isAssistantVicePresident = role === "assistant vice president";
   const isHr = role === "hr";
   const isAccounting = role === "accounting";
+  const isTread = role === "tread";
   const isVicePresident = role === "vice president";
   const isSeniorVicePresident = role === "senior vice president";
   const isPresident = role === "president";
@@ -49,6 +50,7 @@ export default function ResignationRequests() {
     isAdmin ||
     isHr ||
     isAccounting ||
+    isTread ||
     isAreaManager ||
     isRegionalManager ||
     isAssistantVicePresident ||
@@ -340,7 +342,7 @@ export default function ResignationRequests() {
 
     if (isRegionalManager && status === STATUS_RM) return true;
     if (isAssistantVicePresident && status === STATUS_AVP) return true;
-    if (isAdmin && status === STATUS_ADMIN) return true;
+    if ((isAdmin || isHr || isAccounting) && status === STATUS_ADMIN) return true;
 
     return false;
   };
@@ -350,7 +352,7 @@ export default function ResignationRequests() {
 
     if (isRegionalManager && status === STATUS_RM) return true;
     if (isAssistantVicePresident && status === STATUS_AVP) return true;
-    if (isAdmin && status === STATUS_ADMIN) return true;
+    if ((isAdmin || isHr || isAccounting) && status === STATUS_ADMIN) return true;
 
     return false;
   };
@@ -389,7 +391,7 @@ export default function ResignationRequests() {
         <div>
           <h2 className="po-title">Resignation Requests</h2>
           <p className="po-subtitle">
-            Area Manager → Regional Manager → Assistant Vice President → Admin
+            Area Manager → Regional Manager → Assistant Vice President → Admin/HR/Accounting
           </p>
         </div>
 

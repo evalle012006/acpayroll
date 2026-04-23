@@ -23,6 +23,7 @@ const roleLower = (req) => norm(req.user?.role);
 const isAdmin = (req) => roleLower(req) === "admin";
 const isHr = (req) => roleLower(req) === "hr";
 const isAccounting = (req) => roleLower(req) === "accounting";
+const isTread = (req) => roleLower(req) === "tread";
 const isBranchManager = (req) => roleLower(req) === "branch manager";
 const isAssistantVicePresident = (req) =>
   roleLower(req) === "assistant vice president";
@@ -35,6 +36,7 @@ const isTopManagement = (req) =>
   isAdmin(req) ||
   isHr(req) ||
   isAccounting(req) ||
+  isTread(req) ||
   isAssistantVicePresident(req) ||
   isVicePresident(req) ||
   isSeniorVicePresident(req) ||
@@ -150,6 +152,8 @@ router.post(
   requireAuth,
   requireRole([
     "admin",
+    "hr",
+    "accounting",
     "branch manager",
     "assistant vice president",
     "vice president",
@@ -389,6 +393,8 @@ router.put(
   requireAuth,
   requireRole([
     "admin",
+    "hr",
+    "accounting",
     "assistant vice president",
     "vice president",
     "senior vice president",
@@ -521,6 +527,8 @@ router.put(
   requireAuth,
   requireRole([
     "admin",
+    "hr",
+    "accounting",
     "assistant vice president",
     "vice president",
     "senior vice president",
@@ -568,7 +576,7 @@ router.put(
 router.delete(
   "/exit-staff-orders/:id",
   requireAuth,
-  requireRole(["admin"]),
+  requireRole(["admin", "hr", "accounting"]),
   async (req, res) => {
     try {
       const id = toInt(req.params.id);

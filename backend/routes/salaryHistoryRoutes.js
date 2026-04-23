@@ -3,7 +3,6 @@ const router = express.Router();
 const pool = require("../db");
 const { requireAuth } = require("../middlewares/authMiddleware");
 
-// GET salary history by employee_no
 router.get("/:employee_no", requireAuth, async (req, res) => {
   try {
     const employeeNo = String(req.params.employee_no || "").trim();

@@ -16,6 +16,7 @@ const roleLower = (req) => String(req.user?.role || "").trim().toLowerCase();
 const isAdmin = (req) => roleLower(req) === "admin";
 const isHr = (req) => roleLower(req) === "hr";
 const isAccounting = (req) => roleLower(req) === "accounting";
+const isTread = (req) => roleLower(req) === "tread";
 const isBranchManager = (req) => roleLower(req) === "branch manager";
 const isAreaManager = (req) => roleLower(req) === "area manager";
 const isRegionalManager = (req) => roleLower(req) === "regional manager";
@@ -31,7 +32,21 @@ const getUserArea = (req) => toStr(req.user?.area);
 const getUserRegion = (req) => toStr(req.user?.region);
 const getUserDivision = (req) => toStr(req.user?.division);
 
-const ALL_ALLOWED_ROLES = [
+const VIEW_ALLOWED_ROLES = [
+  "admin",
+  "hr",
+  "accounting",
+  "tread",
+  "branch manager",
+  "area manager",
+  "regional manager",
+  "assistant vice president",
+  "vice president",
+  "senior vice president",
+  "president",
+];
+
+const EDIT_ALLOWED_ROLES = [
   "admin",
   "hr",
   "accounting",
@@ -49,6 +64,7 @@ function isTopLevelViewer(req) {
     isAdmin(req) ||
     isHr(req) ||
     isAccounting(req) ||
+    isTread(req) ||
     isVicePresident(req) ||
     isSeniorVicePresident(req) ||
     isPresident(req)
@@ -69,6 +85,10 @@ function isAreaScopedViewer(req) {
 
 function isBranchScopedViewer(req) {
   return isBranchManager(req);
+}
+
+function isViewOnlyUser(req) {
+  return isTread(req);
 }
 
 async function getBranchIdFromCode(branchCode) {
@@ -212,7 +232,7 @@ async function canAccessEmployeeNo(client, req, employeeNo) {
 router.get(
   "/staff-balances",
   requireAuth,
-  requireRole(ALL_ALLOWED_ROLES),
+  requireRole(VIEW_ALLOWED_ROLES),
   async (req, res) => {
     try {
       if (isTopLevelViewer(req) || isPresident(req)) {
@@ -366,10 +386,14 @@ router.get(
 router.put(
   "/staff-balances/:employeeNo",
   requireAuth,
-  requireRole(ALL_ALLOWED_ROLES),
+  requireRole(EDIT_ALLOWED_ROLES),
   async (req, res) => {
     const client = await pool.connect();
     try {
+      if (isViewOnlyUser(req)) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
       const employeeNo = clean(req.params.employeeNo);
       if (!employeeNo) {
         return res.status(400).json({ message: "Invalid employee no" });
@@ -453,7 +477,7 @@ router.put(
 router.get(
   "/staff-balances/:employeeNo",
   requireAuth,
-  requireRole(ALL_ALLOWED_ROLES),
+  requireRole(VIEW_ALLOWED_ROLES),
   async (req, res) => {
     const client = await pool.connect();
     try {
