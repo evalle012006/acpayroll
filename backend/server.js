@@ -32,6 +32,7 @@ const logisticRoutes = require("./routes/logisticRoutes");
 const pendingStaffRoutes = require("./routes/pendingStaffRoutes");
 const notificationRoutes = require("./routes/notificationRoutes");
 
+const transportationHistoryRoutes = require("./routes/transportationHistoryRoutes");
 const salaryHistoryRoutes = require("./routes/salaryHistoryRoutes");
 const statusHistoryRoutes = require("./routes/statusHistoryRoutes");
 const staffLoanOpeningBalancesRoutes = require("./routes/staffLoanOpeningBalancesRoutes");
@@ -62,6 +63,7 @@ app.use("/api/transport-overrides", transportOverrideRoutes);
 app.use("/api/logistic", logisticRoutes);
 app.use("/api/salary-history", salaryHistoryRoutes);
 app.use("/api/status-history", statusHistoryRoutes);
+app.use("/api/transport-history", transportationHistoryRoutes);
 
 app.use("/api", compRatesRoutes);
 app.use("/api", staffRoutes);

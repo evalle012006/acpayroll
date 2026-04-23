@@ -15,6 +15,46 @@ const fmt = (n) => toNum(n).toLocaleString();
 const fmtDate = (d) => (d ? String(d).split("T")[0] : "-");
 const toDate10 = (v) => (v ? String(v).slice(0, 10) : "");
 
+const POSITION_ORDER = [
+  "president",
+  "senior vice president",
+  "vice president",
+  "assistant vice president",
+  "regional manager",
+  "acting regional manager",
+  "area manager",
+  "acting area manager",
+  "branch manager",
+  "acting branch manager",
+  "loan officer",
+  "probationary loan officer",
+];
+
+const getPositionRank = (position) => {
+  const idx = POSITION_ORDER.indexOf(norm(position));
+  return idx === -1 ? 999 : idx;
+};
+
+const sortByPosition = (rows) => {
+  return [...rows].sort((a, b) => {
+    const rankA = getPositionRank(a?.position);
+    const rankB = getPositionRank(b?.position);
+
+    if (rankA !== rankB) return rankA - rankB;
+
+    const posCompare = toStr(a?.position).localeCompare(toStr(b?.position));
+    if (posCompare !== 0) return posCompare;
+
+    const lastCompare = toStr(a?.last_name).localeCompare(toStr(b?.last_name));
+    if (lastCompare !== 0) return lastCompare;
+
+    const firstCompare = toStr(a?.first_name).localeCompare(toStr(b?.first_name));
+    if (firstCompare !== 0) return firstCompare;
+
+    return toStr(a?.employee_no).localeCompare(toStr(b?.employee_no));
+  });
+};
+
 const monthlyFromWhole = (v) => {
   const n = toNum(v);
   if (n <= 0) return 0;
@@ -32,6 +72,8 @@ const readUser = () => {
 };
 
 const overrideKey = (branchKey) => `payroll_manual_overrides::branch_${branchKey}`;
+const receivedKey = (branchKey) => `payroll_received::branch_${branchKey}`;
+const makeReceivedId = (staffId, payrollMonth) => `${staffId}__${payrollMonth}`;
 
 const OVERRIDE_FIELDS = [
   "salary",
@@ -96,18 +138,20 @@ const splitPayroll = (netPay) => {
   };
 };
 
-const overlapsCurrentMonth = (startDate, endDate) => {
+const overlapsMonth = (startDate, endDate, selectedMonth) => {
   const start = toDate10(startDate);
   const end = toDate10(endDate);
-  if (!start || !end) return false;
+  if (!start || !end || !selectedMonth) return false;
 
   const s = new Date(`${start}T00:00:00`);
   const e = new Date(`${end}T23:59:59`);
   if (Number.isNaN(s.getTime()) || Number.isNaN(e.getTime())) return false;
 
-  const now = new Date();
-  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0);
-  const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
+  const [year, month] = selectedMonth.split("-").map(Number);
+  if (!year || !month) return false;
+
+  const monthStart = new Date(year, month - 1, 1, 0, 0, 0);
+  const monthEnd = new Date(year, month, 0, 23, 59, 59);
 
   return s <= monthEnd && e >= monthStart;
 };
@@ -127,15 +171,22 @@ function Payroll() {
     role === "hr" ||
     role === "accounting";
 
+  const [selectedMonth, setSelectedMonth] = useState(
+    new Date().toISOString().slice(0, 7)
+  );
+
   const [staff, setStaff] = useState([]);
   const [branch, setBranch] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
   const [overrides, setOverrides] = useState({});
+  const [receivedMap, setReceivedMap] = useState({});
   const [menuOpenFor, setMenuOpenFor] = useState(null);
+  const [menuPos, setMenuPos] = useState({ top: 0, left: 0 });
   const [scheduleBalances, setScheduleBalances] = useState({});
   const [approvedSuspensions, setApprovedSuspensions] = useState({});
+  const [salaryHistoryMap, setSalaryHistoryMap] = useState({});
   const [editModalStaff, setEditModalStaff] = useState(null);
   const [editUntil, setEditUntil] = useState("");
   const [editValues, setEditValues] = useState(() => {
@@ -144,6 +195,8 @@ function Payroll() {
     return obj;
   });
 
+  const menuWrapRef = useRef(null);
+
   const closeMenu = useCallback(() => setMenuOpenFor(null), []);
   const closeModal = useCallback(() => {
     setEditModalStaff(null);
@@ -151,6 +204,17 @@ function Payroll() {
     const obj = {};
     for (const k of OVERRIDE_FIELDS) obj[k] = 0;
     setEditValues(obj);
+  }, []);
+
+  const openMenuFor = useCallback((staffId, event) => {
+    const rect = event.currentTarget.getBoundingClientRect();
+
+    setMenuPos({
+      top: rect.bottom + 6,
+      left: Math.max(8, rect.right - 190),
+    });
+
+    setMenuOpenFor((prev) => (prev === staffId ? null : staffId));
   }, []);
 
   useEffect(() => {
@@ -163,11 +227,31 @@ function Payroll() {
     }
   }, [branchParam]);
 
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(receivedKey(branchParam));
+      const parsed = raw ? JSON.parse(raw) : {};
+      setReceivedMap(parsed && typeof parsed === "object" ? parsed : {});
+    } catch {
+      setReceivedMap({});
+    }
+  }, [branchParam]);
+
   const persistOverrides = useCallback(
     (next) => {
       setOverrides(next);
       try {
         localStorage.setItem(overrideKey(branchParam), JSON.stringify(next));
+      } catch {}
+    },
+    [branchParam]
+  );
+
+  const persistReceivedMap = useCallback(
+    (next) => {
+      setReceivedMap(next);
+      try {
+        localStorage.setItem(receivedKey(branchParam), JSON.stringify(next));
       } catch {}
     },
     [branchParam]
@@ -240,8 +324,8 @@ function Payroll() {
           byBranchId.length > 0
             ? byBranchId
             : byBranchCode.length > 0
-            ? byBranchCode
-            : allStaff.filter((s) => norm(s.area) === norm(foundBranch.area));
+              ? byBranchCode
+              : allStaff.filter((s) => norm(s.area) === norm(foundBranch.area));
 
         const filtered = filteredRaw.filter(isActiveStaff);
 
@@ -252,25 +336,29 @@ function Payroll() {
 
         suspensions.forEach((row) => {
           if (norm(row.status) !== "approved") return;
-          if (!overlapsCurrentMonth(row.start_date || row.suspension_start, row.end_date || row.suspension_end)) return;
+          if (
+            !overlapsMonth(
+              row.start_date || row.suspension_start,
+              row.end_date || row.suspension_end,
+              selectedMonth
+            )
+          ) {
+            return;
+          }
 
           const key = String(row.employee_id ?? "").trim();
           if (!key) return;
 
           if (!map[key]) {
             map[key] = {
-              total_deduction: 0,
-              deduction_basic: 0,
-              deduction_ecola: 0,
-              deduction_transportation: 0,
+              prorated_salary: 0,
+              prorated_ecola: 0,
               days_of_suspension: 0,
             };
           }
 
-          map[key].total_deduction += toNum(row.total_deduction);
-          map[key].deduction_basic += toNum(row.deduction_basic);
-          map[key].deduction_ecola += toNum(row.deduction_ecola);
-          map[key].deduction_transportation += toNum(row.deduction_transportation);
+          map[key].prorated_salary += toNum(row.prorated_salary);
+          map[key].prorated_ecola += toNum(row.prorated_ecola);
           map[key].days_of_suspension += toNum(row.days_of_suspension);
         });
 
@@ -286,7 +374,7 @@ function Payroll() {
     };
 
     run();
-  }, [branchParam]);
+  }, [branchParam, selectedMonth]);
 
   useEffect(() => {
     const loadBalances = async () => {
@@ -296,10 +384,8 @@ function Payroll() {
           return;
         }
 
-        const month = new Date().toISOString().slice(0, 7);
-
         const res = await api.get("/schedule-balances/live", {
-          params: { month, branchId: branch.id },
+          params: { month: selectedMonth, branchId: branch.id },
         });
 
         const rows = Array.isArray(res.data) ? res.data : [];
@@ -325,7 +411,46 @@ function Payroll() {
     };
 
     loadBalances();
-  }, [branch]);
+  }, [branch, selectedMonth]);
+
+  useEffect(() => {
+    const loadEffectiveSalaryHistory = async () => {
+      try {
+        if (!branch?.id || !selectedMonth) {
+          setSalaryHistoryMap({});
+          return;
+        }
+
+        const res = await api.get("/salary-history/effective", {
+          params: {
+            branchId: branch.id,
+            month: selectedMonth,
+          },
+        });
+
+        const rows = Array.isArray(res.data) ? res.data : [];
+        const map = {};
+
+        rows.forEach((r) => {
+          const key = String(r.employee_no || "").trim();
+          if (!key) return;
+
+          map[key] = {
+            salary: toNum(r.salary),
+            ecola: toNum(r.ecola),
+            effective_date: r.effective_date || null,
+          };
+        });
+
+        setSalaryHistoryMap(map);
+      } catch (err) {
+        console.error("Failed loading salary history", err);
+        setSalaryHistoryMap({});
+      }
+    };
+
+    loadEffectiveSalaryHistory();
+  }, [branch, selectedMonth]);
 
   const applyOverrideToStaffRow = useCallback(
     (s) => {
@@ -361,12 +486,25 @@ function Payroll() {
   );
 
   const computedRows = useMemo(() => {
-    return (staff || []).map((raw) => {
+    const rows = (staff || []).map((raw) => {
       const s = applyOverrideToStaffRow(raw);
       const balance = getBalanceForStaff(s);
+      const hist = salaryHistoryMap[String(s.employee_no || "").trim()] || null;
 
-      const salary = toNum(s.salary);
-      const ecola = toNum(s.ecola);
+      const suspension = approvedSuspensions[String(s.id)] || {
+        prorated_salary: 0,
+        prorated_ecola: 0,
+        days_of_suspension: 0,
+      };
+
+      const baseSalary = hist ? toNum(hist.salary) : toNum(s.salary);
+      const baseEcola = hist ? toNum(hist.ecola) : toNum(s.ecola);
+
+      const suspensionSalary = toNum(suspension.prorated_salary);
+      const suspensionEcola = toNum(suspension.prorated_ecola);
+
+      const salary = Math.max(0, baseSalary - suspensionSalary);
+      const ecola = Math.max(0, baseEcola - suspensionEcola);
       const totalComp = salary + ecola;
 
       const total_er = toNum(s.hdmf_er) + toNum(s.sss_er) + toNum(s.ph_er);
@@ -392,16 +530,6 @@ function Payroll() {
           ? toNum(s.staff_accounts_payable)
           : monthlyFromWhole(balance.staff_accounts_payable);
 
-      const suspension = approvedSuspensions[String(s.id)] || {
-        total_deduction: 0,
-        deduction_basic: 0,
-        deduction_ecola: 0,
-        deduction_transportation: 0,
-        days_of_suspension: 0,
-      };
-
-      const suspensionDeduction = toNum(suspension.total_deduction);
-
       const total_deduction =
         total_ee +
         toNum(s.tax) +
@@ -414,14 +542,19 @@ function Payroll() {
         cash_advance +
         other_receivable +
         toNum(s.pagibig_mpl) +
-        staff_accounts_payable +
-        suspensionDeduction;
+        staff_accounts_payable;
 
       const netPay = totalComp - total_deduction;
       const { pay10, pay25 } = splitPayroll(netPay);
 
       return {
         ...s,
+        original_salary: baseSalary,
+        original_ecola: baseEcola,
+        salary_history_effective_date: hist?.effective_date || null,
+        suspension_days: toNum(suspension.days_of_suspension),
+        suspension_basic: suspensionSalary,
+        suspension_ecola: suspensionEcola,
         salary,
         ecola,
         totalComp,
@@ -433,11 +566,6 @@ function Payroll() {
         cash_advance,
         other_receivable,
         staff_accounts_payable,
-        suspension_days: toNum(suspension.days_of_suspension),
-        suspension_deduction: suspensionDeduction,
-        suspension_basic: toNum(suspension.deduction_basic),
-        suspension_ecola: toNum(suspension.deduction_ecola),
-        suspension_transportation: toNum(suspension.deduction_transportation),
         whole_salary_advance: toNum(balance.salary_advance),
         whole_motorcycle_loan: toNum(balance.motorcycle_loan),
         whole_special_advance: toNum(balance.special_advance),
@@ -450,11 +578,61 @@ function Payroll() {
         pay25,
       };
     });
-  }, [staff, applyOverrideToStaffRow, getBalanceForStaff, approvedSuspensions]);
+
+    return sortByPosition(rows);
+  }, [
+    staff,
+    applyOverrideToStaffRow,
+    getBalanceForStaff,
+    approvedSuspensions,
+    salaryHistoryMap,
+  ]);
 
   const sumColumn = (key) => computedRows.reduce((sum, s) => sum + toNum(s[key]), 0);
 
-  const menuWrapRef = useRef(null);
+  const getReceivedRecord = useCallback(
+    (staffId) => {
+      const id = makeReceivedId(staffId, selectedMonth);
+      return receivedMap?.[id] || null;
+    },
+    [receivedMap, selectedMonth]
+  );
+
+  const isAlreadyReceived = useCallback(
+    (staffId, cutOff) => {
+      const rec = receivedMap?.[makeReceivedId(staffId, selectedMonth)];
+      if (!rec) return false;
+      return cutOff === "10th"
+        ? toNum(rec.received_10th) > 0
+        : toNum(rec.received_25th) > 0;
+    },
+    [receivedMap, selectedMonth]
+  );
+
+  const getRemainingPay10 = useCallback(
+    (row) => {
+      const rec = getReceivedRecord(row.id);
+      return toNum(row.pay10) - toNum(rec?.received_10th);
+    },
+    [getReceivedRecord]
+  );
+
+  const getRemainingPay25 = useCallback(
+    (row) => {
+      const rec = getReceivedRecord(row.id);
+      return toNum(row.pay25) - toNum(rec?.received_25th);
+    },
+    [getReceivedRecord]
+  );
+
+  const getTotalReceived = useCallback(
+    (row) => {
+      const rec = getReceivedRecord(row.id);
+      return toNum(rec?.total_received);
+    },
+    [getReceivedRecord]
+  );
+
   useEffect(() => {
     const onDown = (e) => {
       if (!menuOpenFor) return;
@@ -518,6 +696,59 @@ function Payroll() {
     persistOverrides(next);
   };
 
+  const markAsReceived = (row, cutOff) => {
+    const recordId = makeReceivedId(row.id, selectedMonth);
+    const existing = receivedMap?.[recordId] || {
+      id: recordId,
+      staff_id: row.id,
+      employee_no: row.employee_no || "",
+      fullname: row.fullname || "",
+      position: row.position || "",
+      regularization_date: row.regularization_date || "",
+      payroll_month: selectedMonth,
+      received_10th: 0,
+      received_25th: 0,
+      total_received: 0,
+      received_at: null,
+      branch_id: branch?.id || "",
+      branch_code: branch?.code || "",
+      branch_name: branch?.name || "",
+    };
+
+    if (cutOff === "10th" && toNum(existing.received_10th) > 0) {
+      closeMenu();
+      return alert("10th already received.");
+    }
+
+    if (cutOff === "25th" && toNum(existing.received_25th) > 0) {
+      closeMenu();
+      return alert("25th already received.");
+    }
+
+    const amount = cutOff === "10th" ? toNum(row.pay10) : toNum(row.pay25);
+
+    const nextRecord = {
+      ...existing,
+      received_10th:
+        cutOff === "10th" ? amount : toNum(existing.received_10th),
+      received_25th:
+        cutOff === "25th" ? amount : toNum(existing.received_25th),
+      total_received:
+        (cutOff === "10th" ? amount : toNum(existing.received_10th)) +
+        (cutOff === "25th" ? amount : toNum(existing.received_25th)),
+      received_at: new Date().toISOString(),
+    };
+
+    const next = {
+      ...(receivedMap || {}),
+      [recordId]: nextRecord,
+    };
+
+    persistReceivedMap(next);
+    closeMenu();
+    alert(`${cutOff} marked as received.`);
+  };
+
   if (loading) {
     return (
       <div className="payroll-page">
@@ -542,7 +773,7 @@ function Payroll() {
   }
 
   const printedAt = new Date().toLocaleString();
-  const payrollMonth = new Date().toLocaleDateString(undefined, {
+  const payrollMonth = new Date(`${selectedMonth}-01T00:00:00`).toLocaleDateString(undefined, {
     year: "numeric",
     month: "short",
   });
@@ -558,6 +789,13 @@ function Payroll() {
         </div>
 
         <div className="payroll-actions">
+          <input
+            type="month"
+            value={selectedMonth}
+            onChange={(e) => setSelectedMonth(e.target.value)}
+            className="btn-secondary"
+            style={{ padding: "9px 12px" }}
+          />
           <button className="btn-secondary" onClick={() => navigate(-1)} type="button">
             ← Back
           </button>
@@ -571,7 +809,7 @@ function Payroll() {
         <div className="payroll-card-head">
           <div className="payroll-card-title">Salary and Wages</div>
           <div className="payroll-meta">
-            Employees: <strong>{computedRows.length}</strong>
+            Month: <strong>{selectedMonth}</strong> • Employees: <strong>{computedRows.length}</strong>
           </div>
         </div>
 
@@ -586,12 +824,13 @@ function Payroll() {
                 <th rowSpan={2}>Date Regularized</th>
                 <th colSpan={3}>EARNINGS</th>
                 <th colSpan={4}>EMPLOYER (ER)</th>
-                <th colSpan={5}>EMPLOYEE (EE)</th>
+                <th colSpan={4}>EMPLOYEE (EE)</th>
                 <th colSpan={11}>DEDUCTIONS</th>
                 <th rowSpan={2}>Total Deduction</th>
                 <th rowSpan={2}>Net Pay</th>
                 <th rowSpan={2}>10th</th>
                 <th rowSpan={2}>25th</th>
+                <th rowSpan={2}>Received</th>
                 <th rowSpan={2}>Action</th>
               </tr>
 
@@ -609,7 +848,6 @@ function Payroll() {
                 <th>SSS</th>
                 <th>PH</th>
                 <th>Total EE</th>
-                <th>Suspension</th>
 
                 <th>Tax</th>
                 <th>Utility</th>
@@ -657,7 +895,6 @@ function Payroll() {
                     <td className="num">{fmt(s.sss_ee)}</td>
                     <td className="num">{fmt(s.ph_ee)}</td>
                     <td className="num td-strong">{fmt(s.total_ee)}</td>
-                    <td className="num">{fmt(s.suspension_deduction)}</td>
 
                     <td className="num">{fmt(s.tax)}</td>
                     <td className="num">{fmt(s.utility_charge)}</td>
@@ -672,54 +909,28 @@ function Payroll() {
                     <td className="num">{fmt(s.staff_accounts_payable)}</td>
 
                     <td className="num td-strong">{fmt(s.total_deduction)}</td>
-                    <td className={`num td-strong ${s.netPay < 0 ? "neg" : "pos"}`}>{fmt(s.netPay)}</td>
-                    <td className={`num td-strong ${s.pay10 < 0 ? "neg" : "pos"}`}>{fmt(s.pay10)}</td>
-                    <td className={`num td-strong ${s.pay25 < 0 ? "neg" : "pos"}`}>{fmt(s.pay25)}</td>
+                    <td className={`num td-strong ${s.netPay < 0 ? "neg" : "pos"}`}>
+                      {fmt(s.netPay)}
+                    </td>
+                    <td className={`num td-strong ${getRemainingPay10(s) < 0 ? "neg" : "pos"}`}>
+                      {fmt(getRemainingPay10(s))}
+                    </td>
+                    <td className={`num td-strong ${getRemainingPay25(s) < 0 ? "neg" : "pos"}`}>
+                      {fmt(getRemainingPay25(s))}
+                    </td>
+                    <td className="num td-strong">
+                      {fmt(getTotalReceived(s))}
+                    </td>
 
-                    <td style={{ position: "relative" }}>
-                      <div
-                        ref={menuOpenFor === s.id ? menuWrapRef : null}
-                        style={{ display: "inline-block" }}
+                    <td>
+                      <button
+                        type="button"
+                        className="payroll-dots-btn"
+                        onClick={(e) => openMenuFor(s.id, e)}
+                        title="Actions"
                       >
-                        <button
-                          type="button"
-                          className="payroll-dots-btn"
-                          onClick={() => setMenuOpenFor((p) => (p === s.id ? null : s.id))}
-                          title="Actions"
-                        >
-                          <HiDotsVertical />
-                        </button>
-
-                        {menuOpenFor === s.id ? (
-                          <div className="payroll-action-menu">
-                            {canManualEdit ? (
-                              <button
-                                type="button"
-                                className="payroll-action-item"
-                                onClick={() => openManualEdit(s)}
-                              >
-                                Edit manually
-                              </button>
-                            ) : null}
-
-                            {canManualEdit && overrides?.[String(s.id)] ? (
-                              <button
-                                type="button"
-                                className="payroll-action-item danger"
-                                onClick={() => {
-                                  closeMenu();
-                                  const ok = window.confirm(
-                                    "Remove manual override and revert to normal?"
-                                  );
-                                  if (ok) clearOverrideForStaff(s.id);
-                                }}
-                              >
-                                Remove manual edit
-                              </button>
-                            ) : null}
-                          </div>
-                        ) : null}
-                      </div>
+                        <HiDotsVertical />
+                      </button>
                     </td>
                   </tr>
                 );
@@ -732,9 +943,7 @@ function Payroll() {
 
                 <td className="num">{sumColumn("salary").toLocaleString()}</td>
                 <td className="num">{sumColumn("ecola").toLocaleString()}</td>
-                <td className="num td-strong">
-                  {(sumColumn("salary") + sumColumn("ecola")).toLocaleString()}
-                </td>
+                <td className="num td-strong">{sumColumn("totalComp").toLocaleString()}</td>
 
                 <td className="num">{sumColumn("hdmf_er").toLocaleString()}</td>
                 <td className="num">{sumColumn("sss_er").toLocaleString()}</td>
@@ -745,7 +954,6 @@ function Payroll() {
                 <td className="num">{sumColumn("sss_ee").toLocaleString()}</td>
                 <td className="num">{sumColumn("ph_ee").toLocaleString()}</td>
                 <td className="num td-strong">{sumColumn("total_ee").toLocaleString()}</td>
-                <td className="num">{sumColumn("suspension_deduction").toLocaleString()}</td>
 
                 <td className="num">{sumColumn("tax").toLocaleString()}</td>
                 <td className="num">{sumColumn("utility_charge").toLocaleString()}</td>
@@ -761,8 +969,15 @@ function Payroll() {
 
                 <td className="num td-strong">{sumColumn("total_deduction").toLocaleString()}</td>
                 <td className="num td-strong">{sumColumn("netPay").toLocaleString()}</td>
-                <td className="num td-strong">{sumColumn("pay10").toLocaleString()}</td>
-                <td className="num td-strong">{sumColumn("pay25").toLocaleString()}</td>
+                <td className="num td-strong">
+                  {computedRows.reduce((sum, s) => sum + getRemainingPay10(s), 0).toLocaleString()}
+                </td>
+                <td className="num td-strong">
+                  {computedRows.reduce((sum, s) => sum + getRemainingPay25(s), 0).toLocaleString()}
+                </td>
+                <td className="num td-strong">
+                  {computedRows.reduce((sum, s) => sum + getTotalReceived(s), 0).toLocaleString()}
+                </td>
                 <td />
               </tr>
             </tbody>
@@ -771,6 +986,70 @@ function Payroll() {
 
         <div className="payroll-hint">Tip: scroll horizontally to view all columns.</div>
       </div>
+
+      {menuOpenFor ? (
+        <div
+          ref={menuWrapRef}
+          className="payroll-action-menu payroll-action-menu--floating"
+          style={{
+            top: `${menuPos.top}px`,
+            left: `${menuPos.left}px`,
+          }}
+        >
+          {(() => {
+            const s = computedRows.find((row) => row.id === menuOpenFor);
+            if (!s) return null;
+
+            return (
+              <>
+                <button
+                  type="button"
+                  className="payroll-action-item"
+                  onClick={() => markAsReceived(s, "10th")}
+                  disabled={isAlreadyReceived(s.id, "10th")}
+                >
+                  {isAlreadyReceived(s.id, "10th") ? "10th Received" : "Received 10th"}
+                </button>
+
+                <button
+                  type="button"
+                  className="payroll-action-item"
+                  onClick={() => markAsReceived(s, "25th")}
+                  disabled={isAlreadyReceived(s.id, "25th")}
+                >
+                  {isAlreadyReceived(s.id, "25th") ? "25th Received" : "Received 25th"}
+                </button>
+
+                {canManualEdit ? (
+                  <button
+                    type="button"
+                    className="payroll-action-item"
+                    onClick={() => openManualEdit(s)}
+                  >
+                    Edit manually
+                  </button>
+                ) : null}
+
+                {canManualEdit && overrides?.[String(s.id)] ? (
+                  <button
+                    type="button"
+                    className="payroll-action-item danger"
+                    onClick={() => {
+                      closeMenu();
+                      const ok = window.confirm(
+                        "Remove manual override and revert to normal?"
+                      );
+                      if (ok) clearOverrideForStaff(s.id);
+                    }}
+                  >
+                    Remove manual edit
+                  </button>
+                ) : null}
+              </>
+            );
+          })()}
+        </div>
+      ) : null}
 
       {editModalStaff && canManualEdit ? (
         <div
@@ -787,17 +1066,11 @@ function Payroll() {
                   Employee: <b>{editModalStaff.fullname}</b> (ID:{" "}
                   <span className="mono">{editModalStaff.id}</span>)
                 </div>
-                <div style={{ fontSize: 12, opacity: 0.85, marginTop: 6 }}>
-                  Note: Values start at <b>0</b>. This is a temporary override.
-                </div>
               </div>
-              <button type="button" className="payroll-modal-x" onClick={closeModal}>
-                ✕
-              </button>
             </div>
 
             <div className="payroll-modal-body">
-              <div className="payroll-modal-row">
+              <div className="payroll-field">
                 <label>Effective date until</label>
                 <input
                   type="date"
@@ -806,13 +1079,14 @@ function Payroll() {
                 />
               </div>
 
-              <div className="payroll-modal-grid">
+              <div className="payroll-grid-2">
                 {OVERRIDE_FIELDS.map((k) => (
-                  <div key={k} className="payroll-modal-field">
+                  <div key={k} className="payroll-field">
                     <label>{LABELS[k] || k}</label>
                     <input
                       type="number"
-                      value={toNum(editValues[k])}
+                      step="0.01"
+                      value={editValues[k]}
                       onChange={(e) =>
                         setEditValues((p) => ({
                           ...p,
@@ -871,58 +1145,56 @@ function Payroll() {
 
                 <th colSpan={3}>SALARIES AND WAGES</th>
                 <th colSpan={4}>EMPLOYER'S CONTRIBUTION</th>
-                <th colSpan={5}>EMPLOYEE'S CONTRIBUTION</th>
+                <th colSpan={4}>EMPLOYEE'S CONTRIBUTION</th>
                 <th colSpan={11}>OTHER STAFF'S ADVANCES AND DEDUCTION</th>
 
                 <th rowSpan={2}>Total Deductions</th>
                 <th rowSpan={2}>Total Net Pay</th>
-                <th rowSpan={2}>Every 10th</th>
-                <th rowSpan={2}>Every 25th</th>
-                <th rowSpan={2}>Signature</th>
+                <th rowSpan={2}>10th</th>
+                <th rowSpan={2}>25th</th>
+                <th rowSpan={2}>Received</th>
               </tr>
-
               <tr>
-                <th>Basic Salary</th>
-                <th>ECOLA</th>
-                <th>Total Compensation</th>
+                <th>Salary</th>
+                <th>Ecola</th>
+                <th>Total</th>
 
                 <th>HDMF</th>
                 <th>SSS</th>
                 <th>PH</th>
-                <th>Total E.R.</th>
+                <th>Total</th>
 
                 <th>HDMF</th>
                 <th>SSS</th>
                 <th>PH</th>
-                <th>Total E.E.</th>
-                <th>Suspension</th>
+                <th>Total</th>
 
-                <th>Withholding Tax</th>
-                <th>Utility Charge</th>
+                <th>Tax</th>
+                <th>Utility</th>
                 <th>CBU</th>
                 <th>Cash Bond</th>
-                <th>Salary Advance</th>
-                <th>Special Advance</th>
-                <th>Cash Advance</th>
+                <th>Salary Adv</th>
                 <th>Motorcycle</th>
-                <th>Pag-IBIG MPL</th>
-                <th>Other Receivable</th>
-                <th>Staff Accounts Payable</th>
+                <th>Special Adv</th>
+                <th>Cash Adv</th>
+                <th>Other Rec</th>
+                <th>Pag-IBIG</th>
+                <th>Staff A/P</th>
               </tr>
             </thead>
 
             <tbody>
-              {computedRows.map((s, index) => {
-                const familyName = String(s.last_name || "").trim();
-                const firstGiven = String(s.first_name || "").trim();
-                const middleGiven = String(s.middle_name || "").trim();
+              {computedRows.map((s, idx) => {
+                const family = toStr(s.last_name);
+                const first = toStr(s.first_name);
+                const middle = toStr(s.middle_name);
 
                 return (
                   <tr key={s.id}>
-                    <td>{index + 1}</td>
-                    <td>{familyName || "-"}</td>
-                    <td>{firstGiven || "-"}</td>
-                    <td>{middleGiven || "-"}</td>
+                    <td>{idx + 1}</td>
+                    <td>{family || "-"}</td>
+                    <td>{first || "-"}</td>
+                    <td>{middle || "-"}</td>
                     <td>{s.employee_no || s.id}</td>
                     <td>{s.position || "-"}</td>
                     <td>{fmtDate(s.regularization_date)}</td>
@@ -940,32 +1212,30 @@ function Payroll() {
                     <td>{fmt(s.sss_ee)}</td>
                     <td>{fmt(s.ph_ee)}</td>
                     <td>{fmt(s.total_ee)}</td>
-                    <td>{fmt(s.suspension_deduction)}</td>
 
                     <td>{fmt(s.tax)}</td>
                     <td>{fmt(s.utility_charge)}</td>
                     <td>{fmt(s.cbu)}</td>
                     <td>{fmt(s.cashbond)}</td>
                     <td>{fmt(s.salary_advance)}</td>
+                    <td>{fmt(s.motorcycle_loan)}</td>
                     <td>{fmt(s.special_advance)}</td>
                     <td>{fmt(s.cash_advance)}</td>
-                    <td>{fmt(s.motorcycle_loan)}</td>
-                    <td>{fmt(s.pagibig_mpl)}</td>
                     <td>{fmt(s.other_receivable)}</td>
+                    <td>{fmt(s.pagibig_mpl)}</td>
                     <td>{fmt(s.staff_accounts_payable)}</td>
 
                     <td>{fmt(s.total_deduction)}</td>
                     <td>{fmt(s.netPay)}</td>
-                    <td>{fmt(s.pay10)}</td>
-                    <td>{fmt(s.pay25)}</td>
-                    <td></td>
+                    <td>{fmt(getRemainingPay10(s))}</td>
+                    <td>{fmt(getRemainingPay25(s))}</td>
+                    <td>{fmt(getTotalReceived(s))}</td>
                   </tr>
                 );
               })}
 
-              <tr className="branch-payroll-print-total">
+              <tr className="totals-row">
                 <td colSpan={7}>TOTAL</td>
-
                 <td>{fmt(sumColumn("salary"))}</td>
                 <td>{fmt(sumColumn("ecola"))}</td>
                 <td>{fmt(sumColumn("totalComp"))}</td>
@@ -979,45 +1249,27 @@ function Payroll() {
                 <td>{fmt(sumColumn("sss_ee"))}</td>
                 <td>{fmt(sumColumn("ph_ee"))}</td>
                 <td>{fmt(sumColumn("total_ee"))}</td>
-                <td>{fmt(sumColumn("suspension_deduction"))}</td>
 
                 <td>{fmt(sumColumn("tax"))}</td>
                 <td>{fmt(sumColumn("utility_charge"))}</td>
                 <td>{fmt(sumColumn("cbu"))}</td>
                 <td>{fmt(sumColumn("cashbond"))}</td>
                 <td>{fmt(sumColumn("salary_advance"))}</td>
+                <td>{fmt(sumColumn("motorcycle_loan"))}</td>
                 <td>{fmt(sumColumn("special_advance"))}</td>
                 <td>{fmt(sumColumn("cash_advance"))}</td>
-                <td>{fmt(sumColumn("motorcycle_loan"))}</td>
-                <td>{fmt(sumColumn("pagibig_mpl"))}</td>
                 <td>{fmt(sumColumn("other_receivable"))}</td>
+                <td>{fmt(sumColumn("pagibig_mpl"))}</td>
                 <td>{fmt(sumColumn("staff_accounts_payable"))}</td>
 
                 <td>{fmt(sumColumn("total_deduction"))}</td>
                 <td>{fmt(sumColumn("netPay"))}</td>
-                <td>{fmt(sumColumn("pay10"))}</td>
-                <td>{fmt(sumColumn("pay25"))}</td>
-                <td></td>
+                <td>{fmt(computedRows.reduce((sum, s) => sum + getRemainingPay10(s), 0))}</td>
+                <td>{fmt(computedRows.reduce((sum, s) => sum + getRemainingPay25(s), 0))}</td>
+                <td>{fmt(computedRows.reduce((sum, s) => sum + getTotalReceived(s), 0))}</td>
               </tr>
             </tbody>
           </table>
-
-          <div className="branch-payroll-print__signatures">
-            <div className="branch-payroll-print__sign-box">
-              <div className="branch-payroll-print__sign-line"></div>
-              <div>Prepared by:</div>
-            </div>
-
-            <div className="branch-payroll-print__sign-box">
-              <div className="branch-payroll-print__sign-line"></div>
-              <div>Checked by:</div>
-            </div>
-
-            <div className="branch-payroll-print__sign-box">
-              <div className="branch-payroll-print__sign-line"></div>
-              <div>Approved by:</div>
-            </div>
-          </div>
         </div>
       </div>
     </div>

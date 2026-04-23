@@ -44,7 +44,7 @@ const LABELS = {
   other_deduction: "Other",
 };
 
-const emptyOverrideValues = () => {
+const emptyHistoryValues = () => {
   const o = {};
   OVERRIDE_FIELDS.forEach((k) => {
     o[k] = 0;
@@ -52,26 +52,60 @@ const emptyOverrideValues = () => {
   return o;
 };
 
-const isExpired = (until) => {
-  if (!until) return true;
-  const end = new Date(`${until}T23:59:59`);
-  return end.getTime() < Date.now();
-};
-
-const overlapsCurrentMonth = (startDate, endDate) => {
+const overlapsMonth = (startDate, endDate, selectedMonth) => {
   const start = toDate10(startDate);
   const end = toDate10(endDate);
-  if (!start || !end) return false;
+  if (!start || !end || !selectedMonth) return false;
 
   const s = new Date(`${start}T00:00:00`);
   const e = new Date(`${end}T23:59:59`);
   if (Number.isNaN(s.getTime()) || Number.isNaN(e.getTime())) return false;
 
-  const now = new Date();
-  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0);
-  const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
+  const [year, month] = selectedMonth.split("-").map(Number);
+  if (!year || !month) return false;
+
+  const monthStart = new Date(year, month - 1, 1, 0, 0, 0);
+  const monthEnd = new Date(year, month, 0, 23, 59, 59);
 
   return s <= monthEnd && e >= monthStart;
+};
+
+const POSITION_ORDER = [
+  "president",
+  "senior vice president",
+  "vice president",
+  "assistant vice president",
+  "regional manager",
+  "acting regional manager",
+  "area manager",
+  "acting area manager",
+  "branch manager",
+  "acting branch manager",
+  "assistant branch manager",
+  "supervisor",
+  "collector",
+  "loan officer",
+  "probationary loan officer",
+  "staff",
+];
+
+const getPositionRank = (position) => {
+  const idx = POSITION_ORDER.indexOf(norm(position));
+  return idx === -1 ? 999 : idx;
+};
+
+const sortByPosition = (rows) => {
+  return [...rows].sort((a, b) => {
+    const rankA = getPositionRank(a?.position);
+    const rankB = getPositionRank(b?.position);
+
+    if (rankA !== rankB) return rankA - rankB;
+
+    const posCompare = toStr(a?.position).localeCompare(toStr(b?.position));
+    if (posCompare !== 0) return posCompare;
+
+    return toStr(a?.fullname).localeCompare(toStr(b?.fullname));
+  });
 };
 
 export default function Transportation() {
@@ -87,6 +121,10 @@ export default function Transportation() {
     role === "hr" ||
     role === "accounting";
 
+  const [selectedMonth, setSelectedMonth] = useState(
+    new Date().toISOString().slice(0, 7)
+  );
+
   const [branch, setBranch] = useState(null);
   const [staff, setStaff] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -94,28 +132,37 @@ export default function Transportation() {
 
   const money = (v) => toNum(v).toLocaleString();
 
-  const [overrides, setOverrides] = useState({});
+  const [historyMap, setHistoryMap] = useState({});
   const [approvedSuspensions, setApprovedSuspensions] = useState({});
+  const [receivedMap, setReceivedMap] = useState({});
   const [menuOpenFor, setMenuOpenFor] = useState(null);
+  const [menuPos, setMenuPos] = useState({ top: 0, left: 0 });
   const menuWrapRef = useRef(null);
 
   const [editModalStaff, setEditModalStaff] = useState(null);
-  const [editUntil, setEditUntil] = useState("");
-  const [editValues, setEditValues] = useState(() => emptyOverrideValues());
-  const [savingOverride, setSavingOverride] = useState(false);
+  const [editValues, setEditValues] = useState(() => emptyHistoryValues());
+  const [savingHistory, setSavingHistory] = useState(false);
 
-  const loadOverrides = useCallback(async (resolvedBranchId) => {
-    if (!resolvedBranchId) return;
+  const receivedStorageKey = useMemo(
+    () => `transport_received::${branchParam}::${selectedMonth}`,
+    [branchParam, selectedMonth]
+  );
+
+  const loadHistory = useCallback(async (resolvedBranchId, month) => {
+    if (!resolvedBranchId || !month) return;
 
     try {
-      const res = await api.get(`/transport-overrides/branch/${resolvedBranchId}`);
+      const res = await api.get(`/transport-history/branch/${resolvedBranchId}`, {
+        params: { month },
+      });
+
       const map = {};
 
       (Array.isArray(res.data) ? res.data : []).forEach((r) => {
         const staffId = String(r.staff_id);
 
         map[staffId] = {
-          until: toDate10(r.until_date),
+          history_month: r.history_month,
           values: {
             postage: toNum(r.postage),
             transportation: toNum(r.transportation),
@@ -128,11 +175,43 @@ export default function Transportation() {
         };
       });
 
-      setOverrides(map);
+      setHistoryMap(map);
     } catch (err) {
-      console.error("loadOverrides failed:", err?.response?.data || err?.message || err);
+      console.error("loadHistory failed:", err?.response?.data || err?.message || err);
+      setHistoryMap({});
     }
   }, []);
+
+  const openMenuFor = useCallback((staffId, event) => {
+    const rect = event.currentTarget.getBoundingClientRect();
+
+    setMenuPos({
+      top: rect.bottom + 6,
+      left: Math.max(8, rect.right - 210),
+    });
+
+    setMenuOpenFor((prev) => (prev === staffId ? null : staffId));
+  }, []);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(receivedStorageKey);
+      const parsed = raw ? JSON.parse(raw) : {};
+      setReceivedMap(parsed && typeof parsed === "object" ? parsed : {});
+    } catch {
+      setReceivedMap({});
+    }
+  }, [receivedStorageKey]);
+
+  const persistReceivedMap = useCallback(
+    (next) => {
+      setReceivedMap(next);
+      try {
+        localStorage.setItem(receivedStorageKey, JSON.stringify(next));
+      } catch {}
+    },
+    [receivedStorageKey]
+  );
 
   useEffect(() => {
     const onDown = (e) => {
@@ -190,20 +269,28 @@ export default function Transportation() {
           byBranchId.length > 0
             ? byBranchId
             : byBranchCode.length > 0
-            ? byBranchCode
-            : all.filter((s) => norm(s.area) === norm(foundBranch.area));
+              ? byBranchCode
+              : all.filter((s) => norm(s.area) === norm(foundBranch.area));
 
         const filtered = filteredRaw.filter(isActiveStaff);
 
         setStaff(filtered);
-        await loadOverrides(foundBranch.id);
+        await loadHistory(foundBranch.id, selectedMonth);
 
         const suspensions = Array.isArray(suspensionRes.data) ? suspensionRes.data : [];
         const map = {};
 
         suspensions.forEach((row) => {
           if (norm(row.status) !== "approved") return;
-          if (!overlapsCurrentMonth(row.start_date || row.suspension_start, row.end_date || row.suspension_end)) return;
+          if (
+            !overlapsMonth(
+              row.start_date || row.suspension_start,
+              row.end_date || row.suspension_end,
+              selectedMonth
+            )
+          ) {
+            return;
+          }
 
           const key = String(row.employee_id ?? "").trim();
           if (!key) return;
@@ -232,28 +319,27 @@ export default function Transportation() {
     };
 
     run();
-  }, [branchParam, loadOverrides]);
+  }, [branchParam, selectedMonth, loadHistory]);
 
-  const applyOverrideToStaffRow = useCallback(
+  const applyHistoryToStaffRow = useCallback(
     (s) => {
-      const ov = overrides?.[String(s.id)];
-      if (!ov?.until || !ov?.values) return s;
-      if (isExpired(ov.until)) return s;
+      const hist = historyMap?.[String(s.id)];
+      if (!hist?.values) return s;
 
       const patched = { ...s };
       for (const k of OVERRIDE_FIELDS) {
-        if (Object.prototype.hasOwnProperty.call(ov.values, k)) {
-          patched[k] = toNum(ov.values[k]);
+        if (Object.prototype.hasOwnProperty.call(hist.values, k)) {
+          patched[k] = toNum(hist.values[k]);
         }
       }
       return patched;
     },
-    [overrides]
+    [historyMap]
   );
 
   const rows = useMemo(() => {
-    return (staff || []).map((raw) => {
-      const s = applyOverrideToStaffRow(raw);
+    const mapped = (staff || []).map((raw) => {
+      const s = applyHistoryToStaffRow(raw);
 
       const postage = toNum(s.postage);
       const transportation = toNum(s.transportation);
@@ -281,6 +367,20 @@ export default function Transportation() {
       const totalDeduction = motorcycle + other + suspensionTransportation;
       const netPay = totalAllowance - totalDeduction;
 
+      const received = receivedMap[String(s.id)] || {
+        r10: false,
+        r25: false,
+      };
+
+      const half10 = netPay / 2;
+      const half25 = netPay / 2;
+
+      const netPay10 = received.r10 ? 0 : half10;
+      const netPay25 = received.r25 ? 0 : half25;
+      const receivedTotal =
+        (received.r10 ? half10 : 0) +
+        (received.r25 ? half25 : 0);
+
       return {
         id: s.id,
         employee_no: s.employee_no || "",
@@ -303,11 +403,14 @@ export default function Transportation() {
         totalDeduction,
 
         netPay,
-        netPay10: netPay / 2,
-        netPay25: netPay / 2,
+        netPay10,
+        netPay25,
+        receivedTotal,
       };
     });
-  }, [staff, applyOverrideToStaffRow, approvedSuspensions]);
+
+    return sortByPosition(mapped);
+  }, [staff, applyHistoryToStaffRow, approvedSuspensions, receivedMap]);
 
   const totals = useMemo(() => {
     return rows.reduce(
@@ -326,6 +429,7 @@ export default function Transportation() {
         t.netPay += r.netPay;
         t.netPay10 += r.netPay10;
         t.netPay25 += r.netPay25;
+        t.received += r.receivedTotal;
         return t;
       },
       {
@@ -343,6 +447,7 @@ export default function Transportation() {
         netPay: 0,
         netPay10: 0,
         netPay25: 0,
+        received: 0,
       }
     );
   }, [rows]);
@@ -356,17 +461,26 @@ export default function Transportation() {
     setMenuOpenFor(null);
     setEditModalStaff(row);
 
-    const today = new Date().toISOString().slice(0, 10);
-    setEditUntil(today);
-
-    setEditValues(emptyOverrideValues());
+    const existing = historyMap?.[String(row.id)]?.values;
+    setEditValues(
+      existing
+        ? {
+            postage: toNum(existing.postage),
+            transportation: toNum(existing.transportation),
+            additional_target: toNum(existing.additional_target),
+            repairing: toNum(existing.repairing),
+            additional_monitoring: toNum(existing.additional_monitoring),
+            motorcycle_loan: toNum(existing.motorcycle_loan),
+            other_deduction: toNum(existing.other_deduction),
+          }
+        : emptyHistoryValues()
+    );
   };
 
   const closeModal = () => {
-    if (savingOverride) return;
+    if (savingHistory) return;
     setEditModalStaff(null);
-    setEditUntil("");
-    setEditValues(emptyOverrideValues());
+    setEditValues(emptyHistoryValues());
   };
 
   const saveManualEdit = async () => {
@@ -377,28 +491,23 @@ export default function Transportation() {
 
     if (!editModalStaff?.id || !branch?.id) return;
 
-    const until = toDate10(editUntil);
-    if (!until) return alert("Please set Effective date until.");
-    if (isExpired(until)) {
-      return alert("Effective date until is already expired. Please pick a future date.");
-    }
-
-    setSavingOverride(true);
+    setSavingHistory(true);
     try {
-      await api.post("/transport-overrides", {
+      await api.post("/transport-history", {
         branch_id: Number(branch.id),
         staff_id: Number(editModalStaff.id),
-        until,
+        employee_no: editModalStaff.employee_no || "",
+        history_month: selectedMonth,
         values: editValues,
       });
 
-      await loadOverrides(branch.id);
+      await loadHistory(branch.id, selectedMonth);
       closeModal();
-      alert("Manual override saved.");
+      alert("Transportation history saved.");
     } catch (err) {
-      alert(err?.response?.data?.message || "Failed to save override");
+      alert(err?.response?.data?.message || "Failed to save transportation history");
     } finally {
-      setSavingOverride(false);
+      setSavingHistory(false);
     }
   };
 
@@ -411,11 +520,25 @@ export default function Transportation() {
     if (!branch?.id) return;
 
     try {
-      await api.delete(`/transport-overrides/branch/${branch.id}/staff/${staffId}`);
-      await loadOverrides(branch.id);
+      await api.delete(`/transport-history/branch/${branch.id}/staff/${staffId}`, {
+        params: { month: selectedMonth },
+      });
+      await loadHistory(branch.id, selectedMonth);
     } catch (err) {
-      alert(err?.response?.data?.message || "Failed to remove override");
+      alert(err?.response?.data?.message || "Failed to remove transportation history");
     }
+  };
+
+  const markAsReceived = (staffId, which) => {
+    const next = {
+      ...(receivedMap || {}),
+      [String(staffId)]: {
+        ...(receivedMap[String(staffId)] || {}),
+        [which]: true,
+      },
+    };
+    persistReceivedMap(next);
+    setMenuOpenFor(null);
   };
 
   if (loading) {
@@ -441,6 +564,11 @@ export default function Transportation() {
     );
   }
 
+  const printMonth = new Date(`${selectedMonth}-01T00:00:00`).toLocaleDateString(undefined, {
+    year: "numeric",
+    month: "long",
+  });
+
   return (
     <>
       <div className="transpo-page no-print">
@@ -453,6 +581,13 @@ export default function Transportation() {
           </div>
 
           <div className="transpo-actions">
+            <input
+              type="month"
+              value={selectedMonth}
+              onChange={(e) => setSelectedMonth(e.target.value)}
+              className="btn-secondary"
+              style={{ padding: "9px 12px" }}
+            />
             <button className="btn-secondary" onClick={() => navigate(-1)} type="button">
               ← Back
             </button>
@@ -465,6 +600,9 @@ export default function Transportation() {
         <div className="transpo-card">
           <div className="transpo-card-head">
             <div className="transpo-card-title">Allowances, Deductions & Net Pay</div>
+            <div className="transpo-meta">
+              Month: <strong>{selectedMonth}</strong>
+            </div>
           </div>
 
           <div className="transpo-table-wrap">
@@ -480,7 +618,7 @@ export default function Transportation() {
 
                   <th colSpan={6}>Allowances & Incentives</th>
                   <th colSpan={4}>Deductions</th>
-                  <th colSpan={3}>Net Pay</th>
+                  <th colSpan={4}>Net Pay</th>
 
                   <th rowSpan={2}>Action</th>
                 </tr>
@@ -501,21 +639,23 @@ export default function Transportation() {
                   <th>Total Net Pay</th>
                   <th>10th</th>
                   <th>25th</th>
+                  <th>Received</th>
                 </tr>
               </thead>
 
               <tbody>
                 {rows.length === 0 ? (
                   <tr>
-                    <td colSpan={20} className="empty-state">
+                    <td colSpan={21} className="empty-state">
                       No staff found for this branch.
                     </td>
                   </tr>
                 ) : (
                   rows.map((r) => {
                     const staffId = String(r.id);
-                    const ov = overrides?.[staffId];
-                    const hasOverride = !!ov && !isExpired(ov?.until);
+                    const hist = historyMap?.[staffId];
+                    const hasHistory = !!hist?.values;
+                    const received = receivedMap?.[staffId] || {};
 
                     return (
                       <tr key={r.id}>
@@ -523,9 +663,9 @@ export default function Transportation() {
                         <td className="mono">{r.employee_no || "-"}</td>
                         <td className="td-strong td-left">
                           {r.fullname}
-                          {hasOverride ? (
+                          {hasHistory ? (
                             <span style={{ marginLeft: 8, fontSize: 11, opacity: 0.9 }}>
-                              (Manual until {ov?.until})
+                              ({selectedMonth})
                             </span>
                           ) : null}
                         </td>
@@ -550,51 +690,17 @@ export default function Transportation() {
                         </td>
                         <td className={`${r.netPay10 < 0 ? "neg" : "pos"}`}>₱ {money(r.netPay10)}</td>
                         <td className={`${r.netPay25 < 0 ? "neg" : "pos"}`}>₱ {money(r.netPay25)}</td>
+                        <td className="td-strong">₱ {money(r.receivedTotal)}</td>
 
-                        <td style={{ position: "relative" }}>
-                          <div
-                            ref={menuOpenFor === r.id ? menuWrapRef : null}
-                            style={{ display: "inline-block" }}
+                        <td>
+                          <button
+                            type="button"
+                            className="transpo-dots-btn"
+                            onClick={(e) => openMenuFor(r.id, e)}
+                            title="Actions"
                           >
-                            <button
-                              type="button"
-                              className="transpo-dots-btn"
-                              onClick={() => setMenuOpenFor((p) => (p === r.id ? null : r.id))}
-                              title="Actions"
-                            >
-                              <HiDotsVertical />
-                            </button>
-
-                            {menuOpenFor === r.id ? (
-                              <div className="transpo-action-menu">
-                                {canManualEdit ? (
-                                  <button
-                                    type="button"
-                                    className="transpo-action-item"
-                                    onClick={() => openManualEdit(r)}
-                                  >
-                                    Edit manually
-                                  </button>
-                                ) : null}
-
-                                {canManualEdit && hasOverride ? (
-                                  <button
-                                    type="button"
-                                    className="transpo-action-item danger"
-                                    onClick={() => {
-                                      setMenuOpenFor(null);
-                                      const ok = window.confirm(
-                                        "Remove manual override and revert to normal?"
-                                      );
-                                      if (ok) clearOverrideForStaff(r.id);
-                                    }}
-                                  >
-                                    Remove manual edit
-                                  </button>
-                                ) : null}
-                              </div>
-                            ) : null}
-                          </div>
+                            <HiDotsVertical />
+                          </button>
                         </td>
                       </tr>
                     );
@@ -622,6 +728,7 @@ export default function Transportation() {
                     <td className="td-strong">₱ {money(totals.netPay)}</td>
                     <td className="td-strong">₱ {money(totals.netPay10)}</td>
                     <td className="td-strong">₱ {money(totals.netPay25)}</td>
+                    <td className="td-strong">₱ {money(totals.received)}</td>
 
                     <td />
                   </tr>
@@ -632,6 +739,73 @@ export default function Transportation() {
 
           <div className="transpo-hint">Tip: scroll horizontally to view all columns.</div>
         </div>
+
+        {menuOpenFor ? (
+          <div
+            ref={menuWrapRef}
+            className="transpo-action-menu transpo-action-menu--floating"
+            style={{
+              top: `${menuPos.top}px`,
+              left: `${menuPos.left}px`,
+            }}
+          >
+            {(() => {
+              const r = rows.find((row) => row.id === menuOpenFor);
+              if (!r) return null;
+
+              const hasHistory = !!historyMap?.[String(r.id)]?.values;
+              const received = receivedMap?.[String(r.id)] || {};
+
+              return (
+                <>
+                  <button
+                    type="button"
+                    className="transpo-action-item"
+                    onClick={() => markAsReceived(r.id, "r10")}
+                    disabled={!!received.r10}
+                  >
+                    {received.r10 ? "10th Received" : "Mark 10th Received"}
+                  </button>
+
+                  <button
+                    type="button"
+                    className="transpo-action-item"
+                    onClick={() => markAsReceived(r.id, "r25")}
+                    disabled={!!received.r25}
+                  >
+                    {received.r25 ? "25th Received" : "Mark 25th Received"}
+                  </button>
+
+                  {canManualEdit ? (
+                    <button
+                      type="button"
+                      className="transpo-action-item"
+                      onClick={() => openManualEdit(r)}
+                    >
+                      Edit manually
+                    </button>
+                  ) : null}
+
+                  {canManualEdit && hasHistory ? (
+                    <button
+                      type="button"
+                      className="transpo-action-item danger"
+                      onClick={() => {
+                        setMenuOpenFor(null);
+                        const ok = window.confirm(
+                          `Remove transportation history for ${selectedMonth}?`
+                        );
+                        if (ok) clearOverrideForStaff(r.id);
+                      }}
+                    >
+                      Remove manual edit
+                    </button>
+                  ) : null}
+                </>
+              );
+            })()}
+          </div>
+        ) : null}
 
         {editModalStaff && canManualEdit ? (
           <div
@@ -649,31 +823,20 @@ export default function Transportation() {
                     <span className="mono">{editModalStaff.id}</span>)
                   </div>
                   <div style={{ fontSize: 12, opacity: 0.85, marginTop: 6 }}>
-                    Note: Values start at <b>0</b>. This is a temporary override and will
-                    revert automatically.
+                    Editing month: <b>{selectedMonth}</b>
                   </div>
                 </div>
                 <button
                   type="button"
                   className="transpo-modal-x"
                   onClick={closeModal}
-                  disabled={savingOverride}
+                  disabled={savingHistory}
                 >
                   ✕
                 </button>
               </div>
 
               <div className="transpo-modal-body">
-                <div className="transpo-modal-row">
-                  <label>Effective date until</label>
-                  <input
-                    type="date"
-                    value={editUntil}
-                    onChange={(e) => setEditUntil(e.target.value)}
-                    disabled={savingOverride}
-                  />
-                </div>
-
                 <div className="transpo-modal-grid">
                   {OVERRIDE_FIELDS.map((k) => (
                     <div key={k} className="transpo-modal-field">
@@ -687,7 +850,7 @@ export default function Transportation() {
                             [k]: toNum(e.target.value),
                           }))
                         }
-                        disabled={savingOverride}
+                        disabled={savingHistory}
                       />
                     </div>
                   ))}
@@ -699,7 +862,7 @@ export default function Transportation() {
                   type="button"
                   className="btn-secondary"
                   onClick={closeModal}
-                  disabled={savingOverride}
+                  disabled={savingHistory}
                 >
                   Cancel
                 </button>
@@ -707,9 +870,9 @@ export default function Transportation() {
                   type="button"
                   className="btn-primary"
                   onClick={saveManualEdit}
-                  disabled={savingOverride}
+                  disabled={savingHistory}
                 >
-                  {savingOverride ? "Saving..." : "Save"}
+                  {savingHistory ? "Saving..." : "Save"}
                 </button>
               </div>
             </div>
@@ -723,7 +886,9 @@ export default function Transportation() {
           <div className="branch-transpo-print__branch">
             {branch ? `${branch.code} • ${branch.name}` : ""}
           </div>
-          <div className="branch-transpo-print__period">{branch?.area || ""}</div>
+          <div className="branch-transpo-print__period">
+            {branch?.area || ""} • {printMonth}
+          </div>
 
           <table className="branch-transpo-print-table">
             <thead>
@@ -747,13 +912,14 @@ export default function Transportation() {
                 <th>Total Net Pay</th>
                 <th>10th</th>
                 <th>25th</th>
+                <th>Received</th>
               </tr>
             </thead>
 
             <tbody>
               {rows.length === 0 ? (
                 <tr>
-                  <td colSpan={19}>No staff found for this branch.</td>
+                  <td colSpan={20}>No staff found for this branch.</td>
                 </tr>
               ) : (
                 rows.map((r) => (
@@ -777,6 +943,7 @@ export default function Transportation() {
                     <td>{money(r.netPay)}</td>
                     <td>{money(r.netPay10)}</td>
                     <td>{money(r.netPay25)}</td>
+                    <td>{money(r.receivedTotal)}</td>
                   </tr>
                 ))
               )}
@@ -797,10 +964,12 @@ export default function Transportation() {
                   <td>{money(totals.netPay)}</td>
                   <td>{money(totals.netPay10)}</td>
                   <td>{money(totals.netPay25)}</td>
+                  <td>{money(totals.received)}</td>
                 </tr>
               )}
             </tbody>
           </table>
+
           <div className="branch-payroll-print__signatures">
             <div className="branch-payroll-print__sign-box">
               <div className="branch-payroll-print__sign-line"></div>
