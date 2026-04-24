@@ -1,6 +1,3 @@
-/* PromotionOrder.css — matched to TransferStaffOrder.css */
-
-/* page */
 .po-page {
   display: flex;
   flex-direction: column;
@@ -14,6 +11,7 @@
   justify-content: space-between;
   align-items: flex-end;
   gap: 16px;
+  flex-wrap: wrap;
 }
 
 .po-title {
@@ -30,8 +28,7 @@
   color: var(--muted);
 }
 
-/* header buttons (keep your variants, but align base look) */
-.po-actions {
+.po-topbar-actions {
   display: flex;
   gap: 10px;
   flex-wrap: wrap;
@@ -39,25 +36,31 @@
 
 .po-btn {
   border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 10px 14px;
+  border-radius: 12px;
+  padding: 10px 16px;
   font-weight: 800;
   cursor: pointer;
   transition: 0.15s ease;
   user-select: none;
   background: var(--panel);
   color: var(--text);
+  min-height: 40px;
+}
+
+.po-btn:hover {
+  transform: translateY(-1px);
 }
 
 .po-btn:disabled {
   opacity: 0.7;
   cursor: not-allowed;
+  transform: none;
 }
 
 .po-btn-primary {
   background: var(--primary);
   color: #fff;
-  border-color: rgba(255, 255, 255, 0.10);
+  border-color: rgba(255, 255, 255, 0.1);
 }
 
 .po-btn-primary:hover {
@@ -71,7 +74,7 @@
 }
 
 .po-btn-outline:hover {
-  filter: brightness(1.02);
+  filter: brightness(1.03);
 }
 
 .po-btn-ghost {
@@ -84,11 +87,10 @@
   background: var(--hover);
 }
 
-/* card */
 .po-card {
   background: var(--panel);
   border: 1px solid var(--border);
-  border-radius: 16px;
+  border-radius: 18px;
   box-shadow: var(--shadow-soft);
   overflow: hidden;
 }
@@ -110,35 +112,50 @@
   font-weight: 700;
 }
 
-/* table */
 .po-table-wrap {
   overflow: auto;
 }
 
 .po-table {
   width: 100%;
-  border-collapse: collapse;
-  min-width: 980px; /* keep your wide table behavior */
+  border-collapse: separate;
+  border-spacing: 0;
+  min-width: 1180px;
 }
 
 .po-table th {
   background: var(--table-header);
-  color: white;
+  color: #fff;
   padding: 12px;
   text-align: left;
   white-space: nowrap;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.po-table thead th:first-child {
+  border-top-left-radius: 0;
+}
+
+.po-table thead th:last-child {
+  border-top-right-radius: 0;
 }
 
 .po-table td {
-  padding: 12px;
+  padding: 13px 12px;
   border-bottom: 1px solid var(--border);
   color: var(--text);
   background: transparent;
   vertical-align: middle;
+  font-size: 13px;
 }
 
 .po-table tbody tr:hover td {
   background: var(--row-hover);
+}
+
+.po-table tbody tr:last-child td {
+  border-bottom: none;
 }
 
 .po-empty {
@@ -148,7 +165,6 @@
   font-weight: 700;
 }
 
-/* text helpers */
 .mono {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
 }
@@ -165,16 +181,17 @@
   color: var(--muted);
 }
 
-/* actions */
 .po-row-actions {
   display: flex;
   gap: 8px;
   justify-content: flex-start;
+  align-items: center;
+  flex-wrap: wrap;
 }
 
 .po-mini-btn {
   border: 1px solid var(--border);
-  padding: 7px 10px;
+  padding: 7px 12px;
   border-radius: 10px;
   cursor: pointer;
   font-weight: 800;
@@ -182,37 +199,57 @@
   background: var(--panel-2);
   color: var(--text);
   transition: 0.15s ease;
+  min-width: 64px;
+  text-align: center;
 }
 
 .po-mini-btn:hover {
   background: var(--hover);
+  transform: translateY(-1px);
+}
+
+.po-mini-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  transform: none;
 }
 
 .po-approve {
   border-color: rgba(16, 185, 129, 0.45);
   background: rgba(16, 185, 129, 0.12);
+  color: #34d399;
+}
+
+.po-approve:hover {
+  background: rgba(16, 185, 129, 0.18);
 }
 
 .po-reject {
   border-color: rgba(239, 68, 68, 0.45);
   background: rgba(239, 68, 68, 0.12);
+  color: #fca5a5;
 }
 
-/* badges */
+.po-reject:hover {
+  background: rgba(239, 68, 68, 0.18);
+}
+
 .po-badge {
   display: inline-flex;
   align-items: center;
-  padding: 6px 10px;
+  justify-content: center;
+  padding: 7px 14px;
   border-radius: 999px;
   font-size: 12px;
   font-weight: 900;
   border: 1px solid var(--border);
+  min-width: 86px;
 }
 
 .po-pending {
-  background: rgba(59, 130, 246, 0.12);
-  border-color: rgba(59, 130, 246, 0.35);
-  color: #60a5fa;
+  background: rgba(245, 158, 11, 0.12);
+  border-color: rgba(245, 158, 11, 0.35);
+  color: #fbbf24;
 }
 
 .po-approved {
@@ -227,7 +264,6 @@
   color: #fca5a5;
 }
 
-/* modal */
 .po-modal-overlay {
   position: fixed;
   inset: 0;
@@ -237,6 +273,7 @@
   justify-content: center;
   padding: 18px;
   z-index: 9999;
+  overflow-y: auto;
 }
 
 .po-modal {
@@ -244,15 +281,21 @@
   max-width: 920px;
   background: var(--panel);
   border: 1px solid var(--border);
-  border-radius: 16px;
+  border-radius: 18px;
   box-shadow: var(--shadow-soft);
   overflow: hidden;
+}
+
+.po-modal-sm {
+  max-width: 560px;
 }
 
 .po-modal-head {
   padding: 14px 18px;
   display: flex;
   justify-content: space-between;
+  align-items: center;
+  gap: 12px;
   border-bottom: 1px solid var(--border);
 }
 
@@ -279,20 +322,20 @@
   color: var(--text);
   cursor: pointer;
   font-weight: 900;
+  flex-shrink: 0;
 }
 
 .po-x:hover {
   background: var(--hover);
 }
 
-/* form layout */
 .po-form {
   padding: 16px;
 }
 
 .po-grid {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 14px;
 }
 
@@ -304,6 +347,7 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
+  min-width: 0;
 }
 
 .po-field label {
@@ -315,18 +359,31 @@
 .po-field input,
 .po-field textarea,
 .po-field select {
-  padding: 10px;
+  padding: 10px 12px;
   border-radius: 10px;
   border: 1px solid var(--border);
   background: var(--panel-2);
   color: var(--text);
   outline: none;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.po-field input::placeholder,
+.po-field textarea::placeholder {
+  color: var(--muted);
 }
 
 .po-field input:focus,
 .po-field textarea:focus,
 .po-field select:focus {
   border-color: rgba(79, 70, 229, 0.55);
+  box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.12);
+}
+
+.po-field textarea {
+  min-height: 96px;
+  resize: vertical;
 }
 
 .po-modal-actions {
@@ -338,8 +395,57 @@
   margin-top: 14px;
 }
 
-/* dark tuning (same as TransferStaffOrder.css) */
 [data-theme="dark"] .po-card {
   background: #0f1f3d;
   border-color: rgba(255, 255, 255, 0.1);
+}
+
+@media (max-width: 900px) {
+  .po-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .po-field.full {
+    grid-column: span 1;
+  }
+
+  .po-modal {
+    max-width: 100%;
+  }
+}
+
+@media (max-width: 640px) {
+  .po-page {
+    padding: 14px;
+  }
+
+  .po-topbar {
+    align-items: stretch;
+  }
+
+  .po-topbar-actions {
+    width: 100%;
+  }
+
+  .po-btn {
+    min-height: 38px;
+    padding: 9px 14px;
+  }
+
+  .po-table {
+    min-width: 980px;
+  }
+
+  .po-mini-btn {
+    min-width: 58px;
+    padding: 7px 10px;
+  }
+
+  .po-modal-overlay {
+    padding: 10px;
+  }
+
+  .po-form {
+    padding: 14px;
+  }
 }

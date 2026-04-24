@@ -2,6 +2,9 @@ const express = require("express");
 const router = express.Router();
 const pool = require("../db");
 const { requireAuth, requireRole } = require("../middlewares/authMiddleware");
+const multer = require("multer");
+const path = require("path");
+const fs = require("fs");
 
 /* ---------------- helpers ---------------- */
 const toNum = (v) => {
@@ -12,11 +15,6 @@ const toNum = (v) => {
 const toInt = (v) => {
   const n = Number(v);
   return Number.isFinite(n) ? Math.trunc(n) : null;
-};
-
-const toDate = (v) => {
-  const s = String(v ?? "").slice(0, 10);
-  return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : null;
 };
 
 const toStr = (v) => String(v ?? "").trim();
@@ -30,6 +28,10 @@ const isAreaManager = (req) => roleLower(req) === "area manager";
 const isRegionalManager = (req) => roleLower(req) === "regional manager";
 const isAssistantVicePresident = (req) =>
   roleLower(req) === "assistant vice president";
+const isVicePresident = (req) => roleLower(req) === "vice president";
+const isSeniorVicePresident = (req) =>
+  roleLower(req) === "senior vice president";
+const isPresident = (req) => roleLower(req) === "president";
 
 const getUserBranchCode = (req) => toStr(req.user?.branch_id);
 const getUserArea = (req) => toStr(req.user?.area);
@@ -108,36 +110,80 @@ function loanTypeToBalanceColumn(loanType) {
   return null;
 }
 
+/* ---------------- upload config ---------------- */
+const uploadDir = path.join(__dirname, "../uploads/loans");
+if (!fs.existsSync(uploadDir)) {
+  fs.mkdirSync(uploadDir, { recursive: true });
+}
+
+const storage = multer.diskStorage({
+  destination: (_req, _file, cb) => {
+    cb(null, uploadDir);
+  },
+  filename: (_req, file, cb) => {
+    const unique = Date.now() + "-" + Math.round(Math.random() * 1e9);
+    cb(null, unique + path.extname(file.originalname || ""));
+  },
+});
+
+const upload = multer({ storage });
+
+/* ---------------- shared select fields ---------------- */
+const loanSelectFields = `
+  lr.id,
+  lr.staff_id,
+  lr.employee_no,
+  lr.loan_type,
+  lr.reason,
+  lr.amount,
+  lr.term,
+  lr.interest,
+  lr.total,
+  lr.per_month,
+  lr.status,
+  lr.approved_at,
+  lr.disbursement_date,
+
+  lr.attachment_path,
+  lr.attachment_name,
+  lr.attachment_mime,
+
+  lr.approved_attachment_path,
+  lr.approved_attachment_name,
+  lr.approved_attachment_mime,
+
+  lr.approval_stage,
+  lr.area_manager_status,
+  lr.regional_manager_status,
+  lr.assistant_vice_president_status,
+  lr.admin_status,
+  COALESCE(s.fullname, '') AS staff_name,
+  s.first_name,
+  s.last_name,
+  s.middle_name
+`;
+
 /* ---------------- GET all loans ---------------- */
 router.get("/loan-requests", requireAuth, async (req, res) => {
   try {
-    if (isAdmin(req) || isHr(req) || isAccounting(req) || isAssistantVicePresident(req)) {
+    if (
+      isAdmin(req) ||
+      isHr(req) ||
+      isAccounting(req) ||
+      isAssistantVicePresident(req) ||
+      isVicePresident(req) ||
+      isSeniorVicePresident(req) ||
+      isPresident(req)
+    ) {
       const r = await pool.query(
         `
         SELECT
-          lr.id,
-          lr.staff_id,
-          lr.employee_no,
-          lr.loan_type,
-          lr.reason,
-          lr.amount,
-          lr.term,
-          lr.interest,
-          lr.total,
-          lr.per_month,
-          lr.status,
-          lr.approved_at,
-          lr.disbursement_date,
-          COALESCE(s.fullname, '') AS staff_name,
-          s.first_name,
-          s.last_name,
-          s.middle_name
+          ${loanSelectFields}
         FROM public.loan_requests lr
         LEFT JOIN public.staff s ON s.id = lr.staff_id
         ORDER BY lr.id DESC
         `
       );
-
       return res.json(r.rows);
     }
 
@@ -151,23 +197,7 @@ router.get("/loan-requests", requireAuth, async (req, res) => {
       const r = await pool.query(
         `
         SELECT
-          lr.id,
-          lr.staff_id,
-          lr.employee_no,
-          lr.loan_type,
-          lr.reason,
-          lr.amount,
-          lr.term,
-          lr.interest,
-          lr.total,
-          lr.per_month,
-          lr.status,
-          lr.approved_at,
-          lr.disbursement_date,
-          COALESCE(s.fullname, '') AS staff_name,
-          s.first_name,
-          s.last_name,
-          s.middle_name
+          ${loanSelectFields}
         FROM public.loan_requests lr
         LEFT JOIN public.staff s ON s.id = lr.staff_id
         WHERE s.branch_id = $1
@@ -175,7 +205,6 @@ router.get("/loan-requests", requireAuth, async (req, res) => {
         `,
         [bid]
       );
-
       return res.json(r.rows);
     }
 
@@ -186,23 +215,7 @@ router.get("/loan-requests", requireAuth, async (req, res) => {
       const r = await pool.query(
         `
         SELECT
-          lr.id,
-          lr.staff_id,
-          lr.employee_no,
-          lr.loan_type,
-          lr.reason,
-          lr.amount,
-          lr.term,
-          lr.interest,
-          lr.total,
-          lr.per_month,
-          lr.status,
-          lr.approved_at,
-          lr.disbursement_date,
-          COALESCE(s.fullname, '') AS staff_name,
-          s.first_name,
-          s.last_name,
-          s.middle_name
+          ${loanSelectFields}
         FROM public.loan_requests lr
         LEFT JOIN public.staff s ON s.id = lr.staff_id
         WHERE LOWER(TRIM(COALESCE(s.area, ''))) = LOWER(TRIM($1))
@@ -210,7 +223,6 @@ router.get("/loan-requests", requireAuth, async (req, res) => {
         `,
         [area]
       );
-
       return res.json(r.rows);
     }
 
@@ -221,23 +233,7 @@ router.get("/loan-requests", requireAuth, async (req, res) => {
       const r = await pool.query(
         `
         SELECT
-          lr.id,
-          lr.staff_id,
-          lr.employee_no,
-          lr.loan_type,
-          lr.reason,
-          lr.amount,
-          lr.term,
-          lr.interest,
-          lr.total,
-          lr.per_month,
-          lr.status,
-          lr.approved_at,
-          lr.disbursement_date,
-          COALESCE(s.fullname, '') AS staff_name,
-          s.first_name,
-          s.last_name,
-          s.middle_name
+          ${loanSelectFields}
         FROM public.loan_requests lr
         LEFT JOIN public.staff s ON s.id = lr.staff_id
         WHERE LOWER(TRIM(COALESCE(s.region, ''))) = LOWER(TRIM($1))
@@ -245,13 +241,12 @@ router.get("/loan-requests", requireAuth, async (req, res) => {
         `,
         [region]
       );
-
       return res.json(r.rows);
     }
 
     return res.status(403).json({ message: "Access denied" });
   } catch (e) {
-    console.error("GET /api/loan-requests ERROR:", e.message);
+    console.error("GET /api/loan-requests ERROR:", e);
     return res.status(500).json({ message: e?.message || "Server error" });
   }
 });
@@ -303,23 +298,7 @@ router.get("/loan-requests/staff/:staffId", requireAuth, async (req, res) => {
     const r = await pool.query(
       `
       SELECT
-        lr.id,
-        lr.staff_id,
-        lr.employee_no,
-        lr.loan_type,
-        lr.reason,
-        lr.amount,
-        lr.term,
-        lr.interest,
-        lr.total,
-        lr.per_month,
-        lr.status,
-        lr.approved_at,
-        lr.disbursement_date,
-        COALESCE(s.fullname, '') AS staff_name,
-        s.first_name,
-        s.last_name,
-        s.middle_name
+        ${loanSelectFields}
       FROM public.loan_requests lr
       LEFT JOIN public.staff s ON s.id = lr.staff_id
       WHERE lr.staff_id = $1::int
@@ -330,7 +309,7 @@ router.get("/loan-requests/staff/:staffId", requireAuth, async (req, res) => {
 
     return res.json(r.rows);
   } catch (e) {
-    console.error("GET /api/loan-requests/staff/:staffId ERROR:", e.message);
+    console.error("GET /api/loan-requests/staff/:staffId ERROR:", e);
     return res.status(500).json({ message: e?.message || "Server error" });
   }
 });
@@ -339,7 +318,19 @@ router.get("/loan-requests/staff/:staffId", requireAuth, async (req, res) => {
 router.post(
   "/loan-requests",
   requireAuth,
-  requireRole(["admin", "hr", "accounting", "branch manager", "area manager", "regional manager","assistant vice president", "vice president", "senior vice president"]),
+  requireRole([
+    "admin",
+    "hr",
+    "accounting",
+    "branch manager",
+    "area manager",
+    "regional manager",
+    "assistant vice president",
+    "vice president",
+    "senior vice president",
+    "president",
+  ]),
+  upload.single("attachment"),
   async (req, res) => {
     const client = await pool.connect();
 
@@ -356,10 +347,12 @@ router.post(
       const total = toNum(req.body?.total) || computedTotal;
       const per_month = toNum(req.body?.per_month) || (term ? total / term : total);
 
-      const status = String(req.body?.status || "Pending").trim() || "Pending";
+      const status = "Pending";
+      const approval_stage = "area manager";
 
-      const approved_at = req.body?.approved_at ? toDate(req.body.approved_at) : null;
-      const disbursement_date = req.body?.disbursement_date ? toDate(req.body.disbursement_date) : null;
+      const attachment_path = req.file ? `/uploads/loans/${req.file.filename}` : null;
+      const attachment_name = req.file ? req.file.originalname : null;
+      const attachment_mime = req.file ? req.file.mimetype : null;
 
       if (!staff_id) return res.status(400).json({ message: "staff_id is required" });
       if (!loan_type) return res.status(400).json({ message: "loan_type is required" });
@@ -425,8 +418,19 @@ router.post(
             total,
             per_month,
             status,
+            approval_stage,
+            area_manager_status,
+            regional_manager_status,
+            assistant_vice_president_status,
+            admin_status,
             approved_at,
-            disbursement_date
+            disbursement_date,
+            attachment_path,
+            attachment_name,
+            attachment_mime,
+            approved_attachment_path,
+            approved_attachment_name,
+            approved_attachment_mime
           )
         VALUES
           (
@@ -440,8 +444,19 @@ router.post(
             $8::numeric,
             $9::numeric,
             $10::varchar,
-            $11::date,
-            $12::date
+            $11::varchar,
+            'Pending',
+            'Pending',
+            'Pending',
+            'Pending',
+            NULL,
+            NULL,
+            $12::text,
+            $13::text,
+            $14::text,
+            NULL,
+            NULL,
+            NULL
           )
         RETURNING *;
         `,
@@ -456,8 +471,10 @@ router.post(
           total,
           per_month,
           status,
-          approved_at,
-          disbursement_date,
+          approval_stage,
+          attachment_path,
+          attachment_name,
+          attachment_mime,
         ]
       );
 
@@ -467,7 +484,7 @@ router.post(
       try {
         await client.query("ROLLBACK");
       } catch {}
-      console.error("POST /api/loan-requests ERROR:", e.message);
+      console.error("POST /api/loan-requests ERROR:", e);
       return res.status(500).json({ message: e?.message || "Server error" });
     } finally {
       client.release();
@@ -475,93 +492,311 @@ router.post(
   }
 );
 
+/* ---------------- upload approved signed file ---------------- */
+router.post(
+  "/loan-requests/:id/approved-file",
+  requireAuth,
+  requireRole(["admin", "vice president", "senior vice president", "president"]),
+  upload.single("attachment"),
+  async (req, res) => {
+    const client = await pool.connect();
+
+    try {
+      const id = toInt(req.params.id);
+      if (!id) return res.status(400).json({ message: "Invalid id" });
+      if (!req.file) return res.status(400).json({ message: "Attachment is required" });
+
+      await client.query("BEGIN");
+
+      const cur = await client.query(
+        `SELECT id, status FROM loan_requests WHERE id = $1 LIMIT 1`,
+        [id]
+      );
+
+      if (cur.rowCount === 0) {
+        await client.query("ROLLBACK");
+        return res.status(404).json({ message: "Loan not found" });
+      }
+
+      if (String(cur.rows[0].status || "") !== "Approved") {
+        await client.query("ROLLBACK");
+        return res
+          .status(400)
+          .json({ message: "Approved signed file can only be uploaded after final approval" });
+      }
+
+      const approved_attachment_path = `/uploads/loans/${req.file.filename}`;
+      const approved_attachment_name = req.file.originalname || null;
+      const approved_attachment_mime = req.file.mimetype || null;
+
+      await client.query(
+        `
+        UPDATE loan_requests
+        SET
+          approved_attachment_path = $2,
+          approved_attachment_name = $3,
+          approved_attachment_mime = $4
+        WHERE id = $1
+        `,
+        [id, approved_attachment_path, approved_attachment_name, approved_attachment_mime]
+      );
+
+      await client.query("COMMIT");
+      return res.json({ message: "Approved signed file uploaded successfully" });
+    } catch (e) {
+      try {
+        await client.query("ROLLBACK");
+      } catch {}
+      console.error("POST /api/loan-requests/:id/approved-file ERROR:", e);
+      return res.status(500).json({ message: e?.message || "Server error" });
+    } finally {
+      client.release();
+    }
+  }
+);
+
+/* ---------------- download original / approved loan file ---------------- */
+router.get("/loan-requests/:id/download/:type", requireAuth, async (req, res) => {
+  try {
+    const id = toInt(req.params.id);
+    const type = String(req.params.type || "").trim().toLowerCase();
+
+    if (!id) return res.status(400).json({ message: "Invalid id" });
+    if (!["request", "approved"].includes(type)) {
+      return res.status(400).json({ message: "Invalid attachment type" });
+    }
+
+    const r = await pool.query(
+      `
+      SELECT
+        id,
+        status,
+        attachment_path,
+        attachment_name,
+        approved_attachment_path,
+        approved_attachment_name
+      FROM loan_requests
+      WHERE id = $1
+      LIMIT 1
+      `,
+      [id]
+    );
+
+    if (r.rowCount === 0) {
+      return res.status(404).json({ message: "Loan not found" });
+    }
+
+    const row = r.rows[0];
+
+    if (type === "request") {
+      if (
+        !(
+          isAdmin(req) ||
+          isAreaManager(req) ||
+          isRegionalManager(req) ||
+          isAssistantVicePresident(req) ||
+          isVicePresident(req) ||
+          isSeniorVicePresident(req) ||
+          isPresident(req)
+        )
+      ) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      if (!row.attachment_path) {
+        return res.status(404).json({ message: "No request file found" });
+      }
+
+      const rel = String(row.attachment_path).replace(/^\/uploads\//, "");
+      const filePath = path.join(__dirname, "..", "uploads", rel);
+
+      if (!fs.existsSync(filePath)) {
+        return res.status(404).json({ message: "Request file not found" });
+      }
+
+      return res.download(filePath, row.attachment_name || path.basename(filePath));
+    }
+
+    if (type === "approved") {
+      if (
+        !(
+          isAdmin(req) ||
+          isAreaManager(req) ||
+          isRegionalManager(req) ||
+          isAssistantVicePresident(req) ||
+          isVicePresident(req) ||
+          isSeniorVicePresident(req) ||
+          isPresident(req)
+        )
+      ) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      if (!row.approved_attachment_path) {
+        return res.status(404).json({ message: "No approved file found" });
+      }
+
+      const rel = String(row.approved_attachment_path).replace(/^\/uploads\//, "");
+      const filePath = path.join(__dirname, "..", "uploads", rel);
+
+      if (!fs.existsSync(filePath)) {
+        return res.status(404).json({ message: "Approved file not found" });
+      }
+
+      return res.download(filePath, row.approved_attachment_name || path.basename(filePath));
+    }
+
+    return res.status(400).json({ message: "Invalid type" });
+  } catch (e) {
+    console.error("GET /api/loan-requests/:id/download/:type ERROR:", e);
+    return res.status(500).json({ message: e?.message || "Server error" });
+  }
+});
+
 /* ---------------- UPDATE loan request status ---------------- */
 router.put("/loan-requests/:id", requireAuth, async (req, res) => {
   const client = await pool.connect();
 
   try {
     const id = toInt(req.params.id);
+    const action = String(req.body?.action || "").toLowerCase();
+
     if (!id) return res.status(400).json({ message: "Invalid id" });
-
-    const newStatus = String(req.body?.status || "").trim();
-    if (!newStatus) return res.status(400).json({ message: "status is required" });
-
-    const sLower = newStatus.toLowerCase();
-    if ((sLower === "approved" || sLower === "rejected") && !isAdmin(req)) {
-      return res.status(403).json({ message: "Access denied" });
+    if (!["approve", "reject"].includes(action)) {
+      return res.status(400).json({ message: "Invalid action" });
     }
+
+    const role = roleLower(req);
 
     await client.query("BEGIN");
 
     const cur = await client.query(
-      `
-      SELECT
-        id,
-        staff_id,
-        employee_no,
-        status,
-        loan_type,
-        total,
-        amount
-      FROM public.loan_requests
-      WHERE id = $1::int
-      FOR UPDATE
-      `,
+      `SELECT * FROM loan_requests WHERE id = $1 FOR UPDATE`,
       [id]
     );
 
     if (cur.rowCount === 0) {
       await client.query("ROLLBACK");
-      return res.status(404).json({ message: "Loan request not found" });
+      return res.status(404).json({ message: "Loan not found" });
     }
 
-    const row = cur.rows[0];
-    const prevStatus = String(row.status || "").trim();
+    const loan = cur.rows[0];
 
-    const upd = await client.query(
-      `
-      UPDATE public.loan_requests
-      SET
-        status = $1::varchar,
-        approved_at = CASE
-          WHEN $1::varchar = 'Approved' THEN COALESCE(approved_at, CURRENT_DATE)
-          ELSE approved_at
-        END
-      WHERE id = $2::int
-      RETURNING *;
-      `,
-      [newStatus, id]
-    );
+    if (loan.status === "Approved" || loan.status === "Rejected") {
+      await client.query("ROLLBACK");
+      return res.status(400).json({ message: "Already finalized" });
+    }
 
-    if (prevStatus !== "Approved" && newStatus === "Approved") {
-      const employeeNo = row.employee_no;
-      const total = toNum(row.total) || toNum(row.amount);
-      const col = loanTypeToBalanceColumn(row.loan_type);
+    const chain = [
+      "area manager",
+      "regional manager",
+      "assistant vice president",
+      "admin",
+    ];
+
+    const currentStage = toStr(loan.approval_stage || "area manager").toLowerCase();
+
+    const highLevelOverride =
+      isAdmin(req) ||
+      isVicePresident(req) ||
+      isSeniorVicePresident(req) ||
+      isPresident(req);
+
+    if (!highLevelOverride && role !== currentStage) {
+      await client.query("ROLLBACK");
+      return res.status(403).json({ message: "Not your approval stage" });
+    }
+
+    const effectiveRole = highLevelOverride ? currentStage : role;
+
+    const statusColumnMap = {
+      "area manager": "area_manager_status",
+      "regional manager": "regional_manager_status",
+      "assistant vice president": "assistant_vice_president_status",
+      admin: "admin_status",
+    };
+
+    const column = statusColumnMap[effectiveRole];
+    if (!column) {
+      await client.query("ROLLBACK");
+      return res.status(403).json({ message: "Access denied" });
+    }
+
+    if (action === "reject") {
+      await client.query(
+        `
+        UPDATE loan_requests
+        SET
+          status = 'Rejected',
+          ${column} = 'Rejected'
+        WHERE id = $1
+        `,
+        [id]
+      );
+
+      await client.query("COMMIT");
+      return res.json({ message: "Rejected successfully" });
+    }
+
+    const currentIndex = chain.indexOf(effectiveRole);
+    const nextStage = chain[currentIndex + 1];
+
+    if (!nextStage) {
+      await client.query(
+        `
+        UPDATE loan_requests
+        SET
+          status = 'Approved',
+          ${column} = 'Approved',
+          approved_at = CURRENT_DATE,
+          disbursement_date = CURRENT_DATE
+        WHERE id = $1
+        `,
+        [id]
+      );
+
+      const employeeNo = loan.employee_no;
+      const total = toNum(loan.total) || toNum(loan.amount);
+      const col = loanTypeToBalanceColumn(loan.loan_type);
 
       if (employeeNo && col) {
         await ensureBalanceRow(client, employeeNo);
 
         await client.query(
           `
-          UPDATE public.staff_balances
-          SET
-            ${col} = COALESCE(${col}, 0) + $1::numeric,
-            updated_at = NOW()
+          UPDATE staff_balances
+          SET ${col} = COALESCE(${col}, 0) + $1,
+              updated_at = NOW()
           WHERE employee_no = $2
           `,
           [total, employeeNo]
         );
       }
+
+      await client.query("COMMIT");
+      return res.json({ message: "Fully Approved" });
     }
 
+    await client.query(
+      `
+      UPDATE loan_requests
+      SET
+        ${column} = 'Approved',
+        approval_stage = $1
+      WHERE id = $2
+      `,
+      [nextStage, id]
+    );
+
     await client.query("COMMIT");
-    return res.json(upd.rows[0]);
+    return res.json({ message: `Moved to ${nextStage}` });
   } catch (err) {
     try {
       await client.query("ROLLBACK");
     } catch {}
-    console.error("PUT /api/loan-requests/:id ERROR:", err?.message || err);
-    return res.status(500).json({ message: err?.message || "Server error" });
+
+    console.error("Loan approval chain error:", err);
+    return res.status(500).json({ message: err.message });
   } finally {
     client.release();
   }

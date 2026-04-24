@@ -17,18 +17,6 @@ const money = (v) =>
     maximumFractionDigits: 2,
   });
 
-function computeMonthlyTax(taxableIncome) {
-  const income = toNum(taxableIncome);
-
-  if (income <= 20833) return { bracket: "P 20,833 and below", tax: 0 };
-  if (income <= 33332) return { bracket: "P 20,834 - P 33,332", tax: 0.15 * (income - 20833) };
-  if (income <= 66666) return { bracket: "P 33,333 - P 66,666", tax: 2500 + 0.2 * (income - 33333) };
-  if (income <= 166666) return { bracket: "P 66,667 - P 166,666", tax: 8541.8 + 0.25 * (income - 66667) };
-  if (income <= 666666) return { bracket: "P 166,667 - P 666,666", tax: 33541.8 + 0.3 * (income - 166667) };
-
-  return { bracket: "Over P 666,666", tax: 183541.8 + 0.35 * (income - 666667) };
-}
-
 export default function SystemRates() {
   const navigate = useNavigate();
   const { rates, loading, error, refresh } = useCompRates();
@@ -55,6 +43,15 @@ export default function SystemRates() {
     position: "",
     salary: "",
     ecola: "",
+    sss_ee: "",
+    philhealth_ee: "",
+    pagibig_ee: "",
+    total_ee: "",
+    sss_er: "",
+    philhealth_er: "",
+    pagibig_er: "",
+    total_er: "",
+    tax: "",
     cbu: "",
     cashbond: "",
     utility: "",
@@ -64,43 +61,6 @@ export default function SystemRates() {
 
   const err = errLocal || error;
   const isReadOnly = modalMode === "view";
-
-  const computed = useMemo(() => {
-    const salary = toNum(form.salary);
-    const ecola = toNum(form.ecola);
-    const grossIncome = salary + ecola;
-
-    // EE = 5%
-    const sss_ee = grossIncome * 0.05;
-    const philhealth_ee = salary * 0.05;
-    const pagibig_ee = salary * 0.05;
-    const total_ee = sss_ee + philhealth_ee + pagibig_ee;
-
-    // ER = 10%
-    const sss_er = grossIncome * 0.10;
-    const philhealth_er = salary * 0.10;
-    const pagibig_er = salary * 0.10;
-    const total_er = sss_er + philhealth_er + pagibig_er;
-
-    const taxableIncome = Math.max(0, grossIncome - total_ee);
-    const tax = computeMonthlyTax(taxableIncome).tax;
-
-    return {
-      salary,
-      ecola,
-      grossIncome,
-      sss_ee,
-      philhealth_ee,
-      pagibig_ee,
-      total_ee,
-      sss_er,
-      philhealth_er,
-      pagibig_er,
-      total_er,
-      taxableIncome,
-      tax,
-    };
-  }, [form.salary, form.ecola]);
 
   const totals = useMemo(() => {
     return rates.reduce(
@@ -120,6 +80,8 @@ export default function SystemRates() {
         acc.total_ee += toNum(row.total_ee);
 
         acc.tax += toNum(row.tax);
+        acc.cbu += toNum(row.cbu);
+        acc.cashbond += toNum(row.cashbond);
         acc.utility += toNum(row.utility);
 
         return acc;
@@ -137,6 +99,8 @@ export default function SystemRates() {
         pagibig_ee: 0,
         total_ee: 0,
         tax: 0,
+        cbu: 0,
+        cashbond: 0,
         utility: 0,
       }
     );
@@ -154,11 +118,20 @@ export default function SystemRates() {
   const fillFormFromRow = (row) => {
     setForm({
       position: row.position ?? "",
-      salary: row.salary ?? 0,
-      ecola: row.ecola ?? 0,
-      cbu: row.cbu ?? 0,
-      cashbond: row.cashbond ?? 0,
-      utility: row.utility ?? 0,
+      salary: row.salary ?? "",
+      ecola: row.ecola ?? "",
+      sss_ee: row.sss_ee ?? "",
+      philhealth_ee: row.philhealth_ee ?? "",
+      pagibig_ee: row.pagibig_ee ?? "",
+      total_ee: row.total_ee ?? "",
+      sss_er: row.sss_er ?? "",
+      philhealth_er: row.philhealth_er ?? "",
+      pagibig_er: row.pagibig_er ?? "",
+      total_er: row.total_er ?? "",
+      tax: row.tax ?? "",
+      cbu: row.cbu ?? "",
+      cashbond: row.cashbond ?? "",
+      utility: row.utility ?? "",
     });
   };
 
@@ -198,20 +171,20 @@ export default function SystemRates() {
 
       const payload = {
         position: toStr(form.position),
-        salary: computed.salary,
-        ecola: computed.ecola,
+        salary: toNum(form.salary),
+        ecola: toNum(form.ecola),
 
-        sss_ee: computed.sss_ee,
-        philhealth_ee: computed.philhealth_ee,
-        pagibig_ee: computed.pagibig_ee,
-        total_ee: computed.total_ee,
+        sss_ee: toNum(form.sss_ee),
+        philhealth_ee: toNum(form.philhealth_ee),
+        pagibig_ee: toNum(form.pagibig_ee),
+        total_ee: toNum(form.total_ee),
 
-        sss_er: computed.sss_er,
-        philhealth_er: computed.philhealth_er,
-        pagibig_er: computed.pagibig_er,
-        total_er: computed.total_er,
+        sss_er: toNum(form.sss_er),
+        philhealth_er: toNum(form.philhealth_er),
+        pagibig_er: toNum(form.pagibig_er),
+        total_er: toNum(form.total_er),
 
-        tax: computed.tax,
+        tax: toNum(form.tax),
 
         cbu: toNum(form.cbu),
         cashbond: toNum(form.cashbond),
@@ -262,7 +235,7 @@ export default function SystemRates() {
         <div>
           <h2 className="sys-title">Salary & Allowance Rates</h2>
           <p className="sys-subtitle">
-            Manage salary, ECOLA, EE, ER, tax, and utility values per position.
+            Manage salary, ECOLA, EE, ER, tax, CBU, cash bond, and utility values per position.
           </p>
         </div>
 
@@ -357,6 +330,9 @@ export default function SystemRates() {
 
                     <td>
                       <div className="sys-actions">
+                        <button className="sys-btn" onClick={() => openViewModal(r)} type="button">
+                          View
+                        </button>
 
                         {isAdmin && (
                           <button className="sys-btn" onClick={() => openEditModal(r)} type="button">
@@ -452,57 +428,57 @@ export default function SystemRates() {
 
                   <div className="sys-view-field">
                     <label>Salary</label>
-                    <div className="sys-view-box">{money(computed.salary)}</div>
+                    <div className="sys-view-box">{money(form.salary)}</div>
                   </div>
 
                   <div className="sys-view-field">
                     <label>ECOLA</label>
-                    <div className="sys-view-box">{money(computed.ecola)}</div>
+                    <div className="sys-view-box">{money(form.ecola)}</div>
                   </div>
 
                   <div className="sys-view-field">
                     <label>SSS EE</label>
-                    <div className="sys-view-box">{money(computed.sss_ee)}</div>
+                    <div className="sys-view-box">{money(form.sss_ee)}</div>
                   </div>
 
                   <div className="sys-view-field">
                     <label>PhilHealth EE</label>
-                    <div className="sys-view-box">{money(computed.philhealth_ee)}</div>
+                    <div className="sys-view-box">{money(form.philhealth_ee)}</div>
                   </div>
 
                   <div className="sys-view-field">
                     <label>Pag-IBIG EE</label>
-                    <div className="sys-view-box">{money(computed.pagibig_ee)}</div>
+                    <div className="sys-view-box">{money(form.pagibig_ee)}</div>
                   </div>
 
                   <div className="sys-view-field">
                     <label>Total EE</label>
-                    <div className="sys-view-box">{money(computed.total_ee)}</div>
+                    <div className="sys-view-box">{money(form.total_ee)}</div>
                   </div>
 
                   <div className="sys-view-field">
                     <label>SSS ER</label>
-                    <div className="sys-view-box">{money(computed.sss_er)}</div>
+                    <div className="sys-view-box">{money(form.sss_er)}</div>
                   </div>
 
                   <div className="sys-view-field">
                     <label>PhilHealth ER</label>
-                    <div className="sys-view-box">{money(computed.philhealth_er)}</div>
+                    <div className="sys-view-box">{money(form.philhealth_er)}</div>
                   </div>
 
                   <div className="sys-view-field">
                     <label>Pag-IBIG ER</label>
-                    <div className="sys-view-box">{money(computed.pagibig_er)}</div>
+                    <div className="sys-view-box">{money(form.pagibig_er)}</div>
                   </div>
 
                   <div className="sys-view-field">
                     <label>Total ER</label>
-                    <div className="sys-view-box">{money(computed.total_er)}</div>
+                    <div className="sys-view-box">{money(form.total_er)}</div>
                   </div>
 
                   <div className="sys-view-field">
                     <label>Tax</label>
-                    <div className="sys-view-box">{money(computed.tax)}</div>
+                    <div className="sys-view-box">{money(form.tax)}</div>
                   </div>
 
                   <div className="sys-view-field">
@@ -551,47 +527,91 @@ export default function SystemRates() {
 
                   <div className="sys-field">
                     <label>SSS EE</label>
-                    <input type="number" value={computed.sss_ee.toFixed(2)} disabled />
+                    <input
+                      type="number"
+                      value={form.sss_ee}
+                      onChange={(e) => setForm((p) => ({ ...p, sss_ee: e.target.value }))}
+                    />
                   </div>
 
                   <div className="sys-field">
                     <label>PhilHealth EE</label>
-                    <input type="number" value={computed.philhealth_ee.toFixed(2)} disabled />
+                    <input
+                      type="number"
+                      value={form.philhealth_ee}
+                      onChange={(e) =>
+                        setForm((p) => ({ ...p, philhealth_ee: e.target.value }))
+                      }
+                    />
                   </div>
 
                   <div className="sys-field">
                     <label>Pag-IBIG EE</label>
-                    <input type="number" value={computed.pagibig_ee.toFixed(2)} disabled />
+                    <input
+                      type="number"
+                      value={form.pagibig_ee}
+                      onChange={(e) =>
+                        setForm((p) => ({ ...p, pagibig_ee: e.target.value }))
+                      }
+                    />
                   </div>
 
                   <div className="sys-field">
                     <label>Total EE</label>
-                    <input type="number" value={computed.total_ee.toFixed(2)} disabled />
+                    <input
+                      type="number"
+                      value={form.total_ee}
+                      onChange={(e) => setForm((p) => ({ ...p, total_ee: e.target.value }))}
+                    />
                   </div>
 
                   <div className="sys-field">
                     <label>SSS ER</label>
-                    <input type="number" value={computed.sss_er.toFixed(2)} disabled />
+                    <input
+                      type="number"
+                      value={form.sss_er}
+                      onChange={(e) => setForm((p) => ({ ...p, sss_er: e.target.value }))}
+                    />
                   </div>
 
                   <div className="sys-field">
                     <label>PhilHealth ER</label>
-                    <input type="number" value={computed.philhealth_er.toFixed(2)} disabled />
+                    <input
+                      type="number"
+                      value={form.philhealth_er}
+                      onChange={(e) =>
+                        setForm((p) => ({ ...p, philhealth_er: e.target.value }))
+                      }
+                    />
                   </div>
 
                   <div className="sys-field">
                     <label>Pag-IBIG ER</label>
-                    <input type="number" value={computed.pagibig_er.toFixed(2)} disabled />
+                    <input
+                      type="number"
+                      value={form.pagibig_er}
+                      onChange={(e) =>
+                        setForm((p) => ({ ...p, pagibig_er: e.target.value }))
+                      }
+                    />
                   </div>
 
                   <div className="sys-field">
                     <label>Total ER</label>
-                    <input type="number" value={computed.total_er.toFixed(2)} disabled />
+                    <input
+                      type="number"
+                      value={form.total_er}
+                      onChange={(e) => setForm((p) => ({ ...p, total_er: e.target.value }))}
+                    />
                   </div>
 
                   <div className="sys-field">
                     <label>Tax</label>
-                    <input type="number" value={computed.tax.toFixed(2)} disabled />
+                    <input
+                      type="number"
+                      value={form.tax}
+                      onChange={(e) => setForm((p) => ({ ...p, tax: e.target.value }))}
+                    />
                   </div>
 
                   <div className="sys-field">

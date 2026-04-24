@@ -13,6 +13,7 @@ const roleOptions = [
   { label: "Vice President", value: "vice president" },
   { label: "Senior Vice President", value: "senior vice president" },
   { label: "President", value: "president" },
+  { label: "Tread", value: "tread" },
 ];
 
 const toStr = (v) => String(v ?? "").trim();

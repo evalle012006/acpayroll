@@ -232,9 +232,6 @@ function useStaffSignedUrls(staffList) {
   return signedUrls;
 }
 
-// ---------------------------------------------------------------------------
-// Step tabs
-// ---------------------------------------------------------------------------
 function StepTabs({ step, onSelectStep, canGoContract, canGoBalances }) {
   return (
     <div className="step-tabs">
@@ -263,9 +260,6 @@ function StepTabs({ step, onSelectStep, canGoContract, canGoBalances }) {
   );
 }
 
-// ---------------------------------------------------------------------------
-// StaffDetailsStep
-// ---------------------------------------------------------------------------
 function StaffDetailsStep({ form, onChange }) {
   const childrenFormRows = useMemo(() => safeJsonArray(form.children), [form.children]);
   const educationRows = useMemo(() => safeJsonArray(form.education), [form.education]);
@@ -487,24 +481,273 @@ function StaffDetailsStep({ form, onChange }) {
   );
 }
 
-// ---------------------------------------------------------------------------
-// ContractDetailsStep
-// ---------------------------------------------------------------------------
-function ContractDetailsStep({ form, branches, onChange }) {
+function ContractDetailsStep({form, branches, positionRates = [], onChange, branchSearch, setBranchSearch, }) {
+  const positionOptions = Array.isArray(positionRates)
+    ? [...new Map(
+        positionRates
+          .filter((r) => String(r?.position || "").trim())
+          .map((r) => [String(r.position).trim().toLowerCase(), r])
+      ).values()].sort((a, b) =>
+        String(a.position || "").localeCompare(String(b.position || ""))
+      )
+    : [];
+
+    const filteredBranches = useMemo(() => {
+    const q = norm(branchSearch);
+    if (!q) return branches.slice(0, 30);
+
+    return branches.filter((b) => {
+      const hay = [b.id, b.code, b.name, b.area, b.region, b.division]
+        .map((x) => norm(x))
+        .join(" ");
+      return hay.includes(q);
+    });
+  }, [branches, branchSearch]);
+
+  const handleBranchSelect = (branch) => {
+    onChange({
+      target: {
+        name: "branch_id",
+        value: String(branch?.id ?? ""),
+      },
+    });
+
+    onChange({
+      target: {
+        name: "area",
+        value: branch?.area ?? "",
+      },
+    });
+
+    onChange({
+      target: {
+        name: "region",
+        value: branch?.region ?? "",
+      },
+    });
+
+    onChange({
+      target: {
+        name: "division",
+        value: branch?.division ?? "",
+      },
+    });
+
+    setBranchSearch(
+      `${toStr(branch?.code)}${branch?.name ? ` - ${toStr(branch.name)}` : ""}`.trim()
+    );
+  };
+
+  const handlePositionChange = (e) => {
+    const selectedPosition = String(e.target.value || "").trim();
+    const matched = positionOptions.find(
+      (r) => String(r.position || "").trim().toLowerCase() === selectedPosition.toLowerCase()
+    );
+
+    onChange({
+      target: {
+        name: "position",
+        value: selectedPosition,
+      },
+    });
+
+    if (matched) {
+      onChange({
+        target: {
+          name: "salary",
+          value: matched.salary ?? "",
+        },
+      });
+
+      onChange({
+        target: {
+          name: "ecola",
+          value: matched.ecola ?? "",
+        },
+      });
+
+      onChange({
+        target: {
+          name: "cbu",
+          value: matched.cbu ?? "",
+        },
+      });
+
+      onChange({
+        target: {
+          name: "cashbond",
+          value: matched.cashbond ?? "",
+        },
+      });
+
+      onChange({
+        target: {
+          name: "utility",
+          value: matched.utility ?? "",
+        },
+      });
+
+      onChange({
+        target: {
+          name: "sss_er",
+          value: matched.sss_er ?? "",
+        },
+      });
+
+      onChange({
+        target: {
+          name: "ph_er",
+          value: matched.philhealth_er ?? matched.ph_er ?? "",
+        },
+      });
+
+      onChange({
+        target: {
+          name: "hdmf_er",
+          value: matched.pagibig_er ?? matched.hdmf_er ?? "",
+        },
+      });
+
+      onChange({
+        target: {
+          name: "sss_ee",
+          value: matched.sss_ee ?? "",
+        },
+      });
+
+      onChange({
+        target: {
+          name: "ph_ee",
+          value: matched.philhealth_ee ?? matched.ph_ee ?? "",
+        },
+      });
+
+      onChange({
+        target: {
+          name: "hdmf_ee",
+          value: matched.pagibig_ee ?? matched.hdmf_ee ?? "",
+        },
+      });
+
+      onChange({
+        target: {
+          name: "tax",
+          value: matched.tax ?? "",
+        },
+      });
+    }
+  };
+
   return (
     <div className="modal-body staff-add-grid">
       <div className="staff-add-left" style={{ width: "100%" }}>
-        <div className="field"><label>Position *</label><input className="input" name="position" value={form.position} onChange={onChange} required /></div>
-        <div className="field"><label>Department</label><input className="input" name="department" value={form.department} onChange={onChange} /></div>
-        <div className="field"><label>Area</label><input className="input" name="area" value={form.area} onChange={onChange} /></div>
-        <div className="field"><label>Region</label><input className="input" name="region" value={form.region} onChange={onChange} /></div>
-        <div className="field"><label>Division</label><input className="input" name="division" value={form.division} onChange={onChange} /></div>
         <div className="field">
-          <label>Branch</label>
-          <select className="input" name="branch_id" value={form.branch_id} onChange={onChange}>
-            <option value="">Select branch...</option>
-            {branches.map((b) => (<option key={b.id} value={b.id}>{b.name}</option>))}
+          <label>Position *</label>
+          <select
+            className="input"
+            name="position"
+            value={form.position}
+            onChange={handlePositionChange}
+            required
+          >
+            <option value="">Select position...</option>
+            {positionOptions.map((r) => (
+              <option key={r.id || r.position} value={r.position}>
+                {r.position}
+              </option>
+            ))}
           </select>
+        </div>
+
+        <div className="field">
+          <label>Department</label>
+          <input className="input" name="department" value={form.department} onChange={onChange} />
+        </div>
+
+        <div className="field">
+          <label>Area</label>
+          <input className="input" name="area" value={form.area} onChange={onChange} readOnly />
+        </div>
+
+        <div className="field">
+          <label>Region</label>
+          <input className="input" name="region" value={form.region} onChange={onChange} readOnly />
+        </div>
+
+        <div className="field">
+          <label>Division</label>
+          <input className="input" name="division" value={form.division} onChange={onChange} readOnly />
+        </div>
+
+        <div className="field" style={{ position: "relative" }}>
+          <label>Branch</label>
+          <input
+            className="input"
+            value={branchSearch}
+            onChange={(e) => {
+              setBranchSearch(e.target.value);
+              onChange({
+                target: {
+                  name: "branch_id",
+                  value: "",
+                },
+              });
+              onChange({
+                target: {
+                  name: "area",
+                  value: "",
+                },
+              });
+              onChange({
+                target: {
+                  name: "region",
+                  value: "",
+                },
+              });
+              onChange({
+                target: {
+                  name: "division",
+                  value: "",
+                },
+              });
+            }}
+            placeholder="Search branch code or name..."
+          />
+
+          {!!filteredBranches.length && (
+            <div
+              style={{
+                position: "absolute",
+                top: "100%",
+                left: 0,
+                right: 0,
+                zIndex: 50,
+                marginTop: 6,
+                maxHeight: 240,
+                overflowY: "auto",
+                borderRadius: 10,
+                border: "1px solid rgba(255,255,255,0.12)",
+                background: "#0f1a2e",
+                boxShadow: "0 12px 30px rgba(0,0,0,0.35)",
+              }}
+            >
+              {filteredBranches.map((b) => (
+                <div
+                  key={b.id}
+                  onClick={() => handleBranchSelect(b)}
+                  style={{
+                    padding: "10px 12px",
+                    cursor: "pointer",
+                    borderBottom: "1px solid rgba(255,255,255,0.05)",
+                    color: "#e7edf7",
+                  }}
+                >
+                  {`${toStr(b.code)} - ${toStr(b.name)}`.trim()}
+                </div>
+              ))}
+            </div>
+          )}
+
         </div>
         <div className="field">
           <label>Status</label>
@@ -619,6 +862,14 @@ function StaffProfileModal({ staff, signedPhotoUrl, onClose, branchNameById }) {
   const [balances, setBalances] = useState(null);
   const [loadingBal, setLoadingBal] = useState(false);
   const [errBal, setErrBal] = useState("");
+
+  const [bonus15Data, setBonus15Data] = useState({
+    percentage: 0,
+    result: 0,
+    bonus_month: "",
+  });
+  const [loadingBonus15, setLoadingBonus15] = useState(false);
+  const [errBonus15, setErrBonus15] = useState("");
 
   const childrenArr = useMemo(() => safeJsonArray(staff?.children), [staff?.children]);
   const educationArr = useMemo(() => safeJsonArray(staff?.education), [staff?.education]);
@@ -738,11 +989,70 @@ function StaffProfileModal({ staff, signedPhotoUrl, onClose, branchNameById }) {
     } finally { setLoadingBal(false); }
   }, [staff?.id, staff?.employee_no]);
 
+  const loadBonus15Data = useCallback(async () => {
+  if (!staff?.id || !staff?.branch_id) return;
+
+  setLoadingBonus15(true);
+  setErrBonus15("");
+
+  try {
+    const now = new Date();
+    const bonusMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
+
+    const res = await api.get(`/bonus/branch/${staff.branch_id}`, {
+      params: { bonus_month: bonusMonth },
+    });
+
+    const rows = Array.isArray(res.data) ? res.data : [];
+
+    const found =
+      rows.find((r) => String(r.employee_id) === String(staff.id)) || null;
+
+    setBonus15Data({
+      base: toNum(found?.month_13),
+      percentage: toNum(found?.percentage),
+      result: toNum(found?.result),
+      bonus_month: bonusMonth,
+    });
+  } catch (e) {
+    setErrBonus15(e?.response?.data?.message || "Failed to load 15th month bonus data.");
+    setBonus15Data({
+      percentage: 0,
+      result: 0,
+      bonus_month: "",
+    });
+  } finally {
+    setLoadingBonus15(false);
+  }
+}, [staff?.id, staff?.branch_id]);
+
   useEffect(() => {
     if (tab === "leave") loadLeaves();
-    if (tab === "history") { loadLoans(); loadOpeningLoans(); loadDemotions(); loadSapHistory(); }
-    if (tab === "balances") { loadBalances(); loadLoans(); loadOpeningLoans(); loadSapHistory(); }
-  }, [tab, loadLeaves, loadLoans, loadOpeningLoans, loadDemotions, loadSapHistory, loadBalances]);
+
+    if (tab === "history") {
+      loadLoans();
+      loadOpeningLoans();
+      loadDemotions();
+      loadSapHistory();
+    }
+
+    if (tab === "balances") {
+      loadBalances();
+      loadLoans();
+      loadOpeningLoans();
+      loadSapHistory();
+      loadBonus15Data();
+    }
+  }, [
+    tab,
+    loadLeaves,
+    loadLoans,
+    loadOpeningLoans,
+    loadDemotions,
+    loadSapHistory,
+    loadBalances,
+    loadBonus15Data,
+  ]);
 
   const historyItems = useMemo(() => {
     const items = [];
@@ -871,7 +1181,6 @@ function StaffProfileModal({ staff, signedPhotoUrl, onClose, branchNameById }) {
 
         <div className="modal-body staff-profile-scroll">
           <div style={{ display: "flex", alignItems: "center", gap: 16, padding: "8px 0 14px 0" }}>
-            {/* ✅ Use signedPhotoUrl prop instead of avatarUrl() */}
             {signedPhotoUrl ? (
               <img src={signedPhotoUrl} alt="staff" style={{ width: 92, height: 92, borderRadius: "50%", objectFit: "cover", flex: "0 0 auto" }} />
             ) : (
@@ -1091,49 +1400,110 @@ function StaffProfileModal({ staff, signedPhotoUrl, onClose, branchNameById }) {
               {loadingBal ? <div className="empty-state">Loading balances…</div> : null}
               {errBal ? <div className="empty-state" style={{ color: "#ef4444" }}>{errBal}</div> : null}
               {!loadingBal && !errBal ? (
-                <table className="profile-table">
-                  <tbody>
-                    <tr><td colSpan="2"><h2>Personal Savings</h2></td></tr>
-                    <tr><td>CBU</td><td>{money(combinedBalances.cbu)}</td></tr>
-                    <tr><td>Cashbond</td><td>{money(combinedBalances.cashbond)}</td></tr>
-                    <tr><td>Utility</td><td>{money(combinedBalances.utility)}</td></tr>
-                    <tr><td><strong>Total Personal Savings</strong></td><td>{money(combinedBalances.cbu + combinedBalances.cashbond + combinedBalances.utility)}</td></tr>
-                    <tr><td>Salary Advance</td><td>{money(combinedBalances.salary_advance)}</td></tr>
-                    <tr><td>Special Advance</td><td>{money(combinedBalances.special_advance)}</td></tr>
-                    <tr><td>Cash Advance</td><td>{money(combinedBalances.cash_advance)}</td></tr>
-                    <tr><td>Motorcycle Loan</td><td>{money(combinedBalances.motorcycle_loan)}</td></tr>
-                    <tr><td>Pag-ibig Loan</td><td>{money(combinedBalances.pag_ibig_loan)}</td></tr>
-                    <tr><td>Other Receivable</td><td>{money(combinedBalances.other_receivable)}</td></tr>
-                    <tr><td>Staff Accounts Payable</td><td>{money(combinedBalances.staff_accounts_payable)}</td></tr>
-                    <tr>
-                      <td><strong>Total Personal Balance</strong></td>
-                      <td>{money(combinedBalances.salary_advance + combinedBalances.special_advance + combinedBalances.cash_advance + combinedBalances.motorcycle_loan + combinedBalances.pag_ibig_loan + combinedBalances.other_receivable + combinedBalances.staff_accounts_payable)}</td>
-                    </tr>
-                    <tr><td colSpan="2"><h2>Tax Contribution (2316)</h2></td></tr>
-                    <tr><td>Basic Salary</td><td>{money(staff.salary)}</td></tr>
-                    <tr><td>Ecola</td><td>{money(staff.ecola)}</td></tr>
-                    <tr><td><strong>Total Contribution</strong></td><td>{money(toNum(staff.salary) + toNum(staff.ecola))}</td></tr>
-                    <tr><td colSpan="2"><h2>Remittances (EE)</h2></td></tr>
-                    <tr><td>SSS</td><td>{money(staff.sss_ee)}</td></tr>
-                    <tr><td>Philhealth</td><td>{money(staff.ph_ee)}</td></tr>
-                    <tr><td>Pag-ibig</td><td>{money(staff.hdmf_ee)}</td></tr>
-                    <tr><td><strong>Total (EE)</strong></td><td>{money(toNum(staff.sss_ee) + toNum(staff.ph_ee) + toNum(staff.hdmf_ee))}</td></tr>
-                    <tr><td colSpan="2"><h2>Tax</h2></td></tr>
-                    <tr><td>Tax</td><td>{money(staff.tax)}</td></tr>
-                    <tr><td><strong>Total Tax</strong></td><td>{money(toNum(staff.tax))}</td></tr>
-                    <tr><td colSpan="2"><h2>13th / 14th / 15th Month Computation ({thirteenthMonthData.year})</h2></td></tr>
-                    <tr><td>Basic Salary</td><td>{money(thirteenthMonthData.basicSalary)}</td></tr>
-                    <tr><td>Ecola</td><td>{money(thirteenthMonthData.ecola)}</td></tr>
-                    <tr><td><strong>Monthly Compensation</strong></td><td>{money(thirteenthMonthData.monthlyCompensation)}</td></tr>
-                    {thirteenthMonthData.rows.map((row) => (
-                      <tr key={row.month}><td>{row.month}</td><td>{row.amount == null ? "-" : money(row.amount)}</td></tr>
-                    ))}
-                    <tr><td><strong>Total Compensation Earned</strong></td><td>{money(thirteenthMonthData.totalCompensationEarned)}</td></tr>
-                    <tr><td><strong>13th Month Pay</strong></td><td>{money(thirteenthMonthData.thirteenthMonth)}</td></tr>
-                    <tr><td><strong>14th Month Pay</strong></td><td>{money(thirteenthMonthData.fourteenthMonth)}</td></tr>
-                    <tr><td><strong>15th Month Pay</strong></td><td>{money(thirteenthMonthData.fifteenthMonth)}</td></tr>
-                  </tbody>
-                </table>
+                <>
+                  <table className="profile-table">
+                    <tbody>
+                      <tr><td colSpan="2"><h2>Personal Savings</h2></td></tr>
+                      <tr><td>CBU</td><td>{money(combinedBalances.cbu)}</td></tr>
+                      <tr><td>Cashbond</td><td>{money(combinedBalances.cashbond)}</td></tr>
+                      <tr><td>Utility</td><td>{money(combinedBalances.utility)}</td></tr>
+                      <tr>
+                        <td><strong>Total Personal Savings</strong></td>
+                        <td>{money(combinedBalances.cbu + combinedBalances.cashbond + combinedBalances.utility)}</td>
+                      </tr>
+
+                      <tr><td>Salary Advance</td><td>{money(combinedBalances.salary_advance)}</td></tr>
+                      <tr><td>Special Advance</td><td>{money(combinedBalances.special_advance)}</td></tr>
+                      <tr><td>Cash Advance</td><td>{money(combinedBalances.cash_advance)}</td></tr>
+                      <tr><td>Motorcycle Loan</td><td>{money(combinedBalances.motorcycle_loan)}</td></tr>
+                      <tr><td>Pag-ibig Loan</td><td>{money(combinedBalances.pag_ibig_loan)}</td></tr>
+                      <tr><td>Other Receivable</td><td>{money(combinedBalances.other_receivable)}</td></tr>
+                      <tr><td>Staff Accounts Payable</td><td>{money(combinedBalances.staff_accounts_payable)}</td></tr>
+                      <tr>
+                        <td><strong>Total Personal Balance</strong></td>
+                        <td>
+                          {money(
+                            combinedBalances.salary_advance +
+                              combinedBalances.special_advance +
+                              combinedBalances.cash_advance +
+                              combinedBalances.motorcycle_loan +
+                              combinedBalances.pag_ibig_loan +
+                              combinedBalances.other_receivable +
+                              combinedBalances.staff_accounts_payable
+                          )}
+                        </td>
+                      </tr>
+
+                      <tr><td colSpan="2"><h2>Tax Contribution (2316)</h2></td></tr>
+                      <tr><td>Basic Salary</td><td>{money(staff.salary)}</td></tr>
+                      <tr><td>Ecola</td><td>{money(staff.ecola)}</td></tr>
+                      <tr><td><strong>Total Contribution</strong></td><td>{money(toNum(staff.salary) + toNum(staff.ecola))}</td></tr>
+
+                      <tr><td colSpan="2"><h2>Remittances (EE)</h2></td></tr>
+                      <tr><td>SSS</td><td>{money(staff.sss_ee)}</td></tr>
+                      <tr><td>Philhealth</td><td>{money(staff.ph_ee)}</td></tr>
+                      <tr><td>Pag-ibig</td><td>{money(staff.hdmf_ee)}</td></tr>
+                      <tr><td><strong>Total (EE)</strong></td><td>{money(toNum(staff.sss_ee) + toNum(staff.ph_ee) + toNum(staff.hdmf_ee))}</td></tr>
+
+                      <tr><td colSpan="2"><h2>Tax</h2></td></tr>
+                      <tr><td>Tax</td><td>{money(staff.tax)}</td></tr>
+                      <tr><td><strong>Total Tax</strong></td><td>{money(toNum(staff.tax))}</td></tr>
+
+                      <tr><td colSpan="2"><h2>13th / 14th / 15th Month Computation ({thirteenthMonthData.year})</h2></td></tr>
+                      <tr><td>Basic Salary</td><td>{money(thirteenthMonthData.basicSalary)}</td></tr>
+                      <tr><td>Ecola</td><td>{money(thirteenthMonthData.ecola)}</td></tr>
+                      <tr><td><strong>Monthly Compensation</strong></td><td>{money(thirteenthMonthData.monthlyCompensation)}</td></tr>
+
+                      {thirteenthMonthData.rows.map((row) => (
+                        <tr key={row.month}>
+                          <td>{row.month}</td>
+                          <td>{row.amount == null ? "-" : money(row.amount)}</td>
+                        </tr>
+                      ))}
+
+                      <tr><td><strong>Total Compensation Earned</strong></td><td>{money(thirteenthMonthData.totalCompensationEarned)}</td></tr>
+                      <tr><td><strong>13th Month Pay</strong></td><td>{money(thirteenthMonthData.thirteenthMonth)}</td></tr>
+                      <tr><td><strong>14th Month Pay</strong></td><td>{money(thirteenthMonthData.fourteenthMonth)}</td></tr>
+                      <tr><td><strong>15th Month Pay</strong></td><td>{money(thirteenthMonthData.fifteenthMonth)}</td></tr>
+                    </tbody>
+                  </table>
+
+                  <div style={{ marginTop: 20 }}>
+                    {loadingBonus15 ? (
+                      <div className="empty-state">Loading bonus data…</div>
+                    ) : null}
+
+                    {errBonus15 ? (
+                      <div className="empty-state" style={{ color: "#ef4444" }}>
+                        {errBonus15}
+                      </div>
+                    ) : null}
+
+                    {!loadingBonus15 && !errBonus15 ? (
+                      <table className="profile-table">
+                        <thead>
+                          <tr>
+                            <th>2025 13th Month</th>
+                            <th>Percentage</th>
+                            <th>Result</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          <tr>
+                            {/* THIS is the 2025 13th month base from bonus */}
+                            <td>{money(bonus15Data.base || 0)}</td>
+
+                            {/* percentage from bonus.jsx */}
+                            <td>{bonus15Data.percentage}%</td>
+
+                            {/* result from bonus.jsx */}
+                            <td>{money(bonus15Data.result)}</td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    ) : null}
+                  </div>
+                </>
               ) : null}
             </>
           )}
@@ -1165,8 +1535,10 @@ export default function StaffInformation() {
 
   const [staff, setStaff] = useState([]);
   const [branches, setBranches] = useState([]);
+  const [positionRates, setPositionRates] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [branchSearch, setBranchSearch] = useState("");
 
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
@@ -1279,7 +1651,19 @@ export default function StaffInformation() {
     } finally { setLoading(false); }
   }, []);
 
-  useEffect(() => { loadAll(); }, [loadAll]);
+  const loadPositionRates = useCallback(async () => {
+    try {
+      const res = await api.get("/comp-rates");
+      setPositionRates(Array.isArray(res.data) ? res.data : []);
+    } catch {
+      setPositionRates([]);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadAll();
+    loadPositionRates();
+  }, [loadAll, loadPositionRates]);
 
   useEffect(() => {
     const isAnyModalOpen = !!viewStaff || !!editStaff;
@@ -1315,61 +1699,105 @@ export default function StaffInformation() {
   };
 
   const openEdit = async (s) => {
-    if (!canEditStaff) { alert("Only Admin, HR, Accounting, and Branch Manager can edit staff."); return; }
+    if (!canEditStaff) {
+      alert("Only Admin, HR, Accounting, and Branch Manager can edit staff.");
+      return;
+    }
+
     setEditStaff(s);
     setForm({
-      employee_no: s.employee_no || "", last_name: s.last_name || "", first_name: s.first_name || "", middle_name: s.middle_name || "",
-      address: String(s.address ?? ""), municipality: String(s.municipality ?? ""), province: String(s.province ?? ""),
-      contact: String(s.contact ?? ""), email: String(s.email ?? ""),
-      date_of_birth: s.date_of_birth ? String(s.date_of_birth).split("T")[0] : "",
-      place_of_birth: String(s.place_of_birth ?? ""), gender: String(s.gender ?? ""), civil_status: String(s.civil_status ?? ""),
-      citizenship: String(s.citizenship ?? ""), height: String(s.height ?? ""), weight: String(s.weight ?? ""),
-      religion: String(s.religion ?? ""), blood_type: String(s.blood_type ?? ""),
-      spouse_fullname: String(s.spouse_fullname ?? ""), spouse_address: String(s.spouse_address ?? ""),
-      spouse_occupation: String(s.spouse_occupation ?? ""), spouse_employer: String(s.spouse_employer ?? ""),
-      sss_no: String(s.sss_no ?? ""), philhealth_no: String(s.philhealth_no ?? ""),
-      pagibig_no: String(s.pagibig_no ?? ""), tin_no: String(s.tin_no ?? ""),
-      father_fullname: String(s.father_fullname ?? ""), father_address: String(s.father_address ?? ""),
-      father_occupation: String(s.father_occupation ?? ""), father_employer: String(s.father_employer ?? ""), father_contact: String(s.father_contact ?? ""),
-      mother_fullname: String(s.mother_fullname ?? ""), mother_address: String(s.mother_address ?? ""),
-      mother_occupation: String(s.mother_occupation ?? ""), mother_employer: String(s.mother_employer ?? ""), mother_contact: String(s.mother_contact ?? ""),
-      guardian_fullname: String(s.guardian_fullname ?? ""), guardian_address: String(s.guardian_address ?? ""),
-      guardian_occupation: String(s.guardian_occupation ?? ""), guardian_employer: String(s.guardian_employer ?? ""), guardian_contact: String(s.guardian_contact ?? ""),
-      children: jsonText(s.children), education: jsonText(s.education),
-      employment_history: jsonText(s.employment_history), beneficiaries: jsonText(s.beneficiaries),
-      position: s.position || "", department: s.department || "",
-      area: String(s.area ?? ""), region: String(s.region ?? ""), division: String(s.division ?? ""),
-      branch_id: String(s.branch_id ?? ""), status: String(s.status || "Active"),
-      start_date: s.start_date ? String(s.start_date).split("T")[0] : "",
-      regularization_date: s.regularization_date ? String(s.regularization_date).split("T")[0] : "",
-      salary: String(s.salary ?? ""), ecola: String(s.ecola ?? ""),
-      cbu: String(s.cbu ?? ""), cashbond: String(s.cashbond ?? ""),
-      utility: String(s.utility_charge ?? s.utility ?? ""),
-      transportation: String(s.transportation ?? ""), postage: String(s.postage ?? ""),
-      additional_target: String(s.additional_target ?? ""), repairing: String(s.repairing ?? ""),
-      additional_monitoring: String(s.additional_monitoring ?? ""), other_deduction: String(s.other_deduction ?? ""),
-      sss_er: String(s.sss_er ?? ""), ph_er: String(s.ph_er ?? ""), hdmf_er: String(s.hdmf_er ?? ""),
-      sss_ee: String(s.sss_ee ?? ""), ph_ee: String(s.ph_ee ?? ""), hdmf_ee: String(s.hdmf_ee ?? ""),
+      employee_no: s.employee_no || "",
+      last_name: s.last_name || "",
+      first_name: s.first_name || "",
+      middle_name: s.middle_name || "",
+      address: String(s.address ?? ""),
+      municipality: String(s.municipality ?? ""),
+      province: String(s.province ?? ""),
+      contact: String(s.contact ?? ""),
+      email: String(s.email ?? ""),
+      date_of_birth: s.date_of_birth ? String(s.date_of_birth).slice(0, 10) : "",
+      place_of_birth: String(s.place_of_birth ?? ""),
+      gender: String(s.gender ?? ""),
+      civil_status: String(s.civil_status ?? ""),
+      citizenship: String(s.citizenship ?? ""),
+      height: String(s.height ?? ""),
+      weight: String(s.weight ?? ""),
+      religion: String(s.religion ?? ""),
+      blood_type: String(s.blood_type ?? ""),
+      spouse_fullname: String(s.spouse_fullname ?? ""),
+      spouse_address: String(s.spouse_address ?? ""),
+      spouse_occupation: String(s.spouse_occupation ?? ""),
+      spouse_employer: String(s.spouse_employer ?? ""),
+      sss_no: String(s.sss_no ?? ""),
+      philhealth_no: String(s.philhealth_no ?? ""),
+      pagibig_no: String(s.pagibig_no ?? ""),
+      tin_no: String(s.tin_no ?? ""),
+      father_fullname: String(s.father_fullname ?? ""),
+      father_address: String(s.father_address ?? ""),
+      father_occupation: String(s.father_occupation ?? ""),
+      father_employer: String(s.father_employer ?? ""),
+      father_contact: String(s.father_contact ?? ""),
+      mother_fullname: String(s.mother_fullname ?? ""),
+      mother_address: String(s.mother_address ?? ""),
+      mother_occupation: String(s.mother_occupation ?? ""),
+      mother_employer: String(s.mother_employer ?? ""),
+      mother_contact: String(s.mother_contact ?? ""),
+      guardian_fullname: String(s.guardian_fullname ?? ""),
+      guardian_address: String(s.guardian_address ?? ""),
+      guardian_occupation: String(s.guardian_occupation ?? ""),
+      guardian_employer: String(s.guardian_employer ?? ""),
+      guardian_contact: String(s.guardian_contact ?? ""),
+      children: typeof s.children === "string" ? s.children : JSON.stringify(s.children ?? [], null, 2),
+      education: typeof s.education === "string" ? s.education : JSON.stringify(s.education ?? [], null, 2),
+      employment_history:
+        typeof s.employment_history === "string"
+          ? s.employment_history
+          : JSON.stringify(s.employment_history ?? [], null, 2),
+      beneficiaries:
+        typeof s.beneficiaries === "string"
+          ? s.beneficiaries
+          : JSON.stringify(s.beneficiaries ?? [], null, 2),
+
+      position: String(s.position ?? ""),
+      department: String(s.department ?? ""),
+      area: String(s.area ?? ""),
+      region: String(s.region ?? ""),
+      division: String(s.division ?? ""),
+      branch_id: s.branch_id ? String(s.branch_id) : "",
+      status: String(s.status ?? "Active"),
+      start_date: s.start_date ? String(s.start_date).slice(0, 10) : "",
+      regularization_date: s.regularization_date ? String(s.regularization_date).slice(0, 10) : "",
+      salary: String(s.salary ?? ""),
+      ecola: String(s.ecola ?? ""),
+      cbu: String(s.cbu ?? ""),
+      cashbond: String(s.cashbond ?? ""),
+      utility: String(s.utility ?? ""),
+      transportation: String(s.transportation ?? ""),
+      repairing: String(s.repairing ?? ""),
+      postage: String(s.postage ?? ""),
+      additional_target: String(s.additional_target ?? ""),
+      additional_monitoring: String(s.additional_monitoring ?? ""),
+      other_deduction: String(s.other_deduction ?? ""),
+      sss_er: String(s.sss_er ?? ""),
+      ph_er: String(s.ph_er ?? ""),
+      hdmf_er: String(s.hdmf_er ?? ""),
+      sss_ee: String(s.sss_ee ?? ""),
+      ph_ee: String(s.ph_ee ?? ""),
+      hdmf_ee: String(s.hdmf_ee ?? ""),
       tax: String(s.tax ?? ""),
     });
 
-    try {
-      const res = await api.get(`/staff-balances/${s.employee_no}`);
-      const bal = res.data || {};
-      setBalanceForm({
-        cbu: String(bal.cbu ?? ""), cashbond: String(bal.cashbond ?? ""), utility: String(bal.utility ?? ""),
-        salary_advance: String(bal.salary_advance ?? ""), special_advance: String(bal.special_advance ?? ""),
-        cash_advance: String(bal.cash_advance ?? ""), motorcycle_loan: String(bal.motorcycle_loan ?? ""),
-        pag_ibig_loan: String(bal.pag_ibig_loan ?? ""), other_receivable: String(bal.other_receivable ?? ""),
-        staff_accounts_payable: String(bal.staff_accounts_payable ?? ""),
-      });
-    } catch {
-      setBalanceForm({ cbu: "", cashbond: "", utility: "", salary_advance: "", special_advance: "", cash_advance: "", motorcycle_loan: "", pag_ibig_loan: "", other_receivable: "", staff_accounts_payable: "" });
-    }
+    const selectedBranch = branches.find(
+      (b) => String(b.id) === String(s.branch_id)
+    );
 
-    // ✅ Use cached signed URL for photo preview in edit modal, or empty string
-    setPhotoPreview(signedUrls[s.id] || "");
-    setPhotoFile(null);
+    setBranchSearch(
+      selectedBranch
+        ? `${toStr(selectedBranch.code)} - ${toStr(selectedBranch.name)}`.trim()
+        : ""
+    );
+
+    setPhotoPreview();
     setFormStep(1);
   };
 
@@ -1593,7 +2021,18 @@ export default function StaffInformation() {
                 <br />
 
                 {formStep === 1 && <StaffDetailsStep form={form} onChange={onChange} />}
-                {formStep === 2 && <ContractDetailsStep form={form} branches={branches} onChange={onChange} />}
+                
+                {formStep === 2 && (
+                  <ContractDetailsStep
+                    form={form}
+                    branches={branches}
+                    positionRates={positionRates}
+                    onChange={onChange}
+                    branchSearch={branchSearch}
+                    setBranchSearch={setBranchSearch}
+                  />
+                )}
+                
                 {formStep === 3 && <PersonalBalancesStep balanceForm={balanceForm} onBalanceChange={onBalanceChange} />}
               </div>
 

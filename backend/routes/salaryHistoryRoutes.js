@@ -67,7 +67,6 @@ router.get("/effective", requireAuth, async (req, res) => {
   }
 });
 
-// GET salary history by employee_no
 router.get("/:employee_no", requireAuth, async (req, res) => {
   try {
     const employeeNo = String(req.params.employee_no || "").trim();

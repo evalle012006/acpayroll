@@ -12,15 +12,84 @@ const clean = (v) => String(v ?? "").trim();
 const toStr = (v) => String(v ?? "").trim();
 
 const roleLower = (req) => String(req.user?.role || "").trim().toLowerCase();
+
 const isAdmin = (req) => roleLower(req) === "admin";
 const isHr = (req) => roleLower(req) === "hr";
 const isAccounting = (req) => roleLower(req) === "accounting";
+const isTread = (req) => roleLower(req) === "tread";
 const isBranchManager = (req) => roleLower(req) === "branch manager";
 const isAreaManager = (req) => roleLower(req) === "area manager";
 const isRegionalManager = (req) => roleLower(req) === "regional manager";
-const isAssistantVicePresident = (req) => roleLower(req) === "assistant vice president";
+const isAssistantVicePresident = (req) =>
+  roleLower(req) === "assistant vice president";
+const isVicePresident = (req) => roleLower(req) === "vice president";
+const isSeniorVicePresident = (req) =>
+  roleLower(req) === "senior vice president";
+const isPresident = (req) => roleLower(req) === "president";
+
 const getUserBranchCode = (req) => toStr(req.user?.branch_id);
 const getUserArea = (req) => toStr(req.user?.area);
+const getUserRegion = (req) => toStr(req.user?.region);
+const getUserDivision = (req) => toStr(req.user?.division);
+
+const VIEW_ALLOWED_ROLES = [
+  "admin",
+  "hr",
+  "accounting",
+  "tread",
+  "branch manager",
+  "area manager",
+  "regional manager",
+  "assistant vice president",
+  "vice president",
+  "senior vice president",
+  "president",
+];
+
+const EDIT_ALLOWED_ROLES = [
+  "admin",
+  "hr",
+  "accounting",
+  "branch manager",
+  "area manager",
+  "regional manager",
+  "assistant vice president",
+  "vice president",
+  "senior vice president",
+  "president",
+];
+
+function isTopLevelViewer(req) {
+  return (
+    isAdmin(req) ||
+    isHr(req) ||
+    isAccounting(req) ||
+    isTread(req) ||
+    isVicePresident(req) ||
+    isSeniorVicePresident(req) ||
+    isPresident(req)
+  );
+}
+
+function isDivisionScopedViewer(req) {
+  return isAssistantVicePresident(req);
+}
+
+function isRegionScopedViewer(req) {
+  return isRegionalManager(req);
+}
+
+function isAreaScopedViewer(req) {
+  return isAreaManager(req);
+}
+
+function isBranchScopedViewer(req) {
+  return isBranchManager(req);
+}
+
+function isViewOnlyUser(req) {
+  return isTread(req);
+}
 
 async function getBranchIdFromCode(branchCode) {
   const code = toStr(branchCode);
@@ -70,9 +139,9 @@ async function ensureBalanceRow(client, employeeNo) {
       s.last_name,
       s.first_name,
       s.middle_name,
-      0,0,0,
-      0,0,0,0,
-      0,0,
+      0, 0, 0,
+      0, 0, 0, 0,
+      0, 0,
       NOW(), NOW()
     FROM public.staff s
     WHERE s.employee_no = $1
@@ -82,18 +151,99 @@ async function ensureBalanceRow(client, employeeNo) {
   );
 }
 
+async function getScopedStaffRowByEmployeeNo(client, employeeNo) {
+  const r = await client.query(
+    `
+    SELECT
+      id,
+      employee_no,
+      branch_id,
+      area,
+      region,
+      division
+    FROM public.staff
+    WHERE employee_no = $1
+    LIMIT 1
+    `,
+    [employeeNo]
+  );
+
+  if (r.rowCount === 0) return null;
+  return r.rows[0];
+}
+
+async function canAccessEmployeeNo(client, req, employeeNo) {
+  const staffRow = await getScopedStaffRowByEmployeeNo(client, employeeNo);
+  if (!staffRow) {
+    return { ok: false, code: 404, message: "Staff not found" };
+  }
+
+  if (isTopLevelViewer(req) || isPresident(req)) {
+    return { ok: true, staffRow };
+  }
+
+  if (isBranchScopedViewer(req)) {
+    const branchCode = getUserBranchCode(req);
+    if (!branchCode) {
+      return { ok: false, code: 403, message: "Access denied" };
+    }
+
+    const branchId = await getBranchIdFromCode(branchCode);
+    if (!branchId || Number(staffRow.branch_id) !== Number(branchId)) {
+      return { ok: false, code: 403, message: "Access denied" };
+    }
+
+    return { ok: true, staffRow };
+  }
+
+  if (isAreaScopedViewer(req)) {
+    const area = getUserArea(req);
+    if (!area || toStr(staffRow.area).toLowerCase() !== area.toLowerCase()) {
+      return { ok: false, code: 403, message: "Access denied" };
+    }
+
+    return { ok: true, staffRow };
+  }
+
+  if (isRegionScopedViewer(req)) {
+    const region = getUserRegion(req);
+    if (!region || toStr(staffRow.region).toLowerCase() !== region.toLowerCase()) {
+      return { ok: false, code: 403, message: "Access denied" };
+    }
+
+    return { ok: true, staffRow };
+  }
+
+  if (isDivisionScopedViewer(req)) {
+    const division = getUserDivision(req);
+    if (
+      !division ||
+      toStr(staffRow.division).toLowerCase() !== division.toLowerCase()
+    ) {
+      return { ok: false, code: 403, message: "Access denied" };
+    }
+
+    return { ok: true, staffRow };
+  }
+
+  return { ok: false, code: 403, message: "Access denied" };
+}
+
 router.get(
   "/staff-balances",
   requireAuth,
-  requireRole(["admin", "branch manager", "hr", "accounting", "area manager", "regional manager", "assistant vice president"]),
+  requireRole(VIEW_ALLOWED_ROLES),
   async (req, res) => {
     try {
-      if (isAdmin(req) || isHr(req) || isAccounting(req) || isBranchManager(req) || isAreaManager(req) || isRegionalManager(req) || isAssistantVicePresident(req)) {
+      if (isTopLevelViewer(req) || isPresident(req)) {
         const r = await pool.query(`
           SELECT
             sb.*,
             s.id AS staff_id,
             s.branch_id,
+            s.area,
+            s.region,
+            s.division,
             COALESCE(sb."position", s."position") AS "position",
             COALESCE(sb.fullname, s.fullname) AS fullname,
             COALESCE(sb.last_name, s.last_name) AS last_name,
@@ -106,7 +256,7 @@ router.get(
         return res.json(r.rows);
       }
 
-      if (isBranchManager(req)) {
+      if (isBranchScopedViewer(req)) {
         const branchCode = getUserBranchCode(req);
         if (!branchCode) return res.json([]);
 
@@ -119,6 +269,9 @@ router.get(
             sb.*,
             s.id AS staff_id,
             s.branch_id,
+            s.area,
+            s.region,
+            s.division,
             COALESCE(sb."position", s."position") AS "position",
             COALESCE(sb.fullname, s.fullname) AS fullname,
             COALESCE(sb.last_name, s.last_name) AS last_name,
@@ -135,7 +288,7 @@ router.get(
         return res.json(r.rows);
       }
 
-      if (isAreaManager(req)) {
+      if (isAreaScopedViewer(req)) {
         const area = getUserArea(req);
         if (!area) return res.json([]);
 
@@ -145,6 +298,9 @@ router.get(
             sb.*,
             s.id AS staff_id,
             s.branch_id,
+            s.area,
+            s.region,
+            s.division,
             COALESCE(sb."position", s."position") AS "position",
             COALESCE(sb.fullname, s.fullname) AS fullname,
             COALESCE(sb.last_name, s.last_name) AS last_name,
@@ -161,6 +317,64 @@ router.get(
         return res.json(r.rows);
       }
 
+      if (isRegionScopedViewer(req)) {
+        const region = getUserRegion(req);
+        if (!region) return res.json([]);
+
+        const r = await pool.query(
+          `
+          SELECT
+            sb.*,
+            s.id AS staff_id,
+            s.branch_id,
+            s.area,
+            s.region,
+            s.division,
+            COALESCE(sb."position", s."position") AS "position",
+            COALESCE(sb.fullname, s.fullname) AS fullname,
+            COALESCE(sb.last_name, s.last_name) AS last_name,
+            COALESCE(sb.first_name, s.first_name) AS first_name,
+            COALESCE(sb.middle_name, s.middle_name) AS middle_name
+          FROM public.staff_balances sb
+          JOIN public.staff s ON s.employee_no = sb.employee_no
+          WHERE LOWER(TRIM(COALESCE(s.region, ''))) = LOWER(TRIM($1))
+          ORDER BY sb.id DESC
+          `,
+          [region]
+        );
+
+        return res.json(r.rows);
+      }
+
+      if (isDivisionScopedViewer(req)) {
+        const division = getUserDivision(req);
+        if (!division) return res.json([]);
+
+        const r = await pool.query(
+          `
+          SELECT
+            sb.*,
+            s.id AS staff_id,
+            s.branch_id,
+            s.area,
+            s.region,
+            s.division,
+            COALESCE(sb."position", s."position") AS "position",
+            COALESCE(sb.fullname, s.fullname) AS fullname,
+            COALESCE(sb.last_name, s.last_name) AS last_name,
+            COALESCE(sb.first_name, s.first_name) AS first_name,
+            COALESCE(sb.middle_name, s.middle_name) AS middle_name
+          FROM public.staff_balances sb
+          JOIN public.staff s ON s.employee_no = sb.employee_no
+          WHERE LOWER(TRIM(COALESCE(s.division, ''))) = LOWER(TRIM($1))
+          ORDER BY sb.id DESC
+          `,
+          [division]
+        );
+
+        return res.json(r.rows);
+      }
+
       return res.status(403).json({ message: "Access denied" });
     } catch (e) {
       console.error("GET /api/staff-balances ERROR:", e);
@@ -172,41 +386,22 @@ router.get(
 router.put(
   "/staff-balances/:employeeNo",
   requireAuth,
-  requireRole(["admin", "branch manager", "hr", "accounting", "area manager", "regional manager", "assistant vice president"]),
+  requireRole(EDIT_ALLOWED_ROLES),
   async (req, res) => {
     const client = await pool.connect();
     try {
+      if (isViewOnlyUser(req)) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
       const employeeNo = clean(req.params.employeeNo);
       if (!employeeNo) {
         return res.status(400).json({ message: "Invalid employee no" });
       }
 
-      const myRole = roleLower(req);
-      const myBranchCode = getUserBranchCode(req);
-      const myArea = getUserArea(req);
-
-      const s = await client.query(
-        `SELECT employee_no, branch_id, area FROM public.staff WHERE employee_no = $1 LIMIT 1`,
-        [employeeNo]
-      );
-
-      if (s.rowCount === 0) {
-        return res.status(404).json({ message: "Staff not found" });
-      }
-
-      // 🔒 Branch restriction
-      if (myRole === "branch manager") {
-        const myBranchId = await getBranchIdFromCode(myBranchCode);
-        if (!myBranchId || Number(s.rows[0].branch_id) !== Number(myBranchId)) {
-          return res.status(403).json({ message: "Access denied" });
-        }
-      }
-
-      // 🔒 Area restriction
-      if (myRole === "area manager") {
-        if (!myArea || clean(s.rows[0].area).toLowerCase() !== myArea.toLowerCase()) {
-          return res.status(403).json({ message: "Access denied" });
-        }
+      const access = await canAccessEmployeeNo(client, req, employeeNo);
+      if (!access.ok) {
+        return res.status(access.code).json({ message: access.message });
       }
 
       await client.query("BEGIN");
@@ -244,15 +439,33 @@ router.put(
       );
 
       const r = await client.query(
-        `SELECT * FROM public.staff_balances WHERE employee_no = $1 LIMIT 1`,
+        `
+        SELECT
+          sb.*,
+          s.id AS staff_id,
+          s.branch_id,
+          s.area,
+          s.region,
+          s.division,
+          COALESCE(sb."position", s."position") AS "position",
+          COALESCE(sb.fullname, s.fullname) AS fullname,
+          COALESCE(sb.last_name, s.last_name) AS last_name,
+          COALESCE(sb.first_name, s.first_name) AS first_name,
+          COALESCE(sb.middle_name, s.middle_name) AS middle_name
+        FROM public.staff_balances sb
+        LEFT JOIN public.staff s ON s.employee_no = sb.employee_no
+        WHERE sb.employee_no = $1
+        LIMIT 1
+        `,
         [employeeNo]
       );
 
       await client.query("COMMIT");
-
       return res.json(r.rows[0]);
     } catch (e) {
-      try { await client.query("ROLLBACK"); } catch {}
+      try {
+        await client.query("ROLLBACK");
+      } catch {}
       console.error("PUT /api/staff-balances/:employeeNo ERROR:", e);
       return res.status(500).json({ message: e.message || "Server error" });
     } finally {
@@ -264,7 +477,7 @@ router.put(
 router.get(
   "/staff-balances/:employeeNo",
   requireAuth,
-  requireRole(["admin", "branch manager", "hr", "accounting", "area manager", "regional manager", "assistant vice president"]),
+  requireRole(VIEW_ALLOWED_ROLES),
   async (req, res) => {
     const client = await pool.connect();
     try {
@@ -273,36 +486,9 @@ router.get(
         return res.status(400).json({ message: "Invalid employee no" });
       }
 
-      const myRole = roleLower(req);
-      const myBranchCode = getUserBranchCode(req);
-      const myArea = getUserArea(req);
-
-      const s = await client.query(
-        `SELECT id, employee_no, branch_id, area FROM public.staff WHERE employee_no = $1 LIMIT 1`,
-        [employeeNo]
-      );
-
-      if (s.rowCount === 0) {
-        return res.status(404).json({ message: "Staff not found" });
-      }
-
-      if (myRole === "branch manager") {
-        if (!myBranchCode) return res.status(403).json({ message: "Access denied" });
-
-        const myBranchId = await getBranchIdFromCode(myBranchCode);
-        if (!myBranchId) return res.status(403).json({ message: "Access denied" });
-
-        if (Number(s.rows[0].branch_id) !== Number(myBranchId)) {
-          return res.status(403).json({ message: "Access denied" });
-        }
-      }
-
-      if (myRole === "area manager") {
-        if (!myArea) return res.status(403).json({ message: "Access denied" });
-
-        if (toStr(s.rows[0].area).toLowerCase() !== myArea.toLowerCase()) {
-          return res.status(403).json({ message: "Access denied" });
-        }
+      const access = await canAccessEmployeeNo(client, req, employeeNo);
+      if (!access.ok) {
+        return res.status(access.code).json({ message: access.message });
       }
 
       await client.query("BEGIN");
@@ -320,16 +506,16 @@ router.get(
           COALESCE(sb.first_name, s.first_name) AS first_name,
           COALESCE(sb.middle_name, s.middle_name) AS middle_name,
 
-          COALESCE(sb.cbu,0) AS cbu,
-          COALESCE(sb.cashbond,0) AS cashbond,
-          COALESCE(sb.utility,0) AS utility,
+          COALESCE(sb.cbu, 0) AS cbu,
+          COALESCE(sb.cashbond, 0) AS cashbond,
+          COALESCE(sb.utility, 0) AS utility,
 
-          COALESCE(sb.salary_advance,0) AS salary_advance,
-          COALESCE(sb.special_advance,0) AS special_advance,
-          COALESCE(sb.cash_advance,0) AS cash_advance,
-          COALESCE(sb.motorcycle_loan,0) AS motorcycle_loan,
-          COALESCE(sb.other_receivable,0) AS other_receivable,
-          COALESCE(sb.staff_accounts_payable,0) AS staff_accounts_payable,
+          COALESCE(sb.salary_advance, 0) AS salary_advance,
+          COALESCE(sb.special_advance, 0) AS special_advance,
+          COALESCE(sb.cash_advance, 0) AS cash_advance,
+          COALESCE(sb.motorcycle_loan, 0) AS motorcycle_loan,
+          COALESCE(sb.other_receivable, 0) AS other_receivable,
+          COALESCE(sb.staff_accounts_payable, 0) AS staff_accounts_payable,
 
           sb.created_at,
           sb.updated_at
@@ -345,7 +531,7 @@ router.get(
 
       if (r.rowCount === 0) {
         return res.json({
-          staff_id: s.rows[0].id,
+          staff_id: access.staffRow.id,
           employee_no: employeeNo,
           fullname: "",
           position: "",
@@ -417,9 +603,9 @@ router.post(
           s.last_name,
           s.first_name,
           s.middle_name,
-          0,0,0,
-          0,0,0,0,
-          0,0,
+          0, 0, 0,
+          0, 0, 0, 0,
+          0, 0,
           NOW(), NOW()
         FROM public.staff s
         LEFT JOIN public.staff_balances sb ON sb.employee_no = s.employee_no

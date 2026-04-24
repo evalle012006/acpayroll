@@ -1784,8 +1784,37 @@ export default function Deployment() {
     }
   }, []);
 
-  const role = norm(user?.role);
+  const role = String(user?.role || "").trim().toLowerCase();
+
   const isAdmin = role === "admin";
+  const isHr = role === "hr";
+  const isAccounting = role === "accounting";
+  const isTread = role === "tread";
+  const isAssistantVicePresident = role === "assistant vice president";
+  const isVicePresident = role === "vice president";
+  const isSeniorVicePresident = role === "senior vice president";
+  const isPresident = role === "president";
+
+  const canCreateDeployment =
+    isAdmin || isHr || isAccounting;
+
+  const canApproveDeployment =
+    isAdmin ||
+    isHr ||
+    isAccounting ||
+    isAssistantVicePresident ||
+    isVicePresident ||
+    isSeniorVicePresident ||
+    isPresident;
+
+  const canDeleteDeployment =
+    isAdmin || isHr || isAccounting;
+
+  const canAddStaff =
+    isAdmin || isHr || isAccounting;
+
+  const canApprovePendingStaff =
+    isAdmin || isHr || isAccounting;
 
   const [users, setUsers] = useState([]);
 
@@ -2189,10 +2218,10 @@ const updatePendingStaff = async (e) => {
     );
 
     const approvePendingStaff = async (id) => {
-    if (!isAdmin) return alert("Admin only.");
+      if (!canApprovePendingStaff) return alert("Access denied.");
 
     const ok = window.confirm("Approve this pending staff request?");
-    if (!ok) return;
+      if (!ok) return;
 
     setApprovingPendingId(id);
     setErr("");
@@ -2212,7 +2241,7 @@ const updatePendingStaff = async (e) => {
     };
 
     const rejectPendingStaff = async (id) => {
-    if (!isAdmin) return alert("Admin only.");
+      if (!canApprovePendingStaff) return alert("Access denied.");
 
     const ok = window.confirm("Reject this pending staff request?");
     if (!ok) return;
@@ -2250,8 +2279,11 @@ const updatePendingStaff = async (e) => {
           api.get("/comp-rates"),
         ];
 
-        if (isAdmin) {
+        if (canApprovePendingStaff) {
           requests.push(api.get("/pending-staff"));
+        }
+
+        if (isAdmin) {
           requests.push(api.get("/users"));
         }
 
@@ -2261,8 +2293,13 @@ const updatePendingStaff = async (e) => {
         const s = results[1];
         const b = results[2];
         const r = results[3];
-        const p = isAdmin ? results[4] : { data: [] };
-        const u = isAdmin ? results[5] : { data: [] };
+        const p = canApprovePendingStaff
+          ? results[4]
+          : { data: [] };
+
+        const u = isAdmin
+          ? results[canApprovePendingStaff ? 5 : 4]
+          : { data: [] };
 
         setDeployments(Array.isArray(d.data) ? d.data : []);
         setStaff(Array.isArray(s.data) ? s.data : []);
@@ -2418,7 +2455,7 @@ const updatePendingStaff = async (e) => {
   };
 
   const approveDeployment = async (d) => {
-    if (!isAdmin) return alert("Admin only.");
+    if (!canApproveDeployment) return alert("Access denied.");
 
     const statusLower = norm(d?.status || "pending");
     if (statusLower !== "pending") return;
@@ -2443,7 +2480,7 @@ const updatePendingStaff = async (e) => {
   };
 
   const deleteDeployment = async (d) => {
-    if (!isAdmin) return alert("Admin only.");
+    if (!canDeleteDeployment) return alert("Access denied.");
     if (!d?.id) return;
 
     const statusLower = norm(d?.status || "pending");
@@ -2732,13 +2769,23 @@ const updatePendingStaff = async (e) => {
                           Edit
                         </button>
 
-                        {isAdmin && (
+                        {canApprovePendingStaff && (
                           <>
-                            <button className="po-mini-btn" type="button" onClick={() => approvePendingStaff(item.id)} disabled={!pending || approvingPendingId === item.id}>
+                            <button
+                              className="po-mini-btn"
+                              type="button"
+                              onClick={() => approvePendingStaff(item.id)}
+                              disabled={!pending || approvingPendingId === item.id}
+                            >
                               {approvingPendingId === item.id ? "Approving..." : "Approve"}
                             </button>
 
-                            <button className="po-mini-btn" type="button" onClick={() => rejectPendingStaff(item.id)} disabled={!pending || rejectingPendingId === item.id}>
+                            <button
+                              className="po-mini-btn"
+                              type="button"
+                              onClick={() => rejectPendingStaff(item.id)}
+                              disabled={!pending || rejectingPendingId === item.id}
+                            >
                               {rejectingPendingId === item.id ? "Rejecting..." : "Reject"}
                             </button>
                           </>

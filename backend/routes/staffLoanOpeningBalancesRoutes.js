@@ -33,10 +33,23 @@ const isAreaManager = (req) => roleLower(req) === "area manager";
 const isRegionalManager = (req) => roleLower(req) === "regional manager";
 const isAssistantVicePresident = (req) =>
   roleLower(req) === "assistant vice president";
+const isVicePresident = (req) => roleLower(req) === "vice president";
+const isSeniorVicePresident = (req) =>
+  roleLower(req) === "senior vice president";
+const isPresident = (req) => roleLower(req) === "president";
+
+const isTopManagement = (req) =>
+  isAdmin(req) ||
+  isHr(req) ||
+  isAccounting(req) ||
+  isVicePresident(req) ||
+  isSeniorVicePresident(req) ||
+  isPresident(req);
 
 const getUserArea = (req) => toStr(req.user?.area);
 const getUserBranchCode = (req) => toStr(req.user?.branch_id);
 const getUserDivision = (req) => toStr(req.user?.division);
+const getUserRegion = (req) => toStr(req.user?.region);
 
 async function getBranchIdFromCode(branchCode) {
   const code = toStr(branchCode);
@@ -59,11 +72,11 @@ async function canAccessStaffById(client, req, staffId) {
   const id = toInt(staffId);
   if (!id) return false;
 
-  if (isAdmin(req) || isHr(req) || isAccounting(req)) return true;
+  if (isTopManagement(req)) return true;
 
   const r = await client.query(
     `
-    SELECT id, branch_id, area, division
+    SELECT id, branch_id, area, region, division
     FROM public.staff
     WHERE id = $1
     LIMIT 1
@@ -85,7 +98,12 @@ async function canAccessStaffById(client, req, staffId) {
     return !!area && toStr(row.area).toLowerCase() === area.toLowerCase();
   }
 
-  if (isRegionalManager(req) || isAssistantVicePresident(req)) {
+  if (isRegionalManager(req)) {
+    const region = getUserRegion(req);
+    return !!region && toStr(row.region).toLowerCase() === region.toLowerCase();
+  }
+
+  if (isAssistantVicePresident(req)) {
     const division = getUserDivision(req);
     return !!division && toStr(row.division).toLowerCase() === division.toLowerCase();
   }
@@ -156,6 +174,9 @@ router.get(
     "area manager",
     "regional manager",
     "assistant vice president",
+    "vice president",
+    "senior vice president",
+    "president",
   ]),
   async (req, res) => {
     const client = await pool.connect();

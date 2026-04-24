@@ -63,13 +63,27 @@ const isAdmin = (req) => roleLower(req) === "admin";
 const isBranchManager = (req) => roleLower(req) === "branch manager";
 const isHr = (req) => roleLower(req) === "hr";
 const isAccounting = (req) => roleLower(req) === "accounting";
+const isTread = (req) => roleLower(req) === "tread";
 const isAreaManager = (req) => roleLower(req) === "area manager";
 const isRegionalManager = (req) => roleLower(req) === "regional manager";
 const isAssistantVicePresident = (req) => roleLower(req) === "assistant vice president";
+const isVicePresident = (req) => roleLower(req) === "vice president";
+const isSeniorVicePresident = (req) => roleLower(req) === "senior vice president";
+const isPresident = (req) => roleLower(req) === "president";
+
+const isTopManagement = (req) =>
+  isAdmin(req) ||
+  isHr(req) ||
+  isAccounting(req) ||
+  isTread(req) ||
+  isVicePresident(req) ||
+  isSeniorVicePresident(req) ||
+  isPresident(req);
 
 const getUserArea = (req) => toStr(req.user?.area);
 const getUserBranchCode = (req) => toStr(req.user?.branch_id);
 const getUserDivision = (req) => toStr(req.user?.division);
+const getUserRegion = (req) => toStr(req.user?.region);
 
 const toJsonbArray = (v) => {
   try {
@@ -156,11 +170,13 @@ async function canAccessStaffById(client, req, staffId) {
   const id = toInt(staffId);
   if (!id) return false;
 
-  if (isAdmin(req) || isHr(req) || isAccounting(req)) return true;
+  if (isTopManagement(req)) {
+    return true;
+  }
 
   const r = await client.query(
     `
-    SELECT id, branch_id, area, division
+    SELECT id, branch_id, area, region, division
     FROM public.staff
     WHERE id = $1
     LIMIT 1
@@ -183,7 +199,12 @@ async function canAccessStaffById(client, req, staffId) {
     return !!area && toStr(row.area).toLowerCase() === area.toLowerCase();
   }
 
-  if (isRegionalManager(req) || isAssistantVicePresident(req)) {
+  if (isRegionalManager(req)) {
+    const region = getUserRegion(req);
+    return !!region && toStr(row.region).toLowerCase() === region.toLowerCase();
+  }
+
+  if (isAssistantVicePresident(req)) {
     const division = getUserDivision(req);
     return !!division && toStr(row.division).toLowerCase() === division.toLowerCase();
   }
@@ -248,28 +269,28 @@ async function insertStaffFromBody(client, body) {
 
   const status = String(body.status || "Active");
   const branchId = toInt(body.branch_id);
-    let finalArea = toStr(body.area) || null;
-    let finalRegion = toStr(body.region) || null;
-    let finalDivision = toStr(body.division) || null;
+  let finalArea = toStr(body.area) || null;
+  let finalRegion = toStr(body.region) || null;
+  let finalDivision = toStr(body.division) || null;
 
-    if (branchId) {
-      const branchRes = await client.query(
-        `
-        SELECT area, region, division
-        FROM public.branches
-        WHERE id = $1
-        LIMIT 1
-        `,
-        [branchId]
-      );
+  if (branchId) {
+    const branchRes = await client.query(
+      `
+      SELECT area, region, division
+      FROM public.branches
+      WHERE id = $1
+      LIMIT 1
+      `,
+      [branchId]
+    );
 
-      if (branchRes.rowCount > 0) {
-        const b = branchRes.rows[0];
-        finalArea = toStr(b.area) || finalArea;
-        finalRegion = toStr(b.region) || finalRegion;
-        finalDivision = toStr(b.division) || finalDivision;
-      }
+    if (branchRes.rowCount > 0) {
+      const b = branchRes.rows[0];
+      finalArea = toStr(b.area) || finalArea;
+      finalRegion = toStr(b.region) || finalRegion;
+      finalDivision = toStr(b.division) || finalDivision;
     }
+  }
 
   const ins = await client.query(
     `
@@ -460,7 +481,7 @@ async function insertStaffFromBody(client, body) {
 
 router.get("/staff", requireAuth, async (req, res) => {
   try {
-    if (isAdmin(req) || isHr(req) || isAccounting(req)) {
+    if (isTopManagement(req)) {
       const r = await pool.query(`
         SELECT s.*,
                b.name AS branch_name,
@@ -513,7 +534,26 @@ router.get("/staff", requireAuth, async (req, res) => {
       return res.json(r.rows);
     }
 
-    if (isRegionalManager(req) || isAssistantVicePresident(req)) {
+    if (isRegionalManager(req)) {
+      const region = getUserRegion(req);
+      if (!region) return res.json([]);
+
+      const r = await pool.query(
+        `
+        SELECT s.*,
+               b.name AS branch_name,
+               b.code AS branch_code
+        FROM public.staff s
+        LEFT JOIN public.branches b ON b.id = s.branch_id
+        WHERE LOWER(TRIM(COALESCE(s.region, ''))) = LOWER(TRIM($1))
+        ORDER BY s.id DESC
+        `,
+        [region]
+      );
+      return res.json(r.rows);
+    }
+
+    if (isAssistantVicePresident(req)) {
       const division = getUserDivision(req);
       if (!division) return res.json([]);
 
@@ -563,7 +603,18 @@ router.post(
 router.get(
   "/pending-staff",
   requireAuth,
-  requireRole(["admin", "hr", "accounting", "branch manager", "area manager", "regional manager", "assistant vice president"]),
+  requireRole([
+    "admin",
+    "hr",
+    "accounting",
+    "branch manager",
+    "area manager",
+    "regional manager",
+    "assistant vice president",
+    "vice president",
+    "senior vice president",
+    "president",
+  ]),
   async (_req, res) => {
     try {
       const r = await pool.query(`
@@ -592,7 +643,18 @@ router.get(
 router.post(
   "/pending-staff",
   requireAuth,
-  requireRole(["admin", "hr", "accounting", "branch manager", "area manager", "regional manager", "assistant vice president"]),
+  requireRole([
+    "admin",
+    "hr",
+    "accounting",
+    "branch manager",
+    "area manager",
+    "regional manager",
+    "assistant vice president",
+    "vice president",
+    "senior vice president",
+    "president",
+  ]),
   async (req, res) => {
     try {
       const body = req.body || {};
@@ -759,7 +821,18 @@ router.put(
 router.put(
   "/staff/:id",
   requireAuth,
-  requireRole(["admin", "hr", "accounting", "branch manager", "area manager", "regional manager", "assistant vice president"]),
+  requireRole([
+    "admin",
+    "hr",
+    "accounting",
+    "branch manager",
+    "area manager",
+    "regional manager",
+    "assistant vice president",
+    "vice president",
+    "senior vice president",
+    "president",
+  ]),
   async (req, res) => {
     const client = await pool.connect();
     try {
@@ -794,20 +867,30 @@ router.put(
 
       const body = req.body || {};
 
+      console.log("PUT /api/staff/:id BODY =", body);
+
       const last_name = toStr(body.last_name);
       const first_name = toStr(body.first_name);
       const middle_name = toStr(body.middle_name);
-
-      const fullname = buildFullname({ last_name, first_name, middle_name, fullname: body.fullname });
+      const fullname = buildFullname({
+        last_name,
+        first_name,
+        middle_name,
+        fullname: body.fullname,
+      });
       const position = toStr(body.position);
 
       if (!last_name || !first_name || !position) {
         await client.query("ROLLBACK");
-        return res.status(400).json({ message: "last_name, first_name, and position are required" });
+        return res
+          .status(400)
+          .json({ message: "last_name, first_name, and position are required" });
       }
 
       const employeeNo = toStr(body.employee_no) || null;
-      if (employeeNo) {
+      const finalEmployeeNo = employeeNo || toStr(existing.rows[0]?.employee_no) || null;
+
+      if (finalEmployeeNo) {
         const dup = await client.query(
           `
           SELECT 1
@@ -816,8 +899,9 @@ router.put(
             AND id <> $2
           LIMIT 1
           `,
-          [employeeNo, id]
+          [finalEmployeeNo, id]
         );
+
         if (dup.rowCount > 0) {
           await client.query("ROLLBACK");
           return res.status(409).json({ message: "Employee No already exists" });
@@ -833,7 +917,31 @@ router.put(
 
       const oldStatus = toStr(existing.rows[0]?.status || "Active");
       const newStatus = toStr(body.status || oldStatus || "Active");
-      const finalEmployeeNo = employeeNo || toStr(existing.rows[0]?.employee_no);
+
+      const branchId = toInt(body.branch_id);
+
+      let finalArea = toStr(body.area) || null;
+      let finalRegion = toStr(body.region) || null;
+      let finalDivision = toStr(body.division) || null;
+
+      if (branchId) {
+        const branchRes = await client.query(
+          `
+          SELECT area, region, division
+          FROM public.branches
+          WHERE id = $1
+          LIMIT 1
+          `,
+          [branchId]
+        );
+
+        if (branchRes.rowCount > 0) {
+          const b = branchRes.rows[0];
+          finalArea = toStr(b.area) || finalArea;
+          finalRegion = toStr(b.region) || finalRegion;
+          finalDivision = toStr(b.division) || finalDivision;
+        }
+      }
 
       const r = await client.query(
         `
@@ -871,10 +979,10 @@ router.put(
           sss_no=$73, philhealth_no=$74, pagibig_no=$75, tin_no=$76,
           children=$77::jsonb, education=$78::jsonb, employment_history=$79::jsonb, beneficiaries=$80::jsonb
         WHERE id=$81
-        RETURNING id, employee_no, status;
+        RETURNING id, employee_no, status
         `,
         [
-          employeeNo,
+          finalEmployeeNo,
           last_name,
           first_name,
           middle_name || null,
@@ -899,11 +1007,11 @@ router.put(
 
           position,
           toStr(body.department) || null,
-          toStr(body.area) || null,
-          toStr(body.region) || null,
-          toStr(body.division) || null,
+          finalArea,
+          finalRegion,
+          finalDivision,
 
-          toInt(body.branch_id),
+          branchId,
           newStatus || "Active",
 
           toDateOrNull(body.start_date),
@@ -1013,8 +1121,11 @@ router.put(
       return res.json({ message: "Staff updated" });
     } catch (e) {
       await client.query("ROLLBACK");
-      console.error("PUT /api/staff/:id ERROR:", e.message);
-      return res.status(500).json({ message: e?.message || "Server error" });
+      console.error("PUT /api/staff/:id ERROR:", e);
+      return res.status(500).json({
+        message: e?.message || "Server error",
+        detail: e?.detail || null,
+      });
     } finally {
       client.release();
     }
@@ -1039,51 +1150,67 @@ router.delete("/staff/:id", requireAuth, requireRole(["admin"]), async (req, res
 router.post(
   "/staff/:id/photo",
   requireAuth,
-  requireRole(["admin", "hr", "accounting", "branch manager", "area manager", "regional manager", "assistant vice president"]),
-  (req, res, next) => {
-    // Run multer upload first, then pass to route handler
-    uploadToTemp(req, res, (err) => {
-      if (err) {
-        console.error("[Spaces] Multer error:", err);
-        return res.status(400).json({ message: err.message || "Upload failed" });
-      }
-      next();
-    });
-  },
+  requireRole([
+    "admin",
+    "hr",
+    "accounting",
+    "branch manager",
+    "area manager",
+    "regional manager",
+    "assistant vice president",
+    "vice president",
+    "senior vice president",
+    "president",
+  ]),
+  uploadToTemp,
   async (req, res) => {
     const client = await pool.connect();
+
     try {
       const staffId = toInt(req.params.id);
-      if (!staffId) return res.status(400).json({ message: "Invalid staff id." });
-      if (!req.file) return res.status(400).json({ message: "No file uploaded." });
+
+      if (!staffId) {
+        if (req.file?.key) await deleteKey(req.file.key).catch(() => {});
+        return res.status(400).json({ message: "Invalid staff id." });
+      }
+
+      if (!req.file?.key) {
+        return res.status(400).json({ message: "No file uploaded." });
+      }
 
       const allowed = await canAccessStaffById(client, req, staffId);
+
       if (!allowed) {
-        // Clean up temp file if auth fails
-        await deleteKey(req.file.key);
+        if (req.file?.key) await deleteKey(req.file.key).catch(() => {});
         return res.status(403).json({ message: "Access denied" });
       }
 
-      // Get old key so we can delete it if needed (handled by moveFromTemp via prefix)
       const finalKey = await moveFromTemp(
-        req.file.key,       // temp path assigned by multer-s3
-        "staff",            // origin folder
-        String(staffId),    // subfolder = staff ID
-        req.file.originalname
+        req.file.key,
+        "staff",
+        String(staffId),
+        req.file.originalname || "photo.jpg"
       );
 
-      // Store only the key (not a URL) in the database
       await client.query(
         `UPDATE public.staff SET photo_url = $1 WHERE id = $2`,
         [finalKey, staffId]
       );
 
-      return res.json({ photo_key: finalKey });
+      return res.json({
+        message: "Photo uploaded",
+        photo_key: finalKey,
+      });
     } catch (e) {
-      console.error("POST /staff/:id/photo ERROR:", e.message);
-      // Attempt cleanup of temp file on failure
-      if (req.file?.key) await deleteKey(req.file.key).catch(() => {});
-      return res.status(500).json({ message: "Server error" });
+      console.error("POST /api/staff/:id/photo ERROR:", e);
+
+      if (req.file?.key) {
+        await deleteKey(req.file.key).catch(() => {});
+      }
+
+      return res.status(500).json({
+        message: e?.message || "Server error",
+      });
     } finally {
       client.release();
     }

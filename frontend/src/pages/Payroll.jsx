@@ -588,6 +588,7 @@ function Payroll() {
     salaryHistoryMap,
   ]);
 
+
   const sumColumn = (key) => computedRows.reduce((sum, s) => sum + toNum(s[key]), 0);
 
   const getReceivedRecord = useCallback(

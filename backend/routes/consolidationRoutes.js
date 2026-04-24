@@ -8,9 +8,6 @@ const isAdmin = (req) => roleLower(req) === "admin";
 const isHr = (req) => roleLower(req) === "hr";
 const isAccounting = (req) => roleLower(req) === "accounting";
 
-/* ===============================
-   GET (ALLOW ADMIN, HR, ACCOUNTING)
-================================= */
 router.get("/consolidation", requireAuth, async (req, res) => {
   try {
     if (!isAdmin(req) && !isHr(req) && !isAccounting(req)) {
@@ -30,9 +27,6 @@ router.get("/consolidation", requireAuth, async (req, res) => {
   }
 });
 
-/* ===============================
-   CREATE (ADMIN ONLY)
-================================= */
 router.post(
   "/consolidation",
   requireAuth,
@@ -64,9 +58,6 @@ router.post(
   }
 );
 
-/* ===============================
-   UPDATE (ADMIN ONLY)
-================================= */
 router.put(
   "/consolidation/:id",
   requireAuth,
@@ -107,9 +98,6 @@ router.put(
   }
 );
 
-/* ===============================
-   DELETE (ADMIN ONLY)
-================================= */
 router.delete(
   "/consolidation/:id",
   requireAuth,
@@ -127,7 +115,7 @@ router.delete(
         [id]
       );
 
-      if (result.rowCount === 0) {
+      if (result.rowCount === 0) {  
         return res.status(404).json({ message: "Consolidation record not found" });
       }
 

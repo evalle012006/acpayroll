@@ -24,11 +24,29 @@ const roleLower = (req) => String(req.user?.role || "").trim().toLowerCase();
 const isAdmin = (req) => roleLower(req) === "admin";
 const isHr = (req) => roleLower(req) === "hr";
 const isAccounting = (req) => roleLower(req) === "accounting";
+const isTread = (req) => roleLower(req) === "tread";
 const isBranchManager = (req) => roleLower(req) === "branch manager";
 const isAreaManager = (req) => roleLower(req) === "area manager";
 const isRegionalManager = (req) => roleLower(req) === "regional manager";
 const isAssistantVicePresident = (req) =>
   roleLower(req) === "assistant vice president";
+const isVicePresident = (req) => roleLower(req) === "vice president";
+const isSeniorVicePresident = (req) =>
+  roleLower(req) === "senior vice president";
+const isPresident = (req) => roleLower(req) === "president";
+
+const isTopManagement = (req) =>
+  isAdmin(req) ||
+  isHr(req) ||
+  isAccounting(req) ||
+  isVicePresident(req) ||
+  isSeniorVicePresident(req) ||
+  isPresident(req);
+
+const canViewAllTransferOrders = (req) =>
+  isTopManagement(req) ||
+  isAssistantVicePresident(req) ||
+  isTread(req);
 
 const getUserRegion = (req) => toStr(req.user?.region);
 const getUserBranchId = (req) => req.user?.branch_id ?? null;
@@ -118,12 +136,7 @@ async function canAccessTransferOrderFiles(req, orderRow) {
   const userArea = getUserArea(req);
   const userRegion = getUserRegion(req);
 
-  if (
-    isAdmin(req) ||
-    isHr(req) ||
-    isAccounting(req) ||
-    isAssistantVicePresident(req)
-  ) {
+  if (canViewAllTransferOrders(req)) {
     return true;
   }
 
@@ -150,7 +163,7 @@ router.get("/transfer-staff-orders", requireAuth, async (req, res) => {
     const branchId = getUserBranchId(req);
     const userArea = getUserArea(req);
 
-    if (isAdmin(req) || isHr(req) || isAccounting(req)) {
+    if (canViewAllTransferOrders(req)) {
       const r = await pool.query(
         `
         SELECT *
@@ -208,18 +221,6 @@ router.get("/transfer-staff-orders", requireAuth, async (req, res) => {
       return res.json(r.rows);
     }
 
-    if (isAssistantVicePresident(req)) {
-      const r = await pool.query(
-        `
-        SELECT *
-        FROM public.transfer_staff_orders
-        ORDER BY created_at DESC
-        `
-      );
-
-      return res.json(r.rows);
-    }
-
     return res.status(403).json({ message: "Access denied" });
   } catch (e) {
     console.error("GET /api/transfer-staff-orders ERROR:", e.message);
@@ -235,10 +236,15 @@ router.post(
   requireAuth,
   requireRole([
     "admin",
+    "hr",
+    "accounting",
     "branch manager",
     "area manager",
     "regional manager",
     "assistant vice president",
+    "vice president",
+    "senior vice president",
+    "president",
   ]),
   async (req, res) => {
     const client = await pool.connect();
@@ -503,10 +509,15 @@ router.post(
   requireAuth,
   requireRole([
     "admin",
+    "hr",
+    "accounting",
     "branch manager",
     "area manager",
     "regional manager",
     "assistant vice president",
+    "vice president",
+    "senior vice president",
+    "president",
   ]),
   upload.array("files", 10),
   async (req, res) => {
@@ -655,7 +666,14 @@ router.get(
 router.put(
   "/transfer-staff-orders/:id/approve",
   requireAuth,
-  requireRole(["admin"]),
+  requireRole([
+    "admin",
+    "hr",
+    "accounting",
+    "vice president",
+    "senior vice president",
+    "president",
+  ]),
   async (req, res) => {
     try {
       const id = toInt(req.params.id);
@@ -710,7 +728,14 @@ router.put(
 router.put(
   "/transfer-staff-orders/:id/reject",
   requireAuth,
-  requireRole(["admin"]),
+  requireRole([
+    "admin",
+    "hr",
+    "accounting",
+    "vice president",
+    "senior vice president",
+    "president",
+  ]),
   async (req, res) => {
     try {
       const id = toInt(req.params.id);

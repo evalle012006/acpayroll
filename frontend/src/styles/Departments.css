@@ -160,14 +160,14 @@
   color: #b91c1c;
 }
 
-.staff-tabs{
-  display:flex;
-  gap:8px;
-  flex-wrap:wrap;
+.staff-tabs {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
   margin-top: 4px;
 }
 
-.tab-btn{
+.tab-btn {
   padding: 8px 12px;
   border-radius: 10px;
   border: 1px solid var(--border);
@@ -179,17 +179,17 @@
   transition: 0.15s ease;
 }
 
-.tab-btn:hover{
+.tab-btn:hover {
   background: var(--hover);
 }
 
-.tab-btn.active{
-  background: rgba(99,102,241,.18);
-  border-color: rgba(99,102,241,.55);
+.tab-btn.active {
+  background: rgba(99, 102, 241, 0.18);
+  border-color: rgba(99, 102, 241, 0.55);
   color: var(--text);
 }
 
-.section-card{
+.section-card {
   border: 1px solid var(--border);
   background: var(--panel-2);
   border-radius: 14px;
@@ -197,34 +197,34 @@
   margin-bottom: 12px;
 }
 
-.section-title{
+.section-title {
   font-weight: 700;
   margin-bottom: 10px;
 }
 
-.section-subtitle{
+.section-subtitle {
   font-weight: 700;
   margin: 10px 0;
-  opacity: .9;
+  opacity: 0.9;
 }
 
-.profile-table{
+.profile-table {
   width: 100%;
   border-collapse: collapse;
 }
 
-.profile-table td{
+.profile-table td {
   padding: 10px 8px;
   border-top: 1px solid var(--border);
   color: var(--text);
 }
 
-.profile-key{
+.profile-key {
   width: 220px;
-  opacity: .85;
+  opacity: 0.85;
 }
 
-.profile-val{
+.profile-val {
   font-weight: 600;
 }
 
@@ -251,3 +251,57 @@
   overflow-x: auto;
 }
 
+.dept-view-search {
+  margin-bottom: 12px;
+}
+
+.dept-view-search .input {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.dept-view-filters-grid {
+  display: grid;
+  grid-template-columns: minmax(120px, auto) repeat(3, minmax(180px, 1fr));
+  gap: 10px;
+  margin-bottom: 12px;
+  align-items: stretch;
+}
+
+.dept-view-filters-grid .input,
+.dept-view-filters-grid .btn {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.dept-view-pill {
+  width: fit-content;
+  align-self: center;
+  white-space: nowrap;
+}
+
+.dept-view-filters-grid .btn {
+  justify-self: stretch;
+}
+
+@media (max-width: 1100px) {
+  .dept-view-filters-grid {
+    grid-template-columns: repeat(2, minmax(180px, 1fr));
+  }
+
+  .dept-view-pill {
+    width: fit-content;
+    justify-self: start;
+  }
+}
+
+@media (max-width: 680px) {
+  .dept-view-filters-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .dept-view-pill {
+    width: fit-content;
+  }
+}

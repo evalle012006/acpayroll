@@ -15,8 +15,37 @@ const toInt = (v) => {
 
 const toStr = (v) => String(v ?? "").trim();
 
+const roleLower = (req) => String(req.user?.role || "").trim().toLowerCase();
+const isAdmin = (req) => roleLower(req) === "admin";
+const isHr = (req) => roleLower(req) === "hr";
+const isAccounting = (req) => roleLower(req) === "accounting";
+const isTread = (req) => roleLower(req) === "tread";
+const isBranchManager = (req) => roleLower(req) === "branch manager";
+
+const canViewSettlements = (req) =>
+  isAdmin(req) ||
+  isHr(req) ||
+  isAccounting(req) ||
+  isTread(req) ||
+  isBranchManager(req);
+
+const canCreateSettlement = (req) =>
+  isAdmin(req) ||
+  isHr(req) ||
+  isAccounting(req) ||
+  isBranchManager(req);
+
+const canDeleteSettlement = (req) =>
+  isAdmin(req) ||
+  isHr(req) ||
+  isAccounting(req);
+
 router.get("/settlements", requireAuth, async (req, res) => {
   try {
+    if (!canViewSettlements(req)) {
+      return res.status(403).json({ message: "Access denied" });
+    }
+
     const r = await pool.query(
       `SELECT *
        FROM public.settlements
@@ -32,16 +61,20 @@ router.get("/settlements", requireAuth, async (req, res) => {
 router.post(
   "/settlements",
   requireAuth,
-  requireRole(["admin", "branch manager"]),
+  requireRole(["admin", "hr", "accounting", "branch manager"]),
   async (req, res) => {
     try {
+      if (!canCreateSettlement(req)) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
       const staff_id = toInt(req.body?.staff_id);
-      const employee_id = toInt(req.body?.employee_id);
+      const employee_no = toStr(req.body?.employee_no);
       const employee_name = toStr(req.body?.employee_name);
       const prev_branch = toStr(req.body?.prev_branch);
 
       if (!staff_id) return res.status(400).json({ message: "staff_id is required" });
-      if (!employee_id) return res.status(400).json({ message: "employee_id is required" });
+      if (!employee_no) return res.status(400).json({ message: "employee_no is required" });
       if (!employee_name) return res.status(400).json({ message: "employee_name is required" });
 
       const s = await pool.query(
@@ -79,7 +112,7 @@ router.post(
         `
         INSERT INTO public.settlements (
           staff_id,
-          employee_id,
+          employee_no,
           employee_name,
           prev_branch,
           cbu,
@@ -106,7 +139,7 @@ router.post(
         `,
         [
           staff_id,
-          employee_id,
+          employee_no,
           employee_name,
           prev_branch || null,
 
@@ -140,9 +173,13 @@ router.post(
 router.delete(
   "/settlements/:id",
   requireAuth,
-  requireRole(["admin"]),
+  requireRole(["admin", "hr", "accounting"]),
   async (req, res) => {
     try {
+      if (!canDeleteSettlement(req)) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
       const id = toInt(req.params.id);
       if (!id) return res.status(400).json({ message: "Invalid id" });
 

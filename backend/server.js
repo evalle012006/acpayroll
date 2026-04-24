@@ -3,7 +3,6 @@ require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
 const path = require("path");
-
 const authRoutes = require("./routes/authRoutes");
 const userRoutes = require("./routes/userRoutes");
 const staffRoutes = require("./routes/staffRoutes");
@@ -37,6 +36,9 @@ const salaryHistoryRoutes = require("./routes/salaryHistoryRoutes");
 const statusHistoryRoutes = require("./routes/statusHistoryRoutes");
 const staffLoanOpeningBalancesRoutes = require("./routes/staffLoanOpeningBalancesRoutes");
 const staffBonusHistoryRoutes = require("./routes/staffBonusHistoryRoutes");
+const regularizationOrdersRoutes = require("./routes/regularizationOrdersRoutes");
+const resignationRequestsRoutes = require("./routes/resignationRequestsRoutes");
+const reimbursementRequestsRoutes = require("./routes/reimbursementRequestsRoutes");
 
 const app = express();
 
@@ -51,7 +53,6 @@ app.use(
 app.use(express.json({ limit: "25mb" }));
 app.use(express.urlencoded({ extended: true, limit: "25mb" }));
 
-// IMPORTANT: must match your upload route code that uses process.cwd() + /uploads
 app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
 
 app.use("/api/auth", authRoutes);
@@ -88,6 +89,9 @@ app.use("/api", consolidationRoutes);
 app.use("/api", staffLoanOpeningBalancesRoutes);
 app.use("/api", staffBonusHistoryRoutes);
 app.use("/api", notificationRoutes);
+app.use("/api", regularizationOrdersRoutes);
+app.use("/api", resignationRequestsRoutes);
+app.use("/api/reimbursement-requests", reimbursementRequestsRoutes);
 
 app.get("/test", (_req, res) => {
   res.send("Backend is working!");

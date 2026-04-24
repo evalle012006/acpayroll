@@ -14,20 +14,78 @@ const toDate = (v) => {
 };
 
 const toStr = (v) => String(v ?? "").trim();
+
 const toNum = (v) => {
   const n = Number(v ?? 0);
   return Number.isFinite(n) ? n : 0;
 };
 
 const roleLower = (req) => String(req.user?.role || "").trim().toLowerCase();
+
 const isAdmin = (req) => roleLower(req) === "admin";
 const isHr = (req) => roleLower(req) === "hr";
 const isAccounting = (req) => roleLower(req) === "accounting";
+const isTread = (req) => roleLower(req) === "tread";
 const isBranchManager = (req) => roleLower(req) === "branch manager";
 const isAreaManager = (req) => roleLower(req) === "area manager";
 const isRegionalManager = (req) => roleLower(req) === "regional manager";
 const isAssistantVicePresident = (req) =>
   roleLower(req) === "assistant vice president";
+const isVicePresident = (req) => roleLower(req) === "vice president";
+const isSeniorVicePresident = (req) =>
+  roleLower(req) === "senior vice president";
+const isPresident = (req) => roleLower(req) === "president";
+
+const isTopManagement = (req) =>
+  isAssistantVicePresident(req) ||
+  isVicePresident(req) ||
+  isSeniorVicePresident(req) ||
+  isPresident(req);
+
+const canViewAllDeployment = (req) =>
+  isAdmin(req) ||
+  isHr(req) ||
+  isAccounting(req) ||
+  isTread(req) ||
+  isTopManagement(req);
+
+const canCreateDeployment = (req) =>
+  isAdmin(req) ||
+  isHr(req) ||
+  isAccounting(req) ||
+  isBranchManager(req) ||
+  isAreaManager(req) ||
+  isRegionalManager(req) ||
+  isAssistantVicePresident(req) ||
+  isVicePresident(req) ||
+  isSeniorVicePresident(req) ||
+  isPresident(req);
+
+const canEditDeployment = (req) =>
+  isAdmin(req) ||
+  isHr(req) ||
+  isAccounting(req) ||
+  isBranchManager(req) ||
+  isAreaManager(req) ||
+  isRegionalManager(req) ||
+  isAssistantVicePresident(req) ||
+  isVicePresident(req) ||
+  isSeniorVicePresident(req) ||
+  isPresident(req);
+
+const canApproveDeployment = (req) =>
+  isAdmin(req) ||
+  isHr(req) ||
+  isAccounting(req) ||
+  isAssistantVicePresident(req) ||
+  isVicePresident(req) ||
+  isSeniorVicePresident(req) ||
+  isPresident(req);
+
+const canDeleteDeployment = (req) =>
+  isAdmin(req) ||
+  isHr(req) ||
+  isAccounting(req);
 
 const getUserRegion = (req) => toStr(req.user?.region);
 const getUserBranchCode = (req) => toStr(req.user?.branch_id);
@@ -176,7 +234,7 @@ router.get("/deployments", requireAuth, async (req, res) => {
   const client = await pool.connect();
 
   try {
-    if (isAdmin(req) || isHr(req) || isAccounting(req)) {
+    if (canViewAllDeployment(req)) {
       const r = await client.query(`
         SELECT *
         FROM public.deployment_orders
@@ -239,18 +297,6 @@ router.get("/deployments", requireAuth, async (req, res) => {
       return res.json(r.rows);
     }
 
-    if (isAssistantVicePresident(req)) {
-      const r = await client.query(
-        `
-        SELECT *
-        FROM public.deployment_orders
-        ORDER BY id DESC
-        `
-      );
-
-      return res.json(r.rows);
-    }
-
     return res.status(403).json({ message: "Access denied" });
   } catch (e) {
     console.error("GET /api/deployments ERROR:", e.message);
@@ -270,7 +316,7 @@ router.get("/deployments/:id", requireAuth, async (req, res) => {
     const id = toInt(req.params.id);
     if (!id) return res.status(400).json({ message: "Invalid id" });
 
-    if (isAdmin(req) || isHr(req) || isAccounting(req) || isAssistantVicePresident(req)) {
+    if (canViewAllDeployment(req)) {
       const r = await client.query(
         `
         SELECT *
@@ -373,10 +419,14 @@ router.get(
     "admin",
     "hr",
     "accounting",
+    "tread",
     "branch manager",
     "area manager",
     "regional manager",
     "assistant vice president",
+    "vice president",
+    "senior vice president",
+    "president",
   ]),
   async (req, res) => {
     const client = await pool.connect();
@@ -436,10 +486,15 @@ router.post(
   requireAuth,
   requireRole([
     "admin",
+    "hr",
+    "accounting",
     "branch manager",
     "area manager",
     "regional manager",
     "assistant vice president",
+    "vice president",
+    "senior vice president",
+    "president",
   ]),
   async (req, res) => {
     const client = await pool.connect();
@@ -465,6 +520,11 @@ router.post(
       if (!deployment_date) {
         await client.query("ROLLBACK");
         return res.status(400).json({ message: "Deployment date is required" });
+      }
+
+      if (!canCreateDeployment(req)) {
+        await client.query("ROLLBACK");
+        return res.status(403).json({ message: "Access denied" });
       }
 
       if (isBranchManager(req)) {
@@ -571,10 +631,15 @@ router.put(
   requireAuth,
   requireRole([
     "admin",
+    "hr",
+    "accounting",
     "branch manager",
     "area manager",
     "regional manager",
     "assistant vice president",
+    "vice president",
+    "senior vice president",
+    "president",
   ]),
   async (req, res) => {
     const client = await pool.connect();
@@ -606,7 +671,14 @@ router.put(
 
       if (String(row.status || "").toLowerCase() === "approved") {
         await client.query("ROLLBACK");
-        return res.status(400).json({ message: "Approved deployments cannot be edited" });
+        return res
+          .status(400)
+          .json({ message: "Approved deployments cannot be edited" });
+      }
+
+      if (!canEditDeployment(req)) {
+        await client.query("ROLLBACK");
+        return res.status(403).json({ message: "Access denied" });
       }
 
       if (isBranchManager(req)) {
@@ -666,7 +738,14 @@ router.put(
         WHERE id = $6
         RETURNING *;
         `,
-        [branchRow.id, branchRow.code, branchRow.name, deployment_date, details || null, id]
+        [
+          branchRow.id,
+          branchRow.code,
+          branchRow.name,
+          deployment_date,
+          details || null,
+          id,
+        ]
       );
 
       await client.query("COMMIT");
@@ -687,11 +766,15 @@ router.put(
 router.delete(
   "/deployments/:id",
   requireAuth,
-  requireRole(["admin"]),
+  requireRole(["admin", "hr", "accounting"]),
   async (req, res) => {
     try {
       const id = toInt(req.params.id);
       if (!id) return res.status(400).json({ message: "Invalid id" });
+
+      if (!canDeleteDeployment(req)) {
+        return res.status(403).json({ message: "Access denied" });
+      }
 
       const r = await pool.query(
         `
@@ -720,7 +803,15 @@ router.delete(
 router.put(
   "/deployments/:id/approve",
   requireAuth,
-  requireRole(["admin"]),
+  requireRole([
+    "admin",
+    "hr",
+    "accounting",
+    "assistant vice president",
+    "vice president",
+    "senior vice president",
+    "president",
+  ]),
   async (req, res) => {
     const client = await pool.connect();
 
@@ -731,6 +822,11 @@ router.put(
       if (!id) {
         await client.query("ROLLBACK");
         return res.status(400).json({ message: "Invalid id" });
+      }
+
+      if (!canApproveDeployment(req)) {
+        await client.query("ROLLBACK");
+        return res.status(403).json({ message: "Access denied" });
       }
 
       const r = await client.query(

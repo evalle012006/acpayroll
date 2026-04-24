@@ -29,11 +29,25 @@ const roleLower = (req) => String(req.user?.role || "").trim().toLowerCase();
 const isAdmin = (req) => roleLower(req) === "admin";
 const isHr = (req) => roleLower(req) === "hr";
 const isAccounting = (req) => roleLower(req) === "accounting";
+const isTread = (req) => roleLower(req) === "tread";
 const isBranchManager = (req) => roleLower(req) === "branch manager";
 const isAreaManager = (req) => roleLower(req) === "area manager";
 const isRegionalManager = (req) => roleLower(req) === "regional manager";
 const isAssistantVicePresident = (req) =>
   roleLower(req) === "assistant vice president";
+const isVicePresident = (req) => roleLower(req) === "vice president";
+const isSeniorVicePresident = (req) =>
+  roleLower(req) === "senior vice president";
+const isPresident = (req) => roleLower(req) === "president";
+
+const isTopManagement = (req) =>
+  isAdmin(req) ||
+  isHr(req) ||
+  isAccounting(req) ||
+  isTread(req) ||
+  isVicePresident(req) ||
+  isSeniorVicePresident(req) ||
+  isPresident(req);
 
 const getUserBranchId = (req) => req.user?.branch_id ?? null;
 const getUserArea = (req) => toStr(req.user?.area);
@@ -107,7 +121,7 @@ async function generateOrderNo(client, prefix) {
 
 router.get("/promotion-orders", requireAuth, async (req, res) => {
   try {
-    if (isAdmin(req) || isHr(req) || isAccounting(req)) {
+    if (isTopManagement(req)) {
       const r = await pool.query(
         `SELECT * FROM public.promotion_orders ORDER BY created_at DESC`
       );
@@ -179,10 +193,14 @@ router.get(
     "admin",
     "hr",
     "accounting",
+    "tread",
     "branch manager",
     "area manager",
     "regional manager",
     "assistant vice president",
+    "vice president",
+    "senior vice president",
+    "president",
   ]),
   async (req, res) => {
     try {
@@ -251,10 +269,15 @@ router.post(
   requireAuth,
   requireRole([
     "admin",
+    "hr",
+    "accounting",
     "branch manager",
     "area manager",
     "regional manager",
     "assistant vice president",
+    "vice president",
+    "senior vice president",
+    "president",
   ]),
   upload.single("attachment"),
   async (req, res) => {
@@ -426,7 +449,7 @@ router.post(
 router.put(
   "/promotion-orders/:id/approve",
   requireAuth,
-  requireRole(["admin"]),
+  requireRole(["admin", "hr", "accounting", "vice president", "senior vice president", "president"]),
   async (req, res) => {
     const client = await pool.connect();
     try {
@@ -495,7 +518,7 @@ router.put(
 router.put(
   "/promotion-orders/:id/reject",
   requireAuth,
-  requireRole(["admin"]),
+  requireRole(["admin", "hr", "accounting", "vice president", "senior vice president", "president"]),
   async (req, res) => {
     try {
       const id = toInt(req.params.id);

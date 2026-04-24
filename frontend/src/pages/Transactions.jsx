@@ -25,67 +25,177 @@ export default function Transactions() {
   const go = (path) => navigate(path);
 
   /* ---------------- ROLE-BASED FILTER ---------------- */
-
   const cards = [
     {
       title: "Transfer Staff Order",
       desc: "Move staff to another branch/area.",
       path: "/transactions/transfer",
-      roles: ["admin", "hr", "accounting","area manager", "regional manager", "assistant vice president","vice president", "senior vice president", "president"],
+      roles: [
+        "admin",
+        "hr",
+        "accounting",
+        "tread",
+        "area manager",
+        "regional manager",
+        "assistant vice president",
+        "vice president",
+        "senior vice president",
+        "president",
+      ],
     },
     {
       title: "Leave Requests",
       desc: "Create and manage leave requests.",
       path: "/transactions/leave",
-      roles: ["admin", "hr", "accounting", "area manager", "regional manager", "assistant vice president", "vice president", "senior vice president", "president"],
+      roles: [
+        "admin",
+        "hr",
+        "accounting",
+        "tread",
+        "branch manager",
+        "area manager",
+        "regional manager",
+        "assistant vice president",
+        "vice president",
+        "senior vice president",
+        "president",
+      ],
     },
     {
       title: "Promotion Order",
       desc: "Change position and/or salary upward.",
       path: "/transactions/promotion",
-      roles: ["admin", "hr", "accounting", "assistant vice president", "vice president", "senior vice president", "president"],
+      roles: [
+        "admin",
+        "hr",
+        "accounting",
+        "tread",
+        "assistant vice president",
+        "vice president",
+        "senior vice president",
+        "president",
+      ],
     },
     {
       title: "Demotion Order",
       desc: "Adjust role/position downward.",
       path: "/transactions/demotion",
-      roles: ["admin", "hr", "accounting", "assistant vice president", "senior vice president", "vice president", "president"],
+      roles: [
+        "admin",
+        "hr",
+        "accounting",
+        "tread",
+        "assistant vice president",
+        "senior vice president",
+        "vice president",
+        "president",
+      ],
     },
     {
       title: "Deployment Order",
       desc: "Staff newly hired / service recommence.",
       path: "/transactions/deployment",
-      roles: ["admin", "hr", "accounting", "branch manager", "area manager", "regional manager", "assistant vice president", "vice president", "senior vice president", "president"],
+      roles: [
+        "admin",
+        "hr",
+        "accounting",
+        "tread",
+        "area manager",
+        "regional manager",
+        "assistant vice president",
+        "vice president",
+        "senior vice president",
+        "president",
+      ],
     },
     {
       title: "Suspension Order",
       desc: "Temporarily suspend staff work.",
       path: "/transactions/suspension",
-      roles: ["admin", "hr", "accounting", "assistant vice president", "vice president", "senior vice president", "president"],
+      roles: [
+        "admin",
+        "hr",
+        "accounting",
+        "tread",
+        "area manager",
+        "assistant vice president",
+        "vice president",
+        "senior vice president",
+        "president",
+      ],
     },
     {
       title: "Statement of Accounts",
       desc: "Exit staff last pay / liabilities.",
       path: "/transactions/soa",
-      roles: ["admin", "hr", "accounting", "vice president", "senior vice president", "president"],
+      roles: [
+        "admin",
+        "hr",
+        "accounting",
+        "tread",
+        "vice president",
+        "senior vice president",
+        "president",
+      ],
     },
     {
       title: "Exit Staff",
       desc: "Process resignation or termination.",
       path: "/transactions/exit",
-      roles: ["admin", "hr", "accounting", "vice president", "senior vice president", "president"],
+      roles: [
+        "admin",
+        "hr",
+        "accounting",
+        "tread",
+        "vice president",
+        "senior vice president",
+        "president",
+      ],
+    },
+    {
+      title: "Resignation Requests",
+      desc: "Create and manage resignation requests.",
+      path: "/transactions/resignation",
+      roles: [
+        "admin",
+        "hr",
+        "accounting",
+        "tread",
+        "branch manager",
+        "area manager",
+        "regional manager",
+        "assistant vice president",
+        "accounting",
+        "vice president",
+        "senior vice president",
+        "president",
+      ],
     },
     {
       title: "SBF Order",
       desc: "Staff Benevolent Fund request.",
       path: "/transactions/sbf",
-      roles: ["admin", "hr", "accounting", "vice president", "senior vice president", "president"],
+      roles: [
+        "admin",
+        "hr",
+        "accounting",
+        "vice president",
+        "senior vice president",
+        "president",
+      ],
     },
     {
       title: "Regularization Order",
       desc: "Staff Regularization Order",
       path: "/transactions/regularization",
-      roles: ["admin", "hr", "accounting", "vice president", "senior vice president", "president"],
+      roles: [
+        "admin",
+        "hr",
+        "accounting",
+        "vice president",
+        "senior vice president",
+        "president",
+      ],
     },
   ];
 
@@ -116,12 +226,8 @@ export default function Transactions() {
           >
             <div className="transactions-card-head">
               <div>
-                <div className="transactions-card-title">
-                  {card.title}
-                </div>
-                <div className="transactions-card-meta">
-                  {card.desc}
-                </div>
+                <div className="transactions-card-title">{card.title}</div>
+                <div className="transactions-card-meta">{card.desc}</div>
               </div>
 
               <span className="transactions-pill">
