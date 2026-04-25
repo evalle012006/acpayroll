@@ -20,6 +20,7 @@ const roleLower = (req) => String(req.user?.role || "").trim().toLowerCase();
 const isAdmin = (req) => roleLower(req) === "admin";
 const isHr = (req) => roleLower(req) === "hr";
 const isAccounting = (req) => roleLower(req) === "accounting";
+const isTread = (req) => roleLower(req) === "tread";
 const isBranchManager = (req) => roleLower(req) === "branch manager";
 const isAreaManager = (req) => roleLower(req) === "area manager";
 const isRegionalManager = (req) => roleLower(req) === "regional manager";
@@ -32,6 +33,7 @@ const isTopManagement = (req) =>
   isAdmin(req) ||
   isHr(req) ||
   isAccounting(req) ||
+  isTread(req) ||
   isVicePresident(req) ||
   isSeniorVicePresident(req) ||
   isPresident(req);
@@ -228,7 +230,7 @@ router.get("/branches/:id", requireAuth, async (req, res) => {
 router.post(
   "/branches",
   requireAuth,
-  requireRole(["admin"]),
+  requireRole(["admin", "tread"]),
   async (req, res) => {
     try {
       const code = toStr(req.body?.code);
@@ -283,7 +285,7 @@ router.post(
 router.put(
   "/branches/:id",
   requireAuth,
-  requireRole(["admin", "hr", "accounting"]),
+  requireRole(["admin", "hr", "accounting", "tread"]),
   async (req, res) => {
     try {
       const id = toInt(req.params.id);
@@ -349,7 +351,7 @@ router.put(
 router.delete(
   "/branches/:id",
   requireAuth,
-  requireRole(["admin", "hr", "accounting"]),
+  requireRole(["admin", "hr", "accounting", "tread"]),
   async (req, res) => {
     try {
       const id = toInt(req.params.id);

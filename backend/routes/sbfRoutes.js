@@ -19,16 +19,28 @@ const roleLower = (req) => norm(req.user?.role);
 const isAdmin = (req) => roleLower(req) === "admin";
 const isHr = (req) => roleLower(req) === "hr";
 const isAccounting = (req) => roleLower(req) === "accounting";
+const isTread = (req) => roleLower(req) === "tread";
 const isBranchManager = (req) => roleLower(req) === "branch manager";
 
 const canViewSbf = (req) =>
-  isAdmin(req) || isHr(req) || isAccounting(req) || isBranchManager(req);
+  isAdmin(req) ||
+  isHr(req) ||
+  isAccounting(req) ||
+  isBranchManager(req) ||
+  isTread(req);
 
 const canCreateSbf = (req) =>
-  isAdmin(req) || isHr(req) || isAccounting(req) || isBranchManager(req);
+  isAdmin(req) ||
+  isHr(req) ||
+  isAccounting(req) ||
+  isBranchManager(req) ||
+  isTread(req);
 
 const canApproveSbf = (req) =>
-  isAdmin(req) || isHr(req) || isAccounting(req);
+  isAdmin(req) ||
+  isHr(req) ||
+  isAccounting(req) ||
+  isTread(req);
 
 async function makeOrderNo() {
   const result = await pool.query(`
@@ -77,7 +89,7 @@ router.get("/sbf-orders", requireAuth, async (req, res) => {
 router.post(
   "/sbf-orders",
   requireAuth,
-  requireRole(["admin", "hr", "accounting", "branch manager"]),
+  requireRole(["admin", "hr", "accounting", "branch manager", "tread"]),
   async (req, res) => {
     try {
       if (!canCreateSbf(req)) {
@@ -157,7 +169,7 @@ router.post(
 router.put(
   "/sbf-orders/:id/approve",
   requireAuth,
-  requireRole(["admin", "hr", "accounting"]),
+  requireRole(["admin", "hr", "accounting", "tread"]),
   async (req, res) => {
     try {
       if (!canApproveSbf(req)) {
@@ -219,7 +231,7 @@ router.put(
 router.put(
   "/sbf-orders/:id/reject",
   requireAuth,
-  requireRole(["admin", "hr", "accounting"]),
+  requireRole(["admin", "hr", "accounting", "tread"]),
   async (req, res) => {
     try {
       if (!canApproveSbf(req)) {

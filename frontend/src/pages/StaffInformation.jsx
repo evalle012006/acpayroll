@@ -126,12 +126,8 @@ const compute13thMonthBreakdown = (staff) => {
   };
 };
 
-// ---------------------------------------------------------------------------
-// Signed URL cache — module-level so it persists across re-renders
-// Shape: Map<staffId, { url: string, expiresAt: number }>
-// ---------------------------------------------------------------------------
 const _signedUrlCache = new Map();
-const EXPIRY_BUFFER_MS = 60_000; // refresh 1 min before expiry
+const EXPIRY_BUFFER_MS = 60_000;
 
 function getCachedSignedUrl(staffId) {
   const entry = _signedUrlCache.get(staffId);
@@ -150,10 +146,6 @@ function setCachedSignedUrl(staffId, url, expiresInSeconds) {
   });
 }
 
-/**
- * Fetch signed URL for a single staff member.
- * Returns null if the staff has no photo or request fails.
- */
 async function fetchSignedUrl(staffId) {
   try {
     const res = await api.get(`/staff/${staffId}/photo-url`);
@@ -168,11 +160,8 @@ async function fetchSignedUrl(staffId) {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Hook: resolves signed URLs for a list of staff rows that have a photo_url key
-// ---------------------------------------------------------------------------
 function useStaffSignedUrls(staffList) {
-  const [signedUrls, setSignedUrls] = useState({}); // { [staffId]: signedUrl }
+  const [signedUrls, setSignedUrls] = useState({});
   const pendingRef = useRef(new Set());
 
   useEffect(() => {
@@ -183,7 +172,6 @@ function useStaffSignedUrls(staffList) {
     );
 
     if (toFetch.length === 0) {
-      // Serve all from cache
       const fromCache = {};
       staffList.forEach((s) => {
         const cached = getCachedSignedUrl(s.id);
@@ -195,10 +183,8 @@ function useStaffSignedUrls(staffList) {
       return;
     }
 
-    // Mark as in-flight
     toFetch.forEach((s) => pendingRef.current.add(s.id));
 
-    // Seed immediately from cache for staff we already have
     const immediate = {};
     staffList.forEach((s) => {
       const cached = getCachedSignedUrl(s.id);
@@ -208,7 +194,6 @@ function useStaffSignedUrls(staffList) {
       setSignedUrls((prev) => ({ ...prev, ...immediate }));
     }
 
-    // Fetch the rest concurrently
     Promise.allSettled(
       toFetch.map(async (s) => {
         const url = await fetchSignedUrl(s.id);
@@ -226,7 +211,6 @@ function useStaffSignedUrls(staffList) {
         setSignedUrls((prev) => ({ ...prev, ...fetched }));
       }
     });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [staffList]);
 
   return signedUrls;
@@ -781,9 +765,6 @@ function ContractDetailsStep({form, branches, positionRates = [], onChange, bran
   );
 }
 
-// ---------------------------------------------------------------------------
-// PersonalBalancesStep
-// ---------------------------------------------------------------------------
 function PersonalBalancesStep({ balanceForm, onBalanceChange, readOnlyLoans = false, openingLoanRows = [] }) {
   const totalSavings = toNum(balanceForm.cbu) + toNum(balanceForm.cashbond) + toNum(balanceForm.utility);
   const totalBalances =
@@ -832,9 +813,6 @@ function PersonalBalancesStep({ balanceForm, onBalanceChange, readOnlyLoans = fa
   );
 }
 
-// ---------------------------------------------------------------------------
-// StaffProfileModal — receives signedUrls map from parent
-// ---------------------------------------------------------------------------
 function StaffProfileModal({ staff, signedPhotoUrl, onClose, branchNameById }) {
   const [tab, setTab] = useState("staff");
   const [leaveKind, setLeaveKind] = useState("All");
@@ -1490,13 +1468,8 @@ function StaffProfileModal({ staff, signedPhotoUrl, onClose, branchNameById }) {
                         </thead>
                         <tbody>
                           <tr>
-                            {/* THIS is the 2025 13th month base from bonus */}
                             <td>{money(bonus15Data.base || 0)}</td>
-
-                            {/* percentage from bonus.jsx */}
                             <td>{bonus15Data.percentage}%</td>
-
-                            {/* result from bonus.jsx */}
                             <td>{money(bonus15Data.result)}</td>
                           </tr>
                         </tbody>
@@ -1517,9 +1490,6 @@ function StaffProfileModal({ staff, signedPhotoUrl, onClose, branchNameById }) {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Main export
-// ---------------------------------------------------------------------------
 export default function StaffInformation() {
   const readUser = () => {
     try { return JSON.parse(localStorage.getItem("user") || "null"); } catch { return null; }
@@ -1559,7 +1529,6 @@ export default function StaffInformation() {
     motorcycle_loan: "", pag_ibig_loan: "", other_receivable: "", staff_accounts_payable: "",
   });
 
-  // ✅ Fetch signed URLs for all loaded staff that have a photo_url (Spaces key)
   const signedUrls = useStaffSignedUrls(staff);
 
   const branchMap = useMemo(() => {
@@ -1863,7 +1832,6 @@ export default function StaffInformation() {
         const fd = new FormData();
         fd.append("photo", photoFile);
         await api.post(`/staff/${editStaff.id}/photo`, fd);
-        // Evict cache so fresh signed URL is fetched on next render
         _signedUrlCache.delete(editStaff.id);
       }
 
@@ -1938,7 +1906,7 @@ export default function StaffInformation() {
                   <tr><td colSpan={11} className="empty">No staff found.</td></tr>
                 ) : (
                   filteredStaff.map((s) => {
-                    // ✅ Use signedUrls map — no more local path construction
+                    // Use signedUrls map — no more local path construction
                     const photoSrc = signedUrls[s.id] || "";
                     return (
                       <tr key={s.id}>

@@ -20,9 +20,12 @@ const toInt = (v) => {
 const toStr = (v) => String(v ?? "").trim();
 
 const roleLower = (req) => String(req.user?.role || "").trim().toLowerCase();
+
 const isAdmin = (req) => roleLower(req) === "admin";
 const isHr = (req) => roleLower(req) === "hr";
 const isAccounting = (req) => roleLower(req) === "accounting";
+const isTread = (req) => roleLower(req) === "tread";
+
 const isBranchManager = (req) => roleLower(req) === "branch manager";
 const isAreaManager = (req) => roleLower(req) === "area manager";
 const isRegionalManager = (req) => roleLower(req) === "regional manager";
@@ -32,6 +35,28 @@ const isVicePresident = (req) => roleLower(req) === "vice president";
 const isSeniorVicePresident = (req) =>
   roleLower(req) === "senior vice president";
 const isPresident = (req) => roleLower(req) === "president";
+
+const canViewAllLoans = (req) =>
+  isAdmin(req) ||
+  isHr(req) ||
+  isAccounting(req) ||
+  isTread(req) ||
+  isAssistantVicePresident(req) ||
+  isVicePresident(req) ||
+  isSeniorVicePresident(req) ||
+  isPresident(req);
+
+const canDownloadLoanFiles = (req) =>
+  isAdmin(req) ||
+  isHr(req) ||
+  isAccounting(req) ||
+  isTread(req) ||
+  isAreaManager(req) ||
+  isRegionalManager(req) ||
+  isAssistantVicePresident(req) ||
+  isVicePresident(req) ||
+  isSeniorVicePresident(req) ||
+  isPresident(req);
 
 const getUserBranchCode = (req) => toStr(req.user?.branch_id);
 const getUserArea = (req) => toStr(req.user?.area);
@@ -166,15 +191,7 @@ const loanSelectFields = `
 /* ---------------- GET all loans ---------------- */
 router.get("/loan-requests", requireAuth, async (req, res) => {
   try {
-    if (
-      isAdmin(req) ||
-      isHr(req) ||
-      isAccounting(req) ||
-      isAssistantVicePresident(req) ||
-      isVicePresident(req) ||
-      isSeniorVicePresident(req) ||
-      isPresident(req)
-    ) {
+    if (canViewAllLoans(req)) {
       const r = await pool.query(
         `
         SELECT
@@ -257,6 +274,22 @@ router.get("/loan-requests/staff/:staffId", requireAuth, async (req, res) => {
     const staffId = toInt(req.params.staffId);
     if (!staffId) return res.status(400).json({ message: "Invalid staff id" });
 
+    if (canViewAllLoans(req)) {
+      const r = await pool.query(
+        `
+        SELECT
+          ${loanSelectFields}
+        FROM public.loan_requests lr
+        LEFT JOIN public.staff s ON s.id = lr.staff_id
+        WHERE lr.staff_id = $1::int
+        ORDER BY lr.id DESC
+        `,
+        [staffId]
+      );
+
+      return res.json(r.rows);
+    }
+
     const s = await pool.query(
       `
       SELECT id, branch_id, area, region
@@ -322,6 +355,7 @@ router.post(
     "admin",
     "hr",
     "accounting",
+    "tread",
     "branch manager",
     "area manager",
     "regional manager",
@@ -496,7 +530,7 @@ router.post(
 router.post(
   "/loan-requests/:id/approved-file",
   requireAuth,
-  requireRole(["admin", "vice president", "senior vice president", "president"]),
+  requireRole(["admin", "hr", "accounting", "tread", "vice president", "senior vice president", "president"]),
   upload.single("attachment"),
   async (req, res) => {
     const client = await pool.connect();
@@ -588,65 +622,31 @@ router.get("/loan-requests/:id/download/:type", requireAuth, async (req, res) =>
 
     const row = r.rows[0];
 
-    if (type === "request") {
-      if (
-        !(
-          isAdmin(req) ||
-          isAreaManager(req) ||
-          isRegionalManager(req) ||
-          isAssistantVicePresident(req) ||
-          isVicePresident(req) ||
-          isSeniorVicePresident(req) ||
-          isPresident(req)
-        )
-      ) {
-        return res.status(403).json({ message: "Access denied" });
-      }
-
-      if (!row.attachment_path) {
-        return res.status(404).json({ message: "No request file found" });
-      }
-
-      const rel = String(row.attachment_path).replace(/^\/uploads\//, "");
-      const filePath = path.join(__dirname, "..", "uploads", rel);
-
-      if (!fs.existsSync(filePath)) {
-        return res.status(404).json({ message: "Request file not found" });
-      }
-
-      return res.download(filePath, row.attachment_name || path.basename(filePath));
+    if (!canDownloadLoanFiles(req)) {
+      return res.status(403).json({ message: "Access denied" });
     }
 
-    if (type === "approved") {
-      if (
-        !(
-          isAdmin(req) ||
-          isAreaManager(req) ||
-          isRegionalManager(req) ||
-          isAssistantVicePresident(req) ||
-          isVicePresident(req) ||
-          isSeniorVicePresident(req) ||
-          isPresident(req)
-        )
-      ) {
-        return res.status(403).json({ message: "Access denied" });
-      }
+    const targetPath =
+      type === "request" ? row.attachment_path : row.approved_attachment_path;
+    const targetName =
+      type === "request" ? row.attachment_name : row.approved_attachment_name;
 
-      if (!row.approved_attachment_path) {
-        return res.status(404).json({ message: "No approved file found" });
-      }
-
-      const rel = String(row.approved_attachment_path).replace(/^\/uploads\//, "");
-      const filePath = path.join(__dirname, "..", "uploads", rel);
-
-      if (!fs.existsSync(filePath)) {
-        return res.status(404).json({ message: "Approved file not found" });
-      }
-
-      return res.download(filePath, row.approved_attachment_name || path.basename(filePath));
+    if (!targetPath) {
+      return res.status(404).json({
+        message: type === "request" ? "No request file found" : "No approved file found",
+      });
     }
 
-    return res.status(400).json({ message: "Invalid type" });
+    const rel = String(targetPath).replace(/^\/uploads\//, "");
+    const filePath = path.join(__dirname, "..", "uploads", rel);
+
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({
+        message: type === "request" ? "Request file not found" : "Approved file not found",
+      });
+    }
+
+    return res.download(filePath, targetName || path.basename(filePath));
   } catch (e) {
     console.error("GET /api/loan-requests/:id/download/:type ERROR:", e);
     return res.status(500).json({ message: e?.message || "Server error" });

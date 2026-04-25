@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import * as XLSX from "xlsx";
 import api from "../api/axiosClient";
 import "../styles/Consolidation.css";
 
@@ -11,6 +12,21 @@ const toNum = (v) => {
 const toStr = (v) => String(v ?? "").trim();
 const norm = (v) => toStr(v).toLowerCase();
 const fmtDate = (v) => (v ? String(v).split("T")[0] : "-");
+
+const MONTHS = [
+  { key: "01", label: "January" },
+  { key: "02", label: "February" },
+  { key: "03", label: "March" },
+  { key: "04", label: "April" },
+  { key: "05", label: "May" },
+  { key: "06", label: "June" },
+  { key: "07", label: "July" },
+  { key: "08", label: "August" },
+  { key: "09", label: "September" },
+  { key: "10", label: "October" },
+  { key: "11", label: "November" },
+  { key: "12", label: "December" },
+];
 
 const displayName = (row) => {
   const ln = toStr(row?.last_name);
@@ -50,17 +66,57 @@ const getPositionRank = (position) => {
   return idx === -1 ? 999 : idx;
 };
 
+const monthStartDate = (year, monthKey) => `${year}-${monthKey}-01`;
+
+const getMonthlyRate = (row, historyRows, year, monthKey) => {
+  const today = new Date();
+  const nowYear = today.getFullYear();
+  const currentMonth = today.getMonth() + 1;
+  const monthNum = Number(monthKey);
+
+  if (year === nowYear && monthNum > currentMonth) {
+    return {
+      salary: null,
+      ecola: null,
+    };
+  }
+
+  const monthDate = monthStartDate(year, monthKey);
+
+  const validHistory = Array.isArray(historyRows)
+    ? historyRows
+        .filter(
+          (h) =>
+            toStr(h.effective_date) &&
+            String(h.effective_date).slice(0, 10) <= monthDate
+        )
+        .sort((a, b) =>
+          String(a.effective_date)
+            .slice(0, 10)
+            .localeCompare(String(b.effective_date).slice(0, 10))
+        )
+    : [];
+
+  const latest = validHistory[validHistory.length - 1];
+
+  return {
+    salary: latest ? toNum(latest.salary) : toNum(row.salary),
+    ecola: latest ? toNum(latest.ecola) : toNum(row.ecola),
+  };
+};
+
 export default function Consolidation() {
   const navigate = useNavigate();
+  const currentYear = new Date().getFullYear();
+
+  const [selectedYear, setSelectedYear] = useState(currentYear);
 
   const [staff, setStaff] = useState([]);
   const [branches, setBranches] = useState([]);
+  const [salaryHistoryMap, setSalaryHistoryMap] = useState({});
   const [loadingStaff, setLoadingStaff] = useState(false);
   const [search, setSearch] = useState("");
 
-  const [divisionFilter, setDivisionFilter] = useState("");
-  const [regionFilter, setRegionFilter] = useState("");
-  const [areaFilter, setAreaFilter] = useState("");
   const [branchFilter, setBranchFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("All");
 
@@ -73,11 +129,32 @@ export default function Consolidation() {
         api.get("/branches"),
       ]);
 
-      setStaff(Array.isArray(staffRes.data) ? staffRes.data : []);
+      const staffRows = Array.isArray(staffRes.data) ? staffRes.data : [];
+      setStaff(staffRows);
       setBranches(Array.isArray(branchesRes.data) ? branchesRes.data : []);
+
+      const historyPairs = await Promise.all(
+        staffRows
+          .filter((s) => toStr(s.employee_no))
+          .map(async (s) => {
+            try {
+              const res = await api.get(
+                `/salary-history/${encodeURIComponent(s.employee_no)}`
+              );
+              return [
+                String(s.employee_no),
+                Array.isArray(res.data) ? res.data : [],
+              ];
+            } catch {
+              return [String(s.employee_no), []];
+            }
+          })
+      );
+
+      setSalaryHistoryMap(Object.fromEntries(historyPairs));
     } catch (err) {
-      console.error("Failed to fetch staff/branches:", err);
-      alert("Failed to load staff source list.");
+      console.error("Failed to fetch:", err);
+      alert("Failed to load staff list.");
     } finally {
       setLoadingStaff(false);
     }
@@ -89,9 +166,7 @@ export default function Consolidation() {
 
   const branchMap = useMemo(() => {
     const map = new Map();
-    branches.forEach((b) => {
-      map.set(String(b.id), b);
-    });
+    branches.forEach((b) => map.set(String(b.id), b));
     return map;
   }, [branches]);
 
@@ -99,9 +174,6 @@ export default function Consolidation() {
     return staff.map((s) => {
       const branch = branchMap.get(String(s.branch_id));
 
-      const division = toStr(s.division || branch?.division);
-      const region = toStr(s.region || branch?.region);
-      const area = toStr(s.area || branch?.area);
       const branchCode = toStr(branch?.code);
       const branchName = toStr(branch?.name);
       const branchLabel =
@@ -109,9 +181,6 @@ export default function Consolidation() {
 
       return {
         ...s,
-        _division: division,
-        _region: region,
-        _area: area,
         _branchCode: branchCode,
         _branchName: branchName,
         _branchLabel: branchLabel,
@@ -120,88 +189,21 @@ export default function Consolidation() {
     });
   }, [staff, branchMap]);
 
-  const divisionOptions = useMemo(() => {
-    return uniqueSorted(enrichedStaff.map((s) => s._division));
-  }, [enrichedStaff]);
-
-  const regionOptions = useMemo(() => {
-    return uniqueSorted(
-      enrichedStaff
-        .filter((s) => !divisionFilter || norm(s._division) === norm(divisionFilter))
-        .map((s) => s._region)
-    );
-  }, [enrichedStaff, divisionFilter]);
-
-  const areaOptions = useMemo(() => {
-    return uniqueSorted(
-      enrichedStaff
-        .filter((s) => {
-          if (divisionFilter && norm(s._division) !== norm(divisionFilter)) return false;
-          if (regionFilter && norm(s._region) !== norm(regionFilter)) return false;
-          return true;
-        })
-        .map((s) => s._area)
-    );
-  }, [enrichedStaff, divisionFilter, regionFilter]);
-
   const branchOptions = useMemo(() => {
-    return uniqueSorted(
-      enrichedStaff
-        .filter((s) => {
-          if (divisionFilter && norm(s._division) !== norm(divisionFilter)) return false;
-          if (regionFilter && norm(s._region) !== norm(regionFilter)) return false;
-          if (areaFilter && norm(s._area) !== norm(areaFilter)) return false;
-          return true;
-        })
-        .map((s) => s._branchLabel)
-    );
-  }, [enrichedStaff, divisionFilter, regionFilter, areaFilter]);
-
-  const totalBeforeSearch = useMemo(() => {
-    return enrichedStaff.filter((s) => {
-      if (divisionFilter && norm(s._division) !== norm(divisionFilter)) return false;
-      if (regionFilter && norm(s._region) !== norm(regionFilter)) return false;
-      if (areaFilter && norm(s._area) !== norm(areaFilter)) return false;
-      if (branchFilter && norm(s._branchLabel) !== norm(branchFilter)) return false;
-
-      const status = norm(s._status || "active");
-      if (statusFilter !== "All" && status !== norm(statusFilter)) return false;
-
-      return true;
-    }).length;
-  }, [
-    enrichedStaff,
-    divisionFilter,
-    regionFilter,
-    areaFilter,
-    branchFilter,
-    statusFilter,
-  ]);
+    return uniqueSorted(enrichedStaff.map((s) => s._branchLabel));
+  }, [enrichedStaff]);
 
   const filteredStaff = useMemo(() => {
     const q = search.toLowerCase().trim();
 
     const filtered = enrichedStaff.filter((s) => {
-      if (divisionFilter && norm(s._division) !== norm(divisionFilter)) return false;
-      if (regionFilter && norm(s._region) !== norm(regionFilter)) return false;
-      if (areaFilter && norm(s._area) !== norm(areaFilter)) return false;
       if (branchFilter && norm(s._branchLabel) !== norm(branchFilter)) return false;
 
       const status = norm(s._status || "active");
       if (statusFilter !== "All" && status !== norm(statusFilter)) return false;
 
-      const employeeNo = toStr(s.employee_no);
-      const employeeName = displayName(s);
-      const position = toStr(s.position);
-      const branchName = toStr(s._branchName);
-      const branchCode = toStr(s._branchCode);
-      const division = toStr(s._division);
-      const region = toStr(s._region);
-      const area = toStr(s._area);
-      const tinNo = toStr(s.tin_no);
-
       const hay =
-        `${employeeNo} ${employeeName} ${position} ${branchName} ${branchCode} ${division} ${region} ${area} ${status} ${tinNo}`.toLowerCase();
+        `${s.employee_no} ${displayName(s)} ${s.position} ${s._branchLabel} ${s.tin_no} ${status}`.toLowerCase();
 
       return !q || hay.includes(q);
     });
@@ -212,63 +214,70 @@ export default function Consolidation() {
 
       if (rankA !== rankB) return rankA - rankB;
 
-      const posCompare = toStr(a.position).localeCompare(toStr(b.position));
-      if (posCompare !== 0) return posCompare;
-
-      const nameCompare = displayName(a).localeCompare(displayName(b));
-      if (nameCompare !== 0) return nameCompare;
-
-      return toStr(a.employee_no).localeCompare(toStr(b.employee_no));
+      return displayName(a).localeCompare(displayName(b));
     });
-  }, [
-    enrichedStaff,
-    search,
-    divisionFilter,
-    regionFilter,
-    areaFilter,
-    branchFilter,
-    statusFilter,
-  ]);
+  }, [enrichedStaff, search, branchFilter, statusFilter]);
 
-  const totals = useMemo(() => {
-    return filteredStaff.reduce(
-      (acc, row) => {
-        const salary = toNum(row.salary);
-        const ecola = toNum(row.ecola);
-        const sssEe = toNum(row.sss_ee);
-        const philhealthEe = toNum(row.ph_ee ?? row.philhealth_ee);
-        const pagibigEe = toNum(row.hdmf_ee ?? row.pagibig_ee);
-        const tax = toNum(row.tax);
+  const buildExportRows = () => {
+    return filteredStaff.map((row, i) => {
+      const historyRows = salaryHistoryMap[String(row.employee_no)] || [];
 
-        acc.salary += salary;
-        acc.ecola += ecola;
-        acc.total_compensation += salary + ecola;
+      let totalSalary = 0;
+      let totalEcola = 0;
 
-        acc.sss_ee += sssEe;
-        acc.philhealth_ee += philhealthEe;
-        acc.pagibig_ee += pagibigEe;
-        acc.total_ee += sssEe + philhealthEe + pagibigEe;
+      const exportRow = {
+        ID: i + 1,
+        "Employee No": row.employee_no || "-",
+        Name: displayName(row),
+        Position: row.position || "-",
+        Branch: row._branchLabel || "-",
+        Status: row._status || "-",
+        "Start Date": fmtDate(row.start_date),
+        Regularization: fmtDate(row.regularization_date),
+        TIN: row.tin_no || "-",
+        Tax: toNum(row.tax),
+      };
 
-        acc.tax += tax;
-        return acc;
-      },
-      {
-        salary: 0,
-        ecola: 0,
-        total_compensation: 0,
-        sss_ee: 0,
-        philhealth_ee: 0,
-        pagibig_ee: 0,
-        total_ee: 0,
-        tax: 0,
-      }
-    );
-  }, [filteredStaff]);
+      MONTHS.forEach((m) => {
+        const rate = getMonthlyRate(row, historyRows, selectedYear, m.key);
+
+        if (rate.salary !== null) totalSalary += rate.salary;
+        if (rate.ecola !== null) totalEcola += rate.ecola;
+
+        exportRow[`${m.label} Salary`] =
+          rate.salary === null ? "-" : rate.salary;
+        exportRow[`${m.label} ECOLA`] =
+          rate.ecola === null ? "-" : rate.ecola;
+      });
+
+      exportRow["Total Salary"] = totalSalary;
+      exportRow["Total ECOLA"] = totalEcola;
+      exportRow["Total Compensation"] = totalSalary + totalEcola;
+
+      return exportRow;
+    });
+  };
+
+  const exportExcel = () => {
+    const rows = buildExportRows();
+
+    if (!rows.length) {
+      alert("No data to export.");
+      return;
+    }
+
+    const worksheet = XLSX.utils.json_to_sheet(rows);
+    const workbook = XLSX.utils.book_new();
+
+    worksheet["!cols"] = Object.keys(rows[0]).map((key) => ({
+      wch: Math.max(14, key.length + 2),
+    }));
+
+    XLSX.utils.book_append_sheet(workbook, worksheet, "2316 Consolidation");
+    XLSX.writeFile(workbook, `2316-Consolidation-${selectedYear}.xlsx`);
+  };
 
   const clearFilters = () => {
-    setDivisionFilter("");
-    setRegionFilter("");
-    setAreaFilter("");
     setBranchFilter("");
     setStatusFilter("All");
     setSearch("");
@@ -279,93 +288,55 @@ export default function Consolidation() {
       <div className="sys-header">
         <div>
           <h2 className="sys-title">2316 Consolidation</h2>
-          <p className="sys-subtitle">
-            Employee list result for 2316 consolidation reference.
-          </p>
         </div>
 
-        <button
-          type="button"
-          className="conso-btn conso-btn-secondary"
-          onClick={() => navigate("/system-update")}
-        >
-          ← Back
-        </button>
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+          <button
+            className="conso-btn conso-btn-secondary"
+            onClick={exportExcel}
+            type="button"
+          >
+            Export Excel
+          </button>
+
+          <button
+            className="conso-btn conso-btn-secondary"
+            onClick={() => navigate("/system-update")}
+            type="button"
+          >
+            ← Back
+          </button>
+        </div>
       </div>
 
       <div className="sys-card conso-card">
-        <div className="sys-card-head">
-          <div>
-            <div className="sys-card-title">Employee List</div>
-            <div className="sys-card-meta">
-              Salary, employee contributions, and tax reference.
-            </div>
-          </div>
-        </div>
-
         <div className="sys-card-body">
           <div className="conso-filters-grid">
-            <input
+            <select
               className="conso-input"
-              list="conso-division-list"
-              placeholder="Division..."
-              value={divisionFilter}
-              onChange={(e) => {
-                setDivisionFilter(e.target.value);
-                setRegionFilter("");
-                setAreaFilter("");
-                setBranchFilter("");
-              }}
-            />
-            <datalist id="conso-division-list">
-              {divisionOptions.map((item) => (
-                <option key={item} value={item} />
-              ))}
-            </datalist>
+              value={selectedYear}
+              onChange={(e) => setSelectedYear(Number(e.target.value))}
+            >
+              {Array.from({ length: 8 }).map((_, i) => {
+                const year = currentYear - i;
+                return (
+                  <option key={year} value={year}>
+                    Year: {year}
+                  </option>
+                );
+              })}
+            </select>
 
             <input
               className="conso-input"
-              list="conso-region-list"
-              placeholder="Region..."
-              value={regionFilter}
-              onChange={(e) => {
-                setRegionFilter(e.target.value);
-                setAreaFilter("");
-                setBranchFilter("");
-              }}
-            />
-            <datalist id="conso-region-list">
-              {regionOptions.map((item) => (
-                <option key={item} value={item} />
-              ))}
-            </datalist>
-
-            <input
-              className="conso-input"
-              list="conso-area-list"
-              placeholder="Area..."
-              value={areaFilter}
-              onChange={(e) => {
-                setAreaFilter(e.target.value);
-                setBranchFilter("");
-              }}
-            />
-            <datalist id="conso-area-list">
-              {areaOptions.map((item) => (
-                <option key={item} value={item} />
-              ))}
-            </datalist>
-
-            <input
-              className="conso-input"
-              list="conso-branch-list"
+              list="branch-list"
               placeholder="Branch..."
               value={branchFilter}
               onChange={(e) => setBranchFilter(e.target.value)}
             />
-            <datalist id="conso-branch-list">
-              {branchOptions.map((item) => (
-                <option key={item} value={item} />
+            <datalist id="branch-list">
+              {branchOptions.map((b) => (
+                <option key={b} value={b} />
               ))}
             </datalist>
 
@@ -380,164 +351,128 @@ export default function Consolidation() {
             </select>
           </div>
 
-          <div className="conso-summary">
-            <div className="summary-card">
-              <div className="summary-label">Salary</div>
-              <div className="summary-value">{totals.salary.toLocaleString()}</div>
-            </div>
-            <div className="summary-card">
-              <div className="summary-label">ECOLA</div>
-              <div className="summary-value">{totals.ecola.toLocaleString()}</div>
-            </div>
-            <div className="summary-card">
-              <div className="summary-label">Total Compensation</div>
-              <div className="summary-value">{totals.total_compensation.toLocaleString()}</div>
-            </div>
-            <div className="summary-card">
-              <div className="summary-label">SSS</div>
-              <div className="summary-value">{totals.sss_ee.toLocaleString()}</div>
-            </div>
-            <div className="summary-card">
-              <div className="summary-label">PH</div>
-              <div className="summary-value">{totals.philhealth_ee.toLocaleString()}</div>
-            </div>
-            <div className="summary-card">
-              <div className="summary-label">Pag-IBIG</div>
-              <div className="summary-value">{totals.pagibig_ee.toLocaleString()}</div>
-            </div>
-            <div className="summary-card">
-              <div className="summary-label">Total EE</div>
-              <div className="summary-value">{totals.total_ee.toLocaleString()}</div>
-            </div>
-            <div className="summary-card">
-              <div className="summary-label">Tax</div>
-              <div className="summary-value">{totals.tax.toLocaleString()}</div>
-            </div>
-          </div>
-
           <div className="conso-search-row">
-            <div className="pill">
-              Total before search: <strong>{totalBeforeSearch}</strong>
-            </div>
-
             <input
               className="conso-input conso-search-grow"
               type="text"
-              placeholder="Search employee no, name, TIN, position, or branch..."
+              placeholder="Search employee..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
 
             <button
-              type="button"
               className="conso-btn conso-btn-secondary"
               onClick={clearFilters}
+              type="button"
             >
-              Clear Filters
+              Clear
             </button>
           </div>
 
           {loadingStaff ? (
             <p className="sys-mini">Loading staff list...</p>
-          ) : filteredStaff.length === 0 ? (
-            <p className="sys-mini">No staff found.</p>
           ) : (
-            <div className="conso-payroll-card">
-              <div className="conso-payroll-head">
-                <div>
-                  <div className="conso-payroll-title">Consolidation:</div>
-                  <div className="conso-payroll-sub">
-                    Employees: {filteredStaff.length}
-                  </div>
-                </div>
-              </div>
+            <div className="conso-payroll-wrap">
+              <table className="conso-payroll-table">
+                <thead>
+                  <tr>
+                    <th rowSpan={2}>ID</th>
+                    <th rowSpan={2}>Employee No</th>
+                    <th rowSpan={2}>Name</th>
+                    <th rowSpan={2}>Position</th>
+                    <th rowSpan={2}>Branch</th>
+                    <th rowSpan={2}>Status</th>
+                    <th rowSpan={2}>Start Date</th>
+                    <th rowSpan={2}>Regularization</th>
+                    <th rowSpan={2}>TIN</th>
+                    <th rowSpan={2}>Tax</th>
 
-              <div className="conso-payroll-wrap">
-                <table className="conso-payroll-table">
-                  <thead>
-                    <tr>
-                      <th rowSpan={2}>ID</th>
-                      <th rowSpan={2}>Employee No</th>
-                      <th rowSpan={2}>Full Name</th>
-                      <th rowSpan={2}>Position</th>
-                      <th rowSpan={2}>Division</th>
-                      <th rowSpan={2}>Region</th>
-                      <th rowSpan={2}>Area</th>
-                      <th rowSpan={2}>Branch</th>
-                      <th rowSpan={2}>Status</th>
-                      <th rowSpan={2}>Start Date</th>
-                      <th rowSpan={2}>Date Regularized</th>
-                      <th rowSpan={2}>TIN No</th>
-                      <th colSpan={3}>Earnings</th>
-                      <th colSpan={5}>Employee (EE)</th>
-                    </tr>
-                    <tr>
-                      <th>Salary</th>
-                      <th>ECOLA</th>
-                      <th>Total Compensation</th>
-                      <th>SSS</th>
-                      <th>PH</th>
-                      <th>Pag-IBIG</th>
-                      <th>Total EE</th>
-                      <th>Tax</th>
-                    </tr>
-                  </thead>
+                    {MONTHS.map((m) => (
+                      <th key={m.key} colSpan={2}>
+                        {m.label}
+                      </th>
+                    ))}
 
-                  <tbody>
-                    {filteredStaff.map((item, idx) => {
-                      const salary = toNum(item.salary);
-                      const ecola = toNum(item.ecola);
-                      const sssEe = toNum(item.sss_ee);
-                      const philhealthEe = toNum(item.ph_ee ?? item.philhealth_ee);
-                      const pagibigEe = toNum(item.hdmf_ee ?? item.pagibig_ee);
-                      const totalEe = sssEe + philhealthEe + pagibigEe;
+                    <th rowSpan={2}>Total Salary</th>
+                    <th rowSpan={2}>Total ECOLA</th>
+                    <th rowSpan={2}>Total Compensation</th>
+                  </tr>
 
-                      return (
-                        <tr key={item.id}>
-                          <td>{idx + 1}</td>
-                          <td>{toStr(item.employee_no) || "-"}</td>
-                          <td className="td-strong">{displayName(item)}</td>
-                          <td>{item.position || "-"}</td>
-                          <td>{item._division || "-"}</td>
-                          <td>{item._region || "-"}</td>
-                          <td>{item._area || "-"}</td>
-                          <td>{item._branchLabel || "-"}</td>
-                          <td>{item._status || "-"}</td>
-                          <td>{fmtDate(item.start_date)}</td>
-                          <td>{fmtDate(item.regularization_date)}</td>
-                          <td>{toStr(item.tin_no) || "-"}</td>
+                  <tr>
+                    {MONTHS.map((m) => (
+                      <React.Fragment key={m.key}>
+                        <th>Salary</th>
+                        <th>ECOLA</th>
+                      </React.Fragment>
+                    ))}
+                  </tr>
+                </thead>
 
-                          <td>{salary.toLocaleString()}</td>
-                          <td>{ecola.toLocaleString()}</td>
-                          <td>{(salary + ecola).toLocaleString()}</td>
+                <tbody>
+                  {filteredStaff.map((row, i) => {
+                    const historyRows = salaryHistoryMap[String(row.employee_no)] || [];
 
-                          <td>{sssEe.toLocaleString()}</td>
-                          <td>{philhealthEe.toLocaleString()}</td>
-                          <td>{pagibigEe.toLocaleString()}</td>
-                          <td>{totalEe.toLocaleString()}</td>
-                          <td>{toNum(item.tax).toLocaleString()}</td>
-                        </tr>
+                    let totalSalary = 0;
+                    let totalEcola = 0;
+
+                    const monthlyValues = MONTHS.map((m) => {
+                      const rate = getMonthlyRate(
+                        row,
+                        historyRows,
+                        selectedYear,
+                        m.key
                       );
-                    })}
 
-                    <tr className="conso-total-row">
-                      <td colSpan={12}>Totals</td>
-                      <td>{totals.salary.toLocaleString()}</td>
-                      <td>{totals.ecola.toLocaleString()}</td>
-                      <td>{totals.total_compensation.toLocaleString()}</td>
-                      <td>{totals.sss_ee.toLocaleString()}</td>
-                      <td>{totals.philhealth_ee.toLocaleString()}</td>
-                      <td>{totals.pagibig_ee.toLocaleString()}</td>
-                      <td>{totals.total_ee.toLocaleString()}</td>
-                      <td>{totals.tax.toLocaleString()}</td>
+                      if (rate.salary !== null) totalSalary += rate.salary;
+                      if (rate.ecola !== null) totalEcola += rate.ecola;
+
+                      return rate;
+                    });
+
+                    const totalComp = totalSalary + totalEcola;
+
+                    return (
+                      <tr key={row.id}>
+                        <td>{i + 1}</td>
+                        <td>{row.employee_no || "-"}</td>
+                        <td>{displayName(row)}</td>
+                        <td>{row.position || "-"}</td>
+                        <td>{row._branchLabel}</td>
+                        <td>{row._status}</td>
+                        <td>{fmtDate(row.start_date)}</td>
+                        <td>{fmtDate(row.regularization_date)}</td>
+                        <td>{row.tin_no || "-"}</td>
+                        <td>{toNum(row.tax).toLocaleString()}</td>
+
+                        {monthlyValues.map((rate, idx) => (
+                          <React.Fragment key={idx}>
+                            <td>
+                              {rate.salary === null
+                                ? "-"
+                                : rate.salary.toLocaleString()}
+                            </td>
+                            <td>
+                              {rate.ecola === null
+                                ? "-"
+                                : rate.ecola.toLocaleString()}
+                            </td>
+                          </React.Fragment>
+                        ))}
+
+                        <td>{totalSalary.toLocaleString()}</td>
+                        <td>{totalEcola.toLocaleString()}</td>
+                        <td>{totalComp.toLocaleString()}</td>
+                      </tr>
+                    );
+                  })}
+
+                  {filteredStaff.length === 0 && (
+                    <tr>
+                      <td colSpan={37}>No staff found.</td>
                     </tr>
-                  </tbody>
-                </table>
-              </div>
-
-              <div className="conso-payroll-tip">
-                Tip: scroll horizontally to view all columns.
-              </div>
+                  )}
+                </tbody>
+              </table>
             </div>
           )}
         </div>

@@ -15,6 +15,11 @@ const uniqSorted = (arr) =>
     a.localeCompare(b)
   );
 
+const isPosition = (position, names = []) => {
+  const p = norm(position);
+  return names.some((x) => p === norm(x));
+};
+
 export default function Departments() {
   const [departments, setDepartments] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -115,7 +120,19 @@ export default function Departments() {
     ];
   }, [enrichedDeptStaff, divisionFilter, regionFilter, areaFilter]);
 
+  const hasStaffFilter = useMemo(() => {
+    return (
+      !!norm(staffSearch) ||
+      divisionFilter !== "All" ||
+      regionFilter !== "All" ||
+      areaFilter !== "All" ||
+      branchFilter !== "All"
+    );
+  }, [staffSearch, divisionFilter, regionFilter, areaFilter, branchFilter]);
+
   const filteredDeptStaff = useMemo(() => {
+    if (!hasStaffFilter) return [];
+
     const q = norm(staffSearch);
 
     return enrichedDeptStaff.filter((s) => {
@@ -146,12 +163,123 @@ export default function Departments() {
       return !q || hay.includes(q);
     });
   }, [
+    hasStaffFilter,
     enrichedDeptStaff,
     divisionFilter,
     regionFilter,
     areaFilter,
     branchFilter,
     staffSearch,
+  ]);
+
+  const hierarchyRows = useMemo(() => {
+    if (!hasStaffFilter) return [];
+
+    const selectedDivisionStaff = enrichedDeptStaff.filter((s) => {
+      if (divisionFilter !== "All" && s._division !== divisionFilter) return false;
+      if (regionFilter !== "All" && s._region !== regionFilter) return false;
+      if (areaFilter !== "All" && s._area !== areaFilter) return false;
+      if (branchFilter !== "All" && s._branchLabel !== branchFilter) return false;
+      return true;
+    });
+
+    if (divisionFilter !== "All" && regionFilter === "All" && areaFilter === "All") {
+      const managers = selectedDivisionStaff.filter((s) =>
+        isPosition(s.position, [
+          "Regional Manager",
+          "Acting Regional Manager",
+          "Area Manager",
+          "Acting Area Manager",
+          "Assistant Vice President",
+          "Vice President",
+        ])
+      );
+
+      return managers.map((m) => {
+        const handledRegions = uniqSorted(
+          selectedDivisionStaff
+            .filter((x) => {
+              if (isPosition(m.position, ["Area Manager", "Acting Area Manager"])) {
+                return x._area === m._area;
+              }
+              if (isPosition(m.position, ["Regional Manager", "Acting Regional Manager"])) {
+                return x._region === m._region;
+              }
+              return x._division === m._division;
+            })
+            .map((x) => x._region)
+        );
+
+        const handledAreas = uniqSorted(
+          selectedDivisionStaff
+            .filter((x) => {
+              if (isPosition(m.position, ["Area Manager", "Acting Area Manager"])) {
+                return x._area === m._area;
+              }
+              if (isPosition(m.position, ["Regional Manager", "Acting Regional Manager"])) {
+                return x._region === m._region;
+              }
+              return x._division === m._division;
+            })
+            .map((x) => x._area)
+        );
+
+        return {
+          manager: m,
+          title: m.position || "Manager",
+          handledRegions,
+          handledAreas,
+          handledBranches: uniqSorted(
+            selectedDivisionStaff
+              .filter((x) => handledAreas.includes(x._area))
+              .map((x) => x._branchLabel)
+          ),
+        };
+      });
+    }
+
+    if (regionFilter !== "All" && areaFilter === "All") {
+      const managers = selectedDivisionStaff.filter((s) =>
+        isPosition(s.position, ["Regional Manager", "Acting Regional Manager"])
+      );
+
+      return managers.map((m) => ({
+        manager: m,
+        title: m.position || "Regional Manager",
+        handledRegions: [m._region].filter(Boolean),
+        handledAreas: uniqSorted(
+          selectedDivisionStaff.filter((x) => x._region === m._region).map((x) => x._area)
+        ),
+        handledBranches: uniqSorted(
+          selectedDivisionStaff.filter((x) => x._region === m._region).map((x) => x._branchLabel)
+        ),
+      }));
+    }
+
+    if (areaFilter !== "All") {
+      const managers = selectedDivisionStaff.filter((s) =>
+        isPosition(s.position, ["Area Manager", "Acting Area Manager"])
+      );
+
+      return managers.map((m) => ({
+        manager: m,
+        title: m.position || "Area Manager",
+        handledRegions: [m._region].filter(Boolean),
+        handledAreas: [m._area].filter(Boolean),
+        handledBranches: uniqSorted(
+          selectedDivisionStaff.filter((x) => x._area === m._area).map((x) => x._branchLabel)
+        ),
+      }));
+    }
+
+    return [];
+  }, [
+    hasStaffFilter,
+    enrichedDeptStaff,
+    divisionFilter,
+    regionFilter,
+    areaFilter,
+    branchFilter,
   ]);
 
   const loadDepartments = async () => {
@@ -223,13 +351,18 @@ export default function Departments() {
 
     document.addEventListener("keydown", onKey);
     document.body.style.overflow = "hidden";
+
     return () => {
       document.removeEventListener("keydown", onKey);
       document.body.style.overflow = "";
     };
   }, [showModal, viewDept]);
 
-  const onChange = (e) => setForm((p) => ({ ...p, [e.target.name]: e.target.value }));
+  const onChange = (e) =>
+    setForm((p) => ({
+      ...p,
+      [e.target.name]: e.target.value,
+    }));
 
   const saveDepartment = async (e) => {
     e.preventDefault();
@@ -255,6 +388,7 @@ export default function Departments() {
 
   const deleteDepartment = async (id) => {
     if (!window.confirm("Delete this department?")) return;
+
     try {
       await api.delete(`/departments/${id}`);
       await loadDepartments();
@@ -268,6 +402,7 @@ export default function Departments() {
     setDeptStaff([]);
     resetViewFilters();
     setLoadingDeptStaff(true);
+
     try {
       const res = await api.get(`/departments/${d.id}/staff`);
       setDeptStaff(Array.isArray(res.data) ? res.data : []);
@@ -284,7 +419,10 @@ export default function Departments() {
     if (!q) return departments;
 
     return departments.filter((d) =>
-      [d.id, d.code, d.name, d.description].map((x) => norm(x)).join(" ").includes(q)
+      [d.id, d.code, d.name, d.description]
+        .map((x) => norm(x))
+        .join(" ")
+        .includes(q)
     );
   }, [departments, search]);
 
@@ -371,13 +509,25 @@ export default function Departments() {
                       <td>{d.description || "-"}</td>
                       <td>
                         <div className="actions">
-                          <button className="action-btn btn-view" onClick={() => openView(d)} type="button">
+                          <button
+                            className="action-btn btn-view"
+                            onClick={() => openView(d)}
+                            type="button"
+                          >
                             View
                           </button>
-                          <button className="action-btn btn-edit" onClick={() => openEdit(d)} type="button">
+                          <button
+                            className="action-btn btn-edit"
+                            onClick={() => openEdit(d)}
+                            type="button"
+                          >
                             Edit
                           </button>
-                          <button className="action-btn btn-danger" onClick={() => deleteDepartment(d.id)} type="button">
+                          <button
+                            className="action-btn btn-danger"
+                            onClick={() => deleteDepartment(d.id)}
+                            type="button"
+                          >
                             Delete
                           </button>
                         </div>
@@ -410,12 +560,23 @@ export default function Departments() {
 
                 <div className="field">
                   <label>Department Name</label>
-                  <input className="input" name="name" value={form.name} onChange={onChange} required />
+                  <input
+                    className="input"
+                    name="name"
+                    value={form.name}
+                    onChange={onChange}
+                    required
+                  />
                 </div>
 
                 <div className="field">
                   <label>Description</label>
-                  <textarea className="input" name="description" value={form.description} onChange={onChange} />
+                  <textarea
+                    className="input"
+                    name="description"
+                    value={form.description}
+                    onChange={onChange}
+                  />
                 </div>
               </div>
 
@@ -437,12 +598,14 @@ export default function Departments() {
           <div
             className="modal staff-profile-modal"
             onMouseDown={(e) => e.stopPropagation()}
-            style={{ maxWidth: 1100 }}
+            style={{ maxWidth: 1180 }}
           >
             <div className="modal-head">
               <div>
                 <h3>Department: {viewDept.name}</h3>
-                <div className="mini">Staff list under this department</div>
+                <div className="mini">
+                  Select Division, Region, Area, Branch, or Search to show staff hierarchy.
+                </div>
               </div>
               <button className="icon-btn" onClick={closeView} type="button">
                 ✕
@@ -480,11 +643,9 @@ export default function Departments() {
                     }}
                   />
                   <datalist id="dept-division-list">
-                    {divisionOptions
-                      .filter((v) => v !== "All")
-                      .map((v) => (
-                        <option key={`div-${v}`} value={v} />
-                      ))}
+                    {divisionOptions.filter((v) => v !== "All").map((v) => (
+                      <option key={`div-${v}`} value={v} />
+                    ))}
                   </datalist>
                 </div>
 
@@ -502,11 +663,9 @@ export default function Departments() {
                     }}
                   />
                   <datalist id="dept-region-list">
-                    {regionOptions
-                      .filter((v) => v !== "All")
-                      .map((v) => (
-                        <option key={`reg-${v}`} value={v} />
-                      ))}
+                    {regionOptions.filter((v) => v !== "All").map((v) => (
+                      <option key={`reg-${v}`} value={v} />
+                    ))}
                   </datalist>
                 </div>
 
@@ -523,11 +682,9 @@ export default function Departments() {
                     }}
                   />
                   <datalist id="dept-area-list">
-                    {areaOptions
-                      .filter((v) => v !== "All")
-                      .map((v) => (
-                        <option key={`area-${v}`} value={v} />
-                      ))}
+                    {areaOptions.filter((v) => v !== "All").map((v) => (
+                      <option key={`area-${v}`} value={v} />
+                    ))}
                   </datalist>
                 </div>
 
@@ -543,11 +700,9 @@ export default function Departments() {
                     }}
                   />
                   <datalist id="dept-branch-list">
-                    {branchOptions
-                      .filter((v) => v !== "All")
-                      .map((v) => (
-                        <option key={`br-${v}`} value={v} />
-                      ))}
+                    {branchOptions.filter((v) => v !== "All").map((v) => (
+                      <option key={`br-${v}`} value={v} />
+                    ))}
                   </datalist>
                 </div>
 
@@ -557,6 +712,57 @@ export default function Departments() {
                   </button>
                 </div>
               </div>
+
+              {hasStaffFilter && (
+                <div className="card" style={{ padding: 12, marginBottom: 12 }}>
+                  <h4 style={{ margin: "0 0 10px" }}>In-Charge / Handled Areas</h4>
+
+                  {hierarchyRows.length === 0 ? (
+                    <div className="mini">
+                      No manager found for the selected filter. Check if staff position is Regional Manager,
+                      Acting Regional Manager, Area Manager, or Acting Area Manager.
+                    </div>
+                  ) : (
+                    <div style={{ display: "grid", gap: 10 }}>
+                      {hierarchyRows.map((row) => (
+                        <div
+                          key={`hier-${row.manager.id}`}
+                          style={{
+                            border: "1px solid rgba(255,255,255,0.12)",
+                            borderRadius: 12,
+                            padding: 12,
+                          }}
+                        >
+                          <div className="strong">
+                            {row.manager.fullname || "-"}{" "}
+                            <span className="mini">({row.title})</span>
+                          </div>
+
+                          <div className="mini" style={{ marginTop: 4 }}>
+                            Employee No: {row.manager.employee_no || "-"} • Division:{" "}
+                            {row.manager._division || "-"}
+                          </div>
+
+                          <div style={{ marginTop: 8 }}>
+                            <strong>Region handled:</strong>{" "}
+                            {row.handledRegions.length ? row.handledRegions.join(", ") : "-"}
+                          </div>
+
+                          <div style={{ marginTop: 4 }}>
+                            <strong>Area handled:</strong>{" "}
+                            {row.handledAreas.length ? row.handledAreas.join(", ") : "-"}
+                          </div>
+
+                          <div style={{ marginTop: 4 }}>
+                            <strong>Branches handled:</strong>{" "}
+                            {row.handledBranches.length ? row.handledBranches.join(", ") : "-"}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
 
               <div className="table-scroll">
                 {loadingDeptStaff ? (
@@ -577,10 +783,15 @@ export default function Departments() {
                         <th style={{ width: 120 }}>Status</th>
                       </tr>
                     </thead>
+
                     <tbody>
                       {filteredDeptStaff.length === 0 ? (
                         <tr>
-                          <td colSpan={10}>No staff found for this filter.</td>
+                          <td colSpan={10}>
+                            {!hasStaffFilter
+                              ? "Please search or choose Division, Region, Area, or Branch to show staff."
+                              : "No staff found for this filter."}
+                          </td>
                         </tr>
                       ) : (
                         filteredDeptStaff.map((s) => (

@@ -3,10 +3,6 @@ const router = express.Router();
 const pool = require("../db");
 const { requireAuth, requireRole } = require("../middlewares/authMiddleware");
 
-const multer = require("multer");
-const path = require("path");
-const fs = require("fs");
-
 const {
   uploadToTemp,
   moveFromTemp,
@@ -211,20 +207,6 @@ async function canAccessStaffById(client, req, staffId) {
 
   return false;
 }
-
-const staffUploadDir = path.join(__dirname, "..", "uploads", "staff");
-fs.mkdirSync(staffUploadDir, { recursive: true });
-
-const storage = multer.diskStorage({
-  destination: (_req, _file, cb) => cb(null, staffUploadDir),
-  filename: (_req, file, cb) => {
-    const ext = path.extname(file.originalname || "").toLowerCase();
-    const safeExt = [".png", ".jpg", ".jpeg", ".webp"].includes(ext) ? ext : ".jpg";
-    cb(null, `staff_${Date.now()}_${Math.random().toString(16).slice(2)}${safeExt}`);
-  },
-});
-
-const upload = multer({ storage, limits: { fileSize: 2 * 1024 * 1024 } });
 
 async function insertStaffFromBody(client, body) {
   const last_name = toStr(body.last_name);

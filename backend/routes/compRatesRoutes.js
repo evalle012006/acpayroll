@@ -15,6 +15,7 @@ router.get(
   requireAuth,
   requireRole([
     "admin",
+    "tread",
     "branch manager",
     "hr",
     "accounting",
@@ -67,7 +68,7 @@ router.get(
 router.post(
   "/comp-rates",
   requireAuth,
-  requireRole(["admin"]),
+  requireRole(["admin", "tread"]),
   async (req, res) => {
     try {
       const position = clean(req.body?.position);
@@ -189,7 +190,7 @@ router.post(
 router.put(
   "/comp-rates/:id",
   requireAuth,
-  requireRole(["admin"]),
+  requireRole(["admin", "tread"]),
   async (req, res) => {
     try {
       const id = Number(req.params.id);
@@ -314,7 +315,7 @@ router.put(
 router.delete(
   "/comp-rates/:id",
   requireAuth,
-  requireRole(["admin"]),
+  requireRole(["admin", "tread"]),
   async (req, res) => {
     try {
       const id = Number(req.params.id);

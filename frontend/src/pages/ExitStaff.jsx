@@ -26,7 +26,9 @@ const displayNameParts = (s) => {
 export default function ExitStaff() {
   const navigate = useNavigate();
   const user = useMemo(() => readUser(), []);
-  const isAdmin = norm(user?.role) === "admin";
+
+  // ✅ UPDATED ROLE ACCESS
+  const canManageOrders = ["admin", "hr", "accounting"].includes(norm(user?.role));
 
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -110,11 +112,17 @@ export default function ExitStaff() {
             ← Back
           </button>
 
-          <button className="exit-btn exit-btn-outline" type="button" onClick={loadExitStaff} disabled={loading}>
+          <button
+            className="exit-btn exit-btn-outline"
+            type="button"
+            onClick={loadExitStaff}
+            disabled={loading}
+          >
             {loading ? "Refreshing..." : "Refresh"}
           </button>
 
-          {isAdmin && (
+          {/* ✅ UPDATED ACCESS */}
+          {canManageOrders && (
             <button
               className="exit-btn exit-btn-primary"
               type="button"

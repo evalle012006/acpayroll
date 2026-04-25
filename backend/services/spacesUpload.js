@@ -20,17 +20,13 @@ const s3Client = new S3Client({
 });
 
 const BUCKET = process.env.SPACES_BUCKET;
-const ROOT = process.env.SPACES_ROOT;
+const ROOT = process.env.SPACES_ROOT || "acpayroll";
 
-/**
- * Delete any existing files under a given prefix (folder).
- * Used to replace the old photo before saving the new one.
- */
 const deleteExistingUnderPrefix = async (prefix) => {
   const listCmd = new ListObjectsV2Command({
     Bucket: BUCKET,
     Prefix: prefix,
-    MaxKeys: 10, // safety cap — there should only ever be 1
+    MaxKeys: 10,
   });
   const listRes = await s3Client.send(listCmd);
 
@@ -42,10 +38,6 @@ const deleteExistingUnderPrefix = async (prefix) => {
   }
 };
 
-/**
- * Multer middleware that uploads to a temp path first.
- * Call this before your route handler logic.
- */
 const uploadToTemp = multer({
   storage: multerS3({
     s3: s3Client,
@@ -56,7 +48,7 @@ const uploadToTemp = multer({
       cb(null, `${ROOT}/temp/${timestamp}-${safeName}`);
     },
   }),
-  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB — adjust as needed
+  limits: { fileSize: 25 * 1024 * 1024 },
 }).single("photo");
 
 /**
@@ -74,10 +66,8 @@ const moveFromTemp = async (tempKey, origin, uuid, filename) => {
   const safeName = filename.replace(/[^a-zA-Z0-9._-]/g, "_");
   const finalKey = `${prefix}${Date.now()}-${safeName}`;
 
-  // Delete any previously stored file for this entity
   await deleteExistingUnderPrefix(prefix);
 
-  // Copy temp → final
   await s3Client.send(
     new CopyObjectCommand({
       Bucket: BUCKET,
@@ -86,17 +76,12 @@ const moveFromTemp = async (tempKey, origin, uuid, filename) => {
     })
   );
 
-  // Clean up temp
   await s3Client.send(new DeleteObjectCommand({ Bucket: BUCKET, Key: tempKey }));
 
   console.log(`[Spaces] Moved ${tempKey} → ${finalKey}`);
   return finalKey;
 };
 
-/**
- * Delete a specific key from Spaces.
- * Safe to call with null/undefined — will no-op.
- */
 const deleteKey = async (key) => {
   if (!key) return;
   await s3Client.send(new DeleteObjectCommand({ Bucket: BUCKET, Key: key }));
