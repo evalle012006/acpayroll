@@ -21,12 +21,14 @@ const isHr = (req) => roleLower(req) === "hr";
 const isAccounting = (req) => roleLower(req) === "accounting";
 const isTread = (req) => roleLower(req) === "tread";
 const isBranchManager = (req) => roleLower(req) === "branch manager";
+const isAreaManager = (req) => roleLower(req) === "area manager";
 
 const canViewSbf = (req) =>
   isAdmin(req) ||
   isHr(req) ||
   isAccounting(req) ||
   isBranchManager(req) ||
+  isAreaManager(req) ||
   isTread(req);
 
 const canCreateSbf = (req) =>
@@ -34,6 +36,7 @@ const canCreateSbf = (req) =>
   isHr(req) ||
   isAccounting(req) ||
   isBranchManager(req) ||
+  isAreaManager(req) ||
   isTread(req);
 
 const canApproveSbf = (req) =>
@@ -89,7 +92,14 @@ router.get("/sbf-orders", requireAuth, async (req, res) => {
 router.post(
   "/sbf-orders",
   requireAuth,
-  requireRole(["admin", "hr", "accounting", "branch manager", "tread"]),
+  requireRole([
+    "admin",
+    "hr",
+    "accounting",
+    "branch manager",
+    "area manager",
+    "tread",
+  ]),
   async (req, res) => {
     try {
       if (!canCreateSbf(req)) {

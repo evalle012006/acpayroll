@@ -1199,6 +1199,23 @@ router.post(
   }
 );
 
+router.get("/file-url", requireAuth, async (req, res) => {
+  try {
+    const { key } = req.query;
+
+    if (!key) {
+      return res.status(400).json({ message: "Key is required" });
+    }
+
+    const url = await getSignedDownloadUrl(key);
+
+    res.json({ url });
+  } catch (err) {
+    console.error("SIGNED URL ERROR:", err);
+    res.status(500).json({ message: "Failed to generate signed URL" });
+  }
+});
+
 router.get(
   "/staff/:id/photo-url",
   requireAuth,

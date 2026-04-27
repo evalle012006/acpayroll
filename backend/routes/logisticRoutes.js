@@ -2,8 +2,54 @@ const express = require("express");
 const router = express.Router();
 const pool = require("../db");
 const { requireAuth } = require("../middlewares/authMiddleware");
+const axios = require("axios");
 
 const clean = (v) => String(v ?? "").trim();
+
+const COURIER_CODE_MAP = {
+  "J&T": "jtexpress-ph",
+  "J&T Express": "jtexpress-ph",
+  "J&T Express Philippines": "jtexpress-ph",
+  LBC: "lbc-express",
+  "Ninja Van": "ninjavan-ph",
+  "Flash Express": "flashexpress-ph",
+};
+
+const normalizeCourierCode = (courierName) => {
+  const name = clean(courierName);
+  return COURIER_CODE_MAP[name] || name.toLowerCase().replace(/\s+/g, "");
+};
+
+async function detectCourierCode(apiKey, trackingNumber) {
+  try {
+    const res = await axios.post(
+      "https://api.trackingmore.com/v4/couriers/detect",
+      {
+        tracking_number: trackingNumber,
+      },
+      {
+        headers: {
+          "Tracking-Api-Key": apiKey,
+          "Content-Type": "application/json",
+        },
+        timeout: 20000,
+      }
+    );
+
+    const list = Array.isArray(res.data?.data) ? res.data.data : [];
+    const first = list[0];
+
+    return (
+      clean(first?.courier_code) ||
+      clean(first?.code) ||
+      clean(first?.slug) ||
+      ""
+    );
+  } catch (err) {
+    console.error("COURIER DETECT ERROR:", err?.response?.data || err.message);
+    return "";
+  }
+}
 
 router.get("/", requireAuth, async (_req, res) => {
   try {
@@ -63,6 +109,7 @@ router.post("/", requireAuth, async (req, res) => {
       `SELECT id FROM public.logistic_packages WHERE lower(trim(tracking_no)) = lower(trim($1))`,
       [tracking_no]
     );
+
     if (exists.rows.length > 0) {
       return res.status(409).json({ message: "Tracking number already exists" });
     }
@@ -197,19 +244,24 @@ router.post("/:id/update-status", requireAuth, async (req, res) => {
   }
 });
 
-/**
- * Future external sync endpoint
- * This is where you can later connect J&T partner API,
- * AfterShip, TrackingMore, 17TRACK, etc.
- */
 router.post("/:id/sync-external", requireAuth, async (req, res) => {
+  const client = await pool.connect();
+
   try {
     const id = Number(req.params.id);
     if (!Number.isFinite(id) || id <= 0) {
       return res.status(400).json({ message: "Invalid package id" });
     }
 
-    const pkgRes = await pool.query(
+    const apiKey = process.env.TRACKINGMORE_API_KEY || process.env.TRACKING_API_KEY;
+
+    if (!apiKey) {
+      return res.status(400).json({
+        message: "Tracking API key is missing. Add TRACKINGMORE_API_KEY to backend .env",
+      });
+    }
+
+    const pkgRes = await client.query(
       `SELECT * FROM public.logistic_packages WHERE id = $1`,
       [id]
     );
@@ -220,20 +272,230 @@ router.post("/:id/sync-external", requireAuth, async (req, res) => {
 
     const pkg = pkgRes.rows[0];
 
-    // Placeholder for future integration
-    // Example:
-    // 1. call external API using pkg.external_tracking_no || pkg.tracking_no
-    // 2. map returned events
-    // 3. insert new events into logistic_tracking_history
-    // 4. update logistic_packages current status/location
+    if (clean(pkg.courier_name).toLowerCase() === "internal") {
+      return res.status(400).json({
+        message: "Internal packages do not support external sync. Use Update Status instead.",
+      });
+    }
+
+    const trackingNumber = clean(pkg.external_tracking_no || pkg.tracking_no);
+    let courierCode = normalizeCourierCode(pkg.courier_name);
+
+      if (
+        !courierCode ||
+        clean(pkg.courier_name).toLowerCase() === "auto" ||
+        clean(pkg.courier_name).toLowerCase() === "auto detect"
+      ) {
+        const detected = await detectCourierCode(apiKey, trackingNumber);
+
+        if (detected) {
+          courierCode = detected;
+          console.log("AUTO DETECTED COURIER:", courierCode);
+        }
+      }
+
+      if (!courierCode) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({
+          message: "Unable to detect courier. Please select manually.",
+        });
+      }
+
+    if (!trackingNumber) {
+      return res.status(400).json({ message: "External tracking number is required" });
+    }
+
+    await client.query("BEGIN");
+
+    let trackingData = null;
+
+    try {
+      const getRes = await axios.get(
+        `https://api.trackingmore.com/v4/trackings/get`,
+        {
+          headers: {
+            "Tracking-Api-Key": apiKey,
+            "Content-Type": "application/json",
+          },
+          params: {
+            tracking_number: trackingNumber,
+            courier_code: courierCode,
+          },
+          timeout: 20000,
+        }
+      );
+
+      trackingData = getRes.data?.data || null;
+    } catch (getErr) {
+      const statusCode = getErr?.response?.status;
+
+      if (statusCode === 404 || statusCode === 400) {
+        try {
+          await axios.post(
+            `https://api.trackingmore.com/v4/trackings/create`,
+            {
+              tracking_number: trackingNumber,
+              courier_code: courierCode,
+            },
+            {
+              headers: {
+                "Tracking-Api-Key": apiKey,
+                "Content-Type": "application/json",
+              },
+              timeout: 20000,
+            }
+          );
+        } catch (createErr) {
+          const alreadyExists =
+            createErr?.response?.data?.meta?.message ||
+            createErr?.response?.data?.message ||
+            "";
+
+          if (!String(alreadyExists).toLowerCase().includes("exist")) {
+            throw createErr;
+          }
+        }
+
+        const retryRes = await axios.get(
+          `https://api.trackingmore.com/v4/trackings/get`,
+          {
+            headers: {
+              "Tracking-Api-Key": apiKey,
+              "Content-Type": "application/json",
+            },
+            params: {
+              tracking_number: trackingNumber,
+              courier_code: courierCode,
+            },
+            timeout: 20000,
+          }
+        );
+
+        trackingData = retryRes.data?.data || null;
+      } else {
+        throw getErr;
+      }
+    }
+
+    if (!trackingData) {
+      await client.query("ROLLBACK");
+      return res.json({ message: "No tracking data found yet", package: pkg });
+    }
+
+    const originInfo = trackingData.origin_info || {};
+    const trackInfo = Array.isArray(originInfo.trackinfo)
+      ? originInfo.trackinfo
+      : Array.isArray(trackingData.tracking_details)
+        ? trackingData.tracking_details
+        : [];
+
+    const events = trackInfo.map((ev) => ({
+      location: clean(ev.location || ev.checkpoint_location || ""),
+      status: clean(ev.status || ev.checkpoint_status || trackingData.delivery_status || ""),
+      remarks: clean(ev.description || ev.message || ev.checkpoint_status || ""),
+      time: ev.time || ev.checkpoint_time || ev.datetime || null,
+    }));
+
+    for (const ev of events) {
+      const eventTime = ev.time ? new Date(ev.time) : new Date();
+      const validTime = Number.isNaN(eventTime.getTime()) ? new Date() : eventTime;
+
+      await client.query(
+        `
+        INSERT INTO public.logistic_tracking_history
+        (
+          package_id,
+          location,
+          status,
+          remarks,
+          updated_by,
+          created_at
+        )
+        SELECT $1,$2,$3,$4,$5,$6
+        WHERE NOT EXISTS (
+          SELECT 1
+          FROM public.logistic_tracking_history
+          WHERE package_id = $1
+            AND COALESCE(location, '') = COALESCE($2, '')
+            AND COALESCE(status, '') = COALESCE($3, '')
+            AND COALESCE(remarks, '') = COALESCE($4, '')
+            AND created_at = $6
+        )
+        `,
+        [
+          id,
+          ev.location || null,
+          ev.status || null,
+          ev.remarks || null,
+          "External API",
+          validTime,
+        ]
+      );
+    }
+
+    const latest = events.length > 0 ? events[0] : null;
+
+    const latestStatus =
+      clean(latest?.status) ||
+      clean(trackingData.delivery_status) ||
+      clean(trackingData.status) ||
+      pkg.current_status ||
+      "Pending";
+
+    const latestLocation =
+      clean(latest?.location) ||
+      clean(trackingData.destination_info?.location) ||
+      pkg.current_location ||
+      null;
+
+    const latestRemarks =
+      clean(latest?.remarks) ||
+      clean(trackingData.substatus) ||
+      clean(trackingData.delivery_status) ||
+      pkg.remarks ||
+      null;
+
+    const updatedPkg = await client.query(
+      `
+      UPDATE public.logistic_packages
+      SET
+        current_location = $1,
+        current_status = $2,
+        remarks = $3,
+        sync_source = 'external',
+        updated_at = NOW()
+      WHERE id = $4
+      RETURNING *
+      `,
+      [latestLocation || null, latestStatus || null, latestRemarks || null, id]
+    );
+
+    await client.query("COMMIT");
 
     return res.json({
-      message: "External sync is ready for integration",
-      package: pkg,
+      message: "External tracking synced successfully",
+      package: updatedPkg.rows[0],
+      events_added: events.length,
     });
   } catch (e) {
-    console.error("POST /api/logistic/:id/sync-external ERROR:", e.message);
-    return res.status(500).json({ message: "Error syncing external tracking" });
+    try {
+      await client.query("ROLLBACK");
+    } catch {}
+
+    console.error(
+      "POST /api/logistic/:id/sync-external ERROR:",
+      e?.response?.data || e.message
+    );
+
+    return res.status(500).json({
+      message:
+        e?.response?.data?.meta?.message ||
+        e?.response?.data?.message ||
+        e?.message ||
+        "Error syncing external tracking",
+    });
+  } finally {
+    client.release();
   }
 });
 

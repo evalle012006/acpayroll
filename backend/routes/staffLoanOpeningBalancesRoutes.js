@@ -117,13 +117,8 @@ function normalizePayload(body = {}) {
   const original_amount = toNum(body.original_amount);
   const interest = toNum(body.interest);
 
-  const interest_amount = Number(
-    (original_amount * (interest / 100)).toFixed(2)
-  );
-
-  const total_amount = Number(
-    (original_amount + interest_amount).toFixed(2)
-  );
+  const interest_amount = Number((original_amount * (interest / 100)).toFixed(2));
+  const total_amount = Number((original_amount + interest_amount).toFixed(2));
 
   const term_months = toInt(body.term_months) ?? 0;
   const months_paid = toInt(body.months_paid) ?? 0;
@@ -162,9 +157,6 @@ function normalizePayload(body = {}) {
   };
 }
 
-/* =========================================================
-   GET ALL FOR STAFF
-========================================================= */
 router.get(
   "/staff-loan-opening-balances/staff/:staffId",
   requireAuth,
@@ -210,13 +202,10 @@ router.get(
   }
 );
 
-/* =========================================================
-   CREATE
-========================================================= */
 router.post(
   "/staff-loan-opening-balances",
   requireAuth,
-  requireRole(["admin", "hr", "accounting", "tread"]),
+  requireRole(["admin", "hr", "accounting", "tread", "area manager"]),
   async (req, res) => {
     const client = await pool.connect();
     try {
@@ -226,6 +215,12 @@ router.post(
       if (!staff_id) {
         await client.query("ROLLBACK");
         return res.status(400).json({ message: "staff_id is required" });
+      }
+
+      const allowed = await canAccessStaffById(client, req, staff_id);
+      if (!allowed) {
+        await client.query("ROLLBACK");
+        return res.status(403).json({ message: "Access denied" });
       }
 
       const staffRes = await client.query(
@@ -307,13 +302,10 @@ router.post(
   }
 );
 
-/* =========================================================
-   UPDATE
-========================================================= */
 router.put(
   "/staff-loan-opening-balances/:id",
   requireAuth,
-  requireRole(["admin", "hr", "accounting", "tread"]),
+  requireRole(["admin", "hr", "accounting", "tread", "area manager"]),
   async (req, res) => {
     const client = await pool.connect();
     try {
@@ -338,6 +330,12 @@ router.put(
       if (existing.rowCount === 0) {
         await client.query("ROLLBACK");
         return res.status(404).json({ message: "Record not found" });
+      }
+
+      const allowed = await canAccessStaffById(client, req, existing.rows[0].staff_id);
+      if (!allowed) {
+        await client.query("ROLLBACK");
+        return res.status(403).json({ message: "Access denied" });
       }
 
       const payload = normalizePayload(req.body);
@@ -399,9 +397,6 @@ router.put(
   }
 );
 
-/* =========================================================
-   DELETE
-========================================================= */
 router.delete(
   "/staff-loan-opening-balances/:id",
   requireAuth,

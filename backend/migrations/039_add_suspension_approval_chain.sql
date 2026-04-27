@@ -4,6 +4,7 @@ ALTER TABLE public.suspension_orders
 ADD COLUMN IF NOT EXISTS approval_stage VARCHAR(100),
 ADD COLUMN IF NOT EXISTS area_manager_status VARCHAR(30) DEFAULT 'Pending',
 ADD COLUMN IF NOT EXISTS regional_manager_status VARCHAR(30) DEFAULT 'Pending',
+ADD COLUMN IF NOT EXISTS assistant_vice_president_status VARCHAR(30) DEFAULT 'Pending',
 ADD COLUMN IF NOT EXISTS admin_status VARCHAR(30) DEFAULT 'Pending',
 ADD COLUMN IF NOT EXISTS area_manager_approved_by INTEGER,
 ADD COLUMN IF NOT EXISTS area_manager_approved_at TIMESTAMP,
