@@ -218,8 +218,10 @@ export default function Logistic() {
         assigned_to: toStr(packageForm.assigned_to),
         remarks: toStr(packageForm.remarks),
         courier_name: toStr(packageForm.courier_name || "Internal"),
-        external_tracking_no: toStr(packageForm.external_tracking_no),
-      });
+        external_tracking_no: toStr(packageForm.courier_name) === "Internal"
+          ? ""
+          : toStr(packageForm.external_tracking_no || packageForm.tracking_no),
+            });
 
       await fetchPackages();
       closeCreateModal();
@@ -370,7 +372,10 @@ export default function Logistic() {
                             className="btn-secondary"
                             type="button"
                             onClick={() => syncExternal(row)}
-                            disabled={syncingId === row.id}
+                            disabled={
+                              syncingId === row.id ||
+                              String(row.courier_name || "").toLowerCase() === "internal"
+                            }
                           >
                             {syncingId === row.id ? "Syncing..." : "Sync External"}
                           </button>
@@ -425,6 +430,7 @@ export default function Logistic() {
                     }
                   >
                     <option value="Internal">Internal</option>
+                    <option value="Auto">Auto Detect</option>
                     <option value="J&T">J&amp;T</option>
                     <option value="LBC">LBC</option>
                     <option value="Ninja Van">Ninja Van</option>
@@ -438,9 +444,16 @@ export default function Logistic() {
                     className="input"
                     value={packageForm.external_tracking_no}
                     onChange={(e) =>
-                      setPackageForm((p) => ({ ...p, external_tracking_no: e.target.value }))
+                      setPackageForm((p) => ({
+                        ...p,
+                        external_tracking_no: e.target.value,
+                      }))
                     }
-                    placeholder="Use courier tracking number if external"
+                    placeholder={
+                      packageForm.courier_name === "Auto"
+                        ? "Auto detect from tracking number"
+                        : "Use courier tracking number if external"
+                    }
                   />
                 </div>
 

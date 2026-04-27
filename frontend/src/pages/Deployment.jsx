@@ -14,6 +14,20 @@ const DEPARTMENT_OPTIONS = [
   "TRAINING RESEARCH AND EXTERNAL AFFAIRS DEPARTMENT",
 ];
 
+const getImageUrl = async (key) => {
+  if (!key) return "";
+
+  try {
+    const res = await api.get("/file-url", {
+      params: { key },
+    });
+    return res.data.url;
+  } catch (err) {
+    console.error("Image load failed:", err);
+    return "";
+  }
+};
+
 const toStr = (v) => String(v ?? "").trim();
 const toDate10 = (v) => (v ? String(v).slice(0, 10) : "");
 const norm = (v) => toStr(v).toLowerCase();
@@ -2234,7 +2248,7 @@ const updatePendingStaff = async (e) => {
 
       alert("Pending staff approved.");
     } catch (e) {
-      setErr(e?.response?.data?.message || "Failed to approve pending staff.");
+      setErr(e?.response?.data?.message || "Failed to approve pending staff.  ");
     } finally {
       setApprovingPendingId(null);
     }
@@ -2293,6 +2307,7 @@ const updatePendingStaff = async (e) => {
         const s = results[1];
         const b = results[2];
         const r = results[3];
+
         const p = canApprovePendingStaff
           ? results[4]
           : { data: [] };
@@ -2301,18 +2316,39 @@ const updatePendingStaff = async (e) => {
           ? results[canApprovePendingStaff ? 5 : 4]
           : { data: [] };
 
-        setDeployments(Array.isArray(d.data) ? d.data : []);
+        const deploymentsWithImages = await Promise.all(
+          (Array.isArray(d.data) ? d.data : []).map(async (item) => {
+            if (!item.photo) return item;
+
+            try {
+              const res = await api.get("/file-url", {
+                params: { key: item.photo },
+              });
+
+              return {
+                ...item,
+                photo_url: res.data.url,
+              };
+            } catch (err) {
+              console.error("Image load failed:", err);
+              return item;
+            }
+          })
+        );
+
+        setDeployments(deploymentsWithImages);
         setStaff(Array.isArray(s.data) ? s.data : []);
         setBranches(Array.isArray(b.data) ? b.data : []);
         setCompRates(Array.isArray(r.data) ? r.data : []);
         setPendingStaff(Array.isArray(p.data) ? p.data : []);
         setUsers(Array.isArray(u.data) ? u.data : []);
+
       } catch (e) {
         setErr(e?.response?.data?.message || "Failed to load deployment data.");
       } finally {
         setLoading(false);
       }
-    }, [isAdmin]);
+    }, [isAdmin, canApprovePendingStaff]);
 
     useEffect(() => {
     loadData();

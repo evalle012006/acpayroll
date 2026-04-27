@@ -42,7 +42,7 @@ const displayStaffLabel = (s) => {
 export default function OpeningLoanBalances() {
   const user = useMemo(() => readUser(), []);
   const role = String(user?.role || "").trim().toLowerCase();
-  const canManage = role === "admin" || role === "hr" || role === "accounting";
+  const canManage = role === "admin" || role === "hr" || role === "accounting" || role === "area manager";
 
   const staffPickerRef = useRef(null);
 

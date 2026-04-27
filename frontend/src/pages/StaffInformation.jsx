@@ -566,8 +566,15 @@ function ContractDetailsStep({form, branches, positionRates = [], onChange, bran
 
       onChange({
         target: {
+          name: "utility_charge",
+          value: matched.utility_charge ?? matched.utility ?? "",
+        },
+      });
+
+      onChange({
+        target: {
           name: "utility",
-          value: matched.utility ?? "",
+          value: matched.utility ?? matched.utility_charge ?? "",
         },
       });
 
@@ -746,7 +753,7 @@ function ContractDetailsStep({form, branches, positionRates = [], onChange, bran
         <div className="field"><label>Ecola</label><input className="input" name="ecola" value={form.ecola} onChange={onChange} /></div>
         <div className="field"><label>CBU (staff table default)</label><input className="input" name="cbu" value={form.cbu} onChange={onChange} /></div>
         <div className="field"><label>Cashbond (staff table default)</label><input className="input" name="cashbond" value={form.cashbond} onChange={onChange} /></div>
-        <div className="field"><label>Utility (staff table default)</label><input className="input" name="utility" value={form.utility} onChange={onChange} /></div>
+        <div className="field"><label>Utility (staff table default)</label><input className="input" name="utility" value={form.utility ?? form.utility_charge ?? ""} onChange={onChange} /></div>
         <div className="field"><label>Transportation</label><input className="input" name="transportation" value={form.transportation} onChange={onChange} /></div>
         <div className="field"><label>Repairing</label><input className="input" name="repairing" value={form.repairing} onChange={onChange} /></div>
         <div className="field"><label>Postage</label><input className="input" name="postage" value={form.postage} onChange={onChange} /></div>
@@ -766,7 +773,10 @@ function ContractDetailsStep({form, branches, positionRates = [], onChange, bran
 }
 
 function PersonalBalancesStep({ balanceForm, onBalanceChange, readOnlyLoans = false, openingLoanRows = [] }) {
-  const totalSavings = toNum(balanceForm.cbu) + toNum(balanceForm.cashbond) + toNum(balanceForm.utility);
+  const totalSavings =
+    toNum(balanceForm.cbu) +
+    toNum(balanceForm.cashbond) +
+    toNum(balanceForm.utility ?? balanceForm.utility_charge);
   const totalBalances =
     toNum(balanceForm.salary_advance) + toNum(balanceForm.special_advance) + toNum(balanceForm.cash_advance) +
     toNum(balanceForm.motorcycle_loan) + toNum(balanceForm.pag_ibig_loan) + toNum(balanceForm.other_receivable) +
@@ -778,7 +788,7 @@ function PersonalBalancesStep({ balanceForm, onBalanceChange, readOnlyLoans = fa
         <div className="field full" style={{ marginTop: 8 }}><h3 style={{ margin: 0 }}>Personal Savings</h3></div>
         <div className="field"><label>CBU</label><input className="input" name="cbu" value={balanceForm.cbu} onChange={onBalanceChange} /></div>
         <div className="field"><label>Cashbond</label><input className="input" name="cashbond" value={balanceForm.cashbond} onChange={onBalanceChange} /></div>
-        <div className="field"><label>Utility</label><input className="input" name="utility" value={balanceForm.utility} onChange={onBalanceChange} /></div>
+        <div className="field"><label>Utility</label><input className="input" name="utility" value={balanceForm.utility ?? balanceForm.utility_charge ?? ""} onChange={onBalanceChange} /></div>
         <div className="field full"><label>Total Personal Savings</label><div className="input" style={{ background: "var(--panel-2)" }}>{money(totalSavings)}</div></div>
         <div className="field full" style={{ marginTop: 16 }}><h3 style={{ margin: 0 }}>Personal Balances</h3></div>
         <div className="field"><label>Salary Advance</label><input className="input" name="salary_advance" value={balanceForm.salary_advance} onChange={onBalanceChange} readOnly={readOnlyLoans} /></div>
@@ -813,7 +823,7 @@ function PersonalBalancesStep({ balanceForm, onBalanceChange, readOnlyLoans = fa
   );
 }
 
-function StaffProfileModal({ staff, signedPhotoUrl, onClose, branchNameById }) {
+function StaffProfileModal({ staff, signedPhotoUrl, onClose, branchNameById, canViewPrivateDetails = true, }) {
   const [tab, setTab] = useState("staff");
   const [leaveKind, setLeaveKind] = useState("All");
   const [leaveRows, setLeaveRows] = useState([]);
@@ -920,6 +930,7 @@ function StaffProfileModal({ staff, signedPhotoUrl, onClose, branchNameById }) {
       let rows = [];
       const user = (() => { try { return JSON.parse(localStorage.getItem("user") || "null"); } catch { return null; } })();
       const role = String(user?.role || "").trim().toLowerCase();
+
       const canUseStaffEndpoint = role === "admin" || role === "hr" || role === "accounting";
       if (canUseStaffEndpoint) {
         const res = await api.get(`/demotion-orders/staff/${staff.id}`);
@@ -1108,6 +1119,12 @@ function StaffProfileModal({ staff, signedPhotoUrl, onClose, branchNameById }) {
   const headerPosition = toStr(staff?.position) || "-";
   const headerStatus = toStr(staff?.status) || "Active";
 
+  useEffect(() => {
+    if (!canViewPrivateDetails && (tab === "contract" || tab === "balances")) {
+      setTab("staff");
+    }
+  }, [canViewPrivateDetails, tab]);
+
   const renderEducation = () => {
     if (!educationArr.length) return <tr><td colSpan="2">-</td></tr>;
     return educationArr.map((e, idx) => (
@@ -1159,13 +1176,37 @@ function StaffProfileModal({ staff, signedPhotoUrl, onClose, branchNameById }) {
 
         <div className="modal-body staff-profile-scroll">
           <div style={{ display: "flex", alignItems: "center", gap: 16, padding: "8px 0 14px 0" }}>
-            {signedPhotoUrl ? (
-              <img src={signedPhotoUrl} alt="staff" style={{ width: 92, height: 92, borderRadius: "50%", objectFit: "cover", flex: "0 0 auto" }} />
-            ) : (
-              <div className="staff-avatar-lg staff-avatar--fallback" style={{ width: 92, height: 92, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", flex: "0 0 auto" }}>
-                {headerName.slice(0, 1).toUpperCase()}
-              </div>
-            )}
+            <img
+              src={signedPhotoUrl || "/default-avatar.png"}
+              alt="staff"
+              onError={(e) => {
+                e.currentTarget.style.display = "none";
+                const fallback = e.currentTarget.nextElementSibling;
+                if (fallback) fallback.style.display = "flex";
+              }}
+              style={{
+                width: 92,
+                height: 92,
+                borderRadius: "50%",
+                objectFit: "cover",
+                flex: "0 0 auto",
+              }}
+            />
+
+            <div
+              className="staff-avatar-lg staff-avatar--fallback"
+              style={{
+                width: 92,
+                height: 92,
+                borderRadius: "50%",
+                display: signedPhotoUrl ? "none" : "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                flex: "0 0 auto",
+              }}
+            >
+              {headerName.slice(0, 1).toUpperCase()}
+            </div>
             <div style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
               <div style={{ fontWeight: 900, fontSize: 16, lineHeight: 1.2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{headerName}</div>
               <div style={{ opacity: 0.85, marginTop: 4, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{headerPosition}</div>
@@ -1174,7 +1215,9 @@ function StaffProfileModal({ staff, signedPhotoUrl, onClose, branchNameById }) {
           </div>
 
           <div className="staff-tabs" style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            {["staff", "contract", "leave", "attachments", "history", "balances"].map((t) => (
+            {["staff", "contract", "leave", "attachments", "history", "balances"]
+              .filter((t) => canViewPrivateDetails || !["contract", "balances"].includes(t))
+              .map((t) => (
               <button key={t} className={`tab-btn ${tab === t ? "active" : ""}`} onClick={() => setTab(t)} type="button">
                 {t === "staff" ? "Staff Details" : t === "contract" ? "Contract Details" : t === "leave" ? "Leave Details" : t === "attachments" ? "Attachments" : t === "history" ? "Transaction History" : "Personal Balances"}
               </button>
@@ -1498,6 +1541,21 @@ export default function StaffInformation() {
   const user = useMemo(() => readUser(), []);
   const role = useMemo(() => norm(user?.role), [user]);
 
+  const CONFIDENTIAL_POSITIONS = [
+    "vice president",
+    "senior vice president",
+    "president",
+  ];
+
+  const isConfidentialStaff = (s) =>
+    CONFIDENTIAL_POSITIONS.includes(norm(s?.position)) ||
+    CONFIDENTIAL_POSITIONS.includes(norm(s?.role));
+
+  const canViewConfidentialDetails = (s) => {
+    if (!isConfidentialStaff(s)) return true;
+    return role === "admin" || role === norm(s?.position) || role === norm(s?.role);
+  };
+
   const canEditStaff =
     role === "admin" || role === "hr" || role === "accounting" ||
     role === "branch manager" || role === "area manager" ||
@@ -1740,7 +1798,8 @@ export default function StaffInformation() {
       ecola: String(s.ecola ?? ""),
       cbu: String(s.cbu ?? ""),
       cashbond: String(s.cashbond ?? ""),
-      utility: String(s.utility ?? ""),
+      utility: String(s.utility ?? s.utility_charge ?? ""),
+      utility_charge: String(s.utility_charge ?? s.utility ?? ""),
       transportation: String(s.transportation ?? ""),
       repairing: String(s.repairing ?? ""),
       postage: String(s.postage ?? ""),
@@ -1754,6 +1813,41 @@ export default function StaffInformation() {
       ph_ee: String(s.ph_ee ?? ""),
       hdmf_ee: String(s.hdmf_ee ?? ""),
       tax: String(s.tax ?? ""),
+    });
+
+    let balanceRow = null;
+
+    try {
+      const res = await api.get(`/staff-balances/${s.employee_no}`);
+      balanceRow = res.data || null;
+    } catch (err) {
+      balanceRow = null;
+    }
+
+    setBalanceForm({
+      cbu: String(balanceRow?.cbu ?? s.cbu ?? ""),
+      cashbond: String(balanceRow?.cashbond ?? s.cashbond ?? ""),
+      utility: String(
+        balanceRow?.utility ??
+        balanceRow?.utility_charge ??
+        s.utility_charge ??
+        s.utility ??
+        ""
+      ),
+      utility_charge: String(
+        balanceRow?.utility_charge ??
+        balanceRow?.utility ??
+        s.utility_charge ??
+        s.utility ??
+        ""
+      ),
+      salary_advance: String(balanceRow?.salary_advance ?? s.salary_advance ?? ""),
+      special_advance: String(balanceRow?.special_advance ?? s.special_advance ?? ""),
+      cash_advance: String(balanceRow?.cash_advance ?? s.cash_advance ?? ""),
+      motorcycle_loan: String(balanceRow?.motorcycle_loan ?? s.motorcycle_loan ?? ""),
+      pag_ibig_loan: String(balanceRow?.pag_ibig_loan ?? s.pag_ibig_loan ?? ""),
+      other_receivable: String(balanceRow?.other_receivable ?? s.other_receivable ?? ""),
+      staff_accounts_payable: String(balanceRow?.staff_accounts_payable ?? s.staff_accounts_payable ?? ""),
     });
 
     const selectedBranch = branches.find(
@@ -1773,6 +1867,7 @@ export default function StaffInformation() {
   const buildPayload = () => {
     const total_er = toNum(form.sss_er) + toNum(form.ph_er) + toNum(form.hdmf_er);
     const total_ee = toNum(form.sss_ee) + toNum(form.ph_ee) + toNum(form.hdmf_ee);
+
     return {
       ...form,
       branch_id: form.branch_id ? Number(form.branch_id) : null,
@@ -1783,8 +1878,13 @@ export default function StaffInformation() {
       weight: form.weight === "" ? null : Number(form.weight),
       salary: form.salary === "" ? null : Number(form.salary),
       ecola: form.ecola === "" ? null : Number(form.ecola),
-      cbu: toNum(form.cbu), cashbond: toNum(form.cashbond), utility: toNum(form.utility),
+
+      cbu: toNum(form.cbu),
+      cashbond: toNum(form.cashbond),
+      utility: toNum(form.utility ?? form.utility_charge),
+      utility_charge: toNum(form.utility_charge ?? form.utility),
       transportation: toNum(form.transportation), postage: toNum(form.postage),
+
       additional_target: toNum(form.additional_target), repairing: toNum(form.repairing),
       additional_monitoring: toNum(form.additional_monitoring), other_deduction: toNum(form.other_deduction),
       sss_er: toNum(form.sss_er), ph_er: toNum(form.ph_er), hdmf_er: toNum(form.hdmf_er), total_er,
@@ -1806,10 +1906,17 @@ export default function StaffInformation() {
   };
 
   const buildBalancePayload = () => ({
-    cbu: toNum(balanceForm.cbu), cashbond: toNum(balanceForm.cashbond), utility: toNum(balanceForm.utility),
-    salary_advance: toNum(balanceForm.salary_advance), special_advance: toNum(balanceForm.special_advance),
-    cash_advance: toNum(balanceForm.cash_advance), motorcycle_loan: toNum(balanceForm.motorcycle_loan),
-    pag_ibig_loan: toNum(balanceForm.pag_ibig_loan), other_receivable: toNum(balanceForm.other_receivable),
+    cbu: toNum(balanceForm.cbu),
+    cashbond: toNum(balanceForm.cashbond),
+    utility: toNum(balanceForm.utility ?? balanceForm.utility_charge),
+    utility_charge: toNum(balanceForm.utility ?? balanceForm.utility_charge),
+
+    salary_advance: toNum(balanceForm.salary_advance),
+    special_advance: toNum(balanceForm.special_advance),
+    cash_advance: toNum(balanceForm.cash_advance),
+    motorcycle_loan: toNum(balanceForm.motorcycle_loan),
+    pag_ibig_loan: toNum(balanceForm.pag_ibig_loan),
+    other_receivable: toNum(balanceForm.other_receivable),
     staff_accounts_payable: toNum(balanceForm.staff_accounts_payable),
   });
 
@@ -1947,9 +2054,10 @@ export default function StaffInformation() {
       {viewStaff && (
         <StaffProfileModal
           staff={viewStaff}
-          signedPhotoUrl={signedUrls[viewStaff.id] || ""}
+          signedPhotoUrl={signedUrls[viewStaff.id]}
           onClose={closeAllModals}
           branchNameById={branchNameById}
+          canViewPrivateDetails={canViewConfidentialDetails(viewStaff)}
         />
       )}
 
@@ -1985,7 +2093,12 @@ export default function StaffInformation() {
                   </label>
                 </div>
 
-                <StepTabs step={formStep} onSelectStep={setStepGuarded} canGoContract={isStaffStepValid} canGoBalances={isContractStepValid} />
+                <StepTabs
+                  step={formStep}
+                  onSelectStep={setStepGuarded}
+                  canGoContract={canViewConfidentialDetails(editStaff) && isStaffStepValid}
+                  canGoBalances={canViewConfidentialDetails(editStaff) && isContractStepValid}
+                />
                 <br />
 
                 {formStep === 1 && <StaffDetailsStep form={form} onChange={onChange} />}
