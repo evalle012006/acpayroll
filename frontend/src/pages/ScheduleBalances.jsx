@@ -300,14 +300,12 @@ export default function ScheduleBalances() {
     for (const r of filteredEmployeeRows) {
       const rawBranchId = r.branch_id;
 
-      // Skip rows with blank/null branch_id so "-" group will not appear
       if (rawBranchId === null || rawBranchId === undefined || String(rawBranchId).trim() === "") {
         continue;
       }
 
       const branch = branchMap.get(String(rawBranchId));
 
-      // Skip rows whose branch_id does not exist in master branches
       if (!branch) {
         continue;
       }

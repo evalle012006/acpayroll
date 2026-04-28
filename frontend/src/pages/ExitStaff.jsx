@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import "../styles/ExitStaffOrders.css";
+import "../styles/ExitStaff.css";
 import api from "../api/axiosClient";
 
 const toStr = (v) => String(v ?? "").trim();

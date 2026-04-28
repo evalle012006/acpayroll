@@ -235,7 +235,7 @@ const Sidebar = ({ collapsed }) => {
       },
       {
         to: "/reports",
-        label: "Reports",
+        label: "Requests",
         icon: LuFiles,
         roles: [
           "admin",

@@ -16,6 +16,8 @@ const toDate = (v) => {
   return d.toISOString().slice(0, 10);
 };
 
+const todayDate = () => new Date().toISOString().slice(0, 10);
+
 const clean = (v) => String(v ?? "").trim();
 const norm = (v) => clean(v).toLowerCase();
 
@@ -25,11 +27,9 @@ const isHr = (req) => roleLower(req) === "hr";
 const isAccounting = (req) => roleLower(req) === "accounting";
 const isTread = (req) => roleLower(req) === "tread";
 const isBranchManager = (req) => roleLower(req) === "branch manager";
-const isAssistantVicePresident = (req) =>
-  roleLower(req) === "assistant vice president";
+const isAssistantVicePresident = (req) => roleLower(req) === "assistant vice president";
 const isVicePresident = (req) => roleLower(req) === "vice president";
-const isSeniorVicePresident = (req) =>
-  roleLower(req) === "senior vice president";
+const isSeniorVicePresident = (req) => roleLower(req) === "senior vice president";
 const isPresident = (req) => roleLower(req) === "president";
 
 const isTopManagement = (req) =>
@@ -55,11 +55,31 @@ const normalizeExitType = (v) => {
   return clean(v);
 };
 
+/**
+ * Makes staff inactive only when approved exit_date/effective_date is today or past.
+ * This is called before GET routes so future-effective approved exits become inactive
+ * automatically once the date arrives.
+ */
+const applyDueExitStaff = async () => {
+  await pool.query(`
+    UPDATE public.staff s
+    SET status = 'Inactive'
+    FROM public.exit_staff_orders eso
+    WHERE s.employee_no = eso.employee_no
+      AND LOWER(TRIM(COALESCE(eso.status, ''))) = 'approved'
+      AND eso.effective_date IS NOT NULL
+      AND eso.effective_date <= CURRENT_DATE
+      AND LOWER(TRIM(COALESCE(s.status, ''))) <> 'inactive'
+  `);
+};
+
 /* =========================================================
    EXIT STAFF (inactive list)
 ========================================================= */
 router.get("/exit-staff", requireAuth, async (req, res) => {
   try {
+    await applyDueExitStaff();
+
     if (!isTopManagement(req) && !isBranchManager(req)) {
       return res.status(403).json({ message: "Access denied" });
     }
@@ -115,6 +135,8 @@ router.get("/exit-staff", requireAuth, async (req, res) => {
 ========================================================= */
 router.get("/exit-staff-orders", requireAuth, async (req, res) => {
   try {
+    await applyDueExitStaff();
+
     if (isTopManagement(req)) {
       const r = await pool.query(`
         SELECT *
@@ -137,6 +159,7 @@ router.get("/exit-staff-orders", requireAuth, async (req, res) => {
         `,
         [bid]
       );
+
       return res.json(r.rows);
     }
 
@@ -169,8 +192,7 @@ router.post(
       const staff_id = toInt(req.body?.staff_id);
       const employee_no_input = clean(req.body?.employee_no);
       const exit_type = normalizeExitType(req.body?.exit_type);
-      const date_created =
-        toDate(req.body?.date_created) || toDate(new Date().toISOString());
+      const date_created = toDate(req.body?.date_created) || todayDate();
       const effective_date = toDate(req.body?.effective_date);
       const settlement_date = toDate(req.body?.settlement_date);
       const settlement_branch_id = toInt(req.body?.settlement_branch_id);
@@ -181,10 +203,7 @@ router.post(
         return res.status(400).json({ message: "Staff is required" });
       }
 
-      if (
-        !exit_type ||
-        !["AWOL", "Resigned", "Terminated", "Deceased"].includes(exit_type)
-      ) {
+      if (!exit_type || !["AWOL", "Resigned", "Terminated", "Deceased"].includes(exit_type)) {
         await client.query("ROLLBACK");
         return res.status(400).json({
           message: "Exit type must be AWOL, Resigned, Terminated, or Deceased",
@@ -300,6 +319,7 @@ router.post(
       const seq = await client.query(
         `SELECT nextval('public.exit_staff_orders_id_seq') AS n`
       );
+
       const n = Number(seq.rows[0].n);
       const order_no = `EXIT-${String(n).padStart(8, "0")}`;
 
@@ -482,18 +502,35 @@ router.put(
         [id, req.user?.id ?? null]
       );
 
-      await client.query(
-        `
-        UPDATE public.staff
-        SET
-          status = 'Inactive',
-          exit_type = $2,
-          exit_date = $3::date,
-          exit_remarks = $4
-        WHERE employee_no = $1
-        `,
-        [employeeNo, exitType, effectiveDate, remarks]
-      );
+      const today = todayDate();
+
+      if (effectiveDate <= today) {
+        await client.query(
+          `
+          UPDATE public.staff
+          SET
+            status = 'Inactive',
+            exit_type = $2,
+            exit_date = $3::date,
+            exit_remarks = $4
+          WHERE employee_no = $1
+          `,
+          [employeeNo, exitType, effectiveDate, remarks]
+        );
+      } else {
+        await client.query(
+          `
+          UPDATE public.staff
+          SET
+            status = 'Active',
+            exit_type = $2,
+            exit_date = $3::date,
+            exit_remarks = $4
+          WHERE employee_no = $1
+          `,
+          [employeeNo, exitType, effectiveDate, remarks]
+        );
+      }
 
       try {
         await client.query(

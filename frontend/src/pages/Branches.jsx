@@ -28,7 +28,9 @@ const Branches = () => {
   const canOpenBonus = isAdmin || isHR || isAccounting || isBranchManager;
 
   const [branches, setBranches] = useState([]);
+  const [departments, setDepartments] = useState([]);
   const [loadingTable, setLoadingTable] = useState(false);
+  const [loadingDepartments, setLoadingDepartments] = useState(false);
 
   const [code, setCode] = useState("");
   const [name, setName] = useState("");
@@ -44,6 +46,10 @@ const Branches = () => {
   const [showModal, setShowModal] = useState(false);
   const [showMapModal, setShowMapModal] = useState(false);
   const [selectedBranchMap, setSelectedBranchMap] = useState(null);
+
+  const [showDeptModal, setShowDeptModal] = useState(false);
+  const [selectedBranch, setSelectedBranch] = useState(null);
+  const [selectedModule, setSelectedModule] = useState("payroll");
 
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
@@ -72,13 +78,30 @@ const Branches = () => {
     }
   }, [logout]);
 
+  const fetchDepartments = useCallback(async () => {
+    try {
+      setLoadingDepartments(true);
+      const res = await api.get("/departments");
+      setDepartments(Array.isArray(res.data) ? res.data : []);
+    } catch (err) {
+      const status = err?.response?.status;
+      if (status === 401) return logout();
+      setDepartments([]);
+      alert(err?.response?.data?.message || "Failed to load departments.");
+    } finally {
+      setLoadingDepartments(false);
+    }
+  }, [logout]);
+
   useEffect(() => {
     if (!user || !token) {
       window.location.href = "/login";
       return;
     }
+
     fetchBranches();
-  }, [user, token, fetchBranches]);
+    fetchDepartments();
+  }, [user, token, fetchBranches, fetchDepartments]);
 
   const resetForm = () => {
     setCode("");
@@ -100,6 +123,7 @@ const Branches = () => {
 
   const openEdit = (branch) => {
     if (!canManageBranches) return;
+
     setEditId(branch.id);
     setCode(branch.code || "");
     setName(branch.name || "");
@@ -116,6 +140,41 @@ const Branches = () => {
     setShowModal(false);
     resetForm();
   };
+
+  const openDepartmentSelector = (branch, moduleName = "payroll") => {
+    setSelectedBranch(branch);
+    setSelectedModule(moduleName);
+    setShowDeptModal(true);
+
+    if (!departments.length) fetchDepartments();
+  };
+
+  const closeDepartmentSelector = () => {
+    setShowDeptModal(false);
+    setSelectedBranch(null);
+    setSelectedModule("payroll");
+  };
+
+  const openModuleForDepartment = (dept) => {
+    if (!selectedBranch) return;
+
+    const branchCode = encodeURIComponent(selectedBranch.code || "");
+    const departmentId = encodeURIComponent(dept.id || "");
+    const departmentName = encodeURIComponent(dept.name || "");
+
+    closeDepartmentSelector();
+
+    navigate(
+      `/${selectedModule}/${branchCode}?department_id=${departmentId}&department=${departmentName}`
+    );
+  };
+
+  const moduleTitle =
+    selectedModule === "transportation"
+      ? "Transportation"
+      : selectedModule === "bonus"
+      ? "Bonus"
+      : "Payroll";
 
   const openMapModal = (branch) => {
     const lat = String(branch?.latitude ?? "").trim();
@@ -168,11 +227,12 @@ const Branches = () => {
   };
 
   useEffect(() => {
-    if (!showModal && !showMapModal) return;
+    if (!showModal && !showMapModal && !showDeptModal) return;
 
     const onKeyDown = (e) => {
       if (e.key === "Escape") {
         if (showMapModal) closeMapModal();
+        else if (showDeptModal) closeDepartmentSelector();
         else closeFormModal();
       }
     };
@@ -184,7 +244,7 @@ const Branches = () => {
       document.removeEventListener("keydown", onKeyDown);
       document.body.style.overflow = "";
     };
-  }, [showModal, showMapModal]);
+  }, [showModal, showMapModal, showDeptModal]);
 
   const filteredBranches = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -385,7 +445,7 @@ const Branches = () => {
                             <div className="action-group">
                               <button
                                 className="action-btn btn-payroll"
-                                onClick={() => navigate(`/payroll/${branch.code}`)}
+                                onClick={() => openDepartmentSelector(branch, "payroll")}
                                 type="button"
                               >
                                 Payroll
@@ -393,24 +453,20 @@ const Branches = () => {
 
                               <button
                                 className="action-btn btn-transpo"
-                                onClick={() => navigate(`/transportation/${branch.code}`)}
+                                onClick={() => openDepartmentSelector(branch, "transportation")}
                                 type="button"
                               >
                                 Transpo
                               </button>
 
-                              <button
-                                className="action-btn btn-view"
-                                onClick={() => openMapModal(branch)}
-                                type="button"
-                              >
+                              <button className="action-btn btn-view" onClick={() => openMapModal(branch)} type="button">
                                 View Location
                               </button>
 
                               {canOpenBonus && (
                                 <button
                                   className="action-btn btn-bonus"
-                                  onClick={() => navigate(`/bonus/${branch.code}`)}
+                                  onClick={() => openDepartmentSelector(branch, "bonus")}
                                   type="button"
                                 >
                                   Bonus
@@ -420,19 +476,11 @@ const Branches = () => {
 
                             {canManageBranches && (
                               <div className="action-group">
-                                <button
-                                  className="action-btn btn-edit"
-                                  onClick={() => openEdit(branch)}
-                                  type="button"
-                                >
+                                <button className="action-btn btn-edit" onClick={() => openEdit(branch)} type="button">
                                   Edit
                                 </button>
 
-                                <button
-                                  className="action-btn btn-delete"
-                                  onClick={() => deleteBranch(branch.id)}
-                                  type="button"
-                                >
+                                <button className="action-btn btn-delete" onClick={() => deleteBranch(branch.id)} type="button">
                                   Delete
                                 </button>
                               </div>
@@ -529,22 +577,12 @@ const Branches = () => {
 
                 <div className="field">
                   <label>Latitude</label>
-                  <input
-                    className="input"
-                    value={latitude}
-                    onChange={(e) => setLatitude(e.target.value)}
-                    placeholder="14.5995"
-                  />
+                  <input className="input" value={latitude} onChange={(e) => setLatitude(e.target.value)} placeholder="14.5995" />
                 </div>
 
                 <div className="field">
                   <label>Longitude</label>
-                  <input
-                    className="input"
-                    value={longitude}
-                    onChange={(e) => setLongitude(e.target.value)}
-                    placeholder="120.9842"
-                  />
+                  <input className="input" value={longitude} onChange={(e) => setLongitude(e.target.value)} placeholder="120.9842" />
                 </div>
               </div>
 
@@ -557,6 +595,70 @@ const Branches = () => {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {showDeptModal && selectedBranch && (
+        <div className="modal-overlay" onMouseDown={closeDepartmentSelector}>
+          <div className="modal" onMouseDown={(e) => e.stopPropagation()}>
+            <div className="modal-head">
+              <div>
+                <h3>Select Department for {moduleTitle}</h3>
+                <div className="mini">
+                  Branch:{" "}
+                  <strong>
+                    {selectedBranch.code} - {selectedBranch.name}
+                  </strong>
+                </div>
+              </div>
+
+              <button className="icon-btn" type="button" onClick={closeDepartmentSelector}>
+                ✕
+              </button>
+            </div>
+
+            <div className="modal-body">
+              {loadingDepartments ? (
+                <div className="table-loading">Loading departments…</div>
+              ) : departments.length === 0 ? (
+                <div className="empty">No departments found.</div>
+              ) : (
+                <div style={{ display: "grid", gap: 10 }}>
+                  {departments.map((dept) => (
+                    <button
+                      key={dept.id}
+                      className="btn btn-outline"
+                      type="button"
+                      onClick={() => openModuleForDepartment(dept)}
+                      style={{
+                        justifyContent: "flex-start",
+                        textAlign: "left",
+                        padding: "12px 14px",
+                      }}
+                    >
+                      <span>
+                        <strong>
+                          {dept.code ? `${dept.code} - ` : ""}
+                          {dept.name}
+                        </strong>
+                        {dept.description ? (
+                          <span style={{ display: "block", opacity: 0.75, marginTop: 4 }}>
+                            {dept.description}
+                          </span>
+                        ) : null}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="modal-foot">
+              <button className="btn btn-ghost" type="button" onClick={closeDepartmentSelector}>
+                Cancel
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -576,7 +678,8 @@ const Branches = () => {
                 <div className="branch-map-title">{selectedBranchMap.name || "-"}</div>
                 <div className="branch-map-address">{selectedBranchMap.address || "No address provided"}</div>
                 <div className="branch-map-coords">
-                  Area: {selectedBranchMap.area || "-"} | Region: {selectedBranchMap.region || "-"} | Division: {selectedBranchMap.division || "-"}
+                  Area: {selectedBranchMap.area || "-"} | Region: {selectedBranchMap.region || "-"} | Division:{" "}
+                  {selectedBranchMap.division || "-"}
                 </div>
                 <div className="branch-map-coords">
                   Latitude: {selectedBranchMap.latitude ?? "-"} | Longitude: {selectedBranchMap.longitude ?? "-"}
@@ -584,12 +687,7 @@ const Branches = () => {
               </div>
 
               <div className="branch-map-frame">
-                <iframe
-                  title="Branch Location Map"
-                  src={getMapEmbedUrl(selectedBranchMap)}
-                  loading="lazy"
-                  allowFullScreen
-                />
+                <iframe title="Branch Location Map" src={getMapEmbedUrl(selectedBranchMap)} loading="lazy" allowFullScreen />
               </div>
             </div>
 

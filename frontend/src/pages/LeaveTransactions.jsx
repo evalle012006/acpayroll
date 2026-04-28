@@ -14,6 +14,14 @@ const leaveTypes = [
   "Leave Without Pay",
 ];
 
+const LEAVE_CREDIT_MAP = {
+  "Annual Leave": "annual_leave",
+  "Sick Leave": "sick_leave",
+  "Emergency Leave": "emergency_leave",
+  "Maternity Leave": "maternity_leave",
+  "Paternity Leave": "parental_leave",
+};
+
 const readUser = () => {
   try {
     return JSON.parse(localStorage.getItem("user") || "null");
@@ -24,6 +32,11 @@ const readUser = () => {
 
 const fmtDate = (d) => (d ? String(d).split("T")[0] : "-");
 const todayDate = () => new Date().toISOString().slice(0, 10);
+
+const toNum = (v) => {
+  const n = Number(v ?? 0);
+  return Number.isFinite(n) ? n : 0;
+};
 
 const diffDaysInclusive = (startDate, endDate) => {
   if (!startDate || !endDate) return 0;
@@ -37,8 +50,6 @@ const diffDaysInclusive = (startDate, endDate) => {
 const isPdfFile = (mime, name) =>
   String(mime || "").toLowerCase() === "application/pdf" ||
   String(name || "").toLowerCase().endsWith(".pdf");
-
-const toStr = (v) => String(v ?? "").trim();
 
 export default function LeaveTransactions() {
   const navigate = useNavigate();
@@ -112,7 +123,6 @@ export default function LeaveTransactions() {
   });
 
   const [attachmentFile, setAttachmentFile] = useState(null);
-
   const [employeeSearch, setEmployeeSearch] = useState("");
   const [showEmployeeDropdown, setShowEmployeeDropdown] = useState(false);
 
@@ -211,16 +221,8 @@ export default function LeaveTransactions() {
     }));
   }, [leaveForm.start_date, leaveForm.end_date]);
 
-  const renderEmployeeOptions = () =>
-    staffList.map((s) => (
-      <option key={s.id} value={s.id}>
-        {(s.employee_no ? `${s.employee_no} - ` : "") + (s.fullname || "-")}
-      </option>
-    ));
-
   const filteredEmployees = useMemo(() => {
     const q = employeeSearch.toLowerCase();
-
     if (!q) return staffList.slice(0, 30);
 
     return (staffList || []).filter((s) => {
@@ -269,6 +271,40 @@ export default function LeaveTransactions() {
     setShowEmployeeDropdown(false);
   };
 
+  const getApprovedUsedLeave = useCallback(
+    (employeeId, leaveType) => {
+      return (leaveRequests || [])
+        .filter(
+          (l) =>
+            String(l.employee_id) === String(employeeId) &&
+            String(l.leave_type) === String(leaveType) &&
+            String(l.status).toLowerCase() === "approved"
+        )
+        .reduce((sum, l) => {
+          return (
+            sum +
+            (toNum(l.total_no_of_days) || diffDaysInclusive(l.start_date, l.end_date))
+          );
+        }, 0);
+    },
+    [leaveRequests]
+  );
+
+  const getLeaveRemaining = useCallback(() => {
+    const creditField = LEAVE_CREDIT_MAP[leaveForm.leave_type];
+
+    if (!creditField) return Infinity;
+
+    const selectedStaff = staffList.find(
+      (s) => String(s.id) === String(leaveForm.employee_id)
+    );
+
+    const available = toNum(selectedStaff?.[creditField]);
+    const used = getApprovedUsedLeave(leaveForm.employee_id, leaveForm.leave_type);
+
+    return available - used;
+  }, [leaveForm.employee_id, leaveForm.leave_type, staffList, getApprovedUsedLeave]);
+
   const handleCreateLeave = async (e) => {
     e.preventDefault();
 
@@ -276,8 +312,22 @@ export default function LeaveTransactions() {
     if (!leaveForm.leave_type) return alert("Select leave type.");
     if (!leaveForm.date_created) return alert("Select date created.");
     if (!leaveForm.start_date || !leaveForm.end_date) return alert("Select start/end date.");
+
     if (String(leaveForm.start_date) > String(leaveForm.end_date)) {
       return alert("Start date must be on or before end date.");
+    }
+
+    const requestedDays = diffDaysInclusive(leaveForm.start_date, leaveForm.end_date);
+    const remainingLeave = getLeaveRemaining();
+
+    if (remainingLeave <= 0) {
+      return alert("Insufficient leave balance. Remaining leave is 0.");
+    }
+
+    if (requestedDays > remainingLeave) {
+      return alert(
+        `Insufficient leave balance. Remaining: ${remainingLeave}, Requested: ${requestedDays}.`
+      );
     }
 
     try {

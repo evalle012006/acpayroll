@@ -47,7 +47,7 @@ export default function TransferStaffOrder() {
 
   const user = useMemo(() => readUser(), []);
   const role = norm(user?.role);
-  const canApprove = role === "admin";
+  const canApprove = ["admin", "hr", "accounting"].includes(role);
 
   const [showModal, setShowModal] = useState(false);
   const [isRedeploy, setIsRedeploy] = useState(false);

@@ -412,6 +412,8 @@ function Transportation() {
         repairing +
         additionalMonitoring;
 
+      // Suspension transportation is automatically deducted from approved suspension orders.
+      // It is intentionally hidden as a separate table column.
       const totalDeduction =
         motorcycle +
         other +
@@ -703,7 +705,7 @@ function Transportation() {
                 <th rowSpan={2}>No. of Clients</th>
 
                 <th colSpan={6}>ALLOWANCES & INCENTIVES</th>
-                <th colSpan={4}>DEDUCTIONS</th>
+                <th colSpan={3}>DEDUCTIONS</th>
 
                 <th rowSpan={2}>Net Pay</th>
                 <th rowSpan={2}>10th</th>
@@ -722,7 +724,6 @@ function Transportation() {
 
                 <th>Motorcycle</th>
                 <th>Other</th>
-                <th>Suspension Transpo</th>
                 <th>Total Deduction</th>
               </tr>
             </thead>
@@ -730,7 +731,7 @@ function Transportation() {
             <tbody>
               {computedRows.length === 0 ? (
                 <tr>
-                  <td colSpan={20} className="empty-state">
+                  <td colSpan={19} className="empty-state">
                     No staff found for this branch.
                   </td>
                 </tr>
@@ -765,7 +766,6 @@ function Transportation() {
 
                       <td className="num">{fmt(r.motorcycle)}</td>
                       <td className="num">{fmt(r.other)}</td>
-                      <td className="num">{fmt(r.suspensionTransportation)}</td>
                       <td className="num td-strong">{fmt(r.totalDeduction)}</td>
 
                       <td className={`num td-strong ${r.netPay < 0 ? "neg" : "pos"}`}>
@@ -811,7 +811,6 @@ function Transportation() {
 
                   <td className="num">{fmt(sumColumn("motorcycle"))}</td>
                   <td className="num">{fmt(sumColumn("other"))}</td>
-                  <td className="num">{fmt(sumColumn("suspensionTransportation"))}</td>
                   <td className="num td-strong">{fmt(sumColumn("totalDeduction"))}</td>
 
                   <td className="num td-strong">{fmt(sumColumn("netPay"))}</td>
@@ -1025,7 +1024,7 @@ function Transportation() {
                 <th rowSpan={2}>Clients</th>
 
                 <th colSpan={6}>ALLOWANCES & INCENTIVES</th>
-                <th colSpan={4}>DEDUCTIONS</th>
+                <th colSpan={3}>DEDUCTIONS</th>
 
                 <th rowSpan={2}>Total Net Pay</th>
                 <th rowSpan={2}>10th</th>
@@ -1043,7 +1042,6 @@ function Transportation() {
 
                 <th>Motorcycle</th>
                 <th>Other</th>
-                <th>Suspension Transpo</th>
                 <th>Total</th>
               </tr>
             </thead>
@@ -1051,7 +1049,7 @@ function Transportation() {
             <tbody>
               {computedRows.length === 0 ? (
                 <tr>
-                  <td colSpan={22}>No staff found for this branch.</td>
+                  <td colSpan={21}>No staff found for this branch.</td>
                 </tr>
               ) : (
                 computedRows.map((r, idx) => {
@@ -1079,7 +1077,6 @@ function Transportation() {
 
                       <td>{fmt(r.motorcycle)}</td>
                       <td>{fmt(r.other)}</td>
-                      <td>{fmt(r.suspensionTransportation)}</td>
                       <td>{fmt(r.totalDeduction)}</td>
 
                       <td>{fmt(r.netPay)}</td>
@@ -1105,7 +1102,6 @@ function Transportation() {
 
                   <td>{fmt(sumColumn("motorcycle"))}</td>
                   <td>{fmt(sumColumn("other"))}</td>
-                  <td>{fmt(sumColumn("suspensionTransportation"))}</td>
                   <td>{fmt(sumColumn("totalDeduction"))}</td>
 
                   <td>{fmt(sumColumn("netPay"))}</td>

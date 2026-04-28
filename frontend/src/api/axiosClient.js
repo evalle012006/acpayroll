@@ -1,8 +1,6 @@
 import axios from "axios";
 
-const rawBase =
-  import.meta.env.VITE_API_URL ||
-  "http://localhost:5000/api";
+const rawBase = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
 
 const baseURL = String(rawBase).trim().replace(/\/+$/, "");
 
@@ -20,6 +18,7 @@ api.interceptors.request.use(
     const token = localStorage.getItem("token");
 
     if (token) {
+      config.headers = config.headers || {};
       config.headers.Authorization = `Bearer ${token}`;
     }
 
@@ -32,8 +31,14 @@ api.interceptors.response.use(
   (response) => response,
   (error) => {
     const status = error?.response?.status;
+    const url = String(error?.config?.url || "");
 
     if (status === 401) {
+      if (url.includes("/notifications")) {
+        console.warn("Notifications unauthorized, skipping logout.");
+        return Promise.reject(error);
+      }
+
       console.warn("Session expired. Logging out.");
 
       localStorage.removeItem("token");

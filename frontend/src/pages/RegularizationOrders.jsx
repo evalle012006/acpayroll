@@ -28,6 +28,16 @@ const readUser = () => {
   }
 };
 
+const LEAVE_FIELDS = [
+  { name: "annual_leave", label: "Annual Leave" },
+  { name: "sick_leave", label: "Sick Leave" },
+  { name: "emergency_leave", label: "Emergency Leave" },
+  { name: "maternity_leave", label: "Maternity Leave" },
+  { name: "parental_leave", label: "Parental Leave" },
+  { name: "slw_leave", label: "Special Leave for Women (SLW)" },
+  { name: "vawc_leave", label: "VAWC Leave" },
+];
+
 export default function RegularizationOrders() {
   const navigate = useNavigate();
   const employeeBoxRef = useRef(null);
@@ -61,6 +71,13 @@ export default function RegularizationOrders() {
       present_salary: "",
       previous_ecola: "",
       present_ecola: "",
+      annual_leave: "",
+      sick_leave: "",
+      emergency_leave: "",
+      maternity_leave: "",
+      parental_leave: "",
+      slw_leave: "",
+      vawc_leave: "",
       remarks: "",
     }),
     []
@@ -153,6 +170,7 @@ export default function RegularizationOrders() {
       document.removeEventListener("keydown", onKeyDown);
       document.body.style.overflow = "";
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showModal]);
 
   const filteredStaff = useMemo(() => {
@@ -212,6 +230,7 @@ export default function RegularizationOrders() {
       .join(" - ");
 
     const next = {
+      ...emptyForm,
       employee_id: String(emp.id),
       employee_no: clean(emp.employee_no),
       employee_name: clean(emp.fullname) || displayNameParts(emp),
@@ -225,6 +244,13 @@ export default function RegularizationOrders() {
       present_salary: String(toNum(emp.salary)),
       previous_ecola: String(toNum(emp.ecola)),
       present_ecola: String(toNum(emp.ecola)),
+      annual_leave: String(toNum(emp.annual_leave)),
+      sick_leave: String(toNum(emp.sick_leave)),
+      emergency_leave: String(toNum(emp.emergency_leave)),
+      maternity_leave: String(toNum(emp.maternity_leave)),
+      parental_leave: String(toNum(emp.parental_leave)),
+      slw_leave: String(toNum(emp.slw_leave)),
+      vawc_leave: String(toNum(emp.vawc_leave)),
       remarks: "",
     };
 
@@ -262,6 +288,11 @@ export default function RegularizationOrders() {
       formData.append("present_salary", String(toNum(form.present_salary)));
       formData.append("previous_ecola", String(toNum(form.previous_ecola)));
       formData.append("present_ecola", String(toNum(form.present_ecola)));
+
+      LEAVE_FIELDS.forEach((field) => {
+        formData.append(field.name, String(toNum(form[field.name])));
+      });
+
       formData.append("remarks", clean(form.remarks));
 
       if (attachFile) {
@@ -335,11 +366,7 @@ export default function RegularizationOrders() {
         </div>
 
         <div className="reg-topbar-actions">
-          <button
-            className="reg-btn reg-btn-outline"
-            onClick={() => navigate(-1)}
-            type="button"
-          >
+          <button className="reg-btn reg-btn-outline" onClick={() => navigate(-1)} type="button">
             ← Back
           </button>
 
@@ -469,11 +496,7 @@ export default function RegularizationOrders() {
 
             <form className="reg-form" onSubmit={submitCreate}>
               <div className="reg-grid">
-                <div
-                  className="reg-field"
-                  ref={employeeBoxRef}
-                  style={{ position: "relative" }}
-                >
+                <div className="reg-field" ref={employeeBoxRef} style={{ position: "relative" }}>
                   <label>Select Employee</label>
                   <input
                     type="text"
@@ -495,6 +518,13 @@ export default function RegularizationOrders() {
                         present_salary: "",
                         previous_ecola: "",
                         present_ecola: "",
+                        annual_leave: "",
+                        sick_leave: "",
+                        emergency_leave: "",
+                        maternity_leave: "",
+                        parental_leave: "",
+                        slw_leave: "",
+                        vawc_leave: "",
                       }));
                     }}
                     onFocus={() => setShowEmployeeDropdown(true)}
@@ -512,8 +542,7 @@ export default function RegularizationOrders() {
                             className="reg-search-item"
                             onClick={() => onSelectEmployee(s.id)}
                           >
-                            {s.id} — {displayNameParts(s)}{" "}
-                            {s.employee_no ? `(${s.employee_no})` : ""}
+                            {s.id} — {displayNameParts(s)} {s.employee_no ? `(${s.employee_no})` : ""}
                           </button>
                         ))
                       )}
@@ -546,9 +575,7 @@ export default function RegularizationOrders() {
                   <input
                     type="date"
                     value={form.effective_date}
-                    onChange={(e) =>
-                      setForm((p) => ({ ...p, effective_date: e.target.value }))
-                    }
+                    onChange={(e) => setForm((p) => ({ ...p, effective_date: e.target.value }))}
                     required
                   />
                 </div>
@@ -562,9 +589,7 @@ export default function RegularizationOrders() {
                   <label>Present Position</label>
                   <select
                     value={form.present_position}
-                    onChange={(e) =>
-                      setForm((p) => ({ ...p, present_position: e.target.value }))
-                    }
+                    onChange={(e) => setForm((p) => ({ ...p, present_position: e.target.value }))}
                     required
                   >
                     <option value="">Select new position</option>
@@ -586,9 +611,7 @@ export default function RegularizationOrders() {
                   <input
                     type="number"
                     value={form.present_salary}
-                    onChange={(e) =>
-                      setForm((p) => ({ ...p, present_salary: e.target.value }))
-                    }
+                    onChange={(e) => setForm((p) => ({ ...p, present_salary: e.target.value }))}
                   />
                 </div>
 
@@ -602,11 +625,31 @@ export default function RegularizationOrders() {
                   <input
                     type="number"
                     value={form.present_ecola}
-                    onChange={(e) =>
-                      setForm((p) => ({ ...p, present_ecola: e.target.value }))
-                    }
+                    onChange={(e) => setForm((p) => ({ ...p, present_ecola: e.target.value }))}
                   />
                 </div>
+
+                <div className="reg-field full">
+                  <h3 style={{ margin: "8px 0 0" }}>Leave Credits</h3>
+                </div>
+
+                {LEAVE_FIELDS.map((field) => (
+                  <div className="reg-field" key={field.name}>
+                    <label>{field.label}</label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={form[field.name]}
+                      onChange={(e) =>
+                        setForm((p) => ({
+                          ...p,
+                          [field.name]: e.target.value,
+                        }))
+                      }
+                    />
+                  </div>
+                ))}
 
                 <div className="reg-field">
                   <label>Attach File</label>
@@ -620,27 +663,17 @@ export default function RegularizationOrders() {
                   <label>Remarks</label>
                   <textarea
                     value={form.remarks}
-                    onChange={(e) =>
-                      setForm((p) => ({ ...p, remarks: e.target.value }))
-                    }
+                    onChange={(e) => setForm((p) => ({ ...p, remarks: e.target.value }))}
                     placeholder="Remarks"
                   />
                 </div>
               </div>
 
               <div className="reg-modal-actions">
-                <button
-                  className="reg-btn reg-btn-outline"
-                  type="button"
-                  onClick={closeModal}
-                >
+                <button className="reg-btn reg-btn-outline" type="button" onClick={closeModal}>
                   Cancel
                 </button>
-                <button
-                  className="reg-btn reg-btn-primary"
-                  type="submit"
-                  disabled={saving}
-                >
+                <button className="reg-btn reg-btn-primary" type="submit" disabled={saving}>
                   {saving ? "Saving..." : "Create"}
                 </button>
               </div>

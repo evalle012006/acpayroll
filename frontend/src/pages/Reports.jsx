@@ -1,7 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
 import "../styles/Reports.css";
 import api from "../api/axiosClient";
-import * as XLSX from "xlsx";
+
+const norm = (v) => String(v || "").trim().toLowerCase();
+
+const fmtDate = (v) => {
+  if (!v) return "-";
+  const s = String(v);
+  return s.includes("T") ? s.split("T")[0] : s.slice(0, 10);
+};
 
 const toNum = (v) => {
   const n = Number(v);
@@ -14,19 +21,6 @@ const money = (v) =>
     maximumFractionDigits: 2,
   })}`;
 
-const countByStatus = (rows, key = "status") => {
-  const norm = (v) => String(v || "").trim().toLowerCase();
-  return {
-    pending: rows.filter((x) => norm(x[key]) === "pending").length,
-    approved: rows.filter((x) => norm(x[key]) === "approved").length,
-    rejected: rows.filter((x) => norm(x[key]) === "rejected").length,
-    total: rows.length,
-  };
-};
-
-const getStaffStatus = (s) =>
-  String(s?.status || "Active").trim().toLowerCase();
-
 const getEmployeeName = (item) => {
   return (
     item?.employee_name ||
@@ -38,62 +32,122 @@ const getEmployeeName = (item) => {
   );
 };
 
+const isPendingLike = (status) => {
+  const s = norm(status);
+  return s === "pending" || s.includes("pending");
+};
+
+const isDoneLike = (status) => {
+  const s = norm(status);
+  return s === "approved" || s === "rejected" || s === "completed" || s === "done";
+};
+
+const getStatusClass = (status) => {
+  const s = norm(status);
+  if (s === "approved" || s === "completed" || s === "done") return "reports-status approved";
+  if (s === "rejected") return "reports-status rejected";
+  if (s.includes("pending")) return "reports-status pending";
+  return "reports-status";
+};
+
+const requestDepartments = [
+  "All",
+  "HR",
+  "Finance",
+  "Accounting",
+  "Operations",
+];
+
+const requestTypes = [
+  "All",
+  "Leave",
+  "Loan",
+  "SBF",
+  "Reimbursement",
+  "Regularization",
+  "Suspension",
+  "Exit Staff",
+  "Resignation",
+];
+
 export default function Reports() {
   const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState("");
 
-  const [staff, setStaff] = useState([]);
   const [leaves, setLeaves] = useState([]);
   const [loans, setLoans] = useState([]);
   const [sbfOrders, setSbfOrders] = useState([]);
-  const [balances, setBalances] = useState([]);
+  const [reimbursements, setReimbursements] = useState([]);
+  const [regularizations, setRegularizations] = useState([]);
+  const [suspensions, setSuspensions] = useState([]);
+  const [exitOrders, setExitOrders] = useState([]);
+  const [resignations, setResignations] = useState([]);
 
-  const [modalOpen, setModalOpen] = useState(false);
-  const [modalType, setModalType] = useState("");
+  const [selectedDepartment, setSelectedDepartment] = useState("All");
+  const [selectedType, setSelectedType] = useState("All");
+  const [selectedStatus, setSelectedStatus] = useState("Pending");
+  const [search, setSearch] = useState("");
+  const [selectedRequest, setSelectedRequest] = useState(null);
 
   const safeGet = async (url) => {
     try {
       const res = await api.get(url);
-      return res.data || [];
-    } catch (err) {
-      console.error(`Failed to fetch ${url}:`, err);
+      return Array.isArray(res.data) ? res.data : [];
+    } catch (error) {
+      console.warn(`Failed to fetch ${url}:`, error?.response?.data?.message || error.message);
       return [];
     }
   };
 
+  const loadRequests = async () => {
+    setLoading(true);
+    setErr("");
+
+    try {
+      const [
+        leaveData,
+        loanData,
+        sbfData,
+        reimbursementData,
+        regularizationData,
+        suspensionData,
+        exitData,
+        resignationData,
+      ] = await Promise.all([
+        safeGet("/leave-requests"),
+        safeGet("/loan-requests"),
+        safeGet("/sbf-orders"),
+        safeGet("/reimbursement-requests"),
+        safeGet("/regularization-orders"),
+        safeGet("/suspension-orders"),
+        safeGet("/exit-staff-orders"),
+        safeGet("/resignation-requests"),
+      ]);
+
+      setLeaves(leaveData);
+      setLoans(loanData);
+      setSbfOrders(sbfData);
+      setReimbursements(reimbursementData);
+      setRegularizations(regularizationData);
+      setSuspensions(suspensionData);
+      setExitOrders(exitData);
+      setResignations(resignationData);
+    } catch (error) {
+      setErr(error?.response?.data?.message || "Failed to load requests.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
-    const fetchReports = async () => {
-      setLoading(true);
-      try {
-        const [staffData, leaveData, loanData, sbfData, balanceData] =
-          await Promise.all([
-            safeGet("/staff"),
-            safeGet("/leave-requests"),
-            safeGet("/loan-requests"),
-            safeGet("/sbf-orders"),
-            safeGet("/staff-balances"),
-          ]);
-
-        setStaff(Array.isArray(staffData) ? staffData : []);
-        setLeaves(Array.isArray(leaveData) ? leaveData : []);
-        setLoans(Array.isArray(loanData) ? loanData : []);
-        setSbfOrders(Array.isArray(sbfData) ? sbfData : []);
-        setBalances(Array.isArray(balanceData) ? balanceData : []);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchReports();
+    loadRequests();
   }, []);
 
   useEffect(() => {
-    if (!modalOpen) return;
+    if (!selectedRequest) return;
 
     const onKeyDown = (e) => {
-      if (e.key === "Escape") {
-        setModalOpen(false);
-        setModalType("");
-      }
+      if (e.key === "Escape") setSelectedRequest(null);
     };
 
     document.addEventListener("keydown", onKeyDown);
@@ -103,401 +157,588 @@ export default function Reports() {
       document.removeEventListener("keydown", onKeyDown);
       document.body.style.overflow = "";
     };
-  }, [modalOpen]);
+  }, [selectedRequest]);
 
-  const openModal = (type) => {
-    setModalType(type);
-    setModalOpen(true);
-  };
+  const allRequests = useMemo(() => {
+    const rows = [];
 
-  const closeModal = () => {
-    setModalOpen(false);
-    setModalType("");
-  };
+    leaves.forEach((item) => {
+      rows.push({
+        id: `leave-${item.id}`,
+        rawId: item.id,
+        type: "Leave",
+        department: "HR",
+        title: item.leave_type || "Leave Request",
+        employeeNo: item.employee_no || "-",
+        employeeName: getEmployeeName(item),
+        date: item.date_created || item.created_at || item.entry_date,
+        effectiveDate: item.start_date,
+        endDate: item.end_date,
+        status: item.status || "Pending",
+        amount: null,
+        remarks: item.reason || "",
+        source: item,
+      });
+    });
 
-  const employeeSummary = useMemo(() => {
-    const active = staff.filter((x) => getStaffStatus(x) !== "inactive").length;
-    const inactive = staff.filter((x) => getStaffStatus(x) === "inactive").length;
+    loans.forEach((item) => {
+      rows.push({
+        id: `loan-${item.id}`,
+        rawId: item.id,
+        type: "Loan",
+        department: "Finance",
+        title: item.loan_type || "Loan Request",
+        employeeNo: item.employee_no || "-",
+        employeeName: getEmployeeName(item),
+        date: item.entry_date || item.created_at || item.approved_at,
+        effectiveDate: item.disbursement_date,
+        endDate: null,
+        status: item.status || "Pending",
+        amount: item.amount ?? item.total ?? null,
+        remarks: item.reason || item.description || "",
+        source: item,
+      });
+    });
+
+    sbfOrders.forEach((item) => {
+      rows.push({
+        id: `sbf-${item.id}`,
+        rawId: item.id,
+        type: "SBF",
+        department: "Finance",
+        title: item.assistance_type || "SBF Order",
+        employeeNo: item.employee_no || "-",
+        employeeName: getEmployeeName(item),
+        date: item.date_created || item.created_at,
+        effectiveDate: item.effective_date,
+        endDate: null,
+        status: item.status || "Pending",
+        amount: item.amount ?? null,
+        remarks: item.remarks || item.reason || "",
+        source: item,
+      });
+    });
+
+    reimbursements.forEach((item) => {
+      rows.push({
+        id: `reimbursement-${item.id}`,
+        rawId: item.id,
+        type: "Reimbursement",
+        department: "Finance",
+        title: item.reimbursement_type || item.expense_type || "Reimbursement Request",
+        employeeNo: item.employee_no || "-",
+        employeeName: getEmployeeName(item),
+        date: item.date_created || item.created_at || item.entry_date,
+        effectiveDate: item.transaction_date,
+        endDate: null,
+        status: item.status || "Pending",
+        amount: item.amount ?? item.total_amount ?? null,
+        remarks: item.remarks || item.reason || item.description || "",
+        source: item,
+      });
+    });
+
+    regularizations.forEach((item) => {
+      rows.push({
+        id: `regularization-${item.id}`,
+        rawId: item.id,
+        type: "Regularization",
+        department: "HR",
+        title: item.order_no || "Regularization Order",
+        employeeNo: item.employee_no || "-",
+        employeeName: getEmployeeName(item),
+        date: item.date_created || item.created_at,
+        effectiveDate: item.effective_date,
+        endDate: null,
+        status: item.status || "Pending",
+        amount: item.present_salary ?? null,
+        remarks: item.remarks || "",
+        source: item,
+      });
+    });
+
+    suspensions.forEach((item) => {
+      rows.push({
+        id: `suspension-${item.id}`,
+        rawId: item.id,
+        type: "Suspension",
+        department: "HR",
+        title: item.suspension_type || "Suspension Order",
+        employeeNo: item.employee_no || "-",
+        employeeName: getEmployeeName(item),
+        date: item.date_created || item.created_at,
+        effectiveDate: item.start_date || item.suspension_start,
+        endDate: item.end_date || item.suspension_end,
+        status: item.status || "Pending",
+        amount: item.total_deduction ?? null,
+        remarks: item.reason || item.remarks || "",
+        source: item,
+      });
+    });
+
+    exitOrders.forEach((item) => {
+      rows.push({
+        id: `exit-${item.id}`,
+        rawId: item.id,
+        type: "Exit Staff",
+        department: "HR",
+        title: item.exit_type || item.order_no || "Exit Staff Order",
+        employeeNo: item.employee_no || "-",
+        employeeName: getEmployeeName(item),
+        date: item.date_created || item.created_at,
+        effectiveDate: item.effective_date,
+        endDate: item.settlement_date,
+        status: item.status || "Pending",
+        amount: null,
+        remarks: item.remarks || item.rejection_reason || "",
+        source: item,
+      });
+    });
+
+    resignations.forEach((item) => {
+      rows.push({
+        id: `resignation-${item.id}`,
+        rawId: item.id,
+        type: "Resignation",
+        department: "HR",
+        title: item.order_no || "Resignation Request",
+        employeeNo: item.employee_no || "-",
+        employeeName: getEmployeeName(item),
+        date: item.date_created || item.created_at,
+        effectiveDate: item.effective_date || item.resignation_date,
+        endDate: null,
+        status: item.status || "Pending",
+        amount: null,
+        remarks: item.remarks || item.reason || "",
+        source: item,
+      });
+    });
+
+    rows.sort((a, b) => {
+      const ap = isPendingLike(a.status) ? 1 : 0;
+      const bp = isPendingLike(b.status) ? 1 : 0;
+      if (ap !== bp) return bp - ap;
+
+      const ad = a.date ? new Date(a.date).getTime() : 0;
+      const bd = b.date ? new Date(b.date).getTime() : 0;
+      return bd - ad;
+    });
+
+    return rows;
+  }, [
+    leaves,
+    loans,
+    sbfOrders,
+    reimbursements,
+    regularizations,
+    suspensions,
+    exitOrders,
+    resignations,
+  ]);
+
+  const summary = useMemo(() => {
+    const pending = allRequests.filter((x) => isPendingLike(x.status)).length;
+    const completed = allRequests.filter((x) => isDoneLike(x.status)).length;
+    const hr = allRequests.filter((x) => x.department === "HR" && isPendingLike(x.status)).length;
+    const finance = allRequests.filter((x) => x.department === "Finance" && isPendingLike(x.status)).length;
+    const accounting = allRequests.filter((x) => x.department === "Accounting" && isPendingLike(x.status)).length;
 
     return {
-      active,
-      inactive,
-      total: staff.length,
+      total: allRequests.length,
+      pending,
+      completed,
+      hr,
+      finance,
+      accounting,
     };
-  }, [staff]);
+  }, [allRequests]);
 
-  const leaveSummary = useMemo(() => countByStatus(leaves), [leaves]);
-  const loanSummary = useMemo(() => countByStatus(loans), [loans]);
-  const sbfSummary = useMemo(() => countByStatus(sbfOrders), [sbfOrders]);
+  const filteredRequests = useMemo(() => {
+    const q = norm(search);
 
-  const balanceSummary = useMemo(() => {
-    return balances.reduce(
-      (acc, row) => {
-        acc.cbu += toNum(row.cbu);
-        acc.cashbond += toNum(row.cashbond);
-        acc.salaryAdvance += toNum(row.salary_advance);
-        acc.specialAdvance += toNum(row.special_advance);
-        acc.cashAdvance += toNum(row.cash_advance);
-        acc.motorcycleLoan += toNum(row.motorcycle_loan);
-        acc.pagIbigLoan += toNum(row.pag_ibig_loan);
-        acc.otherReceivable += toNum(row.other_receivable);
-        acc.staffAccountsPayable += toNum(row.staff_accounts_payable);
-        return acc;
-      },
-      {
-        cbu: 0,
-        cashbond: 0,
-        salaryAdvance: 0,
-        specialAdvance: 0,
-        cashAdvance: 0,
-        motorcycleLoan: 0,
-        pagIbigLoan: 0,
-        otherReceivable: 0,
-        staffAccountsPayable: 0,
-      }
-    );
-  }, [balances]);
+    return allRequests.filter((item) => {
+      const statusOk =
+        selectedStatus === "All"
+          ? true
+          : selectedStatus === "Pending"
+          ? isPendingLike(item.status)
+          : norm(item.status) === norm(selectedStatus);
 
-  const exportData = () => [
-    {
-      total_employees: employeeSummary.total,
-      active_employees: employeeSummary.active,
-      inactive_employees: employeeSummary.inactive,
-      total_leaves: leaveSummary.total,
-      pending_leaves: leaveSummary.pending,
-      approved_leaves: leaveSummary.approved,
-      rejected_leaves: leaveSummary.rejected,
-      total_loans: loanSummary.total,
-      pending_loans: loanSummary.pending,
-      approved_loans: loanSummary.approved,
-      rejected_loans: loanSummary.rejected,
-      total_sbf_orders: sbfSummary.total,
-      pending_sbf_orders: sbfSummary.pending,
-      approved_sbf_orders: sbfSummary.approved,
-      rejected_sbf_orders: sbfSummary.rejected,
-      cbu: balanceSummary.cbu,
-      cashbond: balanceSummary.cashbond,
-      salary_advance: balanceSummary.salaryAdvance,
-      special_advance: balanceSummary.specialAdvance,
-      cash_advance: balanceSummary.cashAdvance,
-      motorcycle_loan: balanceSummary.motorcycleLoan,
-      pag_ibig_loan: balanceSummary.pagIbigLoan,
-      other_receivable: balanceSummary.otherReceivable,
-      staff_accounts_payable: balanceSummary.staffAccountsPayable,
-    },
-  ];
+      const departmentOk =
+        selectedDepartment === "All" ? true : item.department === selectedDepartment;
 
-  const exportCSV = () => {
-    const data = exportData();
-    if (!data.length) {
-      alert("No data to export.");
-      return;
+      const typeOk = selectedType === "All" ? true : item.type === selectedType;
+
+      const searchOk =
+        !q ||
+        [
+          item.type,
+          item.department,
+          item.title,
+          item.employeeNo,
+          item.employeeName,
+          item.status,
+          item.remarks,
+        ]
+          .map((x) => norm(x))
+          .join(" ")
+          .includes(q);
+
+      return statusOk && departmentOk && typeOk && searchOk;
+    });
+  }, [allRequests, selectedDepartment, selectedType, selectedStatus, search]);
+
+  const copyFollowUpText = async (item) => {
+    const message = `Follow up request
+
+Department: ${item.department}
+Request Type: ${item.type}
+Reference: ${item.rawId}
+Employee: ${item.employeeName}
+Employee No: ${item.employeeNo}
+Status: ${item.status}
+Date Filed: ${fmtDate(item.date)}
+Effective Date: ${fmtDate(item.effectiveDate)}
+Remarks: ${item.remarks || "-"}`;
+
+    try {
+      await navigator.clipboard.writeText(message);
+      alert("Follow-up message copied.");
+    } catch {
+      window.prompt("Copy this follow-up message:", message);
     }
-
-    const ws = XLSX.utils.json_to_sheet(data);
-    const csv = XLSX.utils.sheet_to_csv(ws);
-
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-    const link = document.createElement("a");
-
-    link.href = URL.createObjectURL(blob);
-    link.download = "dashboard_summary.csv";
-    link.click();
   };
 
-  const exportExcel = () => {
-    const data = exportData();
-    if (!data.length) {
-      alert("No data to export.");
-      return;
+  const getRequestRoute = (item) => {
+    switch (item.type) {
+      case "Leave":
+        return "/transactions/leave";
+
+      case "Loan":
+        return "/transactions";
+
+      case "SBF":
+        return "/transactions/sbf";
+
+      case "Reimbursement":
+        return "/transactions";
+
+      case "Regularization":
+        return "/transactions/regularization";
+
+      case "Suspension":
+        return "/transactions/suspension";
+
+      case "Exit Staff":
+        return "/transactions/exit";
+
+      case "Resignation":
+        return "/transactions/resignation";
+
+      default:
+        return "";
     }
-
-    const ws = XLSX.utils.json_to_sheet(data);
-    const wb = XLSX.utils.book_new();
-
-    XLSX.utils.book_append_sheet(wb, ws, "Summary");
-    XLSX.writeFile(wb, "dashboard_summary.xlsx");
   };
 
-  const getModalPendingCount = () => {
-    if (modalType === "employees") {
-      return staff.filter((x) => String(x?.status || "").trim().toLowerCase() === "pending").length;
-    }
-
-    if (modalType === "leaves") {
-      return leaves.filter((x) => String(x?.status || "").trim().toLowerCase() === "pending").length;
-    }
-
-    if (modalType === "loans") {
-      return loans.filter((x) => String(x?.status || "").trim().toLowerCase() === "pending").length;
-    }
-
-    if (modalType === "sbf") {
-      return sbfOrders.filter((x) => String(x?.status || "").trim().toLowerCase() === "pending").length;
-    }
-
-    return 0;
+  const openSourcePage = (item) => {
+    const route = getRequestRoute(item);
+    if (!route) return alert("No page route configured for this request.");
+    window.location.href = route;
   };
 
   return (
     <div className="reports-page">
       <div className="reports-topbar">
         <div>
-          <h2 className="reports-title">Reports / Follow Up</h2>
+          <h2 className="reports-title">Requests / Follow Up</h2>
           <p className="reports-subtitle">
-            View summary and detailed operational reports.
+            Track pending requests and follow up with HR, Finance, Accounting, or Operations.
           </p>
         </div>
-      </div>
 
-      <div className="reports-toolbar">
-        <button className="reports-btn" onClick={exportCSV} type="button">
-          Export CSV
-        </button>
-
-        <button className="reports-btn" onClick={exportExcel} type="button">
-          Export Excel
+        <button className="reports-btn" type="button" onClick={loadRequests} disabled={loading}>
+          {loading ? "Refreshing..." : "Refresh"}
         </button>
       </div>
 
-      {loading ? (
-        <div className="reports-card">
-          <div className="reports-empty">Loading reports...</div>
+      {err ? (
+        <div className="reports-card" style={{ color: "#ef4444", fontWeight: 800 }}>
+          {err}
         </div>
-      ) : (
-        <>
-          <div className="reports-grid">
-            <button
-              type="button"
-              className="reports-stat clickable"
-              onClick={() => openModal("employees")}
-            >
-              <div className="reports-stat-head">
-                <div className="reports-stat-label">Employees</div>
-              </div>
-              <div className="reports-stat-value">{employeeSummary.total}</div>
-              <div className="reports-stat-sub">
-                Active: {employeeSummary.active} | Inactive: {employeeSummary.inactive}
-              </div>
-            </button>
+      ) : null}
 
-            <button
-              type="button"
-              className="reports-stat clickable"
-              onClick={() => openModal("leaves")}
-            >
-              <div className="reports-stat-head">
-                <div className="reports-stat-label">Leave Requests</div>
-                {leaveSummary.pending > 0 && (
-                  <span className="reports-badge">{leaveSummary.pending}</span>
-                )}
-              </div>
-              <div className="reports-stat-value">{leaveSummary.total}</div>
-              <div className="reports-stat-sub">
-                Pending: {leaveSummary.pending} | Approved: {leaveSummary.approved} | Rejected: {leaveSummary.rejected}
-              </div>
-            </button>
+      <div className="reports-grid">
+        <button
+          type="button"
+          className="reports-stat clickable"
+          onClick={() => {
+            setSelectedDepartment("All");
+            setSelectedStatus("All");
+          }}
+        >
+          <div className="reports-stat-label">All Requests</div>
+          <div className="reports-stat-value">{summary.total}</div>
+          <div className="reports-stat-sub">All departments and statuses</div>
+        </button>
 
-            <button
-              type="button"
-              className="reports-stat clickable"
-              onClick={() => openModal("loans")}
-            >
-              <div className="reports-stat-head">
-                <div className="reports-stat-label">Loan Requests</div>
-                {loanSummary.pending > 0 && (
-                  <span className="reports-badge">{loanSummary.pending}</span>
-                )}
-              </div>
-              <div className="reports-stat-value">{loanSummary.total}</div>
-              <div className="reports-stat-sub">
-                Pending: {loanSummary.pending} | Approved: {loanSummary.approved} | Rejected: {loanSummary.rejected}
-              </div>
-            </button>
-
-            <button
-              type="button"
-              className="reports-stat clickable"
-              onClick={() => openModal("sbf")}
-            >
-              <div className="reports-stat-head">
-                <div className="reports-stat-label">SBF Orders</div>
-                {sbfSummary.pending > 0 && (
-                  <span className="reports-badge">{sbfSummary.pending}</span>
-                )}
-              </div>
-              <div className="reports-stat-value">{sbfSummary.total}</div>
-              <div className="reports-stat-sub">
-                Pending: {sbfSummary.pending} | Approved: {sbfSummary.approved} | Rejected: {sbfSummary.rejected}
-              </div>
-            </button>
+        <button
+          type="button"
+          className="reports-stat clickable"
+          onClick={() => {
+            setSelectedDepartment("All");
+            setSelectedStatus("Pending");
+          }}
+        >
+          <div className="reports-stat-head">
+            <div className="reports-stat-label">Pending Follow Ups</div>
+            {summary.pending > 0 && <span className="reports-badge">{summary.pending}</span>}
           </div>
+          <div className="reports-stat-value">{summary.pending}</div>
+          <div className="reports-stat-sub">Needs action or follow up</div>
+        </button>
 
-        </>
-      )}
+        <button
+          type="button"
+          className="reports-stat clickable"
+          onClick={() => {
+            setSelectedDepartment("HR");
+            setSelectedStatus("Pending");
+          }}
+        >
+          <div className="reports-stat-head">
+            <div className="reports-stat-label">HR Pending</div>
+            {summary.hr > 0 && <span className="reports-badge">{summary.hr}</span>}
+          </div>
+          <div className="reports-stat-value">{summary.hr}</div>
+          <div className="reports-stat-sub">Leave, regularization, suspension, exit</div>
+        </button>
 
-      {modalOpen && (
-        <div className="reports-modal-overlay" onMouseDown={closeModal}>
+        <button
+          type="button"
+          className="reports-stat clickable"
+          onClick={() => {
+            setSelectedDepartment("Finance");
+            setSelectedStatus("Pending");
+          }}
+        >
+          <div className="reports-stat-head">
+            <div className="reports-stat-label">Finance Pending</div>
+            {summary.finance > 0 && <span className="reports-badge">{summary.finance}</span>}
+          </div>
+          <div className="reports-stat-value">{summary.finance}</div>
+          <div className="reports-stat-sub">Loans, SBF, reimbursement</div>
+        </button>
+      </div>
+
+      <div className="reports-card">
+        <div className="reports-toolbar" style={{ marginBottom: 14 }}>
+          <input
+            className="reports-input"
+            placeholder="Search employee, request type, status, remarks..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+
+          <select
+            className="reports-input"
+            value={selectedDepartment}
+            onChange={(e) => setSelectedDepartment(e.target.value)}
+          >
+            {requestDepartments.map((d) => (
+              <option key={d} value={d}>
+                {d === "All" ? "All Departments" : d}
+              </option>
+            ))}
+          </select>
+
+          <select
+            className="reports-input"
+            value={selectedType}
+            onChange={(e) => setSelectedType(e.target.value)}
+          >
+            {requestTypes.map((t) => (
+              <option key={t} value={t}>
+                {t === "All" ? "All Request Types" : t}
+              </option>
+            ))}
+          </select>
+
+          <select
+            className="reports-input"
+            value={selectedStatus}
+            onChange={(e) => setSelectedStatus(e.target.value)}
+          >
+            <option value="Pending">Pending Only</option>
+            <option value="All">All Statuses</option>
+            <option value="Approved">Approved</option>
+            <option value="Rejected">Rejected</option>
+          </select>
+        </div>
+
+        <div className="reports-table-wrap">
+          <table className="reports-table">
+            <thead>
+              <tr>
+                <th>Department</th>
+                <th>Request Type</th>
+                <th>Employee</th>
+                <th>Date Filed</th>
+                <th>Effective</th>
+                <th>Amount</th>
+                <th>Status</th>
+                <th style={{ width: 280 }}>Follow Up</th>
+              </tr>
+            </thead>
+
+            <tbody>
+              {loading ? (
+                <tr>
+                  <td colSpan="8" className="reports-empty-cell">
+                    Loading requests...
+                  </td>
+                </tr>
+              ) : filteredRequests.length === 0 ? (
+                <tr>
+                  <td colSpan="8" className="reports-empty-cell">
+                    No requests found.
+                  </td>
+                </tr>
+              ) : (
+                filteredRequests.map((item) => (
+                  <tr key={item.id}>
+                    <td>{item.department}</td>
+                    <td>
+                      <strong>{item.type}</strong>
+                      <div style={{ opacity: 0.75, fontSize: 12, marginTop: 4 }}>
+                        {item.title}
+                      </div>
+                    </td>
+                    <td>
+                      <strong>{item.employeeName}</strong>
+                      <div style={{ opacity: 0.75, fontSize: 12, marginTop: 4 }}>
+                        {item.employeeNo}
+                      </div>
+                    </td>
+                    <td>{fmtDate(item.date)}</td>
+                    <td>
+                      {fmtDate(item.effectiveDate)}
+                      {item.endDate ? ` → ${fmtDate(item.endDate)}` : ""}
+                    </td>
+                    <td>{item.amount == null ? "-" : money(item.amount)}</td>
+                    <td>
+                      <span className={getStatusClass(item.status)}>
+                        {item.status || "Pending"}
+                      </span>
+                    </td>
+                    <td>
+                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                        <button
+                          className="reports-btn"
+                          type="button"
+                          onClick={() => setSelectedRequest(item)}
+                        >
+                          View
+                        </button>
+
+                        <button
+                          className="reports-btn"
+                          type="button"
+                          onClick={() => copyFollowUpText(item)}
+                        >
+                          Copy Follow Up
+                        </button>
+
+                        <button
+                          className="reports-btn"
+                          type="button"
+                          onClick={() => openSourcePage(item)}
+                        >
+                          Open
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {selectedRequest && (
+        <div className="reports-modal-overlay" onMouseDown={() => setSelectedRequest(null)}>
           <div className="reports-modal" onMouseDown={(e) => e.stopPropagation()}>
             <div className="reports-modal-header">
-              <h3 className="reports-modal-title">
-                {modalType === "employees" && "Employees"}
-                {modalType === "leaves" && "Leave Requests"}
-                {modalType === "loans" && "Loan Requests"}
-                {modalType === "sbf" && "SBF Orders"}
-              </h3>
+              <h3 className="reports-modal-title">Request Follow Up</h3>
 
-              <div className="reports-modal-header-right">
-                {getModalPendingCount() > 0 && (
-                  <span className="reports-modal-badge-circle">
-                    {getModalPendingCount()}
-                  </span>
-                )}
-
-                <button
-                  className="reports-modal-close"
-                  type="button"
-                  onClick={closeModal}
-                >
-                  ✕
-                </button>
-              </div>
+              <button
+                className="reports-modal-close"
+                type="button"
+                onClick={() => setSelectedRequest(null)}
+              >
+                ✕
+              </button>
             </div>
 
             <div className="reports-modal-body">
-              {modalType === "employees" && (
-                <div className="reports-table-wrap">
-                  <table className="reports-table">
-                    <thead>
-                      <tr>
-                        <th>Employee No</th>
-                        <th>Name</th>
-                        <th>Status</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {staff.length === 0 ? (
-                        <tr>
-                          <td colSpan="3" className="reports-empty-cell">
-                            No employee records found.
-                          </td>
-                        </tr>
-                      ) : (
-                        staff.map((item, idx) => (
-                          <tr key={item.id || idx}>
-                            <td>{item.employee_no || "-"}</td>
-                            <td>{getEmployeeName(item)}</td>
-                            <td>{item.status || "Active"}</td>
-                          </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              )}
+              <table className="reports-table">
+                <tbody>
+                  <tr>
+                    <th>Department</th>
+                    <td>{selectedRequest.department}</td>
+                  </tr>
+                  <tr>
+                    <th>Request Type</th>
+                    <td>{selectedRequest.type}</td>
+                  </tr>
+                  <tr>
+                    <th>Reference</th>
+                    <td>{selectedRequest.rawId}</td>
+                  </tr>
+                  <tr>
+                    <th>Employee</th>
+                    <td>{selectedRequest.employeeName}</td>
+                  </tr>
+                  <tr>
+                    <th>Employee No</th>
+                    <td>{selectedRequest.employeeNo}</td>
+                  </tr>
+                  <tr>
+                    <th>Date Filed</th>
+                    <td>{fmtDate(selectedRequest.date)}</td>
+                  </tr>
+                  <tr>
+                    <th>Effective Date</th>
+                    <td>{fmtDate(selectedRequest.effectiveDate)}</td>
+                  </tr>
+                  <tr>
+                    <th>Status</th>
+                    <td>{selectedRequest.status}</td>
+                  </tr>
+                  <tr>
+                    <th>Remarks</th>
+                    <td>{selectedRequest.remarks || "-"}</td>
+                  </tr>
+                </tbody>
+              </table>
 
-              {modalType === "leaves" && (
-                <div className="reports-table-wrap">
-                  <table className="reports-table">
-                    <thead>
-                      <tr>
-                        <th>Employee No</th>
-                        <th>Employee Name</th>
-                        <th>Leave Type</th>
-                        <th>Status</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {leaves.length === 0 ? (
-                        <tr>
-                          <td colSpan="4" className="reports-empty-cell">
-                            No leave records found.
-                          </td>
-                        </tr>
-                      ) : (
-                        leaves.map((item, idx) => (
-                          <tr key={item.id || idx}>
-                            <td>{item.employee_no || "-"}</td>
-                            <td>{getEmployeeName(item)}</td>
-                            <td>{item.leave_type || "-"}</td>
-                            <td>{item.status || "-"}</td>
-                          </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              )}
+              <div style={{ display: "flex", gap: 10, marginTop: 16, flexWrap: "wrap" }}>
+                <button
+                  className="reports-btn"
+                  type="button"
+                  onClick={() => copyFollowUpText(selectedRequest)}
+                >
+                  Copy Follow-Up Message
+                </button>
 
-              {modalType === "loans" && (
-                <div className="reports-table-wrap">
-                  <table className="reports-table">
-                    <thead>
-                      <tr>
-                        <th>Employee No</th>
-                        <th>Employee Name</th>
-                        <th>Loan Type</th>
-                        <th>Amount</th>
-                        <th>Status</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {loans.length === 0 ? (
-                        <tr>
-                          <td colSpan="5" className="reports-empty-cell">
-                            No loan records found.
-                          </td>
-                        </tr>
-                      ) : (
-                        loans.map((item, idx) => (
-                          <tr key={item.id || idx}>
-                            <td>{item.employee_no || "-"}</td>
-                            <td>{getEmployeeName(item)}</td>
-                            <td>{item.loan_type || "-"}</td>
-                            <td>{money(item.amount)}</td>
-                            <td>{item.status || "-"}</td>
-                          </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-
-              {modalType === "sbf" && (
-                <div className="reports-table-wrap">
-                  <table className="reports-table">
-                    <thead>
-                      <tr>
-                        <th>Order No</th>
-                        <th>Employee No</th>
-                        <th>Employee Name</th>
-                        <th>Assistance Type</th>
-                        <th>Status</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {sbfOrders.length === 0 ? (
-                        <tr>
-                          <td colSpan="5" className="reports-empty-cell">
-                            No SBF records found.
-                          </td>
-                        </tr>
-                      ) : (
-                        sbfOrders.map((item, idx) => (
-                          <tr key={item.id || idx}>
-                            <td>{item.order_no || "-"}</td>
-                            <td>{item.employee_no || "-"}</td>
-                            <td>{getEmployeeName(item)}</td>
-                            <td>{item.assistance_type || "-"}</td>
-                            <td>{item.status || "-"}</td>
-                          </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              )}
+                <button
+                  className="reports-btn"
+                  type="button"
+                  onClick={() => openSourcePage(selectedRequest)}
+                >
+                  Open Request Page
+                </button>
+              </div>
             </div>
           </div>
         </div>
