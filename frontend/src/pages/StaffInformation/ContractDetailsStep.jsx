@@ -193,17 +193,17 @@ export default function ContractDetailsStep({form, branches, positionRates = [],
 
         <div className="field">
           <label>Area</label>
-          <input className="input" name="area" value={form.area} onChange={onChange} readOnly />
+          <input className="input" name="area" value={form.area} onChange={onChange} />
         </div>
 
         <div className="field">
           <label>Region</label>
-          <input className="input" name="region" value={form.region} onChange={onChange} readOnly />
+          <input className="input" name="region" value={form.region} onChange={onChange} />
         </div>
 
         <div className="field">
           <label>Division</label>
-          <input className="input" name="division" value={form.division} onChange={onChange} readOnly />
+          <input className="input" name="division" value={form.division} onChange={onChange} />
         </div>
 
         <div className="field" style={{ position: "relative" }}>

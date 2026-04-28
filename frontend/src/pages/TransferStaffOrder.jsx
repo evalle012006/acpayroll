@@ -48,6 +48,58 @@ export default function TransferStaffOrder() {
   const user = useMemo(() => readUser(), []);
   const role = norm(user?.role);
   const canApprove = ["admin", "hr", "accounting"].includes(role);
+    const userBranchId = String(user?.branch_id || "");
+    const userArea = norm(user?.area);
+    const userRegion = norm(user?.region);
+    const userDivision = norm(user?.division);
+
+    const canAccessStaff = (s) => {
+      if (["admin", "hr", "accounting", "vice president", "senior vice president", "president"].includes(role)) {
+        return true;
+      }
+
+      if (role === "branch manager") {
+        return String(s?.branch_id || "") === String(user?.branch_id || "");
+      }
+
+      if (role === "area manager") {
+        return norm(s?.area) === norm(user?.area);
+      }
+
+      if (role === "regional manager") {
+        return norm(s?.region) === norm(user?.region);
+      }
+
+      if (role === "assistant vice president") {
+        return norm(s?.division) === norm(user?.division);
+      }
+
+      return false;
+    };
+
+    const canAccessFromBranch = (b) => {
+      if (["admin", "hr", "accounting", "vice president", "senior vice president", "president"].includes(role)) {
+        return true;
+      }
+
+      if (role === "branch manager") {
+        return String(b?.id || "") === userBranchId;
+      }
+
+      if (role === "area manager") {
+        return norm(b?.area) === userArea;
+      }
+
+      if (role === "regional manager") {
+        return norm(b?.region) === userRegion;
+      }
+
+      if (role === "assistant vice president") {
+        return norm(b?.division) === userDivision;
+      }
+
+      return false;
+    };
 
   const [showModal, setShowModal] = useState(false);
   const [isRedeploy, setIsRedeploy] = useState(false);
@@ -212,7 +264,7 @@ export default function TransferStaffOrder() {
 
       try {
         const [bRes, sRes] = await Promise.all([
-          api.get("/branches"),
+          api.get("/branches-all"),
           api.get("/staff"),
         ]);
 
@@ -348,11 +400,13 @@ export default function TransferStaffOrder() {
   const filteredStaff = useMemo(() => {
     const q = toStr(employeeQuery).toLowerCase();
 
-    if (!q) return staff.slice(0, 15);
-
     return staff
+      .filter(canAccessStaff)
       .filter((s) => {
+        if (!q) return true;
+
         const branch = branches.find((b) => Number(b.id) === Number(s.branch_id));
+
         const haystack = [
           s.id,
           s.employee_no,
@@ -365,6 +419,9 @@ export default function TransferStaffOrder() {
           s.branch_name,
           branch?.code,
           branch?.name,
+          s.area,
+          s.region,
+          s.division,
         ]
           .map(toStr)
           .join(" ")
@@ -373,16 +430,17 @@ export default function TransferStaffOrder() {
         return haystack.includes(q);
       })
       .slice(0, 20);
-  }, [staff, employeeQuery, branches]);
+  }, [staff, employeeQuery, branches, role, user]);
 
   const filteredFromBranches = useMemo(() => {
     const q = toStr(fromBranchQuery).toLowerCase();
 
-    if (!q) return branches.slice(0, 15);
-
     return branches
+      .filter(canAccessFromBranch)
       .filter((b) => {
-        const haystack = [b.id, b.code, b.name, b.area]
+        if (!q) return true;
+
+        const haystack = [b.id, b.code, b.name, b.area, b.region, b.division]
           .map(toStr)
           .join(" ")
           .toLowerCase();
@@ -390,23 +448,30 @@ export default function TransferStaffOrder() {
         return haystack.includes(q);
       })
       .slice(0, 20);
-  }, [branches, fromBranchQuery]);
+  }, [branches, fromBranchQuery, role, userBranchId, userArea, userRegion, userDivision]);
 
   const filteredToBranches = useMemo(() => {
     const q = toStr(toBranchQuery).toLowerCase();
 
-    if (!q) return branches.slice(0, 15);
-
     return branches
       .filter((b) => {
-        const haystack = [b.id, b.code, b.name, b.area]
+        if (!q) return true;
+
+        const haystack = [
+          b.id,
+          b.code,
+          b.name,
+          b.area,
+          b.region,
+          b.division,
+        ]
           .map(toStr)
           .join(" ")
           .toLowerCase();
 
         return haystack.includes(q);
       })
-      .slice(0, 20);
+      .slice(0, 100);
   }, [branches, toBranchQuery]);
 
   useEffect(() => {
@@ -1518,3 +1583,5 @@ export default function TransferStaffOrder() {
     </div>
   );
 }
+
+

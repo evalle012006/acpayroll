@@ -190,18 +190,55 @@ export default function StaffInformation() {
 
   const filteredStaff = useMemo(() => {
     const q = norm(search);
+
     return staff.filter((s) => {
+      const userBranch = String(user?.branch_id || "");
+      const userArea = norm(user?.area);
+      const userRegion = norm(user?.region);
+      const userDivision = norm(user?.division);
+
+      const staffBranch = String(s?.branch_id || "");
+      const staffArea = norm(s?.area);
+      const staffRegion = norm(s?.region);
+      const staffDivision = norm(s?.division);
+
+      if (role === "branch manager" && staffBranch !== userBranch) return false;
+      if (role === "area manager" && staffArea !== userArea) return false;
+      if (role === "regional manager" && staffRegion !== userRegion) return false;
+      if (role === "assistant vice president" && staffDivision !== userDivision) return false;
+
       const st = String(s.status || "Active");
       if (statusFilter !== "All" && st !== statusFilter) return false;
+
       if (!q) return true;
+
       const hay = [
-        s.id, s.employee_no, s.fullname, s.last_name, s.first_name, s.middle_name,
-        s.position, s.department, s.area, s.region, s.division, s.branch_id,
-        branchNameById(s.branch_id), s.status, s.address, s.municipality, s.province, s.contact, s.email,
-      ].map((x) => norm(x)).join(" ");
+        s.id,
+        s.employee_no,
+        s.fullname,
+        s.last_name,
+        s.first_name,
+        s.middle_name,
+        s.position,
+        s.department,
+        s.area,
+        s.region,
+        s.division,
+        s.branch_id,
+        branchNameById(s.branch_id),
+        s.status,
+        s.address,
+        s.municipality,
+        s.province,
+        s.contact,
+        s.email,
+      ]
+        .map((x) => norm(x))
+        .join(" ");
+
       return hay.includes(q);
     });
-  }, [staff, search, statusFilter, branchNameById]);
+  }, [staff, search, statusFilter, branchNameById, role, user]);
 
   const isStaffStepValid = useMemo(() => !!toStr(form.last_name) && !!toStr(form.first_name), [form.last_name, form.first_name]);
   const isContractStepValid = useMemo(() => !!toStr(form.position), [form.position]);

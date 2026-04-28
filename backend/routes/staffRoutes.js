@@ -268,9 +268,10 @@ async function insertStaffFromBody(client, body) {
 
     if (branchRes.rowCount > 0) {
       const b = branchRes.rows[0];
-      finalArea = toStr(b.area) || finalArea;
-      finalRegion = toStr(b.region) || finalRegion;
-      finalDivision = toStr(b.division) || finalDivision;
+
+      finalArea = toStr(body.area) || toStr(b.area) || null;
+      finalRegion = toStr(body.region) || toStr(b.region) || null;
+      finalDivision = toStr(body.division) || toStr(b.division) || null;
     }
   }
 
@@ -919,9 +920,10 @@ router.put(
 
         if (branchRes.rowCount > 0) {
           const b = branchRes.rows[0];
-          finalArea = toStr(b.area) || finalArea;
-          finalRegion = toStr(b.region) || finalRegion;
-          finalDivision = toStr(b.division) || finalDivision;
+
+          finalArea = toStr(body.area) || toStr(b.area) || null;
+          finalRegion = toStr(body.region) || toStr(b.region) || null;
+          finalDivision = toStr(body.division) || toStr(b.division) || null;
         }
       }
 

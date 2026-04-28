@@ -163,34 +163,22 @@ export default function ExitStaff() {
           </div>
         </div>
 
-        <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 14 }}>
-          <input
-            type="text"
-            value={keyword}
-            onChange={(e) => setKeyword(e.target.value)}
-            placeholder="Search employee, branch, department..."
-            style={{
-              minWidth: 260,
-              flex: 1,
-              height: 42,
-              borderRadius: 10,
-              border: "1px solid #d1d5db",
-              padding: "0 12px",
-              outline: "none",
-            }}
-          />
+        <div className="exit-filter-bar">
+          <div className="exit-search-box">
+            <span className="exit-search-icon">⌕</span>
+            <input
+              className="exit-search-input"
+              type="text"
+              value={keyword}
+              onChange={(e) => setKeyword(e.target.value)}
+              placeholder="Search employee, branch, department..."
+            />
+          </div>
 
           <select
+            className="exit-type-select"
             value={typeFilter}
             onChange={(e) => setTypeFilter(e.target.value)}
-            style={{
-              width: 180,
-              height: 42,
-              borderRadius: 10,
-              border: "1px solid #d1d5db",
-              padding: "0 12px",
-              outline: "none",
-            }}
           >
             <option value="all">All Exit Types</option>
             <option value="awol">AWOL</option>

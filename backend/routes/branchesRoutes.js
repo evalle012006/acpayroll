@@ -24,9 +24,11 @@ const isTread = (req) => roleLower(req) === "tread";
 const isBranchManager = (req) => roleLower(req) === "branch manager";
 const isAreaManager = (req) => roleLower(req) === "area manager";
 const isRegionalManager = (req) => roleLower(req) === "regional manager";
-const isAssistantVicePresident = (req) => roleLower(req) === "assistant vice president";
+const isAssistantVicePresident = (req) =>
+  roleLower(req) === "assistant vice president";
 const isVicePresident = (req) => roleLower(req) === "vice president";
-const isSeniorVicePresident = (req) => roleLower(req) === "senior vice president";
+const isSeniorVicePresident = (req) =>
+  roleLower(req) === "senior vice president";
 const isPresident = (req) => roleLower(req) === "president";
 
 const isTopManagement = (req) =>
@@ -129,6 +131,39 @@ router.get("/branches", requireAuth, async (req, res) => {
   }
 });
 
+/* ✅ NEW: all branches for Transfer To dropdown */
+router.get(
+  "/branches-all",
+  requireAuth,
+  requireRole([
+    "admin",
+    "hr",
+    "accounting",
+    "tread",
+    "branch manager",
+    "area manager",
+    "regional manager",
+    "assistant vice president",
+    "vice president",
+    "senior vice president",
+    "president",
+  ]),
+  async (_req, res) => {
+    try {
+      const r = await pool.query(`
+        SELECT id, code, name, area, region, division, address, latitude, longitude
+        FROM public.branches
+        ORDER BY id ASC
+      `);
+
+      return res.json(r.rows);
+    } catch (e) {
+      console.error("GET /api/branches-all ERROR:", e.message);
+      return res.status(500).json({ message: "Server error" });
+    }
+  }
+);
+
 router.get("/branches/:id", requireAuth, async (req, res) => {
   try {
     const id = toInt(req.params.id);
@@ -144,13 +179,16 @@ router.get("/branches/:id", requireAuth, async (req, res) => {
         [id]
       );
 
-      if (r.rowCount === 0) return res.status(404).json({ message: "Branch not found" });
+      if (r.rowCount === 0)
+        return res.status(404).json({ message: "Branch not found" });
+
       return res.json(r.rows[0]);
     }
 
     if (isBranchManager(req)) {
       const branchCode = getUserBranchCode(req);
-      if (!branchCode) return res.status(403).json({ message: "Access denied" });
+      if (!branchCode)
+        return res.status(403).json({ message: "Access denied" });
 
       const r = await pool.query(
         `
@@ -162,7 +200,9 @@ router.get("/branches/:id", requireAuth, async (req, res) => {
         [id, branchCode]
       );
 
-      if (r.rowCount === 0) return res.status(403).json({ message: "Access denied" });
+      if (r.rowCount === 0)
+        return res.status(403).json({ message: "Access denied" });
+
       return res.json(r.rows[0]);
     }
 
@@ -180,7 +220,9 @@ router.get("/branches/:id", requireAuth, async (req, res) => {
         [id, area]
       );
 
-      if (r.rowCount === 0) return res.status(403).json({ message: "Access denied" });
+      if (r.rowCount === 0)
+        return res.status(403).json({ message: "Access denied" });
+
       return res.json(r.rows[0]);
     }
 
@@ -198,13 +240,16 @@ router.get("/branches/:id", requireAuth, async (req, res) => {
         [id, region]
       );
 
-      if (r.rowCount === 0) return res.status(403).json({ message: "Access denied" });
+      if (r.rowCount === 0)
+        return res.status(403).json({ message: "Access denied" });
+
       return res.json(r.rows[0]);
     }
 
     if (isAssistantVicePresident(req)) {
       const division = getUserDivision(req);
-      if (!division) return res.status(403).json({ message: "Access denied" });
+      if (!division)
+        return res.status(403).json({ message: "Access denied" });
 
       const r = await pool.query(
         `
@@ -216,7 +261,9 @@ router.get("/branches/:id", requireAuth, async (req, res) => {
         [id, division]
       );
 
-      if (r.rowCount === 0) return res.status(403).json({ message: "Access denied" });
+      if (r.rowCount === 0)
+        return res.status(403).json({ message: "Access denied" });
+
       return res.json(r.rows[0]);
     }
 
@@ -242,11 +289,16 @@ router.post(
       const latitude = toNumOrNull(req.body?.latitude);
       const longitude = toNumOrNull(req.body?.longitude);
 
-      if (!code) return res.status(400).json({ message: "Branch code is required" });
-      if (!name) return res.status(400).json({ message: "Branch name is required" });
-      if (!area) return res.status(400).json({ message: "Area is required" });
-      if (!region) return res.status(400).json({ message: "Region is required" });
-      if (!division) return res.status(400).json({ message: "Division is required" });
+      if (!code)
+        return res.status(400).json({ message: "Branch code is required" });
+      if (!name)
+        return res.status(400).json({ message: "Branch name is required" });
+      if (!area)
+        return res.status(400).json({ message: "Area is required" });
+      if (!region)
+        return res.status(400).json({ message: "Region is required" });
+      if (!division)
+        return res.status(400).json({ message: "Division is required" });
 
       const dup = await pool.query(
         `
@@ -260,7 +312,9 @@ router.post(
       );
 
       if (dup.rowCount > 0) {
-        return res.status(409).json({ message: "Branch code or name already exists" });
+        return res
+          .status(409)
+          .json({ message: "Branch code or name already exists" });
       }
 
       const ins = await pool.query(
@@ -300,11 +354,16 @@ router.put(
       const latitude = toNumOrNull(req.body?.latitude);
       const longitude = toNumOrNull(req.body?.longitude);
 
-      if (!code) return res.status(400).json({ message: "Branch code is required" });
-      if (!name) return res.status(400).json({ message: "Branch name is required" });
-      if (!area) return res.status(400).json({ message: "Area is required" });
-      if (!region) return res.status(400).json({ message: "Region is required" });
-      if (!division) return res.status(400).json({ message: "Division is required" });
+      if (!code)
+        return res.status(400).json({ message: "Branch code is required" });
+      if (!name)
+        return res.status(400).json({ message: "Branch name is required" });
+      if (!area)
+        return res.status(400).json({ message: "Area is required" });
+      if (!region)
+        return res.status(400).json({ message: "Region is required" });
+      if (!division)
+        return res.status(400).json({ message: "Division is required" });
 
       const dup = await pool.query(
         `
@@ -318,7 +377,9 @@ router.put(
       );
 
       if (dup.rowCount > 0) {
-        return res.status(409).json({ message: "Branch code or name already exists" });
+        return res
+          .status(409)
+          .json({ message: "Branch code or name already exists" });
       }
 
       const upd = await pool.query(
@@ -338,7 +399,8 @@ router.put(
         [code, name, area, region, division, address, latitude, longitude, id]
       );
 
-      if (upd.rowCount === 0) return res.status(404).json({ message: "Branch not found" });
+      if (upd.rowCount === 0)
+        return res.status(404).json({ message: "Branch not found" });
 
       return res.json(upd.rows[0]);
     } catch (e) {
@@ -382,7 +444,8 @@ router.delete(
         [id]
       );
 
-      if (del.rowCount === 0) return res.status(404).json({ message: "Branch not found" });
+      if (del.rowCount === 0)
+        return res.status(404).json({ message: "Branch not found" });
 
       return res.json({ message: "Branch deleted", id: del.rows[0].id });
     } catch (e) {

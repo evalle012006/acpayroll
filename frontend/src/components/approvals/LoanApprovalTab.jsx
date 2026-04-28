@@ -343,6 +343,71 @@ export default function LoanApprovalTab() {
     });
   }, [staffList, buildStaffDisplay]);
 
+  const canSeeLoanByScope = useCallback(
+  (item) => {
+    if (
+      isAdmin ||
+      isHr ||
+      isAccounting ||
+      isTread ||
+      isVicePresident ||
+      isSeniorVicePresident ||
+      isPresident
+    ) {
+      return true;
+    }
+
+    const staff =
+      staffMap.get(String(item.staff_id)) ||
+      staffList.find((s) => String(s.employee_no) === String(item.employee_no));
+
+    if (!staff) return false;
+
+    if (isBranchManager) {
+      return String(staff.branch_id || "") === String(user?.branch_id || "");
+    }
+
+    if (isAreaManager) {
+      return norm(staff.area) === norm(user?.area);
+    }
+
+    if (isRegionalManager) {
+      return norm(staff.region) === norm(user?.region);
+    }
+
+    if (isAssistantVicePresident) {
+      return norm(staff.division) === norm(user?.division);
+    }
+
+    return false;
+  },
+  [
+    isAdmin,
+    isHr,
+    isAccounting,
+    isTread,
+    isVicePresident,
+    isSeniorVicePresident,
+    isPresident,
+    isBranchManager,
+    isAreaManager,
+    isRegionalManager,
+    isAssistantVicePresident,
+    staffMap,
+    staffList,
+    user,
+  ]
+);
+
+const filteredLoan = useMemo(() => {
+  return loanRequests.filter((item) => {
+    if (!canSeeLoanByScope(item)) return false;
+
+    if (selectedLoanType === "All") return true;
+    return item.loan_type === selectedLoanType;
+  });
+}, [loanRequests, selectedLoanType, canSeeLoanByScope]);
+
   const filteredLoanEmployees = useMemo(() => {
     const q = norm(loanEmployeeSearch);
     if (!q) return searchableStaff.slice(0, 20);
@@ -355,13 +420,6 @@ export default function LoanApprovalTab() {
     if (s === "rejected") return "badge badge-rejected";
     return "badge badge-pending";
   };
-
-  const filteredLoan = useMemo(() => {
-    return loanRequests.filter((item) => {
-      if (selectedLoanType === "All") return true;
-      return item.loan_type === selectedLoanType;
-    });
-  }, [loanRequests, selectedLoanType]);
 
   const loanPreview = useMemo(() => {
     const amount = toNum(loanForm.amount);
@@ -555,8 +613,8 @@ export default function LoanApprovalTab() {
   };
 
   const loanPendingCount = useMemo(
-    () => loanRequests.filter((x) => norm(x.status) === "pending").length,
-    [loanRequests]
+    () => filteredLoan.filter((x) => norm(x.status) === "pending").length,
+    [filteredLoan]
   );
 
   return (
