@@ -961,8 +961,18 @@ router.put(
           mother_fullname=$63, mother_address=$64, mother_occupation=$65, mother_employer=$66, mother_contact=$67,
           guardian_fullname=$68, guardian_address=$69, guardian_occupation=$70, guardian_employer=$71, guardian_contact=$72,
           sss_no=$73, philhealth_no=$74, pagibig_no=$75, tin_no=$76,
-          children=$77::jsonb, education=$78::jsonb, employment_history=$79::jsonb, beneficiaries=$80::jsonb
-        WHERE id=$81
+          children=$77::jsonb,
+            education=$78::jsonb,
+            employment_history=$79::jsonb,
+            beneficiaries=$80::jsonb,
+
+            annual_leave=$81,
+            sick_leave=$82,
+            emergency_leave=$83,
+            maternity_leave=$84,
+            parental_leave=$85
+
+            WHERE id=$86
         RETURNING id, employee_no, status
         `,
         [
@@ -1066,6 +1076,12 @@ router.put(
           JSON.stringify(education),
           JSON.stringify(employment_history),
           JSON.stringify(beneficiaries),
+
+          toNum(body.annual_leave),
+          toNum(body.sick_leave),
+          toNum(body.emergency_leave),
+          toNum(body.maternity_leave),
+          toNum(body.parental_leave),
 
           id,
         ]

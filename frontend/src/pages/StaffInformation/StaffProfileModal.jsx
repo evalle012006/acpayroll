@@ -3,7 +3,7 @@ import api from "../../api/axiosClient";
 import PersonalBalancesStep from "./PersonalBalancesStep";
 import { safeJsonArray, toStr, fmtDate, toNum, money, displayName, loanDisplayDate, compute13thMonthBreakdown, } from "./staffInfoUtils";
 
-export default function StaffProfileModal({ staff, signedPhotoUrl, onClose, branchNameById, canViewPrivateDetails = true, }) {
+export default function StaffProfileModal({ staff, signedPhotoUrl, onClose, branchNameById, canViewPrivateDetails = true, canEditLeaveDetails = false, }) {
   const [tab, setTab] = useState("staff");
   const [leaveKind, setLeaveKind] = useState("All");
   const [leaveRows, setLeaveRows] = useState([]);
@@ -38,6 +38,53 @@ export default function StaffProfileModal({ staff, signedPhotoUrl, onClose, bran
   });
   const [loadingBonus15, setLoadingBonus15] = useState(false);
   const [errBonus15, setErrBonus15] = useState("");
+
+  const [editingLeave, setEditingLeave] = useState(false);
+
+  const [localLeave, setLocalLeave] = useState({
+    annual_leave: toNum(staff.annual_leave),
+    sick_leave: toNum(staff.sick_leave),
+    emergency_leave: toNum(staff.emergency_leave),
+    maternity_leave: toNum(staff.maternity_leave),
+    parental_leave: toNum(staff.parental_leave),
+  });
+
+  const [leaveForm, setLeaveForm] = useState({
+    annual_leave: toNum(staff.annual_leave),
+    sick_leave: toNum(staff.sick_leave),
+    emergency_leave: toNum(staff.emergency_leave),
+    maternity_leave: toNum(staff.maternity_leave),
+    parental_leave: toNum(staff.parental_leave),
+  });
+
+  const handleLeaveChange = (field, value) => {
+    setLeaveForm((prev) => ({
+      ...prev,
+      [field]: value,
+    }));
+  };
+
+  const saveLeaveDetails = async () => {
+    try {
+      await api.put(`/staff/${staff.id}`, {
+        ...staff,
+        ...leaveForm,
+      });
+
+      setLocalLeave({
+        annual_leave: toNum(leaveForm.annual_leave),
+        sick_leave: toNum(leaveForm.sick_leave),
+        emergency_leave: toNum(leaveForm.emergency_leave),
+        maternity_leave: toNum(leaveForm.maternity_leave),
+        parental_leave: toNum(leaveForm.parental_leave),
+      });
+
+      alert("Leave details updated!");
+      setEditingLeave(false);
+    } catch (e) {
+      alert("Failed to update leave details");
+    }
+  };
 
   const childrenArr = useMemo(() => safeJsonArray(staff?.children), [staff?.children]);
   const educationArr = useMemo(() => safeJsonArray(staff?.education), [staff?.education]);
@@ -543,89 +590,111 @@ export default function StaffProfileModal({ staff, signedPhotoUrl, onClose, bran
 
           {tab === "leave" && (
             <>
-              <table className="profile-table" style={{ marginBottom: 16 }}>
-                <thead>
-                  <tr>
-                    <th>Leave Type</th>
-                    <th>Available</th>
-                    <th>Used</th>
-                    <th>Remaining</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr>
-                    <td>Annual Leave</td>
-                    <td>{toNum(staff.annual_leave)}</td>
-                    <td>{leaveUsage.annual_leave}</td>
-                    <td>{toNum(staff.annual_leave) - leaveUsage.annual_leave}</td>
-                  </tr>
+              {canEditLeaveDetails && !editingLeave && (
+                <button
+                  className="btn btn-outline"
+                  onClick={() => setEditingLeave(true)}
+                  style={{ marginBottom: 10 }}
+                >
+                  Edit Leave Details
+                </button>
+              )}
 
-                  <tr>
-                    <td>Sick Leave</td>
-                    <td>{toNum(staff.sick_leave)}</td>
-                    <td>{leaveUsage.sick_leave}</td>
-                    <td>{toNum(staff.sick_leave) - leaveUsage.sick_leave}</td>
-                  </tr>
+              {editingLeave && (
+                <div className="leave-edit-card">
+                  <div className="leave-edit-grid">
+                    {[
+                      ["Annual Leave", "annual_leave"],
+                      ["Sick Leave", "sick_leave"],
+                      ["Emergency Leave", "emergency_leave"],
+                      ["Maternity Leave", "maternity_leave"],
+                      ["Paternity Leave", "parental_leave"],
+                    ].map(([label, key]) => (
+                      <div key={key} className="leave-field">
+                        <label className="leave-label">{label}</label>
+                        <input
+                          type="number"
+                          value={leaveForm[key]}
+                          onChange={(e) => handleLeaveChange(key, e.target.value)}
+                          className="leave-input"
+                        />
+                      </div>
+                    ))}
+                  </div>
 
-                  <tr>
-                    <td>Emergency Leave</td>
-                    <td>{toNum(staff.emergency_leave)}</td>
-                    <td>{leaveUsage.emergency_leave}</td>
-                    <td>{toNum(staff.emergency_leave) - leaveUsage.emergency_leave}</td>
-                  </tr>
+                  <div className="leave-actions">
+                    <button className="btn btn-primary" onClick={saveLeaveDetails}>
+                      💾 Save Changes
+                    </button>
 
-                  <tr>
-                    <td>Maternity Leave</td>
-                    <td>{toNum(staff.maternity_leave)}</td>
-                    <td>{leaveUsage.maternity_leave}</td>
-                    <td>{toNum(staff.maternity_leave) - leaveUsage.maternity_leave}</td>
-                  </tr>
-
-                  <tr>
-                    <td>Paternity Leave</td>
-                    <td>{toNum(staff.parental_leave)}</td>
-                    <td>{leaveUsage.parental_leave}</td>
-                    <td>{toNum(staff.parental_leave) - leaveUsage.parental_leave}</td>
-                  </tr>
-                </tbody>
-              </table>
-
-              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
-                {["All", "Pending", "Approved", "Rejected"].map((k) => (
-                  <Chip key={k} label={k} active={leaveKind === k} onClick={() => setLeaveKind(k)} />
-                ))}
-              </div>
-              {loadingLeave && <div className="empty-state">Loading leave details…</div>}
-              {!loadingLeave && errLeave ? <div className="empty-state" style={{ color: "#ef4444" }}>{errLeave}</div> : null}
-              {!loadingLeave && !errLeave && filteredLeaves.length === 0 ? <EmptyState title="No leave records yet." hint="Requests will show here." /> : null}
-              {!loadingLeave && !errLeave && filteredLeaves.length > 0 ? (
-                <div className="table-scroll">
-                  <table className="saas-table staffinfo-table">
-                    <thead>
-                      <tr>
-                        <th style={{ width: 190 }}>Code</th>
-                        <th style={{ width: 170 }}>Type</th>
-                        <th style={{ width: 130 }}>Start</th>
-                        <th style={{ width: 130 }}>End</th>
-                        <th style={{ width: 140 }}>Entry Date</th>
-                        <th style={{ width: 120 }}>Status</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filteredLeaves.map((r) => (
-                        <tr key={r.id}>
-                          <td className="mono">{r.transaction_code || r.id}</td>
-                          <td>{r.leave_type || "-"}</td>
-                          <td className="mono">{fmtDate(r.start_date)}</td>
-                          <td className="mono">{fmtDate(r.end_date)}</td>
-                          <td className="mono">{fmtDate(r.entry_date)}</td>
-                          <td className="mono">{r.status || "-"}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                    <button
+                      className="btn btn-outline"
+                      onClick={() => setEditingLeave(false)}
+                    >
+                      Cancel
+                    </button>
+                  </div>
                 </div>
-              ) : null}
+              )}
+
+              {!editingLeave && (
+                <table className="profile-table">
+                  <thead>
+                    <tr>
+                      <th>Leave Type</th>
+                      <th>Available</th>
+                      <th>Used</th>
+                      <th>Remaining</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td>Annual Leave</td>
+                      <td>{toNum(localLeave.annual_leave)}</td>
+                      <td>{leaveUsage.annual_leave}</td>
+                      <td>
+                        {toNum(localLeave.annual_leave) - leaveUsage.annual_leave}
+                      </td>
+                    </tr>
+
+                    <tr>
+                      <td>Sick Leave</td>
+                      <td>{toNum(localLeave.sick_leave)}</td>
+                      <td>{leaveUsage.sick_leave}</td>
+                      <td>
+                        {toNum(localLeave.sick_leave) - leaveUsage.sick_leave}
+                      </td>
+                    </tr>
+
+                    <tr>
+                      <td>Emergency Leave</td>
+                      <td>{toNum(localLeave.emergency_leave)}</td>
+                      <td>{leaveUsage.emergency_leave}</td>
+                      <td>
+                        {toNum(localLeave.emergency_leave) - leaveUsage.emergency_leave}
+                      </td>
+                    </tr>
+
+                    <tr>
+                      <td>Maternity Leave</td>
+                      <td>{toNum(localLeave.maternity_leave)}</td>
+                      <td>{leaveUsage.maternity_leave}</td>
+                      <td>
+                        {toNum(localLeave.maternity_leave) - leaveUsage.maternity_leave}
+                      </td>
+                    </tr>
+
+                    <tr>
+                      <td>Paternity Leave</td>
+                      <td>{toNum(localLeave.parental_leave)}</td>
+                      <td>{leaveUsage.parental_leave}</td>
+                      <td>
+                        {toNum(localLeave.parental_leave) - leaveUsage.parental_leave}
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              )}
             </>
           )}
 

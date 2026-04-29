@@ -10,19 +10,21 @@ import StaffProfileModal from "./StaffInformation/StaffProfileModal";
 import useStaffSignedUrls from "./StaffInformation/useStaffSignedUrls";
 import {
   safeJsonArray,
-  jsonText,
   toStr,
   norm,
   fmtDate,
   toNum,
-  money,
   displayName,
   displayFormName,
 } from "./StaffInformation/staffInfoUtils";
 
 export default function StaffInformation() {
   const readUser = () => {
-    try { return JSON.parse(localStorage.getItem("user") || "null"); } catch { return null; }
+    try {
+      return JSON.parse(localStorage.getItem("user") || "null");
+    } catch {
+      return null;
+    }
   };
 
   const user = useMemo(() => readUser(), []);
@@ -44,9 +46,13 @@ export default function StaffInformation() {
   };
 
   const canEditStaff =
-    role === "admin" || role === "hr" || role === "accounting" ||
-    role === "branch manager" || role === "area manager" ||
-    role === "regional manager" || role === "assistant vice president";
+    role === "admin" ||
+    role === "hr" ||
+    role === "accounting" ||
+    role === "branch manager" ||
+    role === "area manager" ||
+    role === "regional manager" ||
+    role === "assistant vice president";
 
   const [staff, setStaff] = useState([]);
   const [branches, setBranches] = useState([]);
@@ -69,100 +75,294 @@ export default function StaffInformation() {
   const [formStep, setFormStep] = useState(1);
 
   const [balanceForm, setBalanceForm] = useState({
-    cbu: "", cashbond: "", utility: "",
-    salary_advance: "", special_advance: "", cash_advance: "",
-    motorcycle_loan: "", pag_ibig_loan: "", other_receivable: "", staff_accounts_payable: "",
+    cbu: "",
+    cashbond: "",
+    utility: "",
+    salary_advance: "",
+    special_advance: "",
+    cash_advance: "",
+    motorcycle_loan: "",
+    pag_ibig_loan: "",
+    other_receivable: "",
+    staff_accounts_payable: "",
   });
 
   const signedUrls = useStaffSignedUrls(staff);
 
-  const branchMap = useMemo(() => {
+  const branchMapById = useMemo(() => {
     const m = new Map();
-    (branches || []).forEach((b) => m.set(String(b.id), b));
+    branches.forEach((b) => m.set(String(b.id), b));
     return m;
   }, [branches]);
+
+  const branchMapByCode = useMemo(() => {
+    const m = new Map();
+    branches.forEach((b) => {
+      if (b.code) m.set(norm(b.code), b);
+    });
+    return m;
+  }, [branches]);
+
+  const findBranch = useCallback(
+    (branchValue) => {
+      const raw = String(branchValue ?? "").trim();
+      if (!raw) return null;
+
+      return branchMapById.get(raw) || branchMapByCode.get(norm(raw)) || null;
+    },
+    [branchMapById, branchMapByCode]
+  );
 
   const branchNameById = useCallback(
     (id) => {
       if (id == null || id === "") return "";
-      const b = branchMap.get(String(id));
+      const b = findBranch(id);
       return b ? b.name : String(id);
     },
-    [branchMap]
+    [findBranch]
+  );
+
+  const sameBranch = useCallback(
+    (staffBranchValue, userBranchValue) => {
+      const staffRaw = String(staffBranchValue ?? "").trim();
+      const userRaw = String(userBranchValue ?? "").trim();
+
+      if (!staffRaw || !userRaw) return false;
+
+      if (staffRaw === userRaw) return true;
+      if (norm(staffRaw) === norm(userRaw)) return true;
+
+      const staffBranch = findBranch(staffRaw);
+      const userBranch = findBranch(userRaw);
+
+      if (!staffBranch || !userBranch) return false;
+
+      return String(staffBranch.id) === String(userBranch.id);
+    },
+    [findBranch]
   );
 
   const [form, setForm] = useState({
-    employee_no: "", last_name: "", first_name: "", middle_name: "",
-    address: "", municipality: "", province: "", contact: "", email: "",
-    date_of_birth: "", place_of_birth: "", gender: "", civil_status: "",
-    citizenship: "", height: "", weight: "", religion: "", blood_type: "",
-    spouse_fullname: "", spouse_address: "", spouse_occupation: "", spouse_employer: "",
-    sss_no: "", philhealth_no: "", pagibig_no: "", tin_no: "",
-    father_fullname: "", father_address: "", father_occupation: "", father_employer: "", father_contact: "",
-    mother_fullname: "", mother_address: "", mother_occupation: "", mother_employer: "", mother_contact: "",
-    guardian_fullname: "", guardian_address: "", guardian_occupation: "", guardian_employer: "", guardian_contact: "",
-    children: "[]", education: "[]", employment_history: "[]", beneficiaries: "[]",
-    position: "", department: "", area: "", region: "", division: "",
-    branch_id: "", status: "Active", start_date: "", regularization_date: "",
-    salary: "", ecola: "", cbu: "", cashbond: "", utility: "",
-    transportation: "", postage: "", additional_target: "", repairing: "",
-    additional_monitoring: "", other_deduction: "",
-    sss_er: "", ph_er: "", hdmf_er: "",
-    sss_ee: "", ph_ee: "", hdmf_ee: "", tax: "",
+    employee_no: "",
+    last_name: "",
+    first_name: "",
+    middle_name: "",
+    address: "",
+    municipality: "",
+    province: "",
+    contact: "",
+    email: "",
+    date_of_birth: "",
+    place_of_birth: "",
+    gender: "",
+    civil_status: "",
+    citizenship: "",
+    height: "",
+    weight: "",
+    religion: "",
+    blood_type: "",
+    spouse_fullname: "",
+    spouse_address: "",
+    spouse_occupation: "",
+    spouse_employer: "",
+    sss_no: "",
+    philhealth_no: "",
+    pagibig_no: "",
+    tin_no: "",
+    father_fullname: "",
+    father_address: "",
+    father_occupation: "",
+    father_employer: "",
+    father_contact: "",
+    mother_fullname: "",
+    mother_address: "",
+    mother_occupation: "",
+    mother_employer: "",
+    mother_contact: "",
+    guardian_fullname: "",
+    guardian_address: "",
+    guardian_occupation: "",
+    guardian_employer: "",
+    guardian_contact: "",
+    children: "[]",
+    education: "[]",
+    employment_history: "[]",
+    beneficiaries: "[]",
+    position: "",
+    department: "",
+    area: "",
+    region: "",
+    division: "",
+    branch_id: "",
+    status: "Active",
+    start_date: "",
+    regularization_date: "",
+    salary: "",
+    ecola: "",
+    cbu: "",
+    cashbond: "",
+    utility: "",
+    utility_charge: "",
+    transportation: "",
+    postage: "",
+    additional_target: "",
+    repairing: "",
+    additional_monitoring: "",
+    other_deduction: "",
+    sss_er: "",
+    ph_er: "",
+    hdmf_er: "",
+    sss_ee: "",
+    ph_ee: "",
+    hdmf_ee: "",
+    tax: "",
   });
 
   const resetForm = () => {
     setForm({
-      employee_no: "", last_name: "", first_name: "", middle_name: "",
-      address: "", municipality: "", province: "", contact: "", email: "",
-      date_of_birth: "", place_of_birth: "", gender: "", civil_status: "",
-      citizenship: "", height: "", weight: "", religion: "", blood_type: "",
-      spouse_fullname: "", spouse_address: "", spouse_occupation: "", spouse_employer: "",
-      sss_no: "", philhealth_no: "", pagibig_no: "", tin_no: "",
-      father_fullname: "", father_address: "", father_occupation: "", father_employer: "", father_contact: "",
-      mother_fullname: "", mother_address: "", mother_occupation: "", mother_employer: "", mother_contact: "",
-      guardian_fullname: "", guardian_address: "", guardian_occupation: "", guardian_employer: "", guardian_contact: "",
-      children: "[]", education: "[]", employment_history: "[]", beneficiaries: "[]",
-      position: "", department: "", area: "", region: "", division: "",
-      branch_id: "", status: "Active", start_date: "", regularization_date: "",
-      salary: "", ecola: "", cbu: "", cashbond: "", utility: "",
-      transportation: "", postage: "", additional_target: "", repairing: "",
-      additional_monitoring: "", other_deduction: "",
-      sss_er: "", ph_er: "", hdmf_er: "",
-      sss_ee: "", ph_ee: "", hdmf_ee: "", tax: "",
+      employee_no: "",
+      last_name: "",
+      first_name: "",
+      middle_name: "",
+      address: "",
+      municipality: "",
+      province: "",
+      contact: "",
+      email: "",
+      date_of_birth: "",
+      place_of_birth: "",
+      gender: "",
+      civil_status: "",
+      citizenship: "",
+      height: "",
+      weight: "",
+      religion: "",
+      blood_type: "",
+      spouse_fullname: "",
+      spouse_address: "",
+      spouse_occupation: "",
+      spouse_employer: "",
+      sss_no: "",
+      philhealth_no: "",
+      pagibig_no: "",
+      tin_no: "",
+      father_fullname: "",
+      father_address: "",
+      father_occupation: "",
+      father_employer: "",
+      father_contact: "",
+      mother_fullname: "",
+      mother_address: "",
+      mother_occupation: "",
+      mother_employer: "",
+      mother_contact: "",
+      guardian_fullname: "",
+      guardian_address: "",
+      guardian_occupation: "",
+      guardian_employer: "",
+      guardian_contact: "",
+      children: "[]",
+      education: "[]",
+      employment_history: "[]",
+      beneficiaries: "[]",
+      position: "",
+      department: "",
+      area: "",
+      region: "",
+      division: "",
+      branch_id: "",
+      status: "Active",
+      start_date: "",
+      regularization_date: "",
+      salary: "",
+      ecola: "",
+      cbu: "",
+      cashbond: "",
+      utility: "",
+      utility_charge: "",
+      transportation: "",
+      postage: "",
+      additional_target: "",
+      repairing: "",
+      additional_monitoring: "",
+      other_deduction: "",
+      sss_er: "",
+      ph_er: "",
+      hdmf_er: "",
+      sss_ee: "",
+      ph_ee: "",
+      hdmf_ee: "",
+      tax: "",
     });
+
     setBalanceForm({
-      cbu: "", cashbond: "", utility: "",
-      salary_advance: "", special_advance: "", cash_advance: "",
-      motorcycle_loan: "", pag_ibig_loan: "", other_receivable: "", staff_accounts_payable: "",
+      cbu: "",
+      cashbond: "",
+      utility: "",
+      salary_advance: "",
+      special_advance: "",
+      cash_advance: "",
+      motorcycle_loan: "",
+      pag_ibig_loan: "",
+      other_receivable: "",
+      staff_accounts_payable: "",
     });
+
     setPhotoFile(null);
     setPhotoPreview("");
     setFormStep(1);
   };
 
-  const closeAllModals = () => { setViewStaff(null); setEditStaff(null); resetForm(); };
-  const onChange = (e) => setForm((p) => ({ ...p, [e.target.name]: e.target.value }));
-  const onBalanceChange = (e) => setBalanceForm((p) => ({ ...p, [e.target.name]: e.target.value }));
+  const closeAllModals = () => {
+    setViewStaff(null);
+    setEditStaff(null);
+    resetForm();
+  };
+
+  const onChange = (e) =>
+    setForm((p) => ({ ...p, [e.target.name]: e.target.value }));
+
+  const onBalanceChange = (e) =>
+    setBalanceForm((p) => ({ ...p, [e.target.name]: e.target.value }));
 
   const onPickPhoto = (file) => {
     setPhotoFile(file || null);
     if (!file) return setPhotoPreview("");
+
     const r = new FileReader();
     r.onload = () => setPhotoPreview(String(r.result || ""));
     r.readAsDataURL(file);
   };
 
   const loadAll = useCallback(async () => {
-    setLoading(true); setError("");
+    setLoading(true);
+    setError("");
+
     try {
-      const [staffRes, branchesRes] = await Promise.allSettled([api.get("/staff"), api.get("/branches")]);
-      if (staffRes.status === "fulfilled") setStaff(Array.isArray(staffRes.value.data) ? staffRes.value.data : []);
-      else setStaff([]);
-      if (branchesRes.status === "fulfilled") setBranches(Array.isArray(branchesRes.value.data) ? branchesRes.value.data : []);
-      else setBranches([]);
-      if (staffRes.status === "rejected") setError(staffRes.reason?.response?.data?.message || staffRes.reason?.message || "Failed to load staff data.");
-    } finally { setLoading(false); }
+      const [staffRes, branchesRes] = await Promise.allSettled([
+        api.get("/staff"),
+        api.get("/branches"),
+      ]);
+
+      if (staffRes.status === "fulfilled") {
+        setStaff(Array.isArray(staffRes.value.data) ? staffRes.value.data : []);
+      } else {
+        setStaff([]);
+        setError(
+          staffRes.reason?.response?.data?.message ||
+            staffRes.reason?.message ||
+            "Failed to load staff data."
+        );
+      }
+
+      if (branchesRes.status === "fulfilled") {
+        setBranches(Array.isArray(branchesRes.value.data) ? branchesRes.value.data : []);
+      } else {
+        setBranches([]);
+      }
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   const loadPositionRates = useCallback(async () => {
@@ -182,10 +382,16 @@ export default function StaffInformation() {
   useEffect(() => {
     const isAnyModalOpen = !!viewStaff || !!editStaff;
     if (!isAnyModalOpen) return;
+
     const onKey = (e) => e.key === "Escape" && closeAllModals();
+
     document.addEventListener("keydown", onKey);
     document.body.style.overflow = "hidden";
-    return () => { document.removeEventListener("keydown", onKey); document.body.style.overflow = ""; };
+
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.body.style.overflow = "";
+    };
   }, [viewStaff, editStaff]);
 
   const filteredStaff = useMemo(() => {
@@ -202,7 +408,10 @@ export default function StaffInformation() {
       const staffRegion = norm(s?.region);
       const staffDivision = norm(s?.division);
 
-      if (role === "branch manager" && staffBranch !== userBranch) return false;
+      if (role === "branch manager") {
+        if (!sameBranch(staffBranch, userBranch)) return false;
+      }
+
       if (role === "area manager" && staffArea !== userArea) return false;
       if (role === "regional manager" && staffRegion !== userRegion) return false;
       if (role === "assistant vice president" && staffDivision !== userDivision) return false;
@@ -211,6 +420,8 @@ export default function StaffInformation() {
       if (statusFilter !== "All" && st !== statusFilter) return false;
 
       if (!q) return true;
+
+      const branch = findBranch(s.branch_id);
 
       const hay = [
         s.id,
@@ -225,7 +436,9 @@ export default function StaffInformation() {
         s.region,
         s.division,
         s.branch_id,
-        branchNameById(s.branch_id),
+        branch?.id,
+        branch?.code,
+        branch?.name,
         s.status,
         s.address,
         s.municipality,
@@ -238,14 +451,37 @@ export default function StaffInformation() {
 
       return hay.includes(q);
     });
-  }, [staff, search, statusFilter, branchNameById, role, user]);
+  }, [
+    staff,
+    search,
+    statusFilter,
+    role,
+    user,
+    sameBranch,
+    findBranch,
+  ]);
 
-  const isStaffStepValid = useMemo(() => !!toStr(form.last_name) && !!toStr(form.first_name), [form.last_name, form.first_name]);
-  const isContractStepValid = useMemo(() => !!toStr(form.position), [form.position]);
+  const isStaffStepValid = useMemo(
+    () => !!toStr(form.last_name) && !!toStr(form.first_name),
+    [form.last_name, form.first_name]
+  );
+
+  const isContractStepValid = useMemo(
+    () => !!toStr(form.position),
+    [form.position]
+  );
 
   const setStepGuarded = (nextStep) => {
-    if (nextStep === 2 && !isStaffStepValid) { alert("Please complete required fields in Staff Details (Last Name, First Name)."); return; }
-    if (nextStep === 3 && !isContractStepValid) { alert("Position is required in Contract Details."); return; }
+    if (nextStep === 2 && !isStaffStepValid) {
+      alert("Please complete required fields in Staff Details (Last Name, First Name).");
+      return;
+    }
+
+    if (nextStep === 3 && !isContractStepValid) {
+      alert("Position is required in Contract Details.");
+      return;
+    }
+
     setFormStep(nextStep);
   };
 
@@ -256,6 +492,7 @@ export default function StaffInformation() {
     }
 
     setEditStaff(s);
+
     setForm({
       employee_no: s.employee_no || "",
       last_name: s.last_name || "",
@@ -298,8 +535,14 @@ export default function StaffInformation() {
       guardian_occupation: String(s.guardian_occupation ?? ""),
       guardian_employer: String(s.guardian_employer ?? ""),
       guardian_contact: String(s.guardian_contact ?? ""),
-      children: typeof s.children === "string" ? s.children : JSON.stringify(s.children ?? [], null, 2),
-      education: typeof s.education === "string" ? s.education : JSON.stringify(s.education ?? [], null, 2),
+      children:
+        typeof s.children === "string"
+          ? s.children
+          : JSON.stringify(s.children ?? [], null, 2),
+      education:
+        typeof s.education === "string"
+          ? s.education
+          : JSON.stringify(s.education ?? [], null, 2),
       employment_history:
         typeof s.employment_history === "string"
           ? s.employment_history
@@ -317,7 +560,9 @@ export default function StaffInformation() {
       branch_id: s.branch_id ? String(s.branch_id) : "",
       status: String(s.status ?? "Active"),
       start_date: s.start_date ? String(s.start_date).slice(0, 10) : "",
-      regularization_date: s.regularization_date ? String(s.regularization_date).slice(0, 10) : "",
+      regularization_date: s.regularization_date
+        ? String(s.regularization_date).slice(0, 10)
+        : "",
       salary: String(s.salary ?? ""),
       ecola: String(s.ecola ?? ""),
       cbu: String(s.cbu ?? ""),
@@ -344,7 +589,7 @@ export default function StaffInformation() {
     try {
       const res = await api.get(`/staff-balances/${s.employee_no}`);
       balanceRow = res.data || null;
-    } catch (err) {
+    } catch {
       balanceRow = null;
     }
 
@@ -353,17 +598,17 @@ export default function StaffInformation() {
       cashbond: String(balanceRow?.cashbond ?? s.cashbond ?? ""),
       utility: String(
         balanceRow?.utility ??
-        balanceRow?.utility_charge ??
-        s.utility_charge ??
-        s.utility ??
-        ""
+          balanceRow?.utility_charge ??
+          s.utility_charge ??
+          s.utility ??
+          ""
       ),
       utility_charge: String(
         balanceRow?.utility_charge ??
-        balanceRow?.utility ??
-        s.utility_charge ??
-        s.utility ??
-        ""
+          balanceRow?.utility ??
+          s.utility_charge ??
+          s.utility ??
+          ""
       ),
       salary_advance: String(balanceRow?.salary_advance ?? s.salary_advance ?? ""),
       special_advance: String(balanceRow?.special_advance ?? s.special_advance ?? ""),
@@ -371,12 +616,12 @@ export default function StaffInformation() {
       motorcycle_loan: String(balanceRow?.motorcycle_loan ?? s.motorcycle_loan ?? ""),
       pag_ibig_loan: String(balanceRow?.pag_ibig_loan ?? s.pag_ibig_loan ?? ""),
       other_receivable: String(balanceRow?.other_receivable ?? s.other_receivable ?? ""),
-      staff_accounts_payable: String(balanceRow?.staff_accounts_payable ?? s.staff_accounts_payable ?? ""),
+      staff_accounts_payable: String(
+        balanceRow?.staff_accounts_payable ?? s.staff_accounts_payable ?? ""
+      ),
     });
 
-    const selectedBranch = branches.find(
-      (b) => String(b.id) === String(s.branch_id)
-    );
+    const selectedBranch = findBranch(s.branch_id);
 
     setBranchSearch(
       selectedBranch
@@ -384,7 +629,7 @@ export default function StaffInformation() {
         : ""
     );
 
-    setPhotoPreview();
+    setPhotoPreview("");
     setFormStep(1);
   };
 
@@ -407,25 +652,51 @@ export default function StaffInformation() {
       cashbond: toNum(form.cashbond),
       utility: toNum(form.utility ?? form.utility_charge),
       utility_charge: toNum(form.utility_charge ?? form.utility),
-      transportation: toNum(form.transportation), postage: toNum(form.postage),
+      transportation: toNum(form.transportation),
+      postage: toNum(form.postage),
 
-      additional_target: toNum(form.additional_target), repairing: toNum(form.repairing),
-      additional_monitoring: toNum(form.additional_monitoring), other_deduction: toNum(form.other_deduction),
-      sss_er: toNum(form.sss_er), ph_er: toNum(form.ph_er), hdmf_er: toNum(form.hdmf_er), total_er,
-      sss_ee: toNum(form.sss_ee), ph_ee: toNum(form.ph_ee), hdmf_ee: toNum(form.hdmf_ee), total_ee,
+      additional_target: toNum(form.additional_target),
+      repairing: toNum(form.repairing),
+      additional_monitoring: toNum(form.additional_monitoring),
+      other_deduction: toNum(form.other_deduction),
+      sss_er: toNum(form.sss_er),
+      ph_er: toNum(form.ph_er),
+      hdmf_er: toNum(form.hdmf_er),
+      total_er,
+      sss_ee: toNum(form.sss_ee),
+      ph_ee: toNum(form.ph_ee),
+      hdmf_ee: toNum(form.hdmf_ee),
+      total_ee,
       tax: toNum(form.tax),
-      children: safeJsonArray(form.children), education: safeJsonArray(form.education),
-      employment_history: safeJsonArray(form.employment_history), beneficiaries: safeJsonArray(form.beneficiaries),
-      spouse_fullname: toStr(form.spouse_fullname) || null, spouse_address: toStr(form.spouse_address) || null,
-      spouse_occupation: toStr(form.spouse_occupation) || null, spouse_employer: toStr(form.spouse_employer) || null,
-      sss_no: toStr(form.sss_no) || null, philhealth_no: toStr(form.philhealth_no) || null,
-      pagibig_no: toStr(form.pagibig_no) || null, tin_no: toStr(form.tin_no) || null,
-      father_fullname: toStr(form.father_fullname) || null, father_address: toStr(form.father_address) || null,
-      father_occupation: toStr(form.father_occupation) || null, father_employer: toStr(form.father_employer) || null, father_contact: toStr(form.father_contact) || null,
-      mother_fullname: toStr(form.mother_fullname) || null, mother_address: toStr(form.mother_address) || null,
-      mother_occupation: toStr(form.mother_occupation) || null, mother_employer: toStr(form.mother_employer) || null, mother_contact: toStr(form.mother_contact) || null,
-      guardian_fullname: toStr(form.guardian_fullname) || null, guardian_address: toStr(form.guardian_address) || null,
-      guardian_occupation: toStr(form.guardian_occupation) || null, guardian_employer: toStr(form.guardian_employer) || null, guardian_contact: toStr(form.guardian_contact) || null,
+
+      children: safeJsonArray(form.children),
+      education: safeJsonArray(form.education),
+      employment_history: safeJsonArray(form.employment_history),
+      beneficiaries: safeJsonArray(form.beneficiaries),
+
+      spouse_fullname: toStr(form.spouse_fullname) || null,
+      spouse_address: toStr(form.spouse_address) || null,
+      spouse_occupation: toStr(form.spouse_occupation) || null,
+      spouse_employer: toStr(form.spouse_employer) || null,
+      sss_no: toStr(form.sss_no) || null,
+      philhealth_no: toStr(form.philhealth_no) || null,
+      pagibig_no: toStr(form.pagibig_no) || null,
+      tin_no: toStr(form.tin_no) || null,
+      father_fullname: toStr(form.father_fullname) || null,
+      father_address: toStr(form.father_address) || null,
+      father_occupation: toStr(form.father_occupation) || null,
+      father_employer: toStr(form.father_employer) || null,
+      father_contact: toStr(form.father_contact) || null,
+      mother_fullname: toStr(form.mother_fullname) || null,
+      mother_address: toStr(form.mother_address) || null,
+      mother_occupation: toStr(form.mother_occupation) || null,
+      mother_employer: toStr(form.mother_employer) || null,
+      mother_contact: toStr(form.mother_contact) || null,
+      guardian_fullname: toStr(form.guardian_fullname) || null,
+      guardian_address: toStr(form.guardian_address) || null,
+      guardian_occupation: toStr(form.guardian_occupation) || null,
+      guardian_employer: toStr(form.guardian_employer) || null,
+      guardian_contact: toStr(form.guardian_contact) || null,
     };
   };
 
@@ -434,7 +705,6 @@ export default function StaffInformation() {
     cashbond: toNum(balanceForm.cashbond),
     utility: toNum(balanceForm.utility ?? balanceForm.utility_charge),
     utility_charge: toNum(balanceForm.utility ?? balanceForm.utility_charge),
-
     salary_advance: toNum(balanceForm.salary_advance),
     special_advance: toNum(balanceForm.special_advance),
     cash_advance: toNum(balanceForm.cash_advance),
@@ -446,16 +716,41 @@ export default function StaffInformation() {
 
   const updateStaff = async (e) => {
     e.preventDefault();
-    if (!canEditStaff) { alert("Only Admin, HR, and Accounting can edit staff."); return; }
+
+    if (!canEditStaff) {
+      alert("Only Admin, HR, Accounting, and authorized managers can edit staff.");
+      return;
+    }
+
     if (!editStaff) return;
-    if (!isStaffStepValid) { alert("Please complete required fields in Staff Details (Last Name, First Name)."); setFormStep(1); return; }
-    if (formStep === 1) { setFormStep(2); return; }
-    if (!isContractStepValid) { alert("Position is required in Contract Details."); setFormStep(2); return; }
-    if (formStep === 2) { setFormStep(3); return; }
+
+    if (!isStaffStepValid) {
+      alert("Please complete required fields in Staff Details (Last Name, First Name).");
+      setFormStep(1);
+      return;
+    }
+
+    if (formStep === 1) {
+      setFormStep(2);
+      return;
+    }
+
+    if (!isContractStepValid) {
+      alert("Position is required in Contract Details.");
+      setFormStep(2);
+      return;
+    }
+
+    if (formStep === 2) {
+      setFormStep(3);
+      return;
+    }
 
     setSaving(true);
+
     try {
       const payload = buildPayload();
+
       await api.put(`/staff/${editStaff.id}`, payload);
       await api.put(`/staff-balances/${payload.employee_no}`, buildBalancePayload());
 
@@ -463,7 +758,6 @@ export default function StaffInformation() {
         const fd = new FormData();
         fd.append("photo", photoFile);
         await api.post(`/staff/${editStaff.id}/photo`, fd);
-        _signedUrlCache.delete(editStaff.id);
       }
 
       closeAllModals();
@@ -471,11 +765,15 @@ export default function StaffInformation() {
       alert("Staff updated.");
     } catch (err) {
       alert(err?.response?.data?.message || err.message || "Failed to update staff.");
-    } finally { setSaving(false); }
+    } finally {
+      setSaving(false);
+    }
   };
 
   const statusBadgeClass = (s) =>
-    String(s || "Active") === "Inactive" ? "status-badge inactive" : "status-badge active";
+    String(s || "Active") === "Inactive"
+      ? "status-badge inactive"
+      : "status-badge active";
 
   return (
     <div className="staffinfo-page">
@@ -484,18 +782,27 @@ export default function StaffInformation() {
           <h2>Staff Information</h2>
           <p>View staff, edit staff, upload photo, and set Active/Inactive status.</p>
         </div>
+
         <div className="staffinfo-actions">
-          <button className="btn btn-outline" onClick={loadAll} type="button">Refresh</button>
+          <button className="btn btn-outline" onClick={loadAll} type="button">
+            Refresh
+          </button>
         </div>
       </div>
 
       <div className="card staffinfo-controls">
         <div className="search-wrap" style={{ gap: 10 }}>
-          <select className="input" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} style={{ width: 160 }}>
+          <select
+            className="input"
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            style={{ width: 160 }}
+          >
             <option value="All">All Status</option>
             <option value="Active">Active</option>
             <option value="Inactive">Inactive</option>
           </select>
+
           <input
             className="input"
             placeholder="Search by ID, name, position, department, area, region, division, branch..."
@@ -503,9 +810,29 @@ export default function StaffInformation() {
             onChange={(e) => setSearchInput(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && setSearch(searchInput)}
           />
-          <button className="btn btn-outline" onClick={() => setSearch(searchInput)} type="button">Search</button>
-          <button className="btn btn-ghost" type="button" onClick={() => { setSearch(""); setSearchInput(""); }}>Clear</button>
-          <div className="pill">Results: <strong>{filteredStaff.length}</strong></div>
+
+          <button
+            className="btn btn-outline"
+            onClick={() => setSearch(searchInput)}
+            type="button"
+          >
+            Search
+          </button>
+
+          <button
+            className="btn btn-ghost"
+            type="button"
+            onClick={() => {
+              setSearch("");
+              setSearchInput("");
+            }}
+          >
+            Clear
+          </button>
+
+          <div className="pill">
+            Results: <strong>{filteredStaff.length}</strong>
+          </div>
         </div>
       </div>
 
@@ -513,7 +840,9 @@ export default function StaffInformation() {
         {loading ? (
           <div className="table-loading">Loading staff…</div>
         ) : error ? (
-          <div className="table-loading" style={{ color: "#ef4444" }}>{error}</div>
+          <div className="table-loading" style={{ color: "#ef4444" }}>
+            {error}
+          </div>
         ) : (
           <div className="table-scroll">
             <table className="saas-table staffinfo-table">
@@ -532,12 +861,18 @@ export default function StaffInformation() {
                   <th style={{ width: 260 }}>Action</th>
                 </tr>
               </thead>
+
               <tbody>
                 {filteredStaff.length === 0 ? (
-                  <tr><td colSpan={11} className="empty">No staff found.</td></tr>
+                  <tr>
+                    <td colSpan={11} className="empty">
+                      No staff found.
+                    </td>
+                  </tr>
                 ) : (
                   filteredStaff.slice(0, 100).map((s) => {
                     const photoSrc = signedUrls[s.id] || "";
+
                     return (
                       <tr key={s.id}>
                         <td>
@@ -549,19 +884,37 @@ export default function StaffInformation() {
                             </div>
                           )}
                         </td>
+
                         <td className="mono">{s.id}</td>
                         <td className="mono">{s.employee_no || "-"}</td>
                         <td className="strong">{displayName(s)}</td>
                         <td>{s.position || "-"}</td>
                         <td>{s.department || "-"}</td>
                         <td>{branchNameById(s.branch_id) || "-"}</td>
-                        <td><span className={statusBadgeClass(s.status)}>{String(s.status || "Active")}</span></td>
+                        <td>
+                          <span className={statusBadgeClass(s.status)}>
+                            {String(s.status || "Active")}
+                          </span>
+                        </td>
                         <td>{fmtDate(s.start_date)}</td>
                         <td>{fmtDate(s.regularization_date)}</td>
                         <td>
                           <div className="actions">
-                            <button className="action-btn btn-view" onClick={() => setViewStaff(s)} type="button">View</button>
-                            <button className="action-btn btn-edit" onClick={() => openEdit(s)} type="button">Edit</button>
+                            <button
+                              className="action-btn btn-view"
+                              onClick={() => setViewStaff(s)}
+                              type="button"
+                            >
+                              View
+                            </button>
+
+                            <button
+                              className="action-btn btn-edit"
+                              onClick={() => openEdit(s)}
+                              type="button"
+                            >
+                              Edit
+                            </button>
                           </div>
                         </td>
                       </tr>
@@ -581,20 +934,29 @@ export default function StaffInformation() {
           onClose={closeAllModals}
           branchNameById={branchNameById}
           canViewPrivateDetails={canViewConfidentialDetails(viewStaff)}
+          canEditLeaveDetails={["admin", "hr", "accounting"].includes(role)}
         />
       )}
 
       {editStaff && (
         <div className="modal-overlay" onMouseDown={closeAllModals}>
-          <div className="modal staff-profile-modal" onMouseDown={(e) => e.stopPropagation()} style={{ maxWidth: 1200 }}>
+          <div
+            className="modal staff-profile-modal"
+            onMouseDown={(e) => e.stopPropagation()}
+            style={{ maxWidth: 1200 }}
+          >
             <div className="modal-head">
               <div>
                 <h3>Edit Staff</h3>
                 <div className="mini">
-                  {displayFormName(form) || displayName(editStaff)} • {form.position || "-"} • {form.status || "Active"}
+                  {displayFormName(form) || displayName(editStaff)} •{" "}
+                  {form.position || "-"} • {form.status || "Active"}
                 </div>
               </div>
-              <button className="icon-btn" onClick={closeAllModals} type="button">✕</button>
+
+              <button className="icon-btn" onClick={closeAllModals} type="button">
+                ✕
+              </button>
             </div>
 
             <form onSubmit={updateStaff}>
@@ -604,15 +966,29 @@ export default function StaffInformation() {
                     <img className="staff-avatar-lg" src={photoPreview} alt="staff" />
                   ) : (
                     <div className="staff-avatar-lg staff-avatar--fallback">
-                      {(toStr(form.last_name || form.first_name || "?").slice(0, 1).toUpperCase() || "?")}
+                      {toStr(form.last_name || form.first_name || "?")
+                        .slice(0, 1)
+                        .toUpperCase() || "?"}
                     </div>
                   )}
                 </div>
 
-                <div style={{ display: "flex", justifyContent: "center", marginTop: 10, marginBottom: 10 }}>
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "center",
+                    marginTop: 10,
+                    marginBottom: 10,
+                  }}
+                >
                   <label className="btn btn-outline photo-upload">
                     Upload Photo
-                    <input type="file" accept="image/*" hidden onChange={(e) => onPickPhoto(e.target.files?.[0] || null)} />
+                    <input
+                      type="file"
+                      accept="image/*"
+                      hidden
+                      onChange={(e) => onPickPhoto(e.target.files?.[0] || null)}
+                    />
                   </label>
                 </div>
 
@@ -622,10 +998,13 @@ export default function StaffInformation() {
                   canGoContract={canViewConfidentialDetails(editStaff) && isStaffStepValid}
                   canGoBalances={canViewConfidentialDetails(editStaff) && isContractStepValid}
                 />
+
                 <br />
 
-                {formStep === 1 && <StaffDetailsStep form={form} onChange={onChange} />}
-                
+                {formStep === 1 && (
+                  <StaffDetailsStep form={form} onChange={onChange} />
+                )}
+
                 {formStep === 2 && (
                   <ContractDetailsStep
                     form={form}
@@ -636,29 +1015,75 @@ export default function StaffInformation() {
                     setBranchSearch={setBranchSearch}
                   />
                 )}
-                
-                {formStep === 3 && <PersonalBalancesStep balanceForm={balanceForm} onBalanceChange={onBalanceChange} />}
+
+                {formStep === 3 && (
+                  <PersonalBalancesStep
+                    balanceForm={balanceForm}
+                    onBalanceChange={onBalanceChange}
+                  />
+                )}
               </div>
 
               <div className="modal-foot">
                 {formStep === 1 && (
                   <>
-                    <button className="btn btn-primary" type="button" onClick={() => setStepGuarded(2)} disabled={!isStaffStepValid}>Next</button>
-                    <button className="btn btn-ghost" type="button" onClick={closeAllModals}>Cancel</button>
+                    <button
+                      className="btn btn-primary"
+                      type="button"
+                      onClick={() => setStepGuarded(2)}
+                      disabled={!isStaffStepValid}
+                    >
+                      Next
+                    </button>
+
+                    <button className="btn btn-ghost" type="button" onClick={closeAllModals}>
+                      Cancel
+                    </button>
                   </>
                 )}
+
                 {formStep === 2 && (
                   <>
-                    <button className="btn btn-outline" type="button" onClick={() => setFormStep(1)}>Back</button>
-                    <button className="btn btn-primary" type="button" onClick={() => setStepGuarded(3)} disabled={!isContractStepValid}>Next</button>
-                    <button className="btn btn-ghost" type="button" onClick={closeAllModals}>Cancel</button>
+                    <button
+                      className="btn btn-outline"
+                      type="button"
+                      onClick={() => setFormStep(1)}
+                    >
+                      Back
+                    </button>
+
+                    <button
+                      className="btn btn-primary"
+                      type="button"
+                      onClick={() => setStepGuarded(3)}
+                      disabled={!isContractStepValid}
+                    >
+                      Next
+                    </button>
+
+                    <button className="btn btn-ghost" type="button" onClick={closeAllModals}>
+                      Cancel
+                    </button>
                   </>
                 )}
+
                 {formStep === 3 && (
                   <>
-                    <button className="btn btn-outline" type="button" onClick={() => setFormStep(2)}>Back</button>
-                    <button className="btn btn-primary" type="submit" disabled={saving}>{saving ? "Updating..." : "Update Staff"}</button>
-                    <button className="btn btn-ghost" type="button" onClick={closeAllModals}>Cancel</button>
+                    <button
+                      className="btn btn-outline"
+                      type="button"
+                      onClick={() => setFormStep(2)}
+                    >
+                      Back
+                    </button>
+
+                    <button className="btn btn-primary" type="submit" disabled={saving}>
+                      {saving ? "Updating..." : "Update Staff"}
+                    </button>
+
+                    <button className="btn btn-ghost" type="button" onClick={closeAllModals}>
+                      Cancel
+                    </button>
                   </>
                 )}
               </div>

@@ -18,23 +18,21 @@ const toInt = (v) => {
 };
 
 const toStr = (v) => String(v ?? "").trim();
-
 const roleLower = (req) => String(req.user?.role || "").trim().toLowerCase();
 
 const isAdmin = (req) => roleLower(req) === "admin";
 const isHr = (req) => roleLower(req) === "hr";
 const isAccounting = (req) => roleLower(req) === "accounting";
 const isTread = (req) => roleLower(req) === "tread";
-
 const isBranchManager = (req) => roleLower(req) === "branch manager";
 const isAreaManager = (req) => roleLower(req) === "area manager";
 const isRegionalManager = (req) => roleLower(req) === "regional manager";
-const isAssistantVicePresident = (req) =>
-  roleLower(req) === "assistant vice president";
+const isAssistantVicePresident = (req) => roleLower(req) === "assistant vice president";
 const isVicePresident = (req) => roleLower(req) === "vice president";
-const isSeniorVicePresident = (req) =>
-  roleLower(req) === "senior vice president";
+const isSeniorVicePresident = (req) => roleLower(req) === "senior vice president";
 const isPresident = (req) => roleLower(req) === "president";
+
+const isFinalApprover = (req) => isAdmin(req) || isHr(req) || isAccounting(req);
 
 const canViewAllLoans = (req) =>
   isAdmin(req) ||
@@ -61,6 +59,34 @@ const canDownloadLoanFiles = (req) =>
 const getUserBranchCode = (req) => toStr(req.user?.branch_id);
 const getUserArea = (req) => toStr(req.user?.area);
 const getUserRegion = (req) => toStr(req.user?.region);
+
+const getInitialApprovalStage = (applicantRole) => {
+  const role = String(applicantRole || "").trim().toLowerCase();
+
+  if (role === "assistant vice president") return "admin";
+  if (role === "regional manager") return "assistant vice president";
+  if (role === "area manager") return "regional manager";
+
+  return "area manager";
+};
+
+const getApprovalChain = (applicantRole) => {
+  const role = String(applicantRole || "").trim().toLowerCase();
+
+  if (role === "assistant vice president") {
+    return ["admin"];
+  }
+
+  if (role === "regional manager") {
+    return ["assistant vice president", "admin"];
+  }
+
+  if (role === "area manager") {
+    return ["regional manager", "assistant vice president", "admin"];
+  }
+
+  return ["area manager", "regional manager", "assistant vice president", "admin"];
+};
 
 async function getBranchIdFromCode(branchCode) {
   const code = toStr(branchCode);
@@ -142,9 +168,7 @@ if (!fs.existsSync(uploadDir)) {
 }
 
 const storage = multer.diskStorage({
-  destination: (_req, _file, cb) => {
-    cb(null, uploadDir);
-  },
+  destination: (_req, _file, cb) => cb(null, uploadDir),
   filename: (_req, file, cb) => {
     const unique = Date.now() + "-" + Math.round(Math.random() * 1e9);
     cb(null, unique + path.extname(file.originalname || ""));
@@ -177,11 +201,13 @@ const loanSelectFields = `
   lr.approved_attachment_name,
   lr.approved_attachment_mime,
 
+  lr.applicant_role,
   lr.approval_stage,
   lr.area_manager_status,
   lr.regional_manager_status,
   lr.assistant_vice_president_status,
   lr.admin_status,
+
   COALESCE(s.fullname, '') AS staff_name,
   s.first_name,
   s.last_name,
@@ -194,8 +220,7 @@ router.get("/loan-requests", requireAuth, async (req, res) => {
     if (canViewAllLoans(req)) {
       const r = await pool.query(
         `
-        SELECT
-          ${loanSelectFields}
+        SELECT ${loanSelectFields}
         FROM public.loan_requests lr
         LEFT JOIN public.staff s ON s.id = lr.staff_id
         ORDER BY lr.id DESC
@@ -213,8 +238,7 @@ router.get("/loan-requests", requireAuth, async (req, res) => {
 
       const r = await pool.query(
         `
-        SELECT
-          ${loanSelectFields}
+        SELECT ${loanSelectFields}
         FROM public.loan_requests lr
         LEFT JOIN public.staff s ON s.id = lr.staff_id
         WHERE s.branch_id = $1
@@ -231,8 +255,7 @@ router.get("/loan-requests", requireAuth, async (req, res) => {
 
       const r = await pool.query(
         `
-        SELECT
-          ${loanSelectFields}
+        SELECT ${loanSelectFields}
         FROM public.loan_requests lr
         LEFT JOIN public.staff s ON s.id = lr.staff_id
         WHERE LOWER(TRIM(COALESCE(s.area, ''))) = LOWER(TRIM($1))
@@ -249,8 +272,7 @@ router.get("/loan-requests", requireAuth, async (req, res) => {
 
       const r = await pool.query(
         `
-        SELECT
-          ${loanSelectFields}
+        SELECT ${loanSelectFields}
         FROM public.loan_requests lr
         LEFT JOIN public.staff s ON s.id = lr.staff_id
         WHERE LOWER(TRIM(COALESCE(s.region, ''))) = LOWER(TRIM($1))
@@ -277,8 +299,7 @@ router.get("/loan-requests/staff/:staffId", requireAuth, async (req, res) => {
     if (canViewAllLoans(req)) {
       const r = await pool.query(
         `
-        SELECT
-          ${loanSelectFields}
+        SELECT ${loanSelectFields}
         FROM public.loan_requests lr
         LEFT JOIN public.staff s ON s.id = lr.staff_id
         WHERE lr.staff_id = $1::int
@@ -330,8 +351,7 @@ router.get("/loan-requests/staff/:staffId", requireAuth, async (req, res) => {
 
     const r = await pool.query(
       `
-      SELECT
-        ${loanSelectFields}
+      SELECT ${loanSelectFields}
       FROM public.loan_requests lr
       LEFT JOIN public.staff s ON s.id = lr.staff_id
       WHERE lr.staff_id = $1::int
@@ -370,8 +390,8 @@ router.post(
 
     try {
       const staff_id = toInt(req.body?.staff_id ?? req.body?.employee_id);
-      const loan_type = String(req.body?.loan_type || "").trim();
-      const reason = String(req.body?.reason || "").trim();
+      const loan_type = toStr(req.body?.loan_type);
+      const reason = toStr(req.body?.reason);
 
       const amount = toNum(req.body?.amount);
       const term = Math.max(1, toInt(req.body?.term) || 1);
@@ -381,8 +401,9 @@ router.post(
       const total = toNum(req.body?.total) || computedTotal;
       const per_month = toNum(req.body?.per_month) || (term ? total / term : total);
 
+      const applicant_role = roleLower(req);
+      const approval_stage = getInitialApprovalStage(applicant_role);
       const status = "Pending";
-      const approval_stage = "area manager";
 
       const attachment_path = req.file ? `/uploads/loans/${req.file.filename}` : null;
       const attachment_name = req.file ? req.file.originalname : null;
@@ -452,6 +473,7 @@ router.post(
             total,
             per_month,
             status,
+            applicant_role,
             approval_stage,
             area_manager_status,
             regional_manager_status,
@@ -479,15 +501,16 @@ router.post(
             $9::numeric,
             $10::varchar,
             $11::varchar,
+            $12::varchar,
             'Pending',
             'Pending',
             'Pending',
             'Pending',
             NULL,
             NULL,
-            $12::text,
             $13::text,
             $14::text,
+            $15::text,
             NULL,
             NULL,
             NULL
@@ -505,6 +528,7 @@ router.post(
           total,
           per_month,
           status,
+          applicant_role,
           approval_stage,
           attachment_path,
           attachment_name,
@@ -530,7 +554,15 @@ router.post(
 router.post(
   "/loan-requests/:id/approved-file",
   requireAuth,
-  requireRole(["admin", "hr", "accounting", "tread", "vice president", "senior vice president", "president"]),
+  requireRole([
+    "admin",
+    "hr",
+    "accounting",
+    "tread",
+    "vice president",
+    "senior vice president",
+    "president",
+  ]),
   upload.single("attachment"),
   async (req, res) => {
     const client = await pool.connect();
@@ -593,7 +625,7 @@ router.post(
 router.get("/loan-requests/:id/download/:type", requireAuth, async (req, res) => {
   try {
     const id = toInt(req.params.id);
-    const type = String(req.params.type || "").trim().toLowerCase();
+    const type = toStr(req.params.type).toLowerCase();
 
     if (!id) return res.status(400).json({ message: "Invalid id" });
     if (!["request", "approved"].includes(type)) {
@@ -659,7 +691,7 @@ router.put("/loan-requests/:id", requireAuth, async (req, res) => {
 
   try {
     const id = toInt(req.params.id);
-    const action = String(req.body?.action || "").toLowerCase();
+    const action = toStr(req.body?.action).toLowerCase();
 
     if (!id) return res.status(400).json({ message: "Invalid id" });
     if (!["approve", "reject"].includes(action)) {
@@ -687,27 +719,28 @@ router.put("/loan-requests/:id", requireAuth, async (req, res) => {
       return res.status(400).json({ message: "Already finalized" });
     }
 
-    const chain = [
-      "area manager",
-      "regional manager",
-      "assistant vice president",
-      "admin",
-    ];
+    const applicantRole = toStr(loan.applicant_role) || "";
+    const chain = getApprovalChain(applicantRole);
 
-    const currentStage = toStr(loan.approval_stage || "area manager").toLowerCase();
+    let currentStage = toStr(loan.approval_stage).toLowerCase();
 
-    const highLevelOverride =
-      isAdmin(req) ||
-      isVicePresident(req) ||
-      isSeniorVicePresident(req) ||
-      isPresident(req);
+    if (!chain.includes(currentStage)) {
+      currentStage = chain[0] || "admin";
+    }
 
-    if (!highLevelOverride && role !== currentStage) {
+    const canAct =
+      currentStage === "admin"
+        ? isFinalApprover(req)
+        : role === currentStage;
+
+    const highLevelOverride = isVicePresident(req) || isSeniorVicePresident(req) || isPresident(req);
+
+    if (!canAct && !highLevelOverride) {
       await client.query("ROLLBACK");
       return res.status(403).json({ message: "Not your approval stage" });
     }
 
-    const effectiveRole = highLevelOverride ? currentStage : role;
+    const effectiveRole = highLevelOverride ? currentStage : currentStage;
 
     const statusColumnMap = {
       "area manager": "area_manager_status",
@@ -717,6 +750,7 @@ router.put("/loan-requests/:id", requireAuth, async (req, res) => {
     };
 
     const column = statusColumnMap[effectiveRole];
+
     if (!column) {
       await client.query("ROLLBACK");
       return res.status(403).json({ message: "Access denied" });

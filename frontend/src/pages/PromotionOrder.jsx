@@ -21,18 +21,104 @@ const readUser = () => {
 
 const fmtDate = (d) => (d ? String(d).slice(0, 10) : "-");
 
+const STAGE_LABELS = {
+  "area manager": "Area Manager",
+  "regional manager": "Regional Manager",
+  "assistant vice president": "Assistant Vice President",
+  "vice president": "Vice President",
+  tread: "Tread",
+  final: "Admin / HR / Finance",
+};
+
+const getPromotionChain = (oldPosition) => {
+  const r = norm(oldPosition);
+
+  if (r === "area manager") {
+    return ["regional manager", "assistant vice president", "vice president", "tread", "final"];
+  }
+
+  if (r === "regional manager") {
+    return ["assistant vice president", "vice president", "tread", "final"];
+  }
+
+  if (r === "assistant vice president") {
+    return ["vice president", "tread", "final"];
+  }
+
+  if (r === "vice president" || r === "senior vice president" || r === "president") {
+    return ["tread", "final"];
+  }
+
+  return ["area manager", "regional manager", "assistant vice president", "vice president", "tread", "final"];
+};
+
+const getStageStatus = (o, stage) => {
+  const map = {
+    "area manager": o.area_manager_status,
+    "regional manager": o.regional_manager_status,
+    "assistant vice president": o.assistant_vice_president_status,
+    "vice president": o.vice_president_status,
+    tread: o.tread_status,
+    final: o.final_status,
+  };
+
+  return map[stage] || "Pending";
+};
+
+const renderChainSummary = (o) => {
+  return getPromotionChain(o.old_position)
+    .map((stage) => `${STAGE_LABELS[stage]}: ${getStageStatus(o, stage)}`)
+    .join(" | ");
+};
+
 export default function PromotionOrder() {
   const navigate = useNavigate();
   const user = useMemo(() => readUser(), []);
-  const role = String(user?.role || "").trim().toLowerCase();
+  const role = norm(user?.role);
 
   const isAdmin = role === "admin";
   const isHr = role === "hr";
   const isAccounting = role === "accounting";
   const isTread = role === "tread";
+  const isBranchManager = role === "branch manager";
+  const isAreaManager = role === "area manager";
+  const isRegionalManager = role === "regional manager";
+  const isAssistantVicePresident = role === "assistant vice president";
+  const isVicePresident = role === "vice president";
+  const isSeniorVicePresident = role === "senior vice president";
+  const isPresident = role === "president";
 
-  const canCreatePromotion = isAdmin || isHr || isAccounting;
-  const canApprovePromotion = isAdmin || isHr || isAccounting;
+  const canCreatePromotion =
+    isAdmin ||
+    isHr ||
+    isAccounting ||
+    isBranchManager ||
+    isAreaManager ||
+    isRegionalManager ||
+    isAssistantVicePresident ||
+    isVicePresident ||
+    isSeniorVicePresident ||
+    isPresident;
+
+  const canApproveStage = (o) => {
+    if (!o || norm(o.status) !== "pending") return false;
+
+    const stage = norm(o.approval_stage);
+
+    if (stage === "area manager") return isAreaManager;
+    if (stage === "regional manager") return isRegionalManager;
+    if (stage === "assistant vice president") return isAssistantVicePresident;
+    if (stage === "vice president") return isVicePresident;
+    if (stage === "tread") return isTread;
+    if (stage === "final") return isAdmin || isHr || isAccounting;
+
+    return false;
+  };
+
+  const canUploadApprovedFile = (o) =>
+    (isAdmin || isHr || isAccounting) && norm(o?.status) === "approved";
+
+  const canDownloadFile = true;
 
   const [staff, setStaff] = useState([]);
   const [branches, setBranches] = useState([]);
@@ -44,6 +130,7 @@ export default function PromotionOrder() {
   const [loadingOrders, setLoadingOrders] = useState(false);
   const [loadingRates, setLoadingRates] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [uploadingId, setUploadingId] = useState("");
 
   const [showCreate, setShowCreate] = useState(false);
 
@@ -58,7 +145,6 @@ export default function PromotionOrder() {
     new_ecola: "",
     effective_date: "",
     remarks: "",
-
     prev_branch_id: "",
     prev_branch_code: "",
     prev_branch_name: "",
@@ -81,13 +167,13 @@ export default function PromotionOrder() {
 
   const branchMap = useMemo(() => {
     const m = new Map();
-    (branches || []).forEach((b) => m.set(Number(b.id), b));
+    branches.forEach((b) => m.set(Number(b.id), b));
     return m;
   }, [branches]);
 
   const rateMap = useMemo(() => {
     const m = new Map();
-    (positionRates || []).forEach((r) => {
+    positionRates.forEach((r) => {
       const key = norm(r.position);
       if (key) m.set(key, r);
     });
@@ -96,7 +182,8 @@ export default function PromotionOrder() {
 
   const positionOptions = useMemo(() => {
     const seen = new Set();
-    return (positionRates || [])
+
+    return positionRates
       .filter((r) => {
         const key = norm(r.position);
         if (!key || seen.has(key)) return false;
@@ -108,42 +195,55 @@ export default function PromotionOrder() {
 
   const filteredStaff = useMemo(() => {
     const q = norm(employeeQuery);
-    if (!q) return staff.slice(0, 25);
+    const list = !q
+      ? staff
+      : staff.filter((s) => {
+          const hay = [
+            s.id,
+            s.employee_no,
+            s.fullname,
+            s.first_name,
+            s.last_name,
+            s.middle_name,
+            s.position,
+            s.area,
+            s.region,
+            s.division,
+          ]
+            .map(norm)
+            .join(" ");
 
-    return staff
-      .filter((s) => {
-        const hay = [
-          s.id,
-          s.employee_no,
-          s.fullname,
-          s.first_name,
-          s.last_name,
-          s.middle_name,
-          s.position,
-          s.area,
-          s.region,
-          s.division,
-        ]
-          .map((x) => norm(x))
-          .join(" ");
+          return hay.includes(q);
+        });
 
-        return hay.includes(q);
-      })
-      .slice(0, 50);
+    return list.slice(0, 50);
   }, [staff, employeeQuery]);
 
   const filteredBranches = useMemo(() => {
     const q = norm(branchSearch);
-    if (!q) return branches.slice(0, 30);
 
-    return branches
-      .filter((b) => {
-        const hay = [b.id, b.code, b.name, b.area, b.region, b.division]
-          .map((x) => norm(x))
-          .join(" ");
-        return hay.includes(q);
-      })
-      .slice(0, 50);
+    const list = !q
+      ? branches
+      : branches.filter((b) => {
+          const hay = [
+            b.id,
+            b.code,
+            b.name,
+            b.area,
+            b.region,
+            b.division,
+          ]
+            .map(norm)
+            .join(" ");
+
+          return hay.includes(q);
+        });
+
+    return list.sort((a, b) =>
+      `${a.code || ""} ${a.name || ""}`.localeCompare(
+        `${b.code || ""} ${b.name || ""}`
+      )
+    );
   }, [branches, branchSearch]);
 
   const closeModal = () => {
@@ -159,7 +259,6 @@ export default function PromotionOrder() {
       new_ecola: "",
       effective_date: "",
       remarks: "",
-
       prev_branch_id: "",
       prev_branch_code: "",
       prev_branch_name: "",
@@ -191,9 +290,12 @@ export default function PromotionOrder() {
   const loadBranches = useCallback(async () => {
     try {
       setLoadingBranches(true);
-      const res = await api.get("/branches");
+
+      const res = await api.get("/branches-all");
+
       setBranches(Array.isArray(res.data) ? res.data : []);
-    } catch {
+    } catch (err) {
+      console.error("Failed to load all branches:", err?.response?.data || err.message);
       setBranches([]);
     } finally {
       setLoadingBranches(false);
@@ -249,6 +351,7 @@ export default function PromotionOrder() {
       if (employeePickerRef.current && !employeePickerRef.current.contains(e.target)) {
         setShowEmployeeResults(false);
       }
+
       if (branchPickerRef.current && !branchPickerRef.current.contains(e.target)) {
         setShowBranchResults(false);
       }
@@ -278,11 +381,9 @@ export default function PromotionOrder() {
       new_salary: "",
       old_ecola: String(toNum(s?.ecola)),
       new_ecola: "",
-
       prev_branch_id: prevBranchId ? String(prevBranchId) : "",
       prev_branch_code: prevBranch?.code || "",
       prev_branch_name: prevBranch?.name || "",
-
       present_branch_id: prevBranchId ? String(prevBranchId) : "",
       present_branch_code: prevBranch?.code || "",
       present_branch_name: prevBranch?.name || "",
@@ -292,21 +393,25 @@ export default function PromotionOrder() {
     setEmployeeSearch(label);
     setEmployeeQuery(label);
 
-    const presentBranchLabel = prevBranch ? `${prevBranch.code || ""} - ${prevBranch.name || ""}`.trim() : "";
-    setBranchSearch(presentBranchLabel);
+    const presentBranchLabel = prevBranch
+      ? `${prevBranch.code || ""} - ${prevBranch.name || ""}`.trim()
+      : "";
 
+    setBranchSearch(presentBranchLabel);
     setShowEmployeeResults(false);
   };
 
   const onSelectPresentBranch = (branchId) => {
     const bid = branchId ? Number(branchId) : null;
     const b = bid ? branchMap.get(bid) : null;
+
     setForm((p) => ({
       ...p,
       present_branch_id: branchId ? String(branchId) : "",
       present_branch_code: b?.code || "",
       present_branch_name: b?.name || "",
     }));
+
     setBranchSearch(b ? `${b.code || ""} - ${b.name || ""}`.trim() : "");
     setShowBranchResults(false);
   };
@@ -326,40 +431,32 @@ export default function PromotionOrder() {
   const createOrder = async (e) => {
     e.preventDefault();
 
-    if (!selectedEmployee || !form.employee_id || form.employee_id === "") {
-      return alert("Employee is required");
-    }
-    if (!String(form.new_position).trim()) return alert("New position is required.");
-    if (!String(form.effective_date).trim()) return alert("Effective date is required.");
-    if (!String(form.present_branch_id).trim()) return alert("Present branch is required.");
+    if (!selectedEmployee || !form.employee_id) return alert("Employee is required");
+    if (!form.new_position.trim()) return alert("New position is required.");
+    if (!form.effective_date.trim()) return alert("Effective date is required.");
+    if (!form.present_branch_id.trim()) return alert("Present branch is required.");
 
     try {
       setSaving(true);
 
       const formData = new FormData();
       formData.append("employee_id", parseInt(String(selectedEmployee.id), 10));
-      formData.append("employee_name", String(form.employee_name || "").trim());
-      formData.append("old_position", String(form.old_position || "").trim());
-      formData.append("new_position", String(form.new_position || "").trim());
+      formData.append("employee_name", form.employee_name.trim());
+      formData.append("old_position", form.old_position.trim());
+      formData.append("new_position", form.new_position.trim());
       formData.append("old_salary", toNum(form.old_salary));
       formData.append("new_salary", toNum(form.new_salary));
       formData.append("old_ecola", toNum(form.old_ecola));
       formData.append("new_ecola", toNum(form.new_ecola));
-      formData.append("effective_date", String(form.effective_date).slice(0, 10));
-      formData.append("remarks", String(form.remarks || "").trim());
+      formData.append("effective_date", form.effective_date.slice(0, 10));
+      formData.append("remarks", form.remarks.trim());
 
-      formData.append(
-        "prev_branch_id",
-        form.prev_branch_id ? Number(form.prev_branch_id) : ""
-      );
-      formData.append("prev_branch_code", String(form.prev_branch_code || ""));
-      formData.append("prev_branch_name", String(form.prev_branch_name || ""));
-      formData.append(
-        "present_branch_id",
-        form.present_branch_id ? Number(form.present_branch_id) : ""
-      );
-      formData.append("present_branch_code", String(form.present_branch_code || ""));
-      formData.append("present_branch_name", String(form.present_branch_name || ""));
+      formData.append("prev_branch_id", form.prev_branch_id ? Number(form.prev_branch_id) : "");
+      formData.append("prev_branch_code", form.prev_branch_code);
+      formData.append("prev_branch_name", form.prev_branch_name);
+      formData.append("present_branch_id", form.present_branch_id ? Number(form.present_branch_id) : "");
+      formData.append("present_branch_code", form.present_branch_code);
+      formData.append("present_branch_name", form.present_branch_name);
 
       if (attachmentFile) {
         formData.append("attachment", attachmentFile);
@@ -369,7 +466,7 @@ export default function PromotionOrder() {
         headers: { "Content-Type": "multipart/form-data" },
       });
 
-      alert("Promotion order created (Pending).");
+      alert("Promotion order created and sent to approval chain.");
       closeModal();
       await loadOrders();
     } catch (err) {
@@ -391,11 +488,56 @@ export default function PromotionOrder() {
   const reject = async (id) => {
     const reason = prompt("Enter rejection reason:");
     if (!reason || !reason.trim()) return;
+
     try {
       await api.put(`/promotion-orders/${id}/reject`, { reason: reason.trim() });
       await loadOrders();
     } catch (err) {
       alert(err?.response?.data?.message || "Failed to reject.");
+    }
+  };
+
+  const downloadFile = async (id, type, fallbackName = "") => {
+    try {
+      const res = await api.get(`/promotion-orders/${id}/download/${type}`, {
+        responseType: "blob",
+      });
+
+      const blob = new Blob([res.data]);
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+
+      a.href = url;
+      a.download = fallbackName || `promotion-${id}-${type}`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      alert(err?.response?.data?.message || "Failed to download file.");
+    }
+  };
+
+  const uploadApprovedFile = async (orderId, file) => {
+    if (!file) return;
+
+    try {
+      setUploadingId(String(orderId));
+
+      const formData = new FormData();
+      formData.append("attachment", file);
+
+      await api.post(`/promotion-orders/${orderId}/approved-file`, formData, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+
+      alert("Approved promotion file uploaded.");
+      await loadOrders();
+    } catch (err) {
+      alert(err?.response?.data?.message || "Failed to upload approved file.");
+    } finally {
+      setUploadingId("");
     }
   };
 
@@ -405,7 +547,7 @@ export default function PromotionOrder() {
   }, [orders]);
 
   const badgeClass = (status) => {
-    const s = String(status || "").toLowerCase();
+    const s = norm(status);
     if (s === "approved") return "po-badge po-approved";
     if (s === "rejected") return "po-badge po-rejected";
     return "po-badge po-pending";
@@ -415,6 +557,7 @@ export default function PromotionOrder() {
     if (o.prev_branch_code || o.prev_branch_name) {
       return `${o.prev_branch_code || ""} - ${o.prev_branch_name || ""}`.trim();
     }
+
     const b = o.prev_branch_id ? branchMap.get(Number(o.prev_branch_id)) : null;
     return b ? `${b.code || ""} - ${b.name || ""}`.trim() : "-";
   };
@@ -423,6 +566,7 @@ export default function PromotionOrder() {
     if (o.present_branch_code || o.present_branch_name) {
       return `${o.present_branch_code || ""} - ${o.present_branch_name || ""}`.trim();
     }
+
     const b = o.present_branch_id ? branchMap.get(Number(o.present_branch_id)) : null;
     return b ? `${b.code || ""} - ${b.name || ""}`.trim() : "-";
   };
@@ -432,16 +576,18 @@ export default function PromotionOrder() {
       <div className="po-topbar">
         <div>
           <h2 className="po-title">Promotion Orders</h2>
-          <p className="po-subtitle">Manage staff promotions and approvals.</p>
+          <p className="po-subtitle">Manage staff promotions and approval chain.</p>
         </div>
 
         <div className="po-actions">
           <button className="po-btn po-btn-ghost" type="button" onClick={() => navigate(-1)}>
             ← Back
           </button>
+
           <button className="po-btn po-btn-outline" type="button" onClick={loadOrders} disabled={loadingOrders}>
             {loadingOrders ? "Refreshing..." : "Refresh"}
           </button>
+
           {canCreatePromotion && (
             <button className="po-btn po-btn-primary" type="button" onClick={() => setShowCreate(true)}>
               + Create Promotion Order
@@ -470,6 +616,9 @@ export default function PromotionOrder() {
                 <th className="num">NEW SALARY</th>
                 <th>EFFECTIVE</th>
                 <th>STATUS</th>
+                <th>CURRENT STAGE</th>
+                <th>APPROVAL CHAIN</th>
+                <th>FILES</th>
                 <th style={{ width: 180 }}>ACTIONS</th>
               </tr>
             </thead>
@@ -477,19 +626,21 @@ export default function PromotionOrder() {
             <tbody>
               {loadingOrders ? (
                 <tr>
-                  <td colSpan={11} className="po-empty">
+                  <td colSpan={14} className="po-empty">
                     Loading promotion orders…
                   </td>
                 </tr>
               ) : orders.length === 0 ? (
                 <tr>
-                  <td colSpan={11} className="po-empty">
+                  <td colSpan={14} className="po-empty">
                     No promotion orders found.
                   </td>
                 </tr>
               ) : (
                 orders.map((o) => {
-                  const isPending = String(o.status || "").toLowerCase() === "pending";
+                  const isPending = norm(o.status) === "pending";
+                  const canAct = canApproveStage(o);
+
                   return (
                     <tr key={o.id}>
                       <td className="mono">{o.order_no || `PRO-${o.id}`}</td>
@@ -501,15 +652,62 @@ export default function PromotionOrder() {
                       <td className="num">{toNum(o.old_salary).toLocaleString()}</td>
                       <td className="num">{toNum(o.new_salary).toLocaleString()}</td>
                       <td>{fmtDate(o.effective_date)}</td>
+
                       <td>
                         <span className={badgeClass(o.status)}>{o.status || "Pending"}</span>
                       </td>
+
+                      <td>{STAGE_LABELS[norm(o.approval_stage)] || "-"}</td>
+
+                      <td style={{ fontSize: 12, lineHeight: 1.5 }}>
+                        {renderChainSummary(o)}
+                      </td>
+
                       <td>
-                        {canApprovePromotion && isPending ? (
+                        <div className="po-row-actions">
+                          {o.attachment_path && canDownloadFile ? (
+                            <button
+                              className="po-mini-btn"
+                              type="button"
+                              onClick={() => downloadFile(o.id, "request", o.attachment_name || "")}
+                            >
+                              Request File
+                            </button>
+                          ) : null}
+
+                          {o.approved_attachment_path && canDownloadFile ? (
+                            <button
+                              className="po-mini-btn"
+                              type="button"
+                              onClick={() =>
+                                downloadFile(o.id, "approved", o.approved_attachment_name || "")
+                              }
+                            >
+                              Approved File
+                            </button>
+                          ) : null}
+
+                          {canUploadApprovedFile(o) ? (
+                            <label className="po-mini-btn" style={{ cursor: "pointer" }}>
+                              {uploadingId === String(o.id) ? "Uploading..." : "Upload Approved"}
+                              <input
+                                type="file"
+                                hidden
+                                accept=".pdf,.png,.jpg,.jpeg,.doc,.docx"
+                                onChange={(e) => uploadApprovedFile(o.id, e.target.files?.[0] || null)}
+                              />
+                            </label>
+                          ) : null}
+                        </div>
+                      </td>
+
+                      <td>
+                        {canAct && isPending ? (
                           <div className="po-row-actions">
                             <button className="po-mini-btn po-approve" type="button" onClick={() => approve(o.id)}>
                               Approve
                             </button>
+
                             <button className="po-mini-btn po-reject" type="button" onClick={() => reject(o.id)}>
                               Reject
                             </button>
@@ -536,8 +734,9 @@ export default function PromotionOrder() {
             <div className="po-modal-head">
               <div>
                 <h3 className="po-modal-title">Create Promotion Order</h3>
-                <p className="po-modal-sub">Order will be Pending until approved by Admin/HR/Accounting.</p>
+                <p className="po-modal-sub">Order will follow approval chain based on the employee’s current position.</p>
               </div>
+
               <button className="po-x" type="button" onClick={closeModal}>
                 ✕
               </button>
@@ -545,11 +744,7 @@ export default function PromotionOrder() {
 
             <form onSubmit={createOrder} className="po-form">
               <div className="po-grid">
-                <div
-                  className="po-field"
-                  ref={employeePickerRef}
-                  style={{ position: "relative", overflow: "visible" }}
-                >
+                <div className="po-field" ref={employeePickerRef} style={{ position: "relative", overflow: "visible" }}>
                   <label>Employee</label>
 
                   <input
@@ -578,6 +773,7 @@ export default function PromotionOrder() {
                         present_branch_code: "",
                         present_branch_name: "",
                       }));
+
                       setBranchSearch("");
                     }}
                     onFocus={() => setShowEmployeeResults(true)}
@@ -602,13 +798,9 @@ export default function PromotionOrder() {
                       }}
                     >
                       {loadingStaff ? (
-                        <div style={{ padding: 12, color: "#9aa7bd" }}>
-                          Loading staff...
-                        </div>
+                        <div style={{ padding: 12, color: "#9aa7bd" }}>Loading staff...</div>
                       ) : filteredStaff.length === 0 ? (
-                        <div style={{ padding: 12, color: "#9aa7bd" }}>
-                          No employee found.
-                        </div>
+                        <div style={{ padding: 12, color: "#9aa7bd" }}>No employee found.</div>
                       ) : (
                         filteredStaff.map((s) => (
                           <div
@@ -648,20 +840,13 @@ export default function PromotionOrder() {
                 <div className="po-field">
                   <label>Previous Branch</label>
                   <input
-                    value={
-                      `${form.prev_branch_code || ""}${form.prev_branch_name ? ` - ${form.prev_branch_name}` : ""}` ||
-                      ""
-                    }
+                    value={`${form.prev_branch_code || ""}${form.prev_branch_name ? ` - ${form.prev_branch_name}` : ""}`}
                     readOnly
                     placeholder="Auto-filled"
                   />
                 </div>
 
-                <div
-                  className="po-field"
-                  ref={branchPickerRef}
-                  style={{ position: "relative", overflow: "visible" }}
-                >
+                <div className="po-field" ref={branchPickerRef} style={{ position: "relative", overflow: "visible" }}>
                   <label>Present Branch</label>
 
                   <input
@@ -737,14 +922,8 @@ export default function PromotionOrder() {
 
                 <div className="po-field">
                   <label>New Position</label>
-                  <select
-                    value={form.new_position}
-                    onChange={(e) => onSelectNewPosition(e.target.value)}
-                    required
-                  >
-                    <option value="">
-                      {loadingRates ? "Loading positions..." : "Select New Position"}
-                    </option>
+                  <select value={form.new_position} onChange={(e) => onSelectNewPosition(e.target.value)} required>
+                    <option value="">{loadingRates ? "Loading positions..." : "Select New Position"}</option>
                     {positionOptions.map((r) => (
                       <option key={r.id || r.position} value={r.position}>
                         {r.position}
@@ -784,7 +963,7 @@ export default function PromotionOrder() {
                 </div>
 
                 <div className="po-field full">
-                  <label>Attach File</label>
+                  <label>Attach Request File</label>
                   <input
                     type="file"
                     accept=".pdf,.png,.jpg,.jpeg,.doc,.docx"
@@ -807,11 +986,8 @@ export default function PromotionOrder() {
                 <button className="po-btn po-btn-ghost" type="button" onClick={closeModal}>
                   Cancel
                 </button>
-                <button
-                  className="po-btn po-btn-primary"
-                  type="submit"
-                  disabled={saving || !form.employee_id}
-                >
+
+                <button className="po-btn po-btn-primary" type="submit" disabled={saving || !form.employee_id}>
                   {saving ? "Creating..." : "Create Order"}
                 </button>
               </div>

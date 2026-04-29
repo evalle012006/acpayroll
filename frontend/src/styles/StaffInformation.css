@@ -285,3 +285,51 @@
   transform: none;
 }
 
+.leave-edit-card {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  padding: 18px;
+  margin-bottom: 16px;
+  backdrop-filter: blur(6px);
+}
+
+.leave-edit-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 14px;
+}
+
+.leave-field {
+  display: flex;
+  flex-direction: column;
+}
+
+.leave-label {
+  font-size: 12px;
+  font-weight: 600;
+  margin-bottom: 6px;
+  opacity: 0.8;
+}
+
+.leave-input {
+  background: #0b1a2b;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  padding: 10px 12px;
+  color: white;
+  font-weight: 600;
+  outline: none;
+  transition: 0.2s ease;
+}
+
+.leave-input:focus {
+  border-color: #6366f1;
+  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.25);
+}
+
+.leave-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 16px;
+}

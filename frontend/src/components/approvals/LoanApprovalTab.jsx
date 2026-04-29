@@ -10,19 +10,14 @@ const loanTypes = [
   "Pag-ibig Loan",
 ];
 
-const APPROVAL_CHAIN = [
-  "area manager",
-  "regional manager",
-  "assistant vice president",
-  "admin",
-];
-
 const STAGE_LABELS = {
   "area manager": "Area Manager",
   "regional manager": "Regional Manager",
   "assistant vice president": "Assistant Vice President",
-  admin: "Admin",
+  admin: "Admin / HR / Accounting",
 };
+
+const FINAL_APPROVER_ROLES = ["admin", "hr", "accounting"];
 
 const readUser = () => {
   try {
@@ -54,6 +49,24 @@ const getBaseUrl = () => {
   return base.endsWith("/api") ? base.slice(0, -4) : base;
 };
 
+const getDynamicApprovalChain = (item) => {
+  const applicantRole = norm(item?.applicant_role);
+
+  if (applicantRole === "assistant vice president") {
+    return ["admin"];
+  }
+
+  if (applicantRole === "regional manager") {
+    return ["assistant vice president", "admin"];
+  }
+
+  if (applicantRole === "area manager") {
+    return ["regional manager", "assistant vice president", "admin"];
+  }
+
+  return ["area manager", "regional manager", "assistant vice president", "admin"];
+};
+
 const getChainStatus = (item, role) => {
   if (!item) return "Pending";
 
@@ -68,30 +81,43 @@ const getChainStatus = (item, role) => {
 };
 
 const getCurrentStage = (item) => {
+  const chain = getDynamicApprovalChain(item);
   const explicit = norm(item?.approval_stage);
-  if (APPROVAL_CHAIN.includes(explicit)) return explicit;
 
-  for (const role of APPROVAL_CHAIN) {
+  if (chain.includes(explicit)) return explicit;
+
+  for (const role of chain) {
     const status = norm(getChainStatus(item, role));
     if (status !== "approved") return role;
   }
 
-  return "admin";
+  return chain[chain.length - 1] || "admin";
 };
+
+const isFinalApprover = (role) => FINAL_APPROVER_ROLES.includes(norm(role));
 
 const canUserActOnLoan = (item, role) => {
   const overall = norm(item?.status);
   if (overall === "approved" || overall === "rejected") return false;
 
   const stage = getCurrentStage(item);
-  return role === stage;
+
+  if (stage === "admin") {
+    return isFinalApprover(role);
+  }
+
+  return norm(role) === stage;
 };
 
 const renderChainSummary = (item) => {
-  return APPROVAL_CHAIN.map((role) => {
-    const status = getChainStatus(item, role);
-    return `${STAGE_LABELS[role]}: ${status || "Pending"}`;
-  }).join(" | ");
+  const chain = getDynamicApprovalChain(item);
+
+  return chain
+    .map((role) => {
+      const status = getChainStatus(item, role);
+      return `${STAGE_LABELS[role]}: ${status || "Pending"}`;
+    })
+    .join(" | ");
 };
 
 export default function LoanApprovalTab() {
@@ -126,6 +152,8 @@ export default function LoanApprovalTab() {
 
   const canParticipateInLoanApproval =
     isAdmin ||
+    isHr ||
+    isAccounting ||
     isAreaManager ||
     isRegionalManager ||
     isAssistantVicePresident;
@@ -137,7 +165,10 @@ export default function LoanApprovalTab() {
     isTread ||
     isAreaManager ||
     isRegionalManager ||
-    isAssistantVicePresident;
+    isAssistantVicePresident ||
+    isVicePresident ||
+    isSeniorVicePresident ||
+    isPresident;
 
   const canDownloadApprovedFile =
     isAdmin ||
@@ -146,9 +177,12 @@ export default function LoanApprovalTab() {
     isTread ||
     isAreaManager ||
     isRegionalManager ||
-    isAssistantVicePresident;
+    isAssistantVicePresident ||
+    isVicePresident ||
+    isSeniorVicePresident ||
+    isPresident;
 
-  const canUploadApprovedFile = isAdmin;
+  const canUploadApprovedFile = isAdmin || isHr || isAccounting;
 
   const [loanRequests, setLoanRequests] = useState([]);
   const [staffList, setStaffList] = useState([]);
@@ -330,6 +364,8 @@ export default function LoanApprovalTab() {
         display,
         s.position,
         s.area,
+        s.region,
+        s.division,
       ]
         .map((x) => toStr(x))
         .join(" ")
@@ -344,69 +380,69 @@ export default function LoanApprovalTab() {
   }, [staffList, buildStaffDisplay]);
 
   const canSeeLoanByScope = useCallback(
-  (item) => {
-    if (
-      isAdmin ||
-      isHr ||
-      isAccounting ||
-      isTread ||
-      isVicePresident ||
-      isSeniorVicePresident ||
-      isPresident
-    ) {
-      return true;
-    }
+    (item) => {
+      if (
+        isAdmin ||
+        isHr ||
+        isAccounting ||
+        isTread ||
+        isVicePresident ||
+        isSeniorVicePresident ||
+        isPresident
+      ) {
+        return true;
+      }
 
-    const staff =
-      staffMap.get(String(item.staff_id)) ||
-      staffList.find((s) => String(s.employee_no) === String(item.employee_no));
+      const staff =
+        staffMap.get(String(item.staff_id)) ||
+        staffList.find((s) => String(s.employee_no) === String(item.employee_no));
 
-    if (!staff) return false;
+      if (!staff) return false;
 
-    if (isBranchManager) {
-      return String(staff.branch_id || "") === String(user?.branch_id || "");
-    }
+      if (isBranchManager) {
+        return String(staff.branch_id || "") === String(user?.branch_id || "");
+      }
 
-    if (isAreaManager) {
-      return norm(staff.area) === norm(user?.area);
-    }
+      if (isAreaManager) {
+        return norm(staff.area) === norm(user?.area);
+      }
 
-    if (isRegionalManager) {
-      return norm(staff.region) === norm(user?.region);
-    }
+      if (isRegionalManager) {
+        return norm(staff.region) === norm(user?.region);
+      }
 
-    if (isAssistantVicePresident) {
-      return norm(staff.division) === norm(user?.division);
-    }
+      if (isAssistantVicePresident) {
+        return norm(staff.division) === norm(user?.division);
+      }
 
-    return false;
-  },
-  [
-    isAdmin,
-    isHr,
-    isAccounting,
-    isTread,
-    isVicePresident,
-    isSeniorVicePresident,
-    isPresident,
-    isBranchManager,
-    isAreaManager,
-    isRegionalManager,
-    isAssistantVicePresident,
-    staffMap,
-    staffList,
-    user,
-  ]
-);
+      return false;
+    },
+    [
+      isAdmin,
+      isHr,
+      isAccounting,
+      isTread,
+      isVicePresident,
+      isSeniorVicePresident,
+      isPresident,
+      isBranchManager,
+      isAreaManager,
+      isRegionalManager,
+      isAssistantVicePresident,
+      staffMap,
+      staffList,
+      user,
+    ]
+  );
 
-const filteredLoan = useMemo(() => {
-  return loanRequests.filter((item) => {
-    if (!canSeeLoanByScope(item)) return false;
+  const filteredLoan = useMemo(() => {
+    return loanRequests.filter((item) => {
+      if (!canSeeLoanByScope(item)) return false;
 
-    if (selectedLoanType === "All") return true;
-    return item.loan_type === selectedLoanType;
-  });
-}, [loanRequests, selectedLoanType, canSeeLoanByScope]);
+      if (selectedLoanType === "All") return true;
+      return item.loan_type === selectedLoanType;
+    });
+  }, [loanRequests, selectedLoanType, canSeeLoanByScope]);
 
   const filteredLoanEmployees = useMemo(() => {
     const q = norm(loanEmployeeSearch);
@@ -487,6 +523,13 @@ const filteredLoan = useMemo(() => {
     setShowLoanEmployeeDropdown(false);
   };
 
+  const getInitialStageForCurrentUser = () => {
+    if (role === "assistant vice president") return "admin";
+    if (role === "regional manager") return "assistant vice president";
+    if (role === "area manager") return "regional manager";
+    return "area manager";
+  };
+
   const handleCreateLoan = async (e) => {
     e.preventDefault();
 
@@ -509,7 +552,8 @@ const filteredLoan = useMemo(() => {
       formData.append("total", total);
       formData.append("per_month", per_month);
       formData.append("status", "Pending");
-      formData.append("approval_stage", "area manager");
+      formData.append("approval_stage", getInitialStageForCurrentUser());
+      formData.append("applicant_role", role);
       formData.append("date_created", loanForm.date_created || todayDate());
 
       if (loanForm.attachment) {
@@ -639,6 +683,7 @@ const filteredLoan = useMemo(() => {
                   + Add Loan
                 </button>
               )}
+
               <button className="btn-primary" onClick={() => setShowLoanModal(true)} type="button">
                 View
               </button>
@@ -649,7 +694,7 @@ const filteredLoan = useMemo(() => {
             <div className="mini">
               {loadingLoan
                 ? "Loading loan requests..."
-                : "Area Manager and Regional Manager can download the request file to sign. Admin uploads the final approved signed file."}
+                : "Approval chain changes depending on applicant role."}
             </div>
           </div>
         </div>
@@ -667,9 +712,10 @@ const filteredLoan = useMemo(() => {
               <div>
                 <h3 className="modal-title">Add Loan Request</h3>
                 <p className="modal-subtitle">
-                  This request will start at Area Manager approval stage
+                  Initial approval stage: {STAGE_LABELS[getInitialStageForCurrentUser()]}
                 </p>
               </div>
+
               <button className="modal-x" type="button" onClick={() => setShowCreateLoan(false)}>
                 ✕
               </button>
@@ -908,6 +954,7 @@ const filteredLoan = useMemo(() => {
                 <h3 className="modal-title">Loan Requests</h3>
                 <p className="modal-subtitle">Filter by type and follow approval chain</p>
               </div>
+
               <button className="modal-x" type="button" onClick={() => setShowLoanModal(false)}>
                 ✕
               </button>
@@ -933,6 +980,7 @@ const filteredLoan = useMemo(() => {
                     <tr>
                       <th>ID</th>
                       <th>Employee</th>
+                      <th>Applicant Role</th>
                       <th>Loan Type</th>
                       <th>Amount</th>
                       <th>Term</th>
@@ -947,40 +995,49 @@ const filteredLoan = useMemo(() => {
                       <th>Action</th>
                     </tr>
                   </thead>
+
                   <tbody>
                     {filteredLoan.length === 0 ? (
                       <tr>
-                        <td colSpan={14} className="empty-state">
+                        <td colSpan={15} className="empty-state">
                           No requests found.
                         </td>
                       </tr>
                     ) : (
                       filteredLoan.map((item) => {
                         const currentStage = getCurrentStage(item);
-                        const canAct = canParticipateInLoanApproval && canUserActOnLoan(item, role);
+                        const canAct =
+                          canParticipateInLoanApproval && canUserActOnLoan(item, role);
 
                         return (
                           <tr key={item.id}>
                             <td>{item.id ?? "-"}</td>
+
                             <td className="td-strong">
                               {item.staff_name || staffDisplayName(item.staff_id)}
                               <div style={{ fontSize: 12, opacity: 0.75 }}>
                                 Emp No: {item.employee_no || "-"}
                               </div>
                             </td>
+
+                            <td>{item.applicant_role || "-"}</td>
                             <td>{item.loan_type}</td>
                             <td>₱ {fmtMoney(item.amount)}</td>
                             <td>{item.term}</td>
                             <td>{item.interest}%</td>
                             <td>₱ {fmtMoney(item.per_month)}</td>
                             <td>₱ {fmtMoney(item.total)}</td>
+
                             <td>
                               <span className={badgeClass(item.status)}>{item.status}</span>
                             </td>
+
                             <td>{STAGE_LABELS[currentStage] || "-"}</td>
+
                             <td style={{ fontSize: 12, lineHeight: 1.5 }}>
                               {renderChainSummary(item)}
                             </td>
+
                             <td>
                               <div className="row-actions" style={{ flexWrap: "wrap" }}>
                                 {item.attachment_path && canDownloadRequestFile ? (
@@ -1034,6 +1091,7 @@ const filteredLoan = useMemo(() => {
                                 ) : null}
                               </div>
                             </td>
+
                             <td style={{ fontSize: 12, opacity: 0.85 }}>
                               {norm(item.status) === "approved" ? (
                                 <>
@@ -1047,6 +1105,7 @@ const filteredLoan = useMemo(() => {
                                 </>
                               )}
                             </td>
+
                             <td>
                               <div className="row-actions">
                                 <button
@@ -1069,6 +1128,7 @@ const filteredLoan = useMemo(() => {
                                         ? "Approving..."
                                         : "Approve"}
                                     </button>
+
                                     <button
                                       className="btn-danger"
                                       onClick={() => updateLoanStatus(item.id, "reject")}
@@ -1114,6 +1174,7 @@ const filteredLoan = useMemo(() => {
                   {selectedLoan.staff_name || staffDisplayName(selectedLoan.staff_id)}
                 </p>
               </div>
+
               <button className="modal-x" type="button" onClick={closeLoanView}>
                 ✕
               </button>
@@ -1137,6 +1198,11 @@ const filteredLoan = useMemo(() => {
                 <div className="form-group">
                   <label>Employee No</label>
                   <input value={selectedLoan.employee_no || "-"} readOnly />
+                </div>
+
+                <div className="form-group">
+                  <label>Applicant Role</label>
+                  <input value={selectedLoan.applicant_role || "-"} readOnly />
                 </div>
 
                 <div className="form-group">
