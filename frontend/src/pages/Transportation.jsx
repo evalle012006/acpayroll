@@ -306,12 +306,24 @@ function Transportation() {
           (s) => norm(s.branch_code) === norm(foundBranch.code)
         );
 
-        const filteredRaw =
-          byBranchId.length > 0
-            ? byBranchId
-            : byBranchCode.length > 0
-              ? byBranchCode
-              : allStaff.filter((s) => norm(s.area) === norm(foundBranch.area));
+        const searchParams = new URLSearchParams(window.location.search);
+        const departmentId = searchParams.get("department_id");
+        const departmentName = searchParams.get("department");
+
+        const filteredRaw = allStaff.filter((s) => {
+          const matchBranch =
+            Number(s.branch_id) === Number(foundBranch.id) ||
+            norm(s.branch_code) === norm(foundBranch.code);
+
+          const matchDepartment =
+            !departmentId && !departmentName
+              ? true
+              : String(s.department_id || "") === String(departmentId || "") ||
+                norm(s.department) === norm(departmentName) ||
+                norm(s.department_name) === norm(departmentName);
+
+          return matchBranch && matchDepartment;
+        });
 
         const filtered = filteredRaw.filter(isActiveStaff);
         setStaff(filtered);

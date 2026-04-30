@@ -327,12 +327,24 @@ export default function Bonus() {
         const byBranch = allStaff.filter((s) => Number(s.branch_id) === Number(found.id));
         const byBranchCode = allStaff.filter((s) => norm(s.branch_code) === norm(found.code));
 
-        const filteredRaw =
-          byBranch.length > 0
-            ? byBranch
-            : byBranchCode.length > 0
-            ? byBranchCode
-            : allStaff.filter((s) => norm(s.area) === norm(found.area));
+        const searchParams = new URLSearchParams(window.location.search);
+        const departmentId = searchParams.get("department_id");
+        const departmentName = searchParams.get("department");
+
+        const filteredRaw = allStaff.filter((s) => {
+          const matchBranch =
+            Number(s.branch_id) === Number(found.id) ||
+            norm(s.branch_code) === norm(found.code);
+
+          const matchDepartment =
+            !departmentId && !departmentName
+              ? true
+              : String(s.department_id || "") === String(departmentId || "") ||
+                norm(s.department) === norm(departmentName) ||
+                norm(s.department_name) === norm(departmentName);
+
+          return matchBranch && matchDepartment;
+        });
 
         const filtered = filteredRaw.filter(isActiveStaff);
 

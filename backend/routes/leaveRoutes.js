@@ -164,7 +164,7 @@ const storage = multer.diskStorage({
 
 const upload = multer({
   storage,
-  limits: { fileSize: 10 * 1024 * 1024 },
+  limits: { fileSize: 50 * 1024 * 1024 },
 });
 
 const baseLeaveSelect = `
@@ -520,147 +520,110 @@ router.post(
   upload.single("attachment"),
   async (req, res) => {
     const client = await pool.connect();
+
     try {
       await client.query("BEGIN");
 
-      const b = req.body || {};
-      const employee_id = toInt(b.employee_id);
-      const leave_type = String(b.leave_type || "").trim();
-      const start_date = toDateOrNull(b.start_date);
-      const end_date = toDateOrNull(b.end_date);
-      const date_created = toDateOrNull(b.date_created) || toDateOrNull(new Date().toISOString());
-      const reason = toStr(b.reason) || null;
+      const {
+        employee_id,
+        leave_type,
+        date_created,
+        start_date,
+        end_date,
+        reason,
+      } = req.body;
 
       if (!employee_id) {
         await client.query("ROLLBACK");
         return res.status(400).json({ message: "employee_id is required" });
       }
+
       if (!leave_type) {
         await client.query("ROLLBACK");
         return res.status(400).json({ message: "leave_type is required" });
       }
-      if (!start_date || !end_date) {
+
+      if (!date_created) {
         await client.query("ROLLBACK");
-        return res.status(400).json({ message: "start_date and end_date are required" });
-      }
-      if (String(start_date) > String(end_date)) {
-        await client.query("ROLLBACK");
-        return res.status(400).json({ message: "Start date must be on or before end date" });
+        return res.status(400).json({ message: "date_created is required" });
       }
 
-      const total_no_of_days = diffDaysInclusive(start_date, end_date);
+      const isIndefiniteLeave = leave_type === "Indefinite Leave";
 
-      const s = await client.query(
+      let total_no_of_days = 0;
+
+      if (!isIndefiniteLeave) {
+        if (!start_date || !end_date) {
+          await client.query("ROLLBACK");
+          return res.status(400).json({
+            message: "start_date and end_date are required",
+          });
+        }
+
+        if (String(start_date) > String(end_date)) {
+          await client.query("ROLLBACK");
+          return res.status(400).json({
+            message: "Start date must be on or before end date",
+          });
+        }
+
+        total_no_of_days = diffDaysInclusive(start_date, end_date);
+      }
+
+      const transaction_code = makeTxnCode(leave_type);
+
+      const status = initialPendingStatusForRequester(req);
+
+      const insertRes = await client.query(
         `
-        SELECT id, fullname, branch_id, area, region, division
-        FROM public.staff
-        WHERE id = $1
-        `,
-        [employee_id]
-      );
-
-      if (s.rowCount === 0) {
-        await client.query("ROLLBACK");
-        return res.status(404).json({ message: "Staff not found" });
-      }
-
-      const staffRow = s.rows[0];
-
-      if (isBranchManager(req)) {
-        const branchCode = getUserBranchCode(req);
-        const bid = await getBranchIdFromCode(branchCode);
-
-        if (!bid || Number(staffRow.branch_id) !== Number(bid)) {
-          await client.query("ROLLBACK");
-          return res.status(403).json({ message: "Access denied" });
-        }
-      }
-
-      if (isAreaManager(req)) {
-        const area = getUserArea(req);
-        if (!area || toStr(staffRow.area).toLowerCase() !== area.toLowerCase()) {
-          await client.query("ROLLBACK");
-          return res.status(403).json({ message: "Access denied" });
-        }
-      }
-
-      if (isRegionalManager(req)) {
-        const region = getUserRegion(req);
-        if (!region || toStr(staffRow.region).toLowerCase() !== region.toLowerCase()) {
-          await client.query("ROLLBACK");
-          return res.status(403).json({ message: "Access denied" });
-        }
-      }
-
-      if (isAssistantVicePresident(req)) {
-        const division = getUserDivision(req);
-        if (!division || toStr(staffRow.division).toLowerCase() !== division.toLowerCase()) {
-          await client.query("ROLLBACK");
-          return res.status(403).json({ message: "Access denied" });
-        }
-      }
-
-      const txnCode = makeTxnCode(leave_type);
-      const id = `LV-${Date.now()}-${Math.random().toString(16).slice(2, 6).toUpperCase()}`;
-      const initialStatus = initialPendingStatusForRequester(req);
-
-      await client.query(
-        `
-        INSERT INTO public.leave_requests
-          (
-            id,
-            staff_name,
-            leave_type,
-            start_date,
-            end_date,
-            status,
-            transaction_code,
-            entry_date,
-            employee_id,
-            date_created,
-            total_no_of_days,
-            reason
-          )
-        VALUES
-          (
-            $1, $2, $3, $4::date, $5::date, $6, $7, CURRENT_DATE, $8,
-            $9::date, $10, $11
-          )
-        `,
-        [
-          id,
-          String(staffRow.fullname || ""),
+        INSERT INTO public.leave_requests (
+          employee_id,
           leave_type,
+          date_created,
           start_date,
           end_date,
-          initialStatus,
-          txnCode,
-          employee_id,
-          date_created,
           total_no_of_days,
           reason,
+          status,
+          transaction_code,
+          entry_date
+        )
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,NOW())
+        RETURNING *
+        `,
+        [
+          employee_id,
+          leave_type,
+          date_created,
+          isIndefiniteLeave ? null : start_date,
+          isIndefiniteLeave ? null : end_date,
+          total_no_of_days,
+          reason || null,
+          status,
+          transaction_code,
         ]
       );
+
+      const leaveId = insertRes.rows[0].id;
 
       if (req.file) {
         await client.query(
           `
           INSERT INTO public.leave_attachments
-            (
-              leave_request_id,
-              file_name,
-              file_path,
-              file_mime,
-              file_size,
-              attachment_type,
-              uploaded_by,
-              uploaded_by_role
-            )
-          VALUES
-            ($1, $2, $3, $4, $5, 'request', $6, $7)
+          (
+            leave_request_id,
+            file_name,
+            file_path,
+            file_mime,
+            file_size,
+            attachment_type,
+            uploaded_by,
+            uploaded_by_role
+          )
+          VALUES ($1,$2,$3,$4,$5,'request',$6,$7)
           `,
           [
-            id,
+            leaveId,
             req.file.originalname || null,
             `/uploads/leave_attachments/${req.file.filename}`,
             req.file.mimetype || null,
@@ -671,21 +634,32 @@ router.post(
         );
       }
 
+      if (isIndefiniteLeave) {
+        await client.query(
+          `
+          UPDATE public.staff
+          SET status = 'Inactive'
+          WHERE id = $1
+          `,
+          [employee_id]
+        );
+      }
+
       await client.query("COMMIT");
 
-      const finalRow = await pool.query(
+      const finalRow = await client.query(
         `
         ${baseLeaveSelect}
         WHERE lr.id = $1
         `,
-        [id]
+        [leaveId]
       );
 
       return res.json(finalRow.rows[0]);
-    } catch (e) {
+    } catch (err) {
       await client.query("ROLLBACK");
-      console.error("POST /api/leave-requests ERROR:", e.message);
-      return res.status(500).json({ message: e?.message || "Server error" });
+      console.error("CREATE LEAVE ERROR:", err);
+      return res.status(500).json({ message: err.message });
     } finally {
       client.release();
     }

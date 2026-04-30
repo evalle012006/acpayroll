@@ -137,6 +137,7 @@ export default function Transactions() {
         "admin",
         "hr",
         "accounting",
+        "branch manager",
         "vice president",
         "senior vice president",
         "president",

@@ -14,6 +14,7 @@ const STAGE_LABELS = {
   "area manager": "Area Manager",
   "regional manager": "Regional Manager",
   "assistant vice president": "Assistant Vice President",
+  "vice president": "Vice President",
   admin: "Admin / HR / Accounting",
 };
 
@@ -44,27 +45,32 @@ const fmtMoney = (v) =>
 
 const fmtDate = (d) => (d ? String(d).slice(0, 10) : "-");
 
-const getBaseUrl = () => {
-  const base = api.defaults.baseURL || "";
-  return base.endsWith("/api") ? base.slice(0, -4) : base;
-};
-
 const getDynamicApprovalChain = (item) => {
   const applicantRole = norm(item?.applicant_role);
 
-  if (applicantRole === "assistant vice president") {
+  if (applicantRole === "vice president") {
     return ["admin"];
   }
 
+  if (applicantRole === "assistant vice president") {
+    return ["vice president", "admin"];
+  }
+
   if (applicantRole === "regional manager") {
-    return ["assistant vice president", "admin"];
+    return ["assistant vice president", "vice president", "admin"];
   }
 
   if (applicantRole === "area manager") {
-    return ["regional manager", "assistant vice president", "admin"];
+    return ["regional manager", "assistant vice president", "vice president", "admin"];
   }
 
-  return ["area manager", "regional manager", "assistant vice president", "admin"];
+  return [
+    "area manager",
+    "regional manager",
+    "assistant vice president",
+    "vice president",
+    "admin",
+  ];
 };
 
 const getChainStatus = (item, role) => {
@@ -74,6 +80,7 @@ const getChainStatus = (item, role) => {
     "area manager": item.area_manager_status,
     "regional manager": item.regional_manager_status,
     "assistant vice president": item.assistant_vice_president_status,
+    "vice president": item.vice_president_status,
     admin: item.admin_status,
   };
 
@@ -123,7 +130,6 @@ const renderChainSummary = (item) => {
 export default function LoanApprovalTab() {
   const user = useMemo(() => readUser(), []);
   const role = norm(user?.role);
-  const baseUrl = useMemo(() => getBaseUrl(), []);
 
   const isAdmin = role === "admin";
   const isHr = role === "hr";
@@ -156,7 +162,8 @@ export default function LoanApprovalTab() {
     isAccounting ||
     isAreaManager ||
     isRegionalManager ||
-    isAssistantVicePresident;
+    isAssistantVicePresident ||
+    isVicePresident;
 
   const canDownloadRequestFile =
     isAdmin ||
@@ -524,7 +531,8 @@ export default function LoanApprovalTab() {
   };
 
   const getInitialStageForCurrentUser = () => {
-    if (role === "assistant vice president") return "admin";
+    if (role === "vice president") return "admin";
+    if (role === "assistant vice president") return "vice president";
     if (role === "regional manager") return "assistant vice president";
     if (role === "area manager") return "regional manager";
     return "area manager";
@@ -694,7 +702,7 @@ export default function LoanApprovalTab() {
             <div className="mini">
               {loadingLoan
                 ? "Loading loan requests..."
-                : "Approval chain changes depending on applicant role."}
+                : "Approval chain includes Vice President before final Admin/HR/Accounting approval."}
             </div>
           </div>
         </div>

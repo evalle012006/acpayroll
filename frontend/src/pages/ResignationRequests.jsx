@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import api from "../api/axiosClient";
-import "../styles/ExitStaffOrders.css";
+import "../styles/ResignationRequests.css";
 import "../styles/Approval.css";
 
 const toStr = (v) => String(v ?? "").trim();
@@ -340,9 +340,10 @@ export default function ResignationRequests() {
   const canApproveRow = (row) => {
     const status = toStr(row.status);
 
-    if (isRegionalManager && status === STATUS_RM) return true;
-    if (isAssistantVicePresident && status === STATUS_AVP) return true;
-    if ((isAdmin || isHr || isAccounting) && status === STATUS_ADMIN) return true;
+    if (isAreaManager && status === "Pending Area Manager") return true;
+    if (isRegionalManager && status === "Pending Regional Manager") return true;
+    if (isAssistantVicePresident && status === "Pending Executive Approval") return true;
+    if ((isAdmin || isHr || isAccounting) && status === "Pending Admin") return true;
 
     return false;
   };
@@ -350,9 +351,10 @@ export default function ResignationRequests() {
   const canRejectRow = (row) => {
     const status = toStr(row.status);
 
-    if (isRegionalManager && status === STATUS_RM) return true;
-    if (isAssistantVicePresident && status === STATUS_AVP) return true;
-    if ((isAdmin || isHr || isAccounting) && status === STATUS_ADMIN) return true;
+    if (isAreaManager && status === "Pending Area Manager") return true;
+    if (isRegionalManager && status === "Pending Regional Manager") return true;
+    if (isAssistantVicePresident && status === "Pending Executive Approval") return true;
+    if ((isAdmin || isHr || isAccounting) && status === "Pending Admin") return true;
 
     return false;
   };

@@ -82,7 +82,12 @@ export default function LeaveTransactions() {
     isPresident;
 
   const canViewRequestFile =
-    isAdmin || isHr || isAccounting || isTread || isRegionalManager || isAssistantVicePresident;
+    isAdmin ||
+    isHr ||
+    isAccounting ||
+    isTread ||
+    isRegionalManager ||
+    isAssistantVicePresident;
 
   const canViewApprovedFile =
     isAdmin ||
@@ -121,6 +126,8 @@ export default function LeaveTransactions() {
     total_no_of_days: 0,
     reason: "",
   });
+
+  const isIndefiniteLeave = leaveForm.leave_type === "Indefinite Leave";
 
   const [attachmentFile, setAttachmentFile] = useState(null);
   const [employeeSearch, setEmployeeSearch] = useState("");
@@ -215,11 +222,21 @@ export default function LeaveTransactions() {
   }, []);
 
   useEffect(() => {
+    if (isIndefiniteLeave) {
+      setLeaveForm((prev) => ({
+        ...prev,
+        start_date: "",
+        end_date: "",
+        total_no_of_days: "",
+      }));
+      return;
+    }
+
     setLeaveForm((prev) => ({
       ...prev,
       total_no_of_days: diffDaysInclusive(prev.start_date, prev.end_date),
     }));
-  }, [leaveForm.start_date, leaveForm.end_date]);
+  }, [leaveForm.start_date, leaveForm.end_date, isIndefiniteLeave]);
 
   const filteredEmployees = useMemo(() => {
     const q = employeeSearch.toLowerCase();
@@ -311,23 +328,28 @@ export default function LeaveTransactions() {
     if (!leaveForm.employee_id) return alert("Select an employee.");
     if (!leaveForm.leave_type) return alert("Select leave type.");
     if (!leaveForm.date_created) return alert("Select date created.");
-    if (!leaveForm.start_date || !leaveForm.end_date) return alert("Select start/end date.");
 
-    if (String(leaveForm.start_date) > String(leaveForm.end_date)) {
-      return alert("Start date must be on or before end date.");
-    }
+    if (!isIndefiniteLeave) {
+      if (!leaveForm.start_date || !leaveForm.end_date) {
+        return alert("Select start/end date.");
+      }
 
-    const requestedDays = diffDaysInclusive(leaveForm.start_date, leaveForm.end_date);
-    const remainingLeave = getLeaveRemaining();
+      if (String(leaveForm.start_date) > String(leaveForm.end_date)) {
+        return alert("Start date must be on or before end date.");
+      }
 
-    if (remainingLeave <= 0) {
-      return alert("Insufficient leave balance. Remaining leave is 0.");
-    }
+      const requestedDays = diffDaysInclusive(leaveForm.start_date, leaveForm.end_date);
+      const remainingLeave = getLeaveRemaining();
 
-    if (requestedDays > remainingLeave) {
-      return alert(
-        `Insufficient leave balance. Remaining: ${remainingLeave}, Requested: ${requestedDays}.`
-      );
+      if (remainingLeave <= 0) {
+        return alert("Insufficient leave balance. Remaining leave is 0.");
+      }
+
+      if (requestedDays > remainingLeave) {
+        return alert(
+          `Insufficient leave balance. Remaining: ${remainingLeave}, Requested: ${requestedDays}.`
+        );
+      }
     }
 
     try {
@@ -337,8 +359,8 @@ export default function LeaveTransactions() {
       formData.append("employee_id", leaveForm.employee_id);
       formData.append("leave_type", leaveForm.leave_type);
       formData.append("date_created", leaveForm.date_created);
-      formData.append("start_date", leaveForm.start_date);
-      formData.append("end_date", leaveForm.end_date);
+      formData.append("start_date", isIndefiniteLeave ? "" : leaveForm.start_date);
+      formData.append("end_date", isIndefiniteLeave ? "" : leaveForm.end_date);
       formData.append("reason", leaveForm.reason || "");
 
       if (attachmentFile) {
@@ -353,6 +375,7 @@ export default function LeaveTransactions() {
       resetForm();
       setShowCreateLeave(false);
       await fetchLeave();
+      await fetchStaff();
     } catch (err) {
       if (err?.response?.status === 401) return logout();
       if (err?.response?.status === 403) return alert("Access denied.");
@@ -380,6 +403,7 @@ export default function LeaveTransactions() {
         rejection_reason: action === "reject" ? "Rejected by approver" : "",
       });
       await fetchLeave();
+      await fetchStaff();
     } catch (err) {
       if (err?.response?.status === 401) return logout();
       if (err?.response?.status === 403) return alert("Access denied.");
@@ -570,7 +594,11 @@ export default function LeaveTransactions() {
                     <td>{fmtDate(item.date_created)}</td>
                     <td>{fmtDate(item.start_date)}</td>
                     <td>{fmtDate(item.end_date)}</td>
-                    <td>{item.total_no_of_days ?? 0}</td>
+                    <td>
+                      {item.leave_type === "Indefinite Leave"
+                        ? ""
+                        : item.total_no_of_days ?? 0}
+                    </td>
                     <td>
                       <span className={badgeClass(item.status)}>{item.status}</span>
                     </td>
@@ -746,6 +774,9 @@ export default function LeaveTransactions() {
                       setLeaveForm((p) => ({
                         ...p,
                         leave_type: e.target.value,
+                        start_date: e.target.value === "Indefinite Leave" ? "" : p.start_date,
+                        end_date: e.target.value === "Indefinite Leave" ? "" : p.end_date,
+                        total_no_of_days: e.target.value === "Indefinite Leave" ? "" : p.total_no_of_days,
                       }))
                     }
                     required
@@ -785,13 +816,14 @@ export default function LeaveTransactions() {
                     name="start_date"
                     type="date"
                     value={leaveForm.start_date}
+                    disabled={isIndefiniteLeave}
                     onChange={(e) =>
                       setLeaveForm((p) => ({
                         ...p,
                         start_date: e.target.value,
                       }))
                     }
-                    required
+                    required={!isIndefiniteLeave}
                   />
                 </div>
 
@@ -802,13 +834,14 @@ export default function LeaveTransactions() {
                     name="end_date"
                     type="date"
                     value={leaveForm.end_date}
+                    disabled={isIndefiniteLeave}
                     onChange={(e) =>
                       setLeaveForm((p) => ({
                         ...p,
                         end_date: e.target.value,
                       }))
                     }
-                    required
+                    required={!isIndefiniteLeave}
                   />
                 </div>
 
@@ -817,9 +850,9 @@ export default function LeaveTransactions() {
                   <input
                     id="total_no_of_days"
                     name="total_no_of_days"
-                    value={leaveForm.total_no_of_days}
+                    value={isIndefiniteLeave ? "" : leaveForm.total_no_of_days}
                     readOnly
-                    placeholder="Auto-calculated"
+                    placeholder={isIndefiniteLeave ? "N/A for indefinite leave" : "Auto-calculated"}
                   />
                 </div>
 

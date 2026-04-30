@@ -27,9 +27,11 @@ const isTread = (req) => roleLower(req) === "tread";
 const isBranchManager = (req) => roleLower(req) === "branch manager";
 const isAreaManager = (req) => roleLower(req) === "area manager";
 const isRegionalManager = (req) => roleLower(req) === "regional manager";
-const isAssistantVicePresident = (req) => roleLower(req) === "assistant vice president";
+const isAssistantVicePresident = (req) =>
+  roleLower(req) === "assistant vice president";
 const isVicePresident = (req) => roleLower(req) === "vice president";
-const isSeniorVicePresident = (req) => roleLower(req) === "senior vice president";
+const isSeniorVicePresident = (req) =>
+  roleLower(req) === "senior vice president";
 const isPresident = (req) => roleLower(req) === "president";
 
 const isFinalApprover = (req) => isAdmin(req) || isHr(req) || isAccounting(req);
@@ -63,7 +65,8 @@ const getUserRegion = (req) => toStr(req.user?.region);
 const getInitialApprovalStage = (applicantRole) => {
   const role = String(applicantRole || "").trim().toLowerCase();
 
-  if (role === "assistant vice president") return "admin";
+  if (role === "vice president") return "admin";
+  if (role === "assistant vice president") return "vice president";
   if (role === "regional manager") return "assistant vice president";
   if (role === "area manager") return "regional manager";
 
@@ -73,19 +76,34 @@ const getInitialApprovalStage = (applicantRole) => {
 const getApprovalChain = (applicantRole) => {
   const role = String(applicantRole || "").trim().toLowerCase();
 
-  if (role === "assistant vice president") {
+  if (role === "vice president") {
     return ["admin"];
   }
 
+  if (role === "assistant vice president") {
+    return ["vice president", "admin"];
+  }
+
   if (role === "regional manager") {
-    return ["assistant vice president", "admin"];
+    return ["assistant vice president", "vice president", "admin"];
   }
 
   if (role === "area manager") {
-    return ["regional manager", "assistant vice president", "admin"];
+    return [
+      "regional manager",
+      "assistant vice president",
+      "vice president",
+      "admin",
+    ];
   }
 
-  return ["area manager", "regional manager", "assistant vice president", "admin"];
+  return [
+    "area manager",
+    "regional manager",
+    "assistant vice president",
+    "vice president",
+    "admin",
+  ];
 };
 
 async function getBranchIdFromCode(branchCode) {
@@ -163,6 +181,7 @@ function loanTypeToBalanceColumn(loanType) {
 
 /* ---------------- upload config ---------------- */
 const uploadDir = path.join(__dirname, "../uploads/loans");
+
 if (!fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir, { recursive: true });
 }
@@ -206,6 +225,7 @@ const loanSelectFields = `
   lr.area_manager_status,
   lr.regional_manager_status,
   lr.assistant_vice_president_status,
+  lr.vice_president_status,
   lr.admin_status,
 
   COALESCE(s.fullname, '') AS staff_name,
@@ -226,6 +246,7 @@ router.get("/loan-requests", requireAuth, async (req, res) => {
         ORDER BY lr.id DESC
         `
       );
+
       return res.json(r.rows);
     }
 
@@ -246,6 +267,7 @@ router.get("/loan-requests", requireAuth, async (req, res) => {
         `,
         [bid]
       );
+
       return res.json(r.rows);
     }
 
@@ -263,6 +285,7 @@ router.get("/loan-requests", requireAuth, async (req, res) => {
         `,
         [area]
       );
+
       return res.json(r.rows);
     }
 
@@ -280,6 +303,7 @@ router.get("/loan-requests", requireAuth, async (req, res) => {
         `,
         [region]
       );
+
       return res.json(r.rows);
     }
 
@@ -330,6 +354,7 @@ router.get("/loan-requests/staff/:staffId", requireAuth, async (req, res) => {
     if (isBranchManager(req)) {
       const branchCode = getUserBranchCode(req);
       const bid = await getBranchIdFromCode(branchCode);
+
       if (!bid || Number(staffRow.branch_id) !== Number(bid)) {
         return res.status(403).json({ message: "Access denied" });
       }
@@ -337,6 +362,7 @@ router.get("/loan-requests/staff/:staffId", requireAuth, async (req, res) => {
 
     if (isAreaManager(req)) {
       const area = getUserArea(req);
+
       if (!area || toStr(staffRow.area).toLowerCase() !== area.toLowerCase()) {
         return res.status(403).json({ message: "Access denied" });
       }
@@ -344,6 +370,7 @@ router.get("/loan-requests/staff/:staffId", requireAuth, async (req, res) => {
 
     if (isRegionalManager(req)) {
       const region = getUserRegion(req);
+
       if (!region || toStr(staffRow.region).toLowerCase() !== region.toLowerCase()) {
         return res.status(403).json({ message: "Access denied" });
       }
@@ -409,11 +436,25 @@ router.post(
       const attachment_name = req.file ? req.file.originalname : null;
       const attachment_mime = req.file ? req.file.mimetype : null;
 
-      if (!staff_id) return res.status(400).json({ message: "staff_id is required" });
-      if (!loan_type) return res.status(400).json({ message: "loan_type is required" });
-      if (!amount) return res.status(400).json({ message: "amount is required" });
-      if (!term) return res.status(400).json({ message: "term is required" });
-      if (!reason) return res.status(400).json({ message: "reason is required" });
+      if (!staff_id) {
+        return res.status(400).json({ message: "staff_id is required" });
+      }
+
+      if (!loan_type) {
+        return res.status(400).json({ message: "loan_type is required" });
+      }
+
+      if (!amount) {
+        return res.status(400).json({ message: "amount is required" });
+      }
+
+      if (!term) {
+        return res.status(400).json({ message: "term is required" });
+      }
+
+      if (!reason) {
+        return res.status(400).json({ message: "reason is required" });
+      }
 
       await client.query("BEGIN");
 
@@ -437,6 +478,7 @@ router.post(
       if (isBranchManager(req)) {
         const branchCode = getUserBranchCode(req);
         const bid = await getBranchIdFromCode(branchCode);
+
         if (!bid || Number(staffRow.branch_id) !== Number(bid)) {
           await client.query("ROLLBACK");
           return res.status(403).json({ message: "Access denied" });
@@ -445,6 +487,7 @@ router.post(
 
       if (isAreaManager(req)) {
         const area = getUserArea(req);
+
         if (!area || toStr(staffRow.area).toLowerCase() !== area.toLowerCase()) {
           await client.query("ROLLBACK");
           return res.status(403).json({ message: "Access denied" });
@@ -453,6 +496,7 @@ router.post(
 
       if (isRegionalManager(req)) {
         const region = getUserRegion(req);
+
         if (!region || toStr(staffRow.region).toLowerCase() !== region.toLowerCase()) {
           await client.query("ROLLBACK");
           return res.status(403).json({ message: "Access denied" });
@@ -478,6 +522,7 @@ router.post(
             area_manager_status,
             regional_manager_status,
             assistant_vice_president_status,
+            vice_president_status,
             admin_status,
             approved_at,
             disbursement_date,
@@ -502,6 +547,7 @@ router.post(
             $10::varchar,
             $11::varchar,
             $12::varchar,
+            'Pending',
             'Pending',
             'Pending',
             'Pending',
@@ -542,6 +588,7 @@ router.post(
       try {
         await client.query("ROLLBACK");
       } catch {}
+
       console.error("POST /api/loan-requests ERROR:", e);
       return res.status(500).json({ message: e?.message || "Server error" });
     } finally {
@@ -569,13 +616,24 @@ router.post(
 
     try {
       const id = toInt(req.params.id);
-      if (!id) return res.status(400).json({ message: "Invalid id" });
-      if (!req.file) return res.status(400).json({ message: "Attachment is required" });
+
+      if (!id) {
+        return res.status(400).json({ message: "Invalid id" });
+      }
+
+      if (!req.file) {
+        return res.status(400).json({ message: "Attachment is required" });
+      }
 
       await client.query("BEGIN");
 
       const cur = await client.query(
-        `SELECT id, status FROM loan_requests WHERE id = $1 LIMIT 1`,
+        `
+        SELECT id, status
+        FROM loan_requests
+        WHERE id = $1
+        LIMIT 1
+        `,
         [id]
       );
 
@@ -586,9 +644,9 @@ router.post(
 
       if (String(cur.rows[0].status || "") !== "Approved") {
         await client.query("ROLLBACK");
-        return res
-          .status(400)
-          .json({ message: "Approved signed file can only be uploaded after final approval" });
+        return res.status(400).json({
+          message: "Approved signed file can only be uploaded after final approval",
+        });
       }
 
       const approved_attachment_path = `/uploads/loans/${req.file.filename}`;
@@ -613,6 +671,7 @@ router.post(
       try {
         await client.query("ROLLBACK");
       } catch {}
+
       console.error("POST /api/loan-requests/:id/approved-file ERROR:", e);
       return res.status(500).json({ message: e?.message || "Server error" });
     } finally {
@@ -627,7 +686,10 @@ router.get("/loan-requests/:id/download/:type", requireAuth, async (req, res) =>
     const id = toInt(req.params.id);
     const type = toStr(req.params.type).toLowerCase();
 
-    if (!id) return res.status(400).json({ message: "Invalid id" });
+    if (!id) {
+      return res.status(400).json({ message: "Invalid id" });
+    }
+
     if (!["request", "approved"].includes(type)) {
       return res.status(400).json({ message: "Invalid attachment type" });
     }
@@ -693,7 +755,10 @@ router.put("/loan-requests/:id", requireAuth, async (req, res) => {
     const id = toInt(req.params.id);
     const action = toStr(req.body?.action).toLowerCase();
 
-    if (!id) return res.status(400).json({ message: "Invalid id" });
+    if (!id) {
+      return res.status(400).json({ message: "Invalid id" });
+    }
+
     if (!["approve", "reject"].includes(action)) {
       return res.status(400).json({ message: "Invalid action" });
     }
@@ -703,7 +768,12 @@ router.put("/loan-requests/:id", requireAuth, async (req, res) => {
     await client.query("BEGIN");
 
     const cur = await client.query(
-      `SELECT * FROM loan_requests WHERE id = $1 FOR UPDATE`,
+      `
+      SELECT *
+      FROM loan_requests
+      WHERE id = $1
+      FOR UPDATE
+      `,
       [id]
     );
 
@@ -729,23 +799,22 @@ router.put("/loan-requests/:id", requireAuth, async (req, res) => {
     }
 
     const canAct =
-      currentStage === "admin"
-        ? isFinalApprover(req)
-        : role === currentStage;
+      currentStage === "admin" ? isFinalApprover(req) : role === currentStage;
 
-    const highLevelOverride = isVicePresident(req) || isSeniorVicePresident(req) || isPresident(req);
+    const highLevelOverride = isSeniorVicePresident(req) || isPresident(req);
 
     if (!canAct && !highLevelOverride) {
       await client.query("ROLLBACK");
       return res.status(403).json({ message: "Not your approval stage" });
     }
 
-    const effectiveRole = highLevelOverride ? currentStage : currentStage;
+    const effectiveRole = currentStage;
 
     const statusColumnMap = {
       "area manager": "area_manager_status",
       "regional manager": "regional_manager_status",
       "assistant vice president": "assistant_vice_president_status",
+      "vice president": "vice_president_status",
       admin: "admin_status",
     };
 
