@@ -13,13 +13,6 @@ const toInt = (v) => {
 
 const toStr = (v) => String(v ?? "").trim();
 
-const toDateOrNull = (v) => {
-  const s = String(v ?? "").trim();
-  if (!s) return null;
-  const d = s.slice(0, 10);
-  return /^\d{4}-\d{2}-\d{2}$/.test(d) ? d : null;
-};
-
 const roleLower = (req) => String(req.user?.role || "").trim().toLowerCase();
 const isAdmin = (req) => roleLower(req) === "admin";
 const isHr = (req) => roleLower(req) === "hr";
@@ -37,16 +30,6 @@ const getUserBranchCode = (req) => toStr(req.user?.branch_id);
 const getUserArea = (req) => toStr(req.user?.area);
 const getUserRegion = (req) => toStr(req.user?.region);
 const getUserDivision = (req) => toStr(req.user?.division);
-
-const FULL_ACCESS_ROLES = [
-  "admin",
-  "hr",
-  "accounting",
-  "tread",
-  "vice president",
-  "senior vice president",
-  "president",
-];
 
 const VIEW_OR_CREATE_ROLES = [
   "admin",
@@ -75,20 +58,17 @@ const APPROVER_ROLES = [
   "president",
 ];
 
+const isFinalApprover = (req) =>
+  isAdmin(req) || isHr(req) || isAccounting(req) || isTread(req);
+
 const isFullViewer = (req) =>
-  isAdmin(req) ||
-  isHr(req) ||
-  isAccounting(req) ||
-  isTread(req) ||
+  isFinalApprover(req) ||
   isVicePresident(req) ||
   isSeniorVicePresident(req) ||
   isPresident(req);
 
 const isRequestViewer = (req) =>
-  isAdmin(req) ||
-  isHr(req) ||
-  isAccounting(req) ||
-  isTread(req) ||
+  isFinalApprover(req) ||
   isRegionalManager(req) ||
   isAssistantVicePresident(req) ||
   isVicePresident(req) ||
@@ -96,10 +76,7 @@ const isRequestViewer = (req) =>
   isPresident(req);
 
 const canUploadApprovedLeave = (req) =>
-  isAdmin(req) ||
-  isHr(req) ||
-  isAccounting(req) ||
-  isTread(req) ||
+  isFinalApprover(req) ||
   isVicePresident(req) ||
   isSeniorVicePresident(req) ||
   isPresident(req);
@@ -121,27 +98,6 @@ async function getBranchIdFromCode(branchCode) {
   if (r.rowCount === 0) return null;
   return r.rows[0].id;
 }
-
-const makeTxnCode = (leaveType) => {
-  const d = new Date();
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-
-  const lt = String(leaveType || "").toLowerCase();
-
-  const prefix = lt.includes("sick")
-    ? "SL"
-    : lt.includes("annual")
-    ? "AL"
-    : lt.includes("maternity")
-    ? "ML"
-    : lt.includes("paternity")
-    ? "PL"
-    : "LV";
-
-  return `${prefix}${y}${m}${day}`;
-};
 
 const diffDaysInclusive = (startDate, endDate) => {
   const a = new Date(startDate);
@@ -206,12 +162,7 @@ const baseLeaveSelect = `
   FROM public.leave_requests lr
 
   LEFT JOIN LATERAL (
-    SELECT
-      file_name,
-      file_path,
-      file_mime,
-      file_size,
-      uploaded_by_role
+    SELECT file_name, file_path, file_mime, file_size, uploaded_by_role
     FROM public.leave_attachments
     WHERE leave_request_id = lr.id
       AND attachment_type = 'request'
@@ -220,12 +171,7 @@ const baseLeaveSelect = `
   ) req_file ON true
 
   LEFT JOIN LATERAL (
-    SELECT
-      file_name,
-      file_path,
-      file_mime,
-      file_size,
-      uploaded_by_role
+    SELECT file_name, file_path, file_mime, file_size, uploaded_by_role
     FROM public.leave_attachments
     WHERE leave_request_id = lr.id
       AND attachment_type = 'approved'
@@ -237,18 +183,17 @@ const baseLeaveSelect = `
 const initialPendingStatusForRequester = (req) => {
   if (isAreaManager(req)) return "Pending Regional Manager";
   if (isRegionalManager(req)) return "Pending Assistant Vice President";
-  if (isAssistantVicePresident(req)) return "Pending Admin";
+  if (isAssistantVicePresident(req)) return "Pending Vice President";
+  if (isVicePresident(req)) return "Pending Admin";
+
   if (
-    isAdmin(req) ||
-    isHr(req) ||
-    isAccounting(req) ||
-    isTread(req) ||
-    isVicePresident(req) ||
+    isFinalApprover(req) ||
     isSeniorVicePresident(req) ||
     isPresident(req)
   ) {
     return "Pending Admin";
   }
+
   return "Pending Area Manager";
 };
 
@@ -282,54 +227,40 @@ const canActOnLeave = async (req, leaveId) => {
     return { ok: false, code: 400, message: `Leave already ${status.toLowerCase()}` };
   }
 
-  if (
-    isAdmin(req) ||
-    isHr(req) ||
-    isAccounting(req) ||
-    isTread(req) ||
-    isVicePresident(req) ||
-    isSeniorVicePresident(req) ||
-    isPresident(req)
-  ) {
-    return { ok: true, row };
-  }
-
   if (status === "Pending Area Manager") {
-    if (!isAreaManager(req)) {
+    if (!isAreaManager(req) && !isFinalApprover(req) && !isSeniorVicePresident(req) && !isPresident(req)) {
       return { ok: false, code: 403, message: "Only area manager can act on this stage" };
     }
 
-    const userArea = toStr(getUserArea(req)).toLowerCase();
-    const rowArea = toStr(row.area).toLowerCase();
-
-    if (!userArea || userArea !== rowArea) {
-      return { ok: false, code: 403, message: "Access denied" };
+    if (isAreaManager(req)) {
+      const userArea = toStr(getUserArea(req)).toLowerCase();
+      const rowArea = toStr(row.area).toLowerCase();
+      if (!userArea || userArea !== rowArea) {
+        return { ok: false, code: 403, message: "Access denied" };
+      }
     }
 
     return { ok: true, row };
   }
 
   if (status === "Pending Regional Manager") {
-    if (!isRegionalManager(req)) {
-      return {
-        ok: false,
-        code: 403,
-        message: "Only regional manager can act on this stage",
-      };
+    if (!isRegionalManager(req) && !isFinalApprover(req) && !isSeniorVicePresident(req) && !isPresident(req)) {
+      return { ok: false, code: 403, message: "Only regional manager can act on this stage" };
     }
 
-    const userRegion = toStr(getUserRegion(req)).toLowerCase();
-    const rowRegion = toStr(row.region).toLowerCase();
-
-    if (!userRegion || userRegion !== rowRegion) {
-      return { ok: false, code: 403, message: "Access denied" };
+    if (isRegionalManager(req)) {
+      const userRegion = toStr(getUserRegion(req)).toLowerCase();
+      const rowRegion = toStr(row.region).toLowerCase();
+      if (!userRegion || userRegion !== rowRegion) {
+        return { ok: false, code: 403, message: "Access denied" };
+      }
     }
 
     return { ok: true, row };
   }
 
   if (status === "Pending Assistant Vice President") {
-    if (!isAssistantVicePresident(req)) {
+    if (!isAssistantVicePresident(req) && !isFinalApprover(req) && !isSeniorVicePresident(req) && !isPresident(req)) {
       return {
         ok: false,
         code: 403,
@@ -337,22 +268,39 @@ const canActOnLeave = async (req, leaveId) => {
       };
     }
 
-    const userDivision = toStr(getUserDivision(req)).toLowerCase();
-    const rowDivision = toStr(row.division).toLowerCase();
+    if (isAssistantVicePresident(req)) {
+      const userDivision = toStr(getUserDivision(req)).toLowerCase();
+      const rowDivision = toStr(row.division).toLowerCase();
+      if (!userDivision || userDivision !== rowDivision) {
+        return { ok: false, code: 403, message: "Access denied" };
+      }
+    }
 
-    if (!userDivision || userDivision !== rowDivision) {
-      return { ok: false, code: 403, message: "Access denied" };
+    return { ok: true, row };
+  }
+
+  if (status === "Pending Vice President") {
+    if (!isVicePresident(req) && !isFinalApprover(req) && !isSeniorVicePresident(req) && !isPresident(req)) {
+      return {
+        ok: false,
+        code: 403,
+        message: "Only vice president can act on this stage",
+      };
     }
 
     return { ok: true, row };
   }
 
   if (status === "Pending Admin") {
-    return {
-      ok: false,
-      code: 403,
-      message: "Only admin/hr/accounting/tread or higher roles can act on this stage",
-    };
+    if (!isFinalApprover(req) && !isVicePresident(req) && !isSeniorVicePresident(req) && !isPresident(req)) {
+      return {
+        ok: false,
+        code: 403,
+        message: "Only admin/hr/accounting/tread or higher roles can act on this stage",
+      };
+    }
+
+    return { ok: true, row };
   }
 
   return { ok: false, code: 400, message: "Unsupported leave status" };
@@ -360,11 +308,7 @@ const canActOnLeave = async (req, leaveId) => {
 
 router.get("/leave-requests", requireAuth, async (req, res) => {
   try {
-    if (
-      isFullViewer(req) ||
-      isRegionalManager(req) ||
-      isAssistantVicePresident(req)
-    ) {
+    if (isFullViewer(req) || isRegionalManager(req) || isAssistantVicePresident(req)) {
       const r = await pool.query(`
         ${baseLeaveSelect}
         ORDER BY lr.entry_date DESC NULLS LAST, lr.id DESC
@@ -524,14 +468,7 @@ router.post(
     try {
       await client.query("BEGIN");
 
-      const {
-        employee_id,
-        leave_type,
-        date_created,
-        start_date,
-        end_date,
-        reason,
-      } = req.body;
+      const { employee_id, leave_type, date_created, start_date, end_date, reason } = req.body;
 
       if (!employee_id) {
         await client.query("ROLLBACK");
@@ -549,7 +486,6 @@ router.post(
       }
 
       const isIndefiniteLeave = leave_type === "Indefinite Leave";
-
       let total_no_of_days = 0;
 
       if (!isIndefiniteLeave) {
@@ -570,13 +506,19 @@ router.post(
         total_no_of_days = diffDaysInclusive(start_date, end_date);
       }
 
-      const transaction_code = makeTxnCode(leave_type);
+      const seqRes = await client.query(`
+        SELECT nextval('public.leave_requests_id_seq') AS n
+      `);
+
+      const leaveSeq = Number(seqRes.rows[0].n);
+      const transaction_code = `LV-${String(leaveSeq).padStart(8, "0")}`;
 
       const status = initialPendingStatusForRequester(req);
 
       const insertRes = await client.query(
         `
         INSERT INTO public.leave_requests (
+          id,
           employee_id,
           leave_type,
           date_created,
@@ -588,10 +530,11 @@ router.post(
           transaction_code,
           entry_date
         )
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,NOW())
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,NOW())
         RETURNING *
         `,
         [
+          leaveSeq,
           employee_id,
           leave_type,
           date_created,
@@ -669,14 +612,24 @@ router.post(
 router.post(
   "/leave-requests/:id/approved-file",
   requireAuth,
-  requireRole(["admin", "hr", "accounting", "tread", "vice president", "senior vice president", "president"]),
+  requireRole([
+    "admin",
+    "hr",
+    "accounting",
+    "tread",
+    "vice president",
+    "senior vice president",
+    "president",
+  ]),
   upload.single("attachment"),
   async (req, res) => {
     const client = await pool.connect();
+
     try {
       await client.query("BEGIN");
 
       const leaveId = String(req.params.id || "").trim();
+
       if (!leaveId) {
         await client.query("ROLLBACK");
         return res.status(400).json({ message: "Invalid leave request id" });
@@ -709,9 +662,9 @@ router.post(
 
       if (String(leaveCheck.rows[0].status || "") !== "Approved") {
         await client.query("ROLLBACK");
-        return res
-          .status(400)
-          .json({ message: "Approved file can only be uploaded after approval" });
+        return res.status(400).json({
+          message: "Approved file can only be uploaded after approval",
+        });
       }
 
       await client.query(
@@ -759,6 +712,7 @@ router.get("/leave-requests/:id/download/:type", requireAuth, async (req, res) =
     const type = String(req.params.type || "").trim().toLowerCase();
 
     if (!id) return res.status(400).json({ message: "Invalid id" });
+
     if (!["request", "approved"].includes(type)) {
       return res.status(400).json({ message: "Invalid attachment type" });
     }
@@ -786,10 +740,7 @@ router.get("/leave-requests/:id/download/:type", requireAuth, async (req, res) =
     if (type === "approved") {
       if (
         !(
-          isAdmin(req) ||
-          isHr(req) ||
-          isAccounting(req) ||
-          isTread(req) ||
+          isFinalApprover(req) ||
           isRegionalManager(req) ||
           isAssistantVicePresident(req) ||
           isAreaManager(req) ||
@@ -840,6 +791,7 @@ router.put(
   async (req, res) => {
     try {
       const id = String(req.params.id || "").trim();
+
       if (!id) return res.status(400).json({ message: "Invalid id" });
 
       const action = String(req.body?.action || req.body?.status || "").trim();
@@ -850,6 +802,7 @@ router.put(
       }
 
       const access = await canActOnLeave(req, id);
+
       if (!access.ok) {
         return res.status(access.code).json({ message: access.message });
       }
@@ -898,9 +851,17 @@ router.put(
           sql = `
             UPDATE public.leave_requests
             SET
-              status = 'Pending Admin',
+              status = 'Pending Vice President',
               division_approved_by = $2,
               division_approved_at = NOW()
+            WHERE id = $1
+            RETURNING id
+          `;
+        } else if (currentStatus === "Pending Vice President") {
+          sql = `
+            UPDATE public.leave_requests
+            SET
+              status = 'Pending Admin'
             WHERE id = $1
             RETURNING id
           `;
@@ -919,6 +880,7 @@ router.put(
         }
 
         const r = await pool.query(sql, [id, req.user?.id ?? null]);
+
         if (r.rowCount === 0) return res.status(404).json({ message: "Not found" });
       }
 

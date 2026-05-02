@@ -6,7 +6,6 @@ const router = express.Router();
 const pool = require("../db");
 const { requireAuth, requireRole } = require("../middlewares/authMiddleware");
 
-/* ---------------- Helpers ---------------- */
 const toInt = (v) => {
   const n = Number(v);
   return Number.isFinite(n) ? Math.trunc(n) : null;
@@ -31,31 +30,33 @@ const isTread = (req) => roleLower(req) === "tread";
 const isBranchManager = (req) => roleLower(req) === "branch manager";
 const isAreaManager = (req) => roleLower(req) === "area manager";
 const isRegionalManager = (req) => roleLower(req) === "regional manager";
-const isAssistantVicePresident = (req) =>
-      roleLower(req) === "assistant vice president";
+const isAssistantVicePresident = (req) => roleLower(req) === "assistant vice president";
 const isVicePresident = (req) => roleLower(req) === "vice president";
-const isSeniorVicePresident = (req) =>
-      roleLower(req) === "senior vice president";
-const isPresident = (req) => roleLower(req) === "president";
 
-const isExecutiveApprover = (req) =>
-  isAssistantVicePresident(req) ||
-  isVicePresident(req) ||
-  isSeniorVicePresident(req) ||
-  isPresident(req);
+const isFinalApprover = (req) => isAdmin(req) || isHr(req) || isAccounting(req);
 
 const getUserBranchId = (req) => req.user?.branch_id ?? null;
 const getUserArea = (req) => clean(req.user?.area);
 const getUserRegion = (req) => clean(req.user?.region);
 
+const matchBranch = (userBranchId, rowBranchId, rowBranchCode) => {
+  if (!userBranchId) return false;
+
+  return (
+    String(userBranchId) === String(rowBranchId) ||
+    norm(userBranchId) === norm(rowBranchCode)
+  );
+};
+
+const STATUS_BRANCH = "Pending Branch Manager";
 const STATUS_AREA = "Pending Area Manager";
 const STATUS_RM = "Pending Regional Manager";
-const STATUS_EXEC = "Pending Executive Approval";
+const STATUS_AVP = "Pending Assistant Vice President";
+const STATUS_VP = "Pending Vice President";
 const STATUS_ADMIN = "Pending Admin";
 const STATUS_APPROVED = "Approved";
 const STATUS_REJECTED = "Rejected";
 
-/* ---------------- Upload ---------------- */
 const uploadDir = path.join(process.cwd(), "uploads", "resignation-requests");
 fs.mkdirSync(uploadDir, { recursive: true });
 
@@ -66,21 +67,49 @@ const storage = multer.diskStorage({
     const base = path
       .basename(file.originalname || "file", ext)
       .replace(/[^a-zA-Z0-9_-]/g, "_");
+
     cb(null, `${Date.now()}-${base}${ext}`);
   },
 });
 
 const upload = multer({
   storage,
-  limits: { fileSize: 10 * 1024 * 1024 },
+  limits: { fileSize: 50 * 1024 * 1024 },
 });
 
-/* =========================================================
-   GET resignation requests
-========================================================= */
+const determineInitialStatus = (req, staff) => {
+  const staffPosition = norm(staff?.position)
+    .replace(/[_-]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (
+    isAreaManager(req) &&
+    staffPosition.includes("branch") &&
+    staffPosition.includes("manager")
+  ) {
+    return STATUS_BRANCH;
+  }
+
+  if (staffPosition.includes("area manager")) return STATUS_RM;
+  if (staffPosition.includes("regional manager")) return STATUS_AVP;
+  if (staffPosition.includes("assistant vice president")) return STATUS_VP;
+  if (staffPosition.includes("vice president")) return STATUS_ADMIN;
+
+  if (isBranchManager(req)) return STATUS_AREA;
+  if (isAreaManager(req)) return STATUS_AREA;
+  if (isRegionalManager(req)) return STATUS_AVP;
+  if (isAssistantVicePresident(req)) return STATUS_VP;
+  if (isVicePresident(req)) return STATUS_ADMIN;
+  if (isFinalApprover(req) || isTread(req)) return STATUS_ADMIN;
+
+  return STATUS_AREA;
+};
+
 router.get("/resignation-requests", requireAuth, async (req, res) => {
   try {
     const params = [];
+
     let sql = `
       SELECT *
       FROM public.resignation_requests
@@ -92,27 +121,62 @@ router.get("/resignation-requests", requireAuth, async (req, res) => {
       isHr(req) ||
       isAccounting(req) ||
       isTread(req) ||
-      isVicePresident(req) ||
-      isSeniorVicePresident(req) ||
-      isPresident(req)
+      isVicePresident(req)
     ) {
+      // full access
     } else if (isBranchManager(req)) {
       const branchId = getUserBranchId(req);
-      if (!branchId) return res.json([]);
+
+      console.log("BRANCH MANAGER USER:", {
+        id: req.user?.id,
+        role: req.user?.role,
+        branch_id: req.user?.branch_id,
+        area: req.user?.area,
+        region: req.user?.region,
+      });
+
+      if (!branchId) {
+        return res.json([]);
+      }
+
       params.push(String(branchId));
-      sql += ` AND CAST(branch_id AS TEXT) = $${params.length}`;
+
+      sql += `
+        AND (
+          CAST(branch_id AS TEXT) = $${params.length}
+          OR LOWER(TRIM(COALESCE(branch_code, ''))) = LOWER(TRIM($${params.length}))
+        )
+      `;
     } else if (isAreaManager(req)) {
       const area = getUserArea(req);
+
       if (!area) return res.json([]);
+
       params.push(area);
-      sql += ` AND COALESCE(area, '') = $${params.length}`;
+
+      sql += `
+        AND LOWER(TRIM(COALESCE(area, ''))) = LOWER(TRIM($${params.length}))
+      `;
     } else if (isRegionalManager(req)) {
       const region = getUserRegion(req);
+
       if (!region) return res.json([]);
+
       params.push(region);
-      sql += ` AND COALESCE(region, '') = $${params.length}`;
+
+      sql += `
+        AND LOWER(TRIM(COALESCE(region, ''))) = LOWER(TRIM($${params.length}))
+      `;
     } else if (isAssistantVicePresident(req)) {
-      sql += ` AND status IN ('${STATUS_EXEC}', '${STATUS_ADMIN}', '${STATUS_APPROVED}', '${STATUS_REJECTED}')`;
+      sql += `
+        AND status IN (
+          '${STATUS_AVP}',
+          '${STATUS_VP}',
+          '${STATUS_ADMIN}',
+          '${STATUS_APPROVED}',
+          '${STATUS_REJECTED}'
+        )
+      `;
     } else {
       return res.status(403).json({ message: "Access denied" });
     }
@@ -122,14 +186,11 @@ router.get("/resignation-requests", requireAuth, async (req, res) => {
     const r = await pool.query(sql, params);
     return res.json(r.rows);
   } catch (e) {
-    console.error("GET /resignation-requests ERROR:", e.message);
-    return res.status(500).json({ message: "Server error" });
+    console.error("GET /resignation-requests ERROR:", e);
+    return res.status(500).json({ message: e?.message || "Server error" });
   }
 });
 
-/* =========================================================
-   CREATE resignation request
-========================================================= */
 router.post(
   "/resignation-requests",
   requireAuth,
@@ -143,8 +204,6 @@ router.post(
     "regional manager",
     "assistant vice president",
     "vice president",
-    "senior vice president",
-    "president",
   ]),
   upload.single("attachment"),
   async (req, res) => {
@@ -182,7 +241,7 @@ router.post(
       const staffRes = await client.query(
         `
         SELECT id, employee_no, fullname, last_name, first_name, middle_name,
-               branch_id, status, area, region
+               branch_id, status, area, region, position
         FROM public.staff
         WHERE id = $1
         FOR UPDATE
@@ -197,26 +256,29 @@ router.post(
 
       const staff = staffRes.rows[0];
 
-      if (norm(staff.status || "active") !== "active") {
+      if (norm(staff.status || "Active") !== "active") {
         await client.query("ROLLBACK");
-        return res
-          .status(400)
-          .json({ message: "Only active staff can file resignation request" });
+        return res.status(400).json({
+          message: "Only active staff can file resignation request",
+        });
       }
 
       if (isBranchManager(req)) {
         const userBranchId = getUserBranchId(req);
 
-        if (!userBranchId || String(userBranchId) !== String(staff.branch_id)) {
-          await client.query("ROLLBACK");
-          return res.status(403).json({
-            message: "You can only create resignation requests for your branch",
-          });
+        if (!matchBranch(userBranchId, staff.branch_id, staff.branch_code)) {
+          if (!userBranchId || String(userBranchId) !== String(staff.branch_id)) {
+            await client.query("ROLLBACK");
+            return res.status(403).json({
+              message: "You can only create resignation requests for your branch",
+            });
+          }
         }
       }
 
       if (isAreaManager(req)) {
         const userArea = getUserArea(req);
+
         if (!userArea || norm(userArea) !== norm(staff.area)) {
           await client.query("ROLLBACK");
           return res.status(403).json({
@@ -227,6 +289,7 @@ router.post(
 
       if (isRegionalManager(req)) {
         const userRegion = getUserRegion(req);
+
         if (!userRegion || norm(userRegion) !== norm(staff.region)) {
           await client.query("ROLLBACK");
           return res.status(403).json({
@@ -240,10 +303,18 @@ router.post(
         SELECT 1
         FROM public.resignation_requests
         WHERE employee_no = $1
-          AND status IN ($2, $3, $4, $5)
+          AND status IN ($2, $3, $4, $5, $6, $7)
         LIMIT 1
         `,
-        [clean(staff.employee_no), STATUS_AREA, STATUS_RM, STATUS_EXEC, STATUS_ADMIN]
+        [
+          clean(staff.employee_no),
+          STATUS_BRANCH,
+          STATUS_AREA,
+          STATUS_RM,
+          STATUS_AVP,
+          STATUS_VP,
+          STATUS_ADMIN,
+        ]
       );
 
       if (duplicateCheck.rowCount > 0) {
@@ -271,22 +342,11 @@ router.post(
       const seq = await client.query(
         `SELECT nextval('public.resignation_requests_id_seq') AS n`
       );
+
       const n = Number(seq.rows[0].n);
       const request_no = `RES-${String(n).padStart(8, "0")}`;
 
-      let initialStatus = STATUS_ADMIN;
-
-      if (isBranchManager(req)) {
-        initialStatus = STATUS_AREA;
-      } else if (isAreaManager(req)) {
-        initialStatus = STATUS_AREA;
-      } else if (isRegionalManager(req)) {
-        initialStatus = STATUS_ADMIN;
-      } else if (isExecutiveApprover(req)) {
-        initialStatus = STATUS_ADMIN;
-      } else if (isAdmin(req) || isHr(req) || isAccounting(req) || isTread(req)) {
-        initialStatus = STATUS_ADMIN;
-      }
+      const initialStatus = determineInitialStatus(req, staff);
 
       const ins = await client.query(
         `
@@ -314,25 +374,8 @@ router.post(
         )
         VALUES
         (
-          $1,
-          $2,
-          $3,
-          $4,
-          $5,
-          $6,
-          $7,
-          $8,
-          $9,
-          $10,
-          $11,
-          $12,
-          $13,
-          $14::date,
-          $15::date,
-          $16,
-          $17,
-          $18,
-          $19
+          $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,
+          $11,$12,$13,$14::date,$15::date,$16,$17,$18,$19
         )
         RETURNING *;
         `,
@@ -363,7 +406,7 @@ router.post(
       return res.json(ins.rows[0]);
     } catch (e) {
       await client.query("ROLLBACK");
-      console.error("POST /resignation-requests ERROR:", e.message);
+      console.error("POST /resignation-requests ERROR:", e);
       return res.status(500).json({ message: e?.message || "Server error" });
     } finally {
       client.release();
@@ -371,9 +414,6 @@ router.post(
   }
 );
 
-/* =========================================================
-   APPROVE resignation request
-========================================================= */
 router.put("/resignation-requests/:id/approve", requireAuth, async (req, res) => {
   const client = await pool.connect();
 
@@ -381,6 +421,7 @@ router.put("/resignation-requests/:id/approve", requireAuth, async (req, res) =>
     await client.query("BEGIN");
 
     const id = toInt(req.params.id);
+
     if (!id) {
       await client.query("ROLLBACK");
       return res.status(400).json({ message: "Invalid id" });
@@ -408,9 +449,27 @@ router.put("/resignation-requests/:id/approve", requireAuth, async (req, res) =>
     let approverField = null;
     let approverAtField = null;
 
-    
+    if (isBranchManager(req)) {
+      if (currentStatus !== STATUS_BRANCH) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({
+          message: "This request is not pending Branch Manager approval",
+        });
+      }
 
-    if (isAreaManager(req)) {
+      const userBranchId = getUserBranchId(req);
+
+      if (!matchBranch(userBranchId, existing.branch_id, existing.branch_code)) {
+        await client.query("ROLLBACK");
+        return res.status(403).json({
+          message: "You can only approve resignation requests within your branch",
+        });
+      }
+
+      nextStatus = STATUS_AREA;
+      approverField = "branch_manager_approved_by";
+      approverAtField = "branch_manager_approved_at";
+    } else if (isAreaManager(req)) {
       if (currentStatus !== STATUS_AREA) {
         await client.query("ROLLBACK");
         return res.status(400).json({
@@ -419,6 +478,7 @@ router.put("/resignation-requests/:id/approve", requireAuth, async (req, res) =>
       }
 
       const userArea = getUserArea(req);
+
       if (!userArea || norm(userArea) !== norm(existing.area)) {
         await client.query("ROLLBACK");
         return res.status(403).json({
@@ -426,7 +486,7 @@ router.put("/resignation-requests/:id/approve", requireAuth, async (req, res) =>
         });
       }
 
-      nextStatus = STATUS_ADMIN;
+      nextStatus = STATUS_RM;
       approverField = "area_manager_approved_by";
       approverAtField = "area_manager_approved_at";
     } else if (isRegionalManager(req)) {
@@ -438,6 +498,7 @@ router.put("/resignation-requests/:id/approve", requireAuth, async (req, res) =>
       }
 
       const userRegion = getUserRegion(req);
+
       if (!userRegion || norm(userRegion) !== norm(existing.region)) {
         await client.query("ROLLBACK");
         return res.status(403).json({
@@ -445,33 +506,32 @@ router.put("/resignation-requests/:id/approve", requireAuth, async (req, res) =>
         });
       }
 
-      nextStatus = STATUS_EXEC;
+      nextStatus = STATUS_AVP;
       approverField = "regional_manager_approved_by";
       approverAtField = "regional_manager_approved_at";
-    } else if (isExecutiveApprover(req)) {
-      if (currentStatus !== STATUS_EXEC) {
+    } else if (isAssistantVicePresident(req)) {
+      if (currentStatus !== STATUS_AVP) {
         await client.query("ROLLBACK");
         return res.status(400).json({
-          message: "This request is not pending Executive approval",
+          message: "This request is not pending Assistant Vice President approval",
+        });
+      }
+
+      nextStatus = STATUS_VP;
+      approverField = "avp_approved_by";
+      approverAtField = "avp_approved_at";
+    } else if (isVicePresident(req)) {
+      if (currentStatus !== STATUS_VP) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({
+          message: "This request is not pending Vice President approval",
         });
       }
 
       nextStatus = STATUS_ADMIN;
-
-      if (isAssistantVicePresident(req)) {
-        approverField = "avp_approved_by";
-        approverAtField = "avp_approved_at";
-      } else if (isVicePresident(req)) {
-        approverField = "vp_approved_by";
-        approverAtField = "vp_approved_at";
-      } else if (isSeniorVicePresident(req)) {
-        approverField = "svp_approved_by";
-        approverAtField = "svp_approved_at";
-      } else if (isPresident(req)) {
-        approverField = "president_approved_by";
-        approverAtField = "president_approved_at";
-      }
-    } else if (isAdmin(req) || isHr(req) || isAccounting(req)) {
+      approverField = "vp_approved_by";
+      approverAtField = "vp_approved_at";
+    } else if (isFinalApprover(req)) {
       if (currentStatus !== STATUS_ADMIN) {
         await client.query("ROLLBACK");
         return res.status(400).json({
@@ -585,32 +645,24 @@ router.put("/resignation-requests/:id/approve", requireAuth, async (req, res) =>
     return res.json(updateRes.rows[0]);
   } catch (e) {
     await client.query("ROLLBACK");
-    console.error("PUT /resignation-requests/:id/approve ERROR:", e.message);
+    console.error("PUT /resignation-requests/:id/approve ERROR:", e);
     return res.status(500).json({ message: e?.message || "Server error" });
   } finally {
     client.release();
   }
 });
 
-/* =========================================================
-   REJECT resignation request
-========================================================= */
 router.put("/resignation-requests/:id/reject", requireAuth, async (req, res) => {
   try {
     const id = toInt(req.params.id);
     const reason = clean(req.body?.reason);
 
-    if (!id) {
-      return res.status(400).json({ message: "Invalid id" });
-    }
-
-    if (!reason) {
-      return res.status(400).json({ message: "Rejection reason required" });
-    }
+    if (!id) return res.status(400).json({ message: "Invalid id" });
+    if (!reason) return res.status(400).json({ message: "Rejection reason required" });
 
     const requestRes = await pool.query(
       `
-      SELECT id, status, area, region
+      SELECT id, status, area, region, branch_id, branch_code
       FROM public.resignation_requests
       WHERE id = $1
       `,
@@ -624,7 +676,21 @@ router.put("/resignation-requests/:id/reject", requireAuth, async (req, res) => 
     const existing = requestRes.rows[0];
     const currentStatus = clean(existing.status);
 
-    if (isAreaManager(req)) {
+    if (isBranchManager(req)) {
+      if (currentStatus !== STATUS_BRANCH) {
+        return res.status(400).json({
+          message: "This request is not pending Branch Manager approval",
+        });
+      }
+
+      const userBranchId = getUserBranchId(req);
+
+      if (!matchBranch(userBranchId, existing.branch_id, existing.branch_code)) {
+        return res.status(403).json({
+          message: "You can only reject resignation requests within your branch",
+        });
+      }
+    } else if (isAreaManager(req)) {
       if (currentStatus !== STATUS_AREA) {
         return res.status(400).json({
           message: "This request is not pending Area Manager approval",
@@ -632,6 +698,7 @@ router.put("/resignation-requests/:id/reject", requireAuth, async (req, res) => 
       }
 
       const userArea = getUserArea(req);
+
       if (!userArea || norm(userArea) !== norm(existing.area)) {
         return res.status(403).json({
           message: "You can only reject resignation requests within your area",
@@ -645,18 +712,25 @@ router.put("/resignation-requests/:id/reject", requireAuth, async (req, res) => 
       }
 
       const userRegion = getUserRegion(req);
+
       if (!userRegion || norm(userRegion) !== norm(existing.region)) {
         return res.status(403).json({
           message: "You can only reject resignation requests within your region",
         });
       }
-    } else if (isExecutiveApprover(req)) {
-      if (currentStatus !== STATUS_EXEC) {
+    } else if (isAssistantVicePresident(req)) {
+      if (currentStatus !== STATUS_AVP) {
         return res.status(400).json({
-          message: "This request is not pending Executive approval",
+          message: "This request is not pending Assistant Vice President approval",
         });
       }
-    } else if (isAdmin(req) || isHr(req) || isAccounting(req)) {
+    } else if (isVicePresident(req)) {
+      if (currentStatus !== STATUS_VP) {
+        return res.status(400).json({
+          message: "This request is not pending Vice President approval",
+        });
+      }
+    } else if (isFinalApprover(req)) {
       if (currentStatus !== STATUS_ADMIN) {
         return res.status(400).json({
           message: "This request is not pending Admin approval",
@@ -684,7 +758,7 @@ router.put("/resignation-requests/:id/reject", requireAuth, async (req, res) => 
 
     return res.json(r.rows[0]);
   } catch (e) {
-    console.error("PUT /resignation-requests/:id/reject ERROR:", e.message);
+    console.error("PUT /resignation-requests/:id/reject ERROR:", e);
     return res.status(500).json({ message: e?.message || "Server error" });
   }
 });
@@ -698,19 +772,19 @@ router.delete(
     "accounting",
     "tread",
     "area manager",
+    "branch manager",
     "assistant vice president",
     "vice president",
-    "senior vice president",
-    "president",
   ]),
   async (req, res) => {
     try {
       const id = toInt(req.params.id);
+
       if (!id) return res.status(400).json({ message: "Invalid id" });
 
       const check = await pool.query(
         `
-        SELECT status, attachment_path, area, created_by
+        SELECT status, attachment_path, area, branch_id, branch_code, created_by
         FROM public.resignation_requests
         WHERE id = $1
         `,
@@ -729,6 +803,7 @@ router.delete(
 
       if (isAreaManager(req)) {
         const userArea = getUserArea(req);
+
         if (!userArea || norm(userArea) !== norm(row.area)) {
           return res.status(403).json({
             message: "You can only delete resignation requests within your area",
@@ -736,27 +811,28 @@ router.delete(
         }
       }
 
+      if (isBranchManager(req)) {
+        const userBranchId = getUserBranchId(req);
+
+        if (!matchBranch(userBranchId, row.branch_id, row.branch_code)) {
+          return res.status(403).json({
+            message: "You can only delete resignation requests within your branch",
+          });
+        }
+      }
+
       const attachmentPath = row.attachment_path;
 
-      await pool.query(
-        `
-        DELETE FROM public.resignation_requests
-        WHERE id = $1
-        `,
-        [id]
-      );
+      await pool.query(`DELETE FROM public.resignation_requests WHERE id = $1`, [id]);
 
       if (attachmentPath) {
-        const absolutePath = path.join(
-          process.cwd(),
-          attachmentPath.replace(/^\/+/, "")
-        );
+        const absolutePath = path.join(process.cwd(), attachmentPath.replace(/^\/+/, ""));
         fs.unlink(absolutePath, () => {});
       }
 
       return res.json({ message: "Deleted" });
     } catch (e) {
-      console.error("DELETE /resignation-requests/:id ERROR:", e.message);
+      console.error("DELETE /resignation-requests/:id ERROR:", e);
       return res.status(500).json({ message: e?.message || "Server error" });
     }
   }

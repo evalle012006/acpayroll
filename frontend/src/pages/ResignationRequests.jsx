@@ -22,8 +22,11 @@ const getBaseUrl = () => {
   return base.endsWith("/api") ? base.slice(0, -4) : base;
 };
 
+const STATUS_BRANCH = "Pending Branch Manager";
+const STATUS_AREA = "Pending Area Manager";
 const STATUS_RM = "Pending Regional Manager";
-const STATUS_AVP = "Pending Executive Approval";
+const STATUS_AVP = "Pending Assistant Vice President";
+const STATUS_VP = "Pending Vice President";
 const STATUS_ADMIN = "Pending Admin";
 const STATUS_APPROVED = "Approved";
 const STATUS_REJECTED = "Rejected";
@@ -43,20 +46,18 @@ export default function ResignationRequests() {
   const isAccounting = role === "accounting";
   const isTread = role === "tread";
   const isVicePresident = role === "vice president";
-  const isSeniorVicePresident = role === "senior vice president";
-  const isPresident = role === "president";
+  const isBranchManager = role === "branch manager";
 
   const canCreate =
     isAdmin ||
     isHr ||
     isAccounting ||
     isTread ||
+    isBranchManager ||
     isAreaManager ||
     isRegionalManager ||
     isAssistantVicePresident ||
-    isVicePresident ||
-    isSeniorVicePresident ||
-    isPresident;
+    isVicePresident;
 
   const [rows, setRows] = useState([]);
   const [staffList, setStaffList] = useState([]);
@@ -340,9 +341,12 @@ export default function ResignationRequests() {
   const canApproveRow = (row) => {
     const status = toStr(row.status);
 
-    if (isAreaManager && status === "Pending Area Manager") return true;
-    if (isRegionalManager && status === "Pending Regional Manager") return true;
-    if (isAssistantVicePresident && status === "Pending Executive Approval") return true;
+    if (role === "branch manager" && status === "Pending Branch Manager") return true;
+    if (role === "area manager" && status === "Pending Area Manager") return true;
+    if (role === "regional manager" && status === "Pending Regional Manager") return true;
+    if (role === "assistant vice president" && status === "Pending Assistant Vice President") return true;
+    if (role === "vice president" && status === "Pending Vice President") return true;
+
     if ((isAdmin || isHr || isAccounting) && status === "Pending Admin") return true;
 
     return false;
@@ -351,9 +355,11 @@ export default function ResignationRequests() {
   const canRejectRow = (row) => {
     const status = toStr(row.status);
 
+    if (isBranchManager && status === STATUS_BRANCH) return true;
     if (isAreaManager && status === "Pending Area Manager") return true;
     if (isRegionalManager && status === "Pending Regional Manager") return true;
-    if (isAssistantVicePresident && status === "Pending Executive Approval") return true;
+    if (isAssistantVicePresident && status === STATUS_AVP) return true;
+    if (isVicePresident && status === STATUS_VP) return true;
     if ((isAdmin || isHr || isAccounting) && status === "Pending Admin") return true;
 
     return false;
@@ -379,8 +385,11 @@ export default function ResignationRequests() {
 
   const actionLabel = (row) => {
     const status = toStr(row.status);
+    if (status === STATUS_BRANCH) return "For Branch Manager";
+    if (status === STATUS_AREA) return "For Area Manager";
     if (status === STATUS_RM) return "For RM";
     if (status === STATUS_AVP) return "For AVP";
+    if (status === STATUS_VP) return "For VP";
     if (status === STATUS_ADMIN) return "For Admin";
     if (status === STATUS_APPROVED) return "Approved";
     if (status === STATUS_REJECTED) return "Rejected";
@@ -393,7 +402,7 @@ export default function ResignationRequests() {
         <div>
           <h2 className="po-title">Resignation Requests</h2>
           <p className="po-subtitle">
-            Area Manager → Regional Manager → Assistant Vice President → Admin/HR/Accounting
+            Branch Manager → Area Manager → Regional Manager → Assistant Vice President → Admin/HR/Accounting
           </p>
         </div>
 

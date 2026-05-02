@@ -391,6 +391,7 @@ export default function LeaveTransactions() {
     if (status === "Pending Area Manager") return isAreaManager;
     if (status === "Pending Regional Manager") return isRegionalManager;
     if (status === "Pending Assistant Vice President") return isAssistantVicePresident;
+    if (status === "Pending Vice President") return isVicePresident;
     if (status === "Pending Admin") return isAdmin || isHr || isAccounting || isTread;
 
     return false;
@@ -588,7 +589,7 @@ export default function LeaveTransactions() {
               ) : (
                 filteredLeave.map((item) => (
                   <tr key={item.id}>
-                    <td>{item.id}</td>
+                    <td>{item.transaction_code || item.id}</td>
                     <td className="td-strong">{item.staff_name || "-"}</td>
                     <td>{item.leave_type}</td>
                     <td>{fmtDate(item.date_created)}</td>
