@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import "../styles/Reports.css";
 import api from "../api/axiosClient";
 
@@ -50,13 +51,7 @@ const getStatusClass = (status) => {
   return "reports-status";
 };
 
-const requestDepartments = [
-  "All",
-  "HR",
-  "Finance",
-  "Accounting",
-  "Operations",
-];
+const requestDepartments = ["All", "HR", "Finance", "Accounting", "Operations"];
 
 const requestTypes = [
   "All",
@@ -71,6 +66,8 @@ const requestTypes = [
 ];
 
 export default function Reports() {
+  const navigate = useNavigate();
+
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
 
@@ -88,6 +85,18 @@ export default function Reports() {
   const [selectedStatus, setSelectedStatus] = useState("Pending");
   const [search, setSearch] = useState("");
   const [selectedRequest, setSelectedRequest] = useState(null);
+
+  const handleView = (item) => {
+    if (item.department === "Finance") {
+      const type = String(item.type || "").toLowerCase();
+      const id = item.rawId;
+
+      navigate(`/approval?type=${type}&id=${id}`);
+      return;
+    }
+
+    setSelectedRequest(item);
+  };
 
   const safeGet = async (url) => {
     try {
@@ -301,7 +310,7 @@ export default function Reports() {
         rawId: item.id,
         type: "Resignation",
         department: "HR",
-        title: item.order_no || "Resignation Request",
+        title: item.order_no || item.request_no || "Resignation Request",
         employeeNo: item.employee_no || "-",
         employeeName: getEmployeeName(item),
         date: item.date_created || item.created_at,
@@ -413,28 +422,20 @@ Remarks: ${item.remarks || "-"}`;
     switch (item.type) {
       case "Leave":
         return "/transactions/leave";
-
       case "Loan":
-        return "/transactions";
-
+        return `/approval?type=loan&id=${item.rawId}`;
       case "SBF":
-        return "/transactions/sbf";
-
+        return `/approval?type=sbf&id=${item.rawId}`;
       case "Reimbursement":
-        return "/transactions";
-
+        return `/approval?type=reimbursement&id=${item.rawId}`;
       case "Regularization":
         return "/transactions/regularization";
-
       case "Suspension":
         return "/transactions/suspension";
-
       case "Exit Staff":
         return "/transactions/exit";
-
       case "Resignation":
         return "/transactions/resignation";
-
       default:
         return "";
     }
@@ -443,7 +444,7 @@ Remarks: ${item.remarks || "-"}`;
   const openSourcePage = (item) => {
     const route = getRequestRoute(item);
     if (!route) return alert("No page route configured for this request.");
-    window.location.href = route;
+    navigate(route);
   };
 
   return (
@@ -635,7 +636,7 @@ Remarks: ${item.remarks || "-"}`;
                         <button
                           className="reports-btn"
                           type="button"
-                          onClick={() => setSelectedRequest(item)}
+                          onClick={() => handleView(item)}
                         >
                           View
                         </button>

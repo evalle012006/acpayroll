@@ -30,12 +30,19 @@ const readUser = () => {
 const norm = (v) => String(v ?? "").trim().toLowerCase();
 
 const countPending = (rows) =>
-  (Array.isArray(rows) ? rows : []).filter((x) => norm(x?.status) === "pending").length;
+  (Array.isArray(rows) ? rows : []).filter(
+    (x) => norm(x?.status) === "pending"
+  ).length;
 
 const Sidebar = ({ collapsed }) => {
   const { pathname } = useLocation();
   const user = readUser();
   const role = norm(user?.role);
+
+  const userDepartment =
+    String(user?.department || "").trim() ||
+    String(user?.department_name || "").trim() ||
+    "No Department";
 
   const [reportPending, setReportPending] = useState(0);
 
@@ -72,6 +79,7 @@ const Sidebar = ({ collapsed }) => {
         icon: MdDashboard,
         roles: [
           "admin",
+          "it",
           "hr",
           "accounting",
           "tread",
@@ -90,12 +98,13 @@ const Sidebar = ({ collapsed }) => {
         icon: FaBuilding,
         roles: [
           "admin",
+          "it",
           "hr",
           "accounting",
           "tread",
           "vice president",
           "senior vice president",
-          "president"
+          "president",
         ],
       },
       {
@@ -104,6 +113,7 @@ const Sidebar = ({ collapsed }) => {
         icon: FaIdBadge,
         roles: [
           "admin",
+          "it",
           "hr",
           "accounting",
           "tread",
@@ -122,6 +132,7 @@ const Sidebar = ({ collapsed }) => {
         icon: HiOutlineClipboardList,
         roles: [
           "admin",
+          "it",
           "hr",
           "accounting",
           "branch manager",
@@ -139,6 +150,7 @@ const Sidebar = ({ collapsed }) => {
         icon: PiHandCoinsBold,
         roles: [
           "admin",
+          "it",
           "hr",
           "accounting",
           "branch manager",
@@ -155,6 +167,7 @@ const Sidebar = ({ collapsed }) => {
         icon: FaExchangeAlt,
         roles: [
           "admin",
+          "it",
           "hr",
           "accounting",
           "tread",
@@ -173,6 +186,7 @@ const Sidebar = ({ collapsed }) => {
         icon: AiOutlineCheckCircle,
         roles: [
           "admin",
+          "it",
           "hr",
           "accounting",
           "tread",
@@ -191,6 +205,7 @@ const Sidebar = ({ collapsed }) => {
         icon: TbGitBranch,
         roles: [
           "admin",
+          "it",
           "hr",
           "accounting",
           "branch manager",
@@ -208,6 +223,7 @@ const Sidebar = ({ collapsed }) => {
         icon: BiPackage,
         roles: [
           "admin",
+          "it",
           "hr",
           "accounting",
           "tread",
@@ -225,6 +241,7 @@ const Sidebar = ({ collapsed }) => {
         icon: BsCash,
         roles: [
           "admin",
+          "it",
           "hr",
           "accounting",
           "assistant vice president",
@@ -239,12 +256,13 @@ const Sidebar = ({ collapsed }) => {
         icon: LuFiles,
         roles: [
           "admin",
+          "it",
           "hr",
           "accounting",
           "tread",
           "vice president",
           "senior vice president",
-          "president"
+          "president",
         ],
         badge: reportPending > 0 ? reportPending : null,
       },
@@ -252,19 +270,35 @@ const Sidebar = ({ collapsed }) => {
         to: "/exit-staff",
         label: "Exit Staff",
         icon: RxExit,
-        roles: ["admin", "hr", "accounting", "vice president", "senior vice president", "president"],
+        roles: [
+          "admin",
+          "it",
+          "hr",
+          "accounting",
+          "vice president",
+          "senior vice president",
+          "president",
+        ],
       },
       {
         to: "/system-update",
         label: "System Update",
         icon: FiSettings,
-        roles: ["admin", "hr", "accounting", "vice president", "senior vice president", "president"],
+        roles: [
+          "admin",
+          "it",
+          "hr",
+          "accounting",
+          "vice president",
+          "senior vice president",
+          "president",
+        ],
       },
       {
         to: "/users",
         label: "Users",
         icon: FaUserGroup,
-        roles: ["admin", "president"],
+        roles: ["admin", "it", "president"],
       },
     ];
 
@@ -278,11 +312,14 @@ const Sidebar = ({ collapsed }) => {
     <aside className={`sidebar ${collapsed ? "collapsed" : ""}`}>
       <div className="sidebar-brand">
         <img src={amber} alt="logo" className="logo-img" />
+
         {!collapsed && (
           <div className="brand-text">
             <div className="brand-title">AmberCash PH</div>
-            <div className="brand-subtitle">Payroll System</div>
-            {user?.role && <div className="brand-role">Role: {String(user.role)}</div>}
+            <div className="brand-subtitle">{userDepartment}</div>
+            {user?.role && (
+              <div className="brand-role">Role: {String(user.role)}</div>
+            )}
           </div>
         )}
       </div>

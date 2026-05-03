@@ -3,14 +3,12 @@
    SaaS + Dark Mode
 ================================= */
 
-/* page */
 .approval-page {
   display: flex;
   flex-direction: column;
   gap: 18px;
 }
 
-/* header */
 .approval-page-header {
   display: flex;
   align-items: flex-end;
@@ -32,7 +30,6 @@
   color: var(--muted);
 }
 
-/* pills */
 .pill {
   display: inline-flex;
   align-items: center;
@@ -48,10 +45,10 @@
   font-size: 12px;
 }
 
-/* buttons */
-.btn-primary {
-  background: var(--primary);
-  color: white;
+.btn-primary,
+.btn-secondary,
+.btn-success,
+.btn-danger {
   border: none;
   padding: 8px 12px;
   border-radius: 9px;
@@ -61,6 +58,12 @@
   cursor: pointer;
   white-space: nowrap;
 }
+
+.btn-primary {
+  background: var(--primary);
+  color: white;
+}
+
 .btn-primary:hover {
   background: var(--primary-hover);
 }
@@ -69,27 +72,13 @@
   background: var(--panel-2);
   color: var(--text);
   border: 1px solid var(--border);
-  padding: 8px 12px;
-  border-radius: 9px;
-  font-weight: 800;
-  font-size: 12px;
-  line-height: 1;
-  cursor: pointer;
-  white-space: nowrap;
 }
 
 .btn-success {
   background: #10b981;
   color: #fff;
-  border: none;
-  padding: 6px 10px;
-  border-radius: 8px;
-  font-weight: 800;
-  font-size: 12px;
-  line-height: 1;
-  cursor: pointer;
-  white-space: nowrap;
 }
+
 .btn-success:hover {
   background: #059669;
 }
@@ -97,20 +86,12 @@
 .btn-danger {
   background: #ef4444;
   color: #fff;
-  border: none;
-  padding: 6px 10px;
-  border-radius: 8px;
-  font-weight: 800;
-  font-size: 12px;
-  line-height: 1;
-  cursor: pointer;
-  white-space: nowrap;
 }
+
 .btn-danger:hover {
   background: #dc2626;
 }
 
-/* row actions */
 .row-actions {
   display: flex;
   gap: 6px;
@@ -128,7 +109,6 @@
   min-height: 28px;
 }
 
-/* chips */
 .filters {
   display: flex;
   flex-wrap: wrap;
@@ -152,7 +132,6 @@
   border-color: color-mix(in srgb, var(--primary) 35%, var(--border));
 }
 
-/* table container */
 .table-card {
   background: var(--panel);
   border: 1px solid var(--border);
@@ -166,7 +145,6 @@
   max-height: 520px;
 }
 
-/* table */
 .table {
   width: 100%;
   min-width: 1100px;
@@ -211,7 +189,6 @@
   font-weight: 800;
 }
 
-/* badges */
 .badge {
   display: inline-flex;
   align-items: center;
@@ -242,7 +219,6 @@
   border-color: rgba(245, 158, 11, 0.35);
 }
 
-/* modal overlay */
 .modal-overlay {
   position: fixed;
   inset: 0;
@@ -260,7 +236,6 @@
   }
 }
 
-/* modal */
 .modal {
   width: min(1100px, 95vw);
   max-height: 90vh;
@@ -275,7 +250,7 @@
 
 [data-theme="dark"] .modal.saas-modal {
   background: #0b152b;
-  border-color: rgba(255, 255, 255, 0.10);
+  border-color: rgba(255, 255, 255, 0.1);
 }
 
 .modal-head {
@@ -311,7 +286,6 @@
   border: 1px solid var(--border);
 }
 
-/* form */
 .modal-form {
   padding: 0;
 }
@@ -348,6 +322,12 @@
   color: var(--text);
   font-weight: 700;
   outline: none;
+  color-scheme: dark;
+}
+
+.form-group select option {
+  background: #0f172a;
+  color: #ffffff;
 }
 
 .form-group textarea {
@@ -362,13 +342,11 @@
   box-shadow: 0 0 0 4px color-mix(in srgb, var(--primary) 20%, transparent);
 }
 
-/* file upload button look */
 .form-group input[type="file"] {
   padding: 8px 10px;
   font-size: 12px;
 }
 
-/* modal buttons */
 .modal-buttons {
   display: flex;
   justify-content: flex-end;
@@ -376,18 +354,90 @@
   margin-top: 14px;
 }
 
-/* responsive */
-@media (max-width: 768px) {
-  .approval-page-header {
-    flex-direction: column;
-    align-items: flex-start;
-  }
+/* ===============================
+   PAGINATION - THEME AWARE
+================================= */
 
-  .modal-grid {
-    grid-template-columns: 1fr;
-  }
+.leave-pager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--panel);
+  box-shadow: var(--shadow-soft);
+  flex-wrap: wrap;
+}
 
-  .table {
-    min-width: 950px;
-  }
+.leave-pager-left,
+.leave-pager-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.leave-pager-left span,
+.leave-page-summary {
+  font-size: 12px;
+  font-weight: 900;
+  color: var(--muted);
+}
+
+.leave-pager-left select {
+  height: 36px;
+  min-width: 74px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--panel-2);
+  color: var(--text);
+  padding: 0 34px 0 14px;
+  font-weight: 900;
+  outline: none;
+  cursor: pointer;
+}
+
+.leave-pager-left select option {
+  background: var(--panel);
+  color: var(--text);
+}
+
+.leave-page-btn,
+.leave-page-number {
+  min-width: 36px;
+  height: 36px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--panel-2);
+  color: var(--text);
+  font-weight: 900;
+  cursor: pointer;
+  transition: 0.15s ease;
+}
+
+.leave-page-btn:hover:not(:disabled),
+.leave-page-number:hover {
+  background: color-mix(in srgb, var(--primary) 18%, transparent);
+  border-color: color-mix(in srgb, var(--primary) 45%, var(--border));
+}
+
+.leave-page-number.active {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #ffffff;
+}
+
+.leave-page-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+[data-theme="dark"] .leave-pager-left select {
+  color-scheme: dark;
+}
+
+[data-theme="dark"] .leave-pager-left select option {
+  background: #0f172a;
+  color: #ffffff;
 }

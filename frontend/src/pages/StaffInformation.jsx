@@ -65,6 +65,9 @@ export default function StaffInformation() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("All");
 
+  const [pageSize, setPageSize] = useState(25);
+  const [page, setPage] = useState(1);
+
   const [viewStaff, setViewStaff] = useState(null);
   const [editStaff, setEditStaff] = useState(null);
 
@@ -461,6 +464,21 @@ export default function StaffInformation() {
     findBranch,
   ]);
 
+  const totalPages = Math.max(1, Math.ceil(filteredStaff.length / pageSize));
+
+  const pagedStaff = useMemo(() => {
+    const start = (page - 1) * pageSize;
+    return filteredStaff.slice(start, start + pageSize);
+  }, [filteredStaff, page, pageSize]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [search, statusFilter, pageSize]);
+
+  useEffect(() => {
+    if (page > totalPages) setPage(totalPages);
+  }, [page, totalPages]);
+
   const isStaffStepValid = useMemo(
     () => !!toStr(form.last_name) && !!toStr(form.first_name),
     [form.last_name, form.first_name]
@@ -803,6 +821,18 @@ export default function StaffInformation() {
             <option value="Inactive">Inactive</option>
           </select>
 
+          <select
+            className="input"
+            value={pageSize}
+            onChange={(e) => setPageSize(Number(e.target.value))}
+            style={{ width: 130 }}
+          >
+            <option value={25}>25 rows</option>
+            <option value={50}>50 rows</option>
+            <option value={75}>75 rows</option>
+            <option value={100}>100 rows</option>
+          </select>
+
           <input
             className="input"
             placeholder="Search by ID, name, position, department, area, region, division, branch..."
@@ -833,6 +863,18 @@ export default function StaffInformation() {
           <div className="pill">
             Results: <strong>{filteredStaff.length}</strong>
           </div>
+
+          <div className="pill">
+            Showing:{" "}
+            <strong>
+              {filteredStaff.length === 0
+                ? 0
+                : `${(page - 1) * pageSize + 1}-${Math.min(
+                    page * pageSize,
+                    filteredStaff.length
+                  )}`}
+            </strong>
+          </div>
         </div>
       </div>
 
@@ -844,86 +886,112 @@ export default function StaffInformation() {
             {error}
           </div>
         ) : (
-          <div className="table-scroll">
-            <table className="saas-table staffinfo-table">
-              <thead>
-                <tr>
-                  <th style={{ width: 70 }}></th>
-                  <th style={{ width: 90 }}>Slot</th>
-                  <th style={{ width: 120 }}>Emp No</th>
-                  <th>Name</th>
-                  <th style={{ width: 180 }}>Position</th>
-                  <th style={{ width: 180 }}>Department</th>
-                  <th style={{ width: 200 }}>Branch</th>
-                  <th style={{ width: 120 }}>Status</th>
-                  <th style={{ width: 140 }}>Start Date</th>
-                  <th style={{ width: 140 }}>Regularized</th>
-                  <th style={{ width: 260 }}>Action</th>
-                </tr>
-              </thead>
-
-              <tbody>
-                {filteredStaff.length === 0 ? (
+          <>
+            <div className="table-scroll">
+              <table className="saas-table staffinfo-table">
+                <thead>
                   <tr>
-                    <td colSpan={11} className="empty">
-                      No staff found.
-                    </td>
+                    <th style={{ width: 70 }}></th>
+                    <th style={{ width: 90 }}>Slot</th>
+                    <th style={{ width: 120 }}>Emp No</th>
+                    <th>Name</th>
+                    <th style={{ width: 180 }}>Position</th>
+                    <th style={{ width: 180 }}>Department</th>
+                    <th style={{ width: 200 }}>Branch</th>
+                    <th style={{ width: 120 }}>Status</th>
+                    <th style={{ width: 140 }}>Start Date</th>
+                    <th style={{ width: 140 }}>Regularized</th>
+                    <th style={{ width: 260 }}>Action</th>
                   </tr>
-                ) : (
-                  filteredStaff.slice(0, 100).map((s) => {
-                    const photoSrc = signedUrls[s.id] || "";
+                </thead>
 
-                    return (
-                      <tr key={s.id}>
-                        <td>
-                          {photoSrc ? (
-                            <img className="staff-avatar" src={photoSrc} alt="staff" />
-                          ) : (
-                            <div className="staff-avatar staff-avatar--fallback">
-                              {displayName(s).slice(0, 1).toUpperCase() || "?"}
+                <tbody>
+                  {filteredStaff.length === 0 ? (
+                    <tr>
+                      <td colSpan={11} className="empty">
+                        No staff found.
+                      </td>
+                    </tr>
+                  ) : (
+                    pagedStaff.map((s) => {
+                      const photoSrc = signedUrls[s.id] || "";
+
+                      return (
+                        <tr key={s.id}>
+                          <td>
+                            {photoSrc ? (
+                              <img className="staff-avatar" src={photoSrc} alt="staff" />
+                            ) : (
+                              <div className="staff-avatar staff-avatar--fallback">
+                                {displayName(s).slice(0, 1).toUpperCase() || "?"}
+                              </div>
+                            )}
+                          </td>
+
+                          <td className="mono">{s.id}</td>
+                          <td className="mono">{s.employee_no || "-"}</td>
+                          <td className="strong">{displayName(s)}</td>
+                          <td>{s.position || "-"}</td>
+                          <td>{s.department || "-"}</td>
+                          <td>{branchNameById(s.branch_id) || "-"}</td>
+                          <td>
+                            <span className={statusBadgeClass(s.status)}>
+                              {String(s.status || "Active")}
+                            </span>
+                          </td>
+                          <td>{fmtDate(s.start_date)}</td>
+                          <td>{fmtDate(s.regularization_date)}</td>
+                          <td>
+                            <div className="actions">
+                              <button
+                                className="action-btn btn-view"
+                                onClick={() => setViewStaff(s)}
+                                type="button"
+                              >
+                                View
+                              </button>
+
+                              <button
+                                className="action-btn btn-edit"
+                                onClick={() => openEdit(s)}
+                                type="button"
+                              >
+                                Edit
+                              </button>
                             </div>
-                          )}
-                        </td>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
 
-                        <td className="mono">{s.id}</td>
-                        <td className="mono">{s.employee_no || "-"}</td>
-                        <td className="strong">{displayName(s)}</td>
-                        <td>{s.position || "-"}</td>
-                        <td>{s.department || "-"}</td>
-                        <td>{branchNameById(s.branch_id) || "-"}</td>
-                        <td>
-                          <span className={statusBadgeClass(s.status)}>
-                            {String(s.status || "Active")}
-                          </span>
-                        </td>
-                        <td>{fmtDate(s.start_date)}</td>
-                        <td>{fmtDate(s.regularization_date)}</td>
-                        <td>
-                          <div className="actions">
-                            <button
-                              className="action-btn btn-view"
-                              onClick={() => setViewStaff(s)}
-                              type="button"
-                            >
-                              View
-                            </button>
+            <div className="staffinfo-pager">
+              <button
+                className="pager-btn"
+                type="button"
+                disabled={page <= 1}
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+              >
+                ‹
+              </button>
 
-                            <button
-                              className="action-btn btn-edit"
-                              onClick={() => openEdit(s)}
-                              type="button"
-                            >
-                              Edit
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
-          </div>
+              <span className="pager-info">
+                Page {page} of {totalPages}
+              </span>
+
+              <button
+                className="pager-btn"
+                type="button"
+                disabled={page >= totalPages}
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              >
+                ›
+              </button>
+            </div>
+          </>
         )}
       </div>
 

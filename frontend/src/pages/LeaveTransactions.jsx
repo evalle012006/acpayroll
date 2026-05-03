@@ -111,6 +111,8 @@ export default function LeaveTransactions() {
   const [uploadingApproved, setUploadingApproved] = useState({});
 
   const [selectedLeaveType, setSelectedLeaveType] = useState("All");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
   const [showCreateLeave, setShowCreateLeave] = useState(false);
 
   const [leaveForm, setLeaveForm] = useState({
@@ -418,6 +420,21 @@ export default function LeaveTransactions() {
     );
   }, [leaveRequests, selectedLeaveType]);
 
+  const totalPages = Math.max(1, Math.ceil(filteredLeave.length / pageSize));
+
+  const pagedLeave = useMemo(() => {
+    const start = (page - 1) * pageSize;
+    return filteredLeave.slice(start, start + pageSize);
+  }, [filteredLeave, page, pageSize]);
+
+  useEffect(() => {
+  setPage(1);
+}, [selectedLeaveType, pageSize]);
+
+  useEffect(() => {
+    if (page > totalPages) setPage(totalPages);
+  }, [page, totalPages]);
+
   const badgeClass = (status) => {
     if (status === "Approved") return "badge badge-approved";
     if (status === "Rejected") return "badge badge-rejected";
@@ -518,6 +535,21 @@ export default function LeaveTransactions() {
     );
   };
 
+  const getPageNumbers = () => {
+    const pages = [];
+    const maxButtons = 5;
+
+    let start = Math.max(1, page - 2);
+    let end = Math.min(totalPages, start + maxButtons - 1);
+
+    if (end - start < maxButtons - 1) {
+      start = Math.max(1, end - maxButtons + 1);
+    }
+
+    for (let i = start; i <= end; i++) pages.push(i);
+    return pages;
+  };
+
   return (
     <div className="approval-page">
       <div className="approval-page-header">
@@ -556,6 +588,57 @@ export default function LeaveTransactions() {
         ))}
       </div>
 
+      <div className="leave-pager">
+        <div className="leave-pager-left">
+          <span>Rows per page</span>
+
+          <select
+            value={pageSize}
+            onChange={(e) => setPageSize(Number(e.target.value))}
+          >
+            <option value={25}>25</option>
+            <option value={50}>50</option>
+            <option value={75}>75</option>
+            <option value={100}>100</option>
+          </select>
+        </div>
+
+        <div className="leave-pager-right">
+          <button
+            className="leave-page-btn"
+            type="button"
+            disabled={page <= 1}
+            onClick={() => setPage((p) => Math.max(1, p - 1))}
+          >
+            ‹
+          </button>
+
+          {getPageNumbers().map((p) => (
+            <button
+              key={p}
+              className={`leave-page-number ${page === p ? "active" : ""}`}
+              type="button"
+              onClick={() => setPage(p)}
+            >
+              {p}
+            </button>
+          ))}
+
+          <button
+            className="leave-page-btn"
+            type="button"
+            disabled={page >= totalPages}
+            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+          >
+            ›
+          </button>
+
+          <span className="leave-page-summary">
+            Page {page} of {totalPages}
+          </span>
+        </div>
+      </div>
+
       <div className="table-card">
         <div className="table-wrap">
           <table className="table">
@@ -587,7 +670,7 @@ export default function LeaveTransactions() {
                   </td>
                 </tr>
               ) : (
-                filteredLeave.map((item) => (
+                pagedLeave.map((item) => (
                   <tr key={item.id}>
                     <td>{item.transaction_code || item.id}</td>
                     <td className="td-strong">{item.staff_name || "-"}</td>

@@ -4,6 +4,7 @@ import api from "../api/axiosClient";
 
 const roleOptions = [
   { label: "Admin", value: "admin" },
+  { label: "IT", value: "it" },
   { label: "Hr", value: "hr" },
   { label: "Accounting", value: "accounting" },
   { label: "Branch Manager", value: "branch manager" },
@@ -15,6 +16,20 @@ const roleOptions = [
   { label: "President", value: "president" },
   { label: "Tread", value: "tread" },
 ];
+
+const emptyForm = {
+  username: "",
+  password: "",
+  role: "admin",
+  branch_id: "",
+  area: "",
+  region: "",
+  division: "",
+  first_name: "",
+  middle_name: "",
+  last_name: "",
+  department: "",
+};
 
 const toStr = (v) => String(v ?? "").trim();
 
@@ -28,15 +43,7 @@ const Users = () => {
   const [saving, setSaving] = useState(false);
 
   const [editId, setEditId] = useState(null);
-  const [form, setForm] = useState({
-    username: "",
-    password: "",
-    role: "admin",
-    branch_id: "",
-    area: "",
-    region: "",
-    division: "",
-  });
+  const [form, setForm] = useState(emptyForm);
 
   const [branchSearch, setBranchSearch] = useState("");
   const [areaSearch, setAreaSearch] = useState("");
@@ -123,7 +130,11 @@ const Users = () => {
         String(r.branch_name || "").toLowerCase().includes(q) ||
         String(r.area || "").toLowerCase().includes(q) ||
         String(r.region || "").toLowerCase().includes(q) ||
-        String(r.division || "").toLowerCase().includes(q)
+        String(r.division || "").toLowerCase().includes(q) ||
+        String(r.first_name || "").toLowerCase().includes(q) ||
+        String(r.middle_name || "").toLowerCase().includes(q) ||
+        String(r.last_name || "").toLowerCase().includes(q) ||
+        String(r.department || "").toLowerCase().includes(q)
     );
   }, [rows, search]);
 
@@ -145,6 +156,7 @@ const Users = () => {
   const filteredBranches = useMemo(() => {
     const q = branchSearch.trim().toLowerCase();
     if (!q) return branches;
+
     return branches.filter(
       (b) =>
         String(b.name || "").toLowerCase().includes(q) ||
@@ -172,15 +184,7 @@ const Users = () => {
 
   const openAdd = () => {
     setEditId(null);
-    setForm({
-      username: "",
-      password: "",
-      role: "admin",
-      branch_id: "",
-      area: "",
-      region: "",
-      division: "",
-    });
+    setForm(emptyForm);
     setBranchSearch("");
     setAreaSearch("");
     setRegionSearch("");
@@ -202,7 +206,12 @@ const Users = () => {
       area: u.area || "",
       region: u.region || "",
       division: u.division || "",
+      first_name: u.first_name || "",
+      middle_name: u.middle_name || "",
+      last_name: u.last_name || "",
+      department: u.department || "",
     });
+
     setBranchSearch(u.branch_name || "");
     setAreaSearch(u.area || "");
     setRegionSearch(u.region || "");
@@ -252,6 +261,7 @@ const Users = () => {
     }
 
     setSaving(true);
+
     try {
       const payload = {
         username: String(form.username || "").trim(),
@@ -260,6 +270,10 @@ const Users = () => {
         area: String(form.area || "").trim(),
         region: String(form.region || "").trim(),
         division: String(form.division || "").trim(),
+        first_name: String(form.first_name || "").trim(),
+        middle_name: String(form.middle_name || "").trim(),
+        last_name: String(form.last_name || "").trim(),
+        department: String(form.department || "").trim(),
       };
 
       if (!editId) {
@@ -290,6 +304,7 @@ const Users = () => {
 
   const onDelete = async (id) => {
     if (!window.confirm("Delete this user?")) return;
+
     try {
       await api.delete(`/users/${id}`);
       await fetchUsers();
@@ -306,9 +321,13 @@ const Users = () => {
     if (resetSaving) return;
 
     const pw = String(resetPw || "").trim();
-    if (pw.length < 6) return alert("Password must be at least 6 characters.");
+
+    if (pw.length < 6) {
+      return alert("Password must be at least 6 characters.");
+    }
 
     setResetSaving(true);
+
     try {
       await api.put(`/users/${resetId}/reset-password`, { new_password: pw });
       closeReset();
@@ -327,6 +346,7 @@ const Users = () => {
     const found = roleOptions.find(
       (r) => r.value === String(value || "").toLowerCase()
     );
+
     return found ? found.label : String(value || "");
   };
 
@@ -342,6 +362,7 @@ const Users = () => {
           <button className="btn-secondary" onClick={fetchUsers} type="button">
             Refresh
           </button>
+
           <button className="btn-primary" onClick={openAdd} type="button">
             + Add User
           </button>
@@ -352,10 +373,11 @@ const Users = () => {
         <div className="users-controls">
           <input
             className="input"
-            placeholder="Search by id, username, role, branch, area, region, division..."
+            placeholder="Search by id, username, name, department, role, branch, area, region, division..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
+
           <div className="pill">
             Results: <strong>{filtered.length}</strong>
           </div>
@@ -368,8 +390,12 @@ const Users = () => {
             <table className="table">
               <thead>
                 <tr>
-                  <th style={{ width: 90 }}>ID</th>
-                  <th>Username</th>
+                  <th style={{ width: 80 }}>ID</th>
+                  <th style={{ width: 150 }}>Username</th>
+                  <th style={{ width: 150 }}>First Name</th>
+                  <th style={{ width: 150 }}>Middle Name</th>
+                  <th style={{ width: 150 }}>Last Name</th>
+                  <th style={{ width: 160 }}>Department</th>
                   <th style={{ width: 220 }}>Role</th>
                   <th style={{ width: 180 }}>Branch</th>
                   <th style={{ width: 160 }}>Area</th>
@@ -383,7 +409,7 @@ const Users = () => {
               <tbody>
                 {filtered.length === 0 ? (
                   <tr>
-                    <td colSpan={9} className="empty">
+                    <td colSpan={13} className="empty">
                       No users found.
                     </td>
                   </tr>
@@ -392,12 +418,18 @@ const Users = () => {
                     <tr key={u.id}>
                       <td className="mono">{u.id}</td>
                       <td className="strong">{u.username}</td>
+                      <td>{u.first_name ?? "-"}</td>
+                      <td>{u.middle_name ?? "-"}</td>
+                      <td>{u.last_name ?? "-"}</td>
+                      <td>{u.department ?? "-"}</td>
                       <td>{roleLabel(u.role)}</td>
-                      <td>{u.branch_name ?? "-"}</td>
+                      <td>{u.branch_name ?? u.branch_id ?? "-"}</td>
                       <td>{u.area ?? "-"}</td>
                       <td>{u.region ?? "-"}</td>
                       <td>{u.division ?? "-"}</td>
-                      <td>{u.created_at ? String(u.created_at).split("T")[0] : "-"}</td>
+                      <td>
+                        {u.created_at ? String(u.created_at).split("T")[0] : "-"}
+                      </td>
 
                       <td>
                         <div className="row-actions">
@@ -438,14 +470,21 @@ const Users = () => {
       {showModal && (
         <div
           className="modal-overlay"
-          onMouseDown={(e) => e.target.classList.contains("modal-overlay") && closeModal()}
+          onMouseDown={(e) =>
+            e.target.classList.contains("modal-overlay") && closeModal()
+          }
         >
           <div className="modal" onMouseDown={(e) => e.stopPropagation()}>
             <div className="modal-head">
               <div>
-                <h3 className="modal-title">{editId ? "Edit User" : "Add User"}</h3>
+                <h3 className="modal-title">
+                  {editId ? "Edit User" : "Add User"}
+                </h3>
+
                 <p className="modal-subtitle">
-                  {editId ? "Leave password blank to keep current password." : "Create a new account."}
+                  {editId
+                    ? "Leave password blank to keep current password."
+                    : "Create a new account."}
                 </p>
               </div>
 
@@ -456,6 +495,50 @@ const Users = () => {
 
             <form onSubmit={onSubmit} className="modal-form">
               <div className="grid">
+                <div className="field">
+                  <label>First Name</label>
+                  <input
+                    className="input"
+                    name="first_name"
+                    value={form.first_name}
+                    onChange={onChange}
+                    placeholder="Enter first name"
+                  />
+                </div>
+
+                <div className="field">
+                  <label>Middle Name</label>
+                  <input
+                    className="input"
+                    name="middle_name"
+                    value={form.middle_name}
+                    onChange={onChange}
+                    placeholder="Enter middle name"
+                  />
+                </div>
+
+                <div className="field">
+                  <label>Last Name</label>
+                  <input
+                    className="input"
+                    name="last_name"
+                    value={form.last_name}
+                    onChange={onChange}
+                    placeholder="Enter last name"
+                  />
+                </div>
+
+                <div className="field">
+                  <label>Department</label>
+                  <input
+                    className="input"
+                    name="department"
+                    value={form.department}
+                    onChange={onChange}
+                    placeholder="e.g. IT, HR, Accounting"
+                  />
+                </div>
+
                 <div className="field">
                   <label>Username</label>
                   <input
@@ -507,7 +590,7 @@ const Users = () => {
                           onClick={() => {
                             setForm((p) => ({
                               ...p,
-                              branch_id: String(b.code || ""),
+                              branch_id: String(b.code || b.id || ""),
                             }));
                             setBranchSearch(b.name || "");
                             setShowBranchOptions(false);
@@ -630,16 +713,23 @@ const Users = () => {
                     type="password"
                     value={form.password}
                     onChange={onChange}
-                    placeholder={editId ? "(leave blank to keep current)" : "Enter password"}
+                    placeholder={
+                      editId ? "(leave blank to keep current)" : "Enter password"
+                    }
                     required={!editId}
                   />
                 </div>
               </div>
 
               <div className="modal-actions">
-                <button className="btn-secondary" type="button" onClick={closeModal}>
+                <button
+                  className="btn-secondary"
+                  type="button"
+                  onClick={closeModal}
+                >
                   Cancel
                 </button>
+
                 <button className="btn-primary" type="submit" disabled={saving}>
                   {saving ? "Saving..." : editId ? "Update" : "Create"}
                 </button>
@@ -652,12 +742,18 @@ const Users = () => {
       {resetId && (
         <div
           className="modal-overlay"
-          onMouseDown={(e) => e.target.classList.contains("modal-overlay") && closeReset()}
+          onMouseDown={(e) =>
+            e.target.classList.contains("modal-overlay") && closeReset()
+          }
         >
-          <div className="modal confirm-modal" onMouseDown={(e) => e.stopPropagation()}>
+          <div
+            className="modal confirm-modal"
+            onMouseDown={(e) => e.stopPropagation()}
+          >
             <div className="modal-head">
               <div>
                 <h3 className="modal-title">Reset Password</h3>
+
                 <p className="modal-subtitle">
                   Set a new password for <b>{resetUser?.username}</b>
                 </p>
@@ -692,7 +788,12 @@ const Users = () => {
                 >
                   Cancel
                 </button>
-                <button className="btn-primary" type="submit" disabled={resetSaving}>
+
+                <button
+                  className="btn-primary"
+                  type="submit"
+                  disabled={resetSaving}
+                >
                   {resetSaving ? "Resetting..." : "Reset Password"}
                 </button>
               </div>

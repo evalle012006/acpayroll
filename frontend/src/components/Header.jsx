@@ -51,7 +51,13 @@ const Header = ({ toggleSidebar }) => {
   const [notifications, setNotifications] = useState([]);
   const [loadingNotifs, setLoadingNotifs] = useState(false);
 
-  const displayName = user?.username || "User";
+  const displayName = [
+    user?.first_name,
+    user?.middle_name,
+    user?.last_name,
+  ]
+    .filter(Boolean)
+    .join(" ") || user?.username || "User";
   const displayRole = user?.role || "Unknown";
 
   const unreadCount = useMemo(

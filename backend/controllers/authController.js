@@ -27,7 +27,11 @@ const login = async (req, res) => {
         branch_id,
         area,
         region,
-        division
+        division,
+        first_name,
+        middle_name,
+        last_name,
+        department
       FROM public.users
       WHERE lower(trim(username)) = lower(trim($1))
       LIMIT 1
@@ -54,6 +58,10 @@ const login = async (req, res) => {
       area: user.area ?? null,
       region: user.region ?? null,
       division: user.division ?? null,
+      first_name: user.first_name ?? null,
+      middle_name: user.middle_name ?? null,
+      last_name: user.last_name ?? null,
+      department: user.department ?? null,
     };
 
     const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: "8h" });
