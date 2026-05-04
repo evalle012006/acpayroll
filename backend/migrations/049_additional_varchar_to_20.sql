@@ -1,0 +1,6 @@
+BEGIN;
+
+ALTER TABLE suspension_orders
+ALTER COLUMN order_no TYPE VARCHAR(20);
+
+COMMIT;
