@@ -511,7 +511,7 @@ router.post(
       `);
 
       const leaveSeq = Number(seqRes.rows[0].n);
-      const transaction_code = `LV-${String(leaveSeq).padStart(8, "0")}`;
+      const transaction_code = `LV-${String(leaveSeq).padStart(7, "0")}`;
 
       const status = initialPendingStatusForRequester(req);
 

@@ -15,10 +15,9 @@ const STAGE_LABELS = {
   "regional manager": "Regional Manager",
   "assistant vice president": "Assistant Vice President",
   "vice president": "Vice President",
-  admin: "Admin / HR / Accounting",
 };
 
-const FINAL_APPROVER_ROLES = ["admin", "hr", "accounting"];
+const FINAL_APPROVER_ROLES = ["vice president"];
 
 const readUser = () => {
   try {
@@ -49,19 +48,19 @@ const getDynamicApprovalChain = (item) => {
   const applicantRole = norm(item?.applicant_role);
 
   if (applicantRole === "vice president") {
-    return ["admin"];
+    return ["vice president"];
   }
 
   if (applicantRole === "assistant vice president") {
-    return ["vice president", "admin"];
+    return ["vice president"];
   }
 
   if (applicantRole === "regional manager") {
-    return ["assistant vice president", "vice president", "admin"];
+    return ["assistant vice president", "vice president"];
   }
 
   if (applicantRole === "area manager") {
-    return ["regional manager", "assistant vice president", "vice president", "admin"];
+    return ["regional manager", "assistant vice president", "vice president"];
   }
 
   return [
@@ -69,7 +68,6 @@ const getDynamicApprovalChain = (item) => {
     "regional manager",
     "assistant vice president",
     "vice president",
-    "admin",
   ];
 };
 
@@ -702,7 +700,7 @@ export default function LoanApprovalTab() {
             <div className="mini">
               {loadingLoan
                 ? "Loading loan requests..."
-                : "Approval chain includes Vice President before final Admin/HR/Accounting approval."}
+                : "Final approval is handled by Vice President."}
             </div>
           </div>
         </div>

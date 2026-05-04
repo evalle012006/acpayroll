@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import "../styles/ExitStaffOrders.css";
 import api from "../api/axiosClient";
+import { FaCheck, FaTimes, FaTrash } from "react-icons/fa";
 
 /* ---------------- Helpers ---------------- */
 const toStr = (v) => String(v ?? "").trim();
@@ -586,43 +587,45 @@ export default function ExitStaffOrders() {
                           {canAct ? (
                             <>
                               <button
-                                className="po-mini-btn po-approve"
+                                className="po-mini-btn po-approve icon-only"
                                 type="button"
                                 onClick={() => approve(o)}
                                 disabled={approvingId === o.id}
+                                title="Approve"
                               >
-                                {approvingId === o.id ? "Approving..." : "Approve"}
+                                {approvingId === o.id ? "..." : <FaCheck />}
                               </button>
 
                               <button
-                                className="po-mini-btn po-reject"
+                                className="po-mini-btn po-reject icon-only"
                                 type="button"
                                 onClick={() => reject(o)}
                                 disabled={rejectingId === o.id}
+                                title="Reject"
                               >
-                                {rejectingId === o.id ? "Rejecting..." : "Reject"}
+                                {rejectingId === o.id ? "..." : <FaTimes />}
                               </button>
-                            </>
-                          ) : (
-                            <span className="exit-dash">-</span>
-                          )}
+                              </>
+                              ) : (
+                                <span className="exit-dash">-</span>
+                              )}
 
-                          {canDelete && (
-                            <button
-                              className="po-mini-btn"
-                              type="button"
-                              onClick={() => del(o)}
-                              disabled={approved || deletingId === o.id}
-                              title={approved ? "Approved records cannot be deleted" : "Delete"}
-                              style={{
-                                marginLeft: 8,
-                                opacity: approved || deletingId === o.id ? 0.5 : 1,
-                                cursor: approved ? "not-allowed" : "pointer",
-                              }}
-                            >
-                              {deletingId === o.id ? "Deleting..." : "Delete"}
-                            </button>
-                          )}
+                              {canDelete && (
+                                <button
+                                  className="po-mini-btn icon-only"
+                                  type="button"
+                                  onClick={() => del(o)}
+                                  disabled={approved || deletingId === o.id}
+                                  title={approved ? "Approved records cannot be deleted" : "Delete"}
+                                  style={{
+                                    marginLeft: 8,
+                                    opacity: approved || deletingId === o.id ? 0.5 : 1,
+                                    cursor: approved ? "not-allowed" : "pointer",
+                                  }}
+                                >
+                                  {deletingId === o.id ? "..." : <FaTrash />}
+                                </button>
+                              )}
                         </div>
                       </td>
                     </tr>

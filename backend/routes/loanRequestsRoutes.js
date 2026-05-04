@@ -34,7 +34,7 @@ const isSeniorVicePresident = (req) =>
   roleLower(req) === "senior vice president";
 const isPresident = (req) => roleLower(req) === "president";
 
-const isFinalApprover = (req) => isAdmin(req) || isHr(req) || isAccounting(req);
+const isFinalApprover = (req) => isVicePresident(req);
 
 const canViewAllLoans = (req) =>
   isAdmin(req) ||
@@ -77,24 +77,19 @@ const getApprovalChain = (applicantRole) => {
   const role = String(applicantRole || "").trim().toLowerCase();
 
   if (role === "vice president") {
-    return ["admin"];
+    return ["vice president"];
   }
 
   if (role === "assistant vice president") {
-    return ["vice president", "admin"];
+    return ["vice president"];
   }
 
   if (role === "regional manager") {
-    return ["assistant vice president", "vice president", "admin"];
+    return ["assistant vice president", "vice president"];
   }
 
   if (role === "area manager") {
-    return [
-      "regional manager",
-      "assistant vice president",
-      "vice president",
-      "admin",
-    ];
+    return ["regional manager", "assistant vice president", "vice president"];
   }
 
   return [
@@ -102,7 +97,6 @@ const getApprovalChain = (applicantRole) => {
     "regional manager",
     "assistant vice president",
     "vice president",
-    "admin",
   ];
 };
 
@@ -820,7 +814,6 @@ router.put("/loan-requests/:id", requireAuth, async (req, res) => {
       "regional manager": "regional_manager_status",
       "assistant vice president": "assistant_vice_president_status",
       "vice president": "vice_president_status",
-      admin: "admin_status",
     };
 
     const column = statusColumnMap[effectiveRole];

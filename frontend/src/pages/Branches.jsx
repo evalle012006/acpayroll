@@ -2,6 +2,7 @@ import { useNavigate } from "react-router-dom";
 import { useEffect, useMemo, useState, useCallback } from "react";
 import "../styles/Branches.css";
 import api from "../api/axiosClient";
+import { FaEdit, FaTrash } from "react-icons/fa";
 
 const readUser = () => {
   try {
@@ -459,10 +460,6 @@ const Branches = () => {
                                 Transpo
                               </button>
 
-                              <button className="action-btn btn-view" onClick={() => openMapModal(branch)} type="button">
-                                View Location
-                              </button>
-
                               {canOpenBonus && (
                                 <button
                                   className="action-btn btn-bonus"
@@ -472,16 +469,30 @@ const Branches = () => {
                                   Bonus
                                 </button>
                               )}
+
+                              <button className="action-btn btn-view" onClick={() => openMapModal(branch)} type="button">
+                                View Location
+                              </button>
                             </div>
 
                             {canManageBranches && (
                               <div className="action-group">
-                                <button className="action-btn btn-edit" onClick={() => openEdit(branch)} type="button">
-                                  Edit
+                                <button
+                                  className="action-btn btn-edit icon-only"
+                                  onClick={() => openEdit(branch)}
+                                  type="button"
+                                  title="Edit"
+                                >
+                                  <FaEdit />
                                 </button>
 
-                                <button className="action-btn btn-delete" onClick={() => deleteBranch(branch.id)} type="button">
-                                  Delete
+                                <button
+                                  className="action-btn btn-delete icon-only"
+                                  onClick={() => deleteBranch(branch.id)}
+                                  type="button"
+                                  title="Delete"
+                                >
+                                  <FaTrash />
                                 </button>
                               </div>
                             )}

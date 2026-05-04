@@ -8,15 +8,8 @@ import ContractDetailsStep from "./StaffInformation/ContractDetailsStep";
 import PersonalBalancesStep from "./StaffInformation/PersonalBalancesStep";
 import StaffProfileModal from "./StaffInformation/StaffProfileModal";
 import useStaffSignedUrls from "./StaffInformation/useStaffSignedUrls";
-import {
-  safeJsonArray,
-  toStr,
-  norm,
-  fmtDate,
-  toNum,
-  displayName,
-  displayFormName,
-} from "./StaffInformation/staffInfoUtils";
+import { safeJsonArray, toStr, norm, fmtDate, toNum, displayName, displayFormName, } from "./StaffInformation/staffInfoUtils";
+import { FaEye, FaEdit } from "react-icons/fa";
 
 export default function StaffInformation() {
   const readUser = () => {
@@ -944,19 +937,21 @@ export default function StaffInformation() {
                           <td>
                             <div className="actions">
                               <button
-                                className="action-btn btn-view"
+                                className="action-btn btn-view icon-only"
                                 onClick={() => setViewStaff(s)}
                                 type="button"
+                                title="View"
                               >
-                                View
+                                <FaEye />
                               </button>
 
                               <button
-                                className="action-btn btn-edit"
+                                className="action-btn btn-edit icon-only"
                                 onClick={() => openEdit(s)}
                                 type="button"
+                                title="Edit"
                               >
-                                Edit
+                                <FaEdit />
                               </button>
                             </div>
                           </td>
