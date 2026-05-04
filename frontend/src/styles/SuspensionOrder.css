@@ -449,3 +449,17 @@
     padding: 14px;
   }
 }
+
+.po-icon-btn {
+  width: 36px;
+  height: 36px;
+  min-width: 36px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.po-icon-btn svg {
+  font-size: 14px;
+}

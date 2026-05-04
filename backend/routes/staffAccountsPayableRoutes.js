@@ -14,7 +14,15 @@ const toInt = (v) => {
 };
 
 const roleLower = (req) => String(req.user?.role || "").trim().toLowerCase();
+
 const isAdmin = (req) => roleLower(req) === "admin";
+const isHr = (req) => roleLower(req) === "hr";
+const isAccounting = (req) => roleLower(req) === "accounting";
+const isPresident = (req) => roleLower(req) === "president";
+const isBranchManager = (req) => roleLower(req) === "branch manager";
+
+const canApproveSAP = (req) =>
+  isAdmin(req) || isPresident(req) || isHr(req) || isAccounting(req);
 
 async function staffIdFromEmployeeNo(client, employee_no) {
   const eno = String(employee_no || "").trim();
@@ -25,6 +33,7 @@ async function staffIdFromEmployeeNo(client, employee_no) {
     SELECT id, employee_no, fullname, first_name, last_name, middle_name, "position"
     FROM public.staff
     WHERE employee_no = $1
+    LIMIT 1
     `,
     [eno]
   );
@@ -33,12 +42,12 @@ async function staffIdFromEmployeeNo(client, employee_no) {
   return { staffId: toInt(s.rows[0].id), staff: s.rows[0] };
 }
 
-async function ensureBalanceRow(client, staffId) {
+async function ensureBalanceRow(client, employeeNo) {
   await client.query(
     `
     INSERT INTO public.staff_balances
       (
-        employee_id,
+        employee_no,
         fullname,
         "position",
         last_name,
@@ -57,7 +66,7 @@ async function ensureBalanceRow(client, staffId) {
         updated_at
       )
     SELECT
-      s.id,
+      s.employee_no,
       s.fullname,
       s."position",
       s.last_name,
@@ -68,10 +77,10 @@ async function ensureBalanceRow(client, staffId) {
       0, 0,
       NOW(), NOW()
     FROM public.staff s
-    WHERE s.id = $1::int
-    ON CONFLICT (employee_id) DO NOTHING
+    WHERE s.employee_no = $1
+    ON CONFLICT (employee_no) DO NOTHING
     `,
-    [staffId]
+    [employeeNo]
   );
 }
 
@@ -149,7 +158,13 @@ router.get("/staff-accounts-payable/employee/:employeeNo", requireAuth, async (r
 router.post(
   "/staff-accounts-payable",
   requireAuth,
-  requireRole(["admin", "branch manager"]),
+  requireRole([
+    "admin",
+    "president",
+    "hr",
+    "accounting",
+    "branch manager",
+  ]),
   async (req, res) => {
     const client = await pool.connect();
 
@@ -199,7 +214,21 @@ router.post(
             middle_name
           )
         VALUES
-          ($1::int, $2::varchar, $3::varchar, $4::varchar, $5::numeric, $6::int, $7::numeric, $8::numeric, 'Pending', $9::int, $10::varchar, $11::varchar, $12::varchar)
+          (
+            $1::int,
+            $2::varchar,
+            $3::varchar,
+            $4::varchar,
+            $5::numeric,
+            $6::int,
+            $7::numeric,
+            $8::numeric,
+            'Pending',
+            $9::int,
+            $10::varchar,
+            $11::varchar,
+            $12::varchar
+          )
         RETURNING *;
         `,
         [
@@ -211,7 +240,7 @@ router.post(
           term,
           per_month,
           balance,
-          req.user?.id ?? null,
+          toInt(req.user?.id),
           staff?.first_name ?? null,
           staff?.last_name ?? null,
           staff?.middle_name ?? null,
@@ -224,6 +253,7 @@ router.post(
       try {
         await client.query("ROLLBACK");
       } catch {}
+
       console.error("POST /api/staff-accounts-payable ERROR:", e.message);
       return res.status(500).json({ message: e?.message || "Server error" });
     } finally {
@@ -246,7 +276,7 @@ router.put("/staff-accounts-payable/:id", requireAuth, async (req, res) => {
 
     const sLower = status.toLowerCase();
 
-    if ((sLower === "approved" || sLower === "rejected") && !isAdmin(req)) {
+    if ((sLower === "approved" || sLower === "rejected") && !canApproveSAP(req)) {
       return res.status(403).json({ message: "Access denied" });
     }
 
@@ -277,10 +307,11 @@ router.put("/staff-accounts-payable/:id", requireAuth, async (req, res) => {
     }
 
     const prevStatus = String(cur.rows[0].status || "").trim();
-    const employeeId = toInt(cur.rows[0].employee_id);
+    const employeeNo = String(cur.rows[0].employee_no || "").trim();
     const balToAdd = toNum(cur.rows[0].balance);
     const amtFallback = toNum(cur.rows[0].amount);
     const addValue = balToAdd > 0 ? balToAdd : amtFallback;
+    const userId = toInt(req.user?.id);
 
     const upd = await client.query(
       `
@@ -310,11 +341,11 @@ router.put("/staff-accounts-payable/:id", requireAuth, async (req, res) => {
       WHERE id = $4::bigint
       RETURNING *;
       `,
-      [status, req.user?.id ?? null, reason || null, id]
+      [status, userId, reason || null, id]
     );
 
-    if (prevStatus !== "Approved" && status === "Approved" && employeeId) {
-      await ensureBalanceRow(client, employeeId);
+    if (prevStatus !== "Approved" && status === "Approved" && employeeNo) {
+      await ensureBalanceRow(client, employeeNo);
 
       await client.query(
         `
@@ -322,9 +353,9 @@ router.put("/staff-accounts-payable/:id", requireAuth, async (req, res) => {
         SET
           staff_accounts_payable = COALESCE(staff_accounts_payable, 0) + $1::numeric,
           updated_at = NOW()
-        WHERE employee_id = $2::int
+        WHERE employee_no = $2::varchar
         `,
-        [addValue, employeeId]
+        [addValue, employeeNo]
       );
     }
 
@@ -334,6 +365,7 @@ router.put("/staff-accounts-payable/:id", requireAuth, async (req, res) => {
     try {
       await client.query("ROLLBACK");
     } catch {}
+
     console.error("PUT /api/staff-accounts-payable/:id ERROR:", e.message);
     return res.status(500).json({ message: e?.message || "Server error" });
   } finally {

@@ -1,7 +1,9 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { FaEdit, FaTrash, FaCheck, FaTimes } from "react-icons/fa";
 import { useNavigate } from "react-router-dom";
 import api from "../api/axiosClient";
 import "../styles/SuspensionOrder.css";
+
 
 const clean = (v) => String(v ?? "").trim();
 const toDate10 = (v) => (v ? String(v).slice(0, 10) : "");
@@ -598,20 +600,23 @@ export default function SuspensionOrder() {
                           {canEditDelete && (
                             <>
                               <button
-                                className="po-mini-btn"
+                                className="po-mini-btn po-icon-btn"
                                 onClick={() => openEdit(o)}
                                 disabled={approved}
                                 type="button"
+                                title="Edit"
                               >
-                                Edit
+                                <FaEdit />
                               </button>
+
                               <button
-                                className="po-mini-btn po-reject"
+                                className="po-mini-btn po-icon-btn po-reject"
                                 onClick={() => deleteOrder(o)}
                                 disabled={approved}
                                 type="button"
+                                title="Delete"
                               >
-                                Delete
+                                <FaTrash />
                               </button>
                             </>
                           )}
@@ -619,18 +624,21 @@ export default function SuspensionOrder() {
                           {canApproveStage(o) ? (
                             <>
                               <button
-                                className="po-mini-btn po-approve"
+                                className="po-mini-btn po-icon-btn po-approve"
                                 onClick={() => approveOrder(o)}
                                 type="button"
+                                title="Approve"
                               >
-                                Approve
+                                <FaCheck />
                               </button>
+
                               <button
-                                className="po-mini-btn po-reject"
+                                className="po-mini-btn po-icon-btn po-reject"
                                 onClick={() => openReject(o)}
                                 type="button"
+                                title="Reject"
                               >
-                                Reject
+                                <FaTimes />
                               </button>
                             </>
                           ) : !canEditDelete ? (

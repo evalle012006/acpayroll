@@ -90,14 +90,29 @@ const LABELS = {
 
 const getCurrentStage = (row) => {
   const explicit = toStr(row?.approval_stage).toLowerCase();
+
   if ([STAGE_AREA, STAGE_RM, STAGE_AVP, STAGE_ADMIN].includes(explicit)) {
     return explicit;
   }
 
-  if (toStr(row?.area_manager_status).toLowerCase() !== "approved") return STAGE_AREA;
-  if (toStr(row?.regional_manager_status).toLowerCase() !== "approved") return STAGE_RM;
-  if (toStr(row?.assistant_vice_president_status).toLowerCase() !== "approved") return STAGE_AVP;
-  if (toStr(row?.admin_status).toLowerCase() !== "approved") return STAGE_ADMIN;
+  if (toStr(row?.area_manager_status).toLowerCase() !== "approved") {
+    return STAGE_AREA;
+  }
+
+  if (toStr(row?.regional_manager_status).toLowerCase() !== "approved") {
+    return STAGE_RM;
+  }
+
+  if (
+    toStr(row?.assistant_vice_president_status).toLowerCase() !== "approved"
+  ) {
+    return STAGE_AVP;
+  }
+
+  if (toStr(row?.admin_status).toLowerCase() !== "approved") {
+    return STAGE_ADMIN;
+  }
+
   return STAGE_ADMIN;
 };
 
@@ -126,12 +141,16 @@ const canAccessStaffRecord = (req, staff) => {
 
   if (isRegionalManager(req)) {
     const region = getUserRegion(req);
-    return !!region && toStr(staff.region).toLowerCase() === region.toLowerCase();
+    return (
+      !!region && toStr(staff.region).toLowerCase() === region.toLowerCase()
+    );
   }
 
   if (isAssistantVicePresident(req)) {
     const region = getUserRegion(req);
-    return !!region && toStr(staff.region).toLowerCase() === region.toLowerCase();
+    return (
+      !!region && toStr(staff.region).toLowerCase() === region.toLowerCase()
+    );
   }
 
   return false;
@@ -160,7 +179,9 @@ const canMutatePendingOrder = (req, row) => {
     return !!region && toStr(row.region).toLowerCase() === region.toLowerCase();
   }
 
-  if (isVicePresident(req) || isSeniorVicePresident(req) || isPresident(req)) return true;
+  if (isVicePresident(req) || isSeniorVicePresident(req) || isPresident(req)) {
+    return true;
+  }
 
   return false;
 };
@@ -177,7 +198,10 @@ const canDownloadApprovedFile = (req, row) => {
   if (isRegionalManager(req)) return true;
   if (isAssistantVicePresident(req)) return true;
 
-  if (isAreaManager(req) && String(row?.status || "").toLowerCase() === "approved") {
+  if (
+    isAreaManager(req) &&
+    String(row?.status || "").toLowerCase() === "approved"
+  ) {
     return true;
   }
 
@@ -203,6 +227,7 @@ router.get("/suspension-orders", requireAuth, async (req, res) => {
         FROM public.suspension_orders
         ORDER BY id DESC
       `);
+
       return res.json(r.rows);
     }
 
@@ -220,6 +245,7 @@ router.get("/suspension-orders", requireAuth, async (req, res) => {
         `,
         [bid]
       );
+
       return res.json(r.rows);
     }
 
@@ -237,6 +263,7 @@ router.get("/suspension-orders", requireAuth, async (req, res) => {
         `,
         [area]
       );
+
       return res.json(r.rows);
     }
 
@@ -254,6 +281,7 @@ router.get("/suspension-orders", requireAuth, async (req, res) => {
         `,
         [region]
       );
+
       return res.json(r.rows);
     }
 
@@ -267,7 +295,9 @@ router.get("/suspension-orders", requireAuth, async (req, res) => {
 router.get("/suspension-orders/staff/:id", requireAuth, async (req, res) => {
   try {
     const employeeId = toInt(req.params.id);
-    if (!employeeId) return res.status(400).json({ message: "Invalid staff id" });
+    if (!employeeId) {
+      return res.status(400).json({ message: "Invalid staff id" });
+    }
 
     const s = await pool.query(
       `
@@ -278,7 +308,9 @@ router.get("/suspension-orders/staff/:id", requireAuth, async (req, res) => {
       [employeeId]
     );
 
-    if (s.rowCount === 0) return res.status(404).json({ message: "Staff not found" });
+    if (s.rowCount === 0) {
+      return res.status(404).json({ message: "Staff not found" });
+    }
 
     const staff = s.rows[0];
 
@@ -320,6 +352,7 @@ router.post(
   upload.single("attachment"),
   async (req, res) => {
     const client = await pool.connect();
+
     try {
       await client.query("BEGIN");
 
@@ -328,7 +361,9 @@ router.post(
       const details = clean(req.body?.details);
       const suspension_type = clean(req.body?.suspension_type);
 
-      const start_date = toDate(req.body?.suspension_start ?? req.body?.start_date);
+      const start_date = toDate(
+        req.body?.suspension_start ?? req.body?.start_date
+      );
       const end_date = toDate(req.body?.suspension_end ?? req.body?.end_date);
 
       const days_of_suspension = toNum(req.body?.days_of_suspension);
@@ -344,7 +379,9 @@ router.post(
       const prorated_postage = toNum(req.body?.prorated_postage);
       const total_deduction = toNum(req.body?.total_deduction);
 
-      const attachment_path = req.file ? `/uploads/suspension/${req.file.filename}` : null;
+      const attachment_path = req.file
+        ? `/uploads/suspension/${req.file.filename}`
+        : null;
       const attachment_name = req.file ? clean(req.file.originalname) : null;
       const attachment_mime = req.file ? clean(req.file.mimetype) : null;
 
@@ -352,22 +389,29 @@ router.post(
         await client.query("ROLLBACK");
         return res.status(400).json({ message: "Employee is required" });
       }
+
       if (!suspension_type) {
         await client.query("ROLLBACK");
         return res.status(400).json({ message: "Suspension type is required" });
       }
+
       if (!start_date) {
         await client.query("ROLLBACK");
         return res.status(400).json({ message: "Start date is required" });
       }
+
       if (!end_date) {
         await client.query("ROLLBACK");
         return res.status(400).json({ message: "End date is required" });
       }
+
       if (days_of_suspension <= 0) {
         await client.query("ROLLBACK");
-        return res.status(400).json({ message: "Days of suspension is required" });
+        return res.status(400).json({
+          message: "Days of suspension is required",
+        });
       }
+
       if (!reason) {
         await client.query("ROLLBACK");
         return res.status(400).json({ message: "Reason is required" });
@@ -394,11 +438,14 @@ router.post(
         return res.status(403).json({ message: "Access denied" });
       }
 
-      const employee_name = clean(req.body?.employee_name) || clean(staff.fullname);
+      const employee_name =
+        clean(req.body?.employee_name) || clean(staff.fullname);
 
-      const seq = await client.query(`SELECT nextval('public.suspension_orders_id_seq') AS n`);
+      const seq = await client.query(
+        `SELECT nextval('public.suspension_orders_id_seq') AS n`
+      );
       const n = Number(seq.rows?.[0]?.n || 0);
-      const order_no = `SUS-${String(n).padStart(8, "0")}`;
+      const order_no = `SUS-${String(n).padStart(6, "0")}`;
 
       let initialStage = STAGE_AREA;
       let areaStatus = "Pending";
@@ -408,11 +455,18 @@ router.post(
 
       if (isAdmin(req) || isHr(req) || isAccounting(req)) {
         initialStage = STAGE_ADMIN;
-      } else if (isAssistantVicePresident(req) || isVicePresident(req) || isSeniorVicePresident(req) || isPresident(req)) {
+      } else if (
+        isAssistantVicePresident(req) ||
+        isVicePresident(req) ||
+        isSeniorVicePresident(req) ||
+        isPresident(req)
+      ) {
         initialStage = STAGE_AVP;
       } else if (isRegionalManager(req)) {
         initialStage = STAGE_RM;
       }
+
+      const createdBy = toInt(req.user?.id);
 
       const ins = await client.query(
         `
@@ -497,7 +551,7 @@ router.post(
           avpStatus,
           adminStatus,
           LABELS[initialStage],
-          req.user?.id ?? null,
+          createdBy,
           clean(staff.last_name),
           clean(staff.first_name),
           clean(staff.middle_name),
@@ -536,10 +590,12 @@ router.put(
   upload.single("attachment"),
   async (req, res) => {
     const client = await pool.connect();
+
     try {
       await client.query("BEGIN");
 
       const id = toInt(req.params.id);
+
       if (!id) {
         await client.query("ROLLBACK");
         return res.status(400).json({ message: "Invalid id" });
@@ -563,7 +619,9 @@ router.put(
 
       if (String(existing.status || "").toLowerCase() === "approved") {
         await client.query("ROLLBACK");
-        return res.status(400).json({ message: "Approved orders cannot be edited" });
+        return res.status(400).json({
+          message: "Approved orders cannot be edited",
+        });
       }
 
       if (!canMutatePendingOrder(req, existing)) {
@@ -576,7 +634,9 @@ router.put(
       const details = clean(req.body?.details);
       const suspension_type = clean(req.body?.suspension_type);
 
-      const start_date = toDate(req.body?.suspension_start ?? req.body?.start_date);
+      const start_date = toDate(
+        req.body?.suspension_start ?? req.body?.start_date
+      );
       const end_date = toDate(req.body?.suspension_end ?? req.body?.end_date);
 
       const days_of_suspension = toNum(req.body?.days_of_suspension);
@@ -596,22 +656,29 @@ router.put(
         await client.query("ROLLBACK");
         return res.status(400).json({ message: "Employee is required" });
       }
+
       if (!suspension_type) {
         await client.query("ROLLBACK");
         return res.status(400).json({ message: "Suspension type is required" });
       }
+
       if (!start_date) {
         await client.query("ROLLBACK");
         return res.status(400).json({ message: "Start date is required" });
       }
+
       if (!end_date) {
         await client.query("ROLLBACK");
         return res.status(400).json({ message: "End date is required" });
       }
+
       if (days_of_suspension <= 0) {
         await client.query("ROLLBACK");
-        return res.status(400).json({ message: "Days of suspension is required" });
+        return res.status(400).json({
+          message: "Days of suspension is required",
+        });
       }
+
       if (!reason) {
         await client.query("ROLLBACK");
         return res.status(400).json({ message: "Reason is required" });
@@ -648,7 +715,8 @@ router.put(
         attachment_mime = clean(req.file.mimetype);
       }
 
-      const employee_name = clean(req.body?.employee_name) || clean(staff.fullname);
+      const employee_name =
+        clean(req.body?.employee_name) || clean(staff.fullname);
 
       const upd = await client.query(
         `
@@ -718,7 +786,11 @@ router.put(
 
       await client.query("COMMIT");
 
-      if (req.file && existing.attachment_path && existing.attachment_path !== attachment_path) {
+      if (
+        req.file &&
+        existing.attachment_path &&
+        existing.attachment_path !== attachment_path
+      ) {
         removeStoredFile(existing.attachment_path);
       }
 
@@ -750,10 +822,12 @@ router.delete(
   ]),
   async (req, res) => {
     const client = await pool.connect();
+
     try {
       await client.query("BEGIN");
 
       const id = toInt(req.params.id);
+
       if (!id) {
         await client.query("ROLLBACK");
         return res.status(400).json({ message: "Invalid id" });
@@ -773,7 +847,9 @@ router.delete(
 
       if (String(existing.status || "").toLowerCase() === "approved") {
         await client.query("ROLLBACK");
-        return res.status(400).json({ message: "Approved orders cannot be deleted" });
+        return res.status(400).json({
+          message: "Approved orders cannot be deleted",
+        });
       }
 
       if (!canMutatePendingOrder(req, existing)) {
@@ -781,11 +857,15 @@ router.delete(
         return res.status(403).json({ message: "Access denied" });
       }
 
-      await client.query(`DELETE FROM public.suspension_orders WHERE id = $1`, [id]);
+      await client.query(`DELETE FROM public.suspension_orders WHERE id = $1`, [
+        id,
+      ]);
       await client.query("COMMIT");
 
       if (existing.attachment_path) removeStoredFile(existing.attachment_path);
-      if (existing.approved_attachment_path) removeStoredFile(existing.approved_attachment_path);
+      if (existing.approved_attachment_path) {
+        removeStoredFile(existing.approved_attachment_path);
+      }
 
       return res.json({ message: "Suspension order deleted successfully" });
     } catch (e) {
@@ -798,55 +878,66 @@ router.delete(
   }
 );
 
-router.get("/suspension-orders/:id/download/:type", requireAuth, async (req, res) => {
-  try {
-    const id = toInt(req.params.id);
-    const type = clean(req.params.type).toLowerCase();
+router.get(
+  "/suspension-orders/:id/download/:type",
+  requireAuth,
+  async (req, res) => {
+    try {
+      const id = toInt(req.params.id);
+      const type = clean(req.params.type).toLowerCase();
 
-    if (!id) return res.status(400).json({ message: "Invalid id" });
-    if (!["request", "approved"].includes(type)) {
-      return res.status(400).json({ message: "Invalid file type" });
+      if (!id) return res.status(400).json({ message: "Invalid id" });
+
+      if (!["request", "approved"].includes(type)) {
+        return res.status(400).json({ message: "Invalid file type" });
+      }
+
+      const r = await pool.query(
+        `SELECT * FROM public.suspension_orders WHERE id = $1`,
+        [id]
+      );
+
+      if (r.rowCount === 0) {
+        return res.status(404).json({
+          message: "Suspension order not found",
+        });
+      }
+
+      const row = r.rows[0];
+
+      if (type === "request" && !canDownloadRequestFile(req)) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      if (type === "approved" && !canDownloadApprovedFile(req, row)) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      const storedPath =
+        type === "request" ? row.attachment_path : row.approved_attachment_path;
+      const storedName =
+        type === "request" ? row.attachment_name : row.approved_attachment_name;
+
+      if (!storedPath) {
+        return res.status(404).json({ message: "No attachment found" });
+      }
+
+      const filePath = path.join(process.cwd(), storedPath.replace(/^\/+/, ""));
+
+      if (!fs.existsSync(filePath)) {
+        return res.status(404).json({ message: "Stored file not found" });
+      }
+
+      return res.download(filePath, storedName || path.basename(filePath));
+    } catch (e) {
+      console.error(
+        "GET /api/suspension-orders/:id/download/:type ERROR:",
+        e.message
+      );
+      return res.status(500).json({ message: "Server error" });
     }
-
-    const r = await pool.query(
-      `SELECT * FROM public.suspension_orders WHERE id = $1`,
-      [id]
-    );
-
-    if (r.rowCount === 0) {
-      return res.status(404).json({ message: "Suspension order not found" });
-    }
-
-    const row = r.rows[0];
-
-    if (type === "request" && !canDownloadRequestFile(req)) {
-      return res.status(403).json({ message: "Access denied" });
-    }
-
-    if (type === "approved" && !canDownloadApprovedFile(req, row)) {
-      return res.status(403).json({ message: "Access denied" });
-    }
-
-    const storedPath =
-      type === "request" ? row.attachment_path : row.approved_attachment_path;
-    const storedName =
-      type === "request" ? row.attachment_name : row.approved_attachment_name;
-
-    if (!storedPath) {
-      return res.status(404).json({ message: "No attachment found" });
-    }
-
-    const filePath = path.join(process.cwd(), storedPath.replace(/^\/+/, ""));
-    if (!fs.existsSync(filePath)) {
-      return res.status(404).json({ message: "Stored file not found" });
-    }
-
-    return res.download(filePath, storedName || path.basename(filePath));
-  } catch (e) {
-    console.error("GET /api/suspension-orders/:id/download/:type ERROR:", e.message);
-    return res.status(500).json({ message: "Server error" });
   }
-});
+);
 
 router.post(
   "/suspension-orders/:id/approved-file",
@@ -856,8 +947,13 @@ router.post(
   async (req, res) => {
     try {
       const id = toInt(req.params.id);
+
       if (!id) return res.status(400).json({ message: "Invalid id" });
-      if (!req.file) return res.status(400).json({ message: "Attachment is required" });
+
+      if (!req.file) {
+        return res.status(400).json({ message: "Attachment is required" });
+      }
+
       if (!canUploadApprovedFile(req)) {
         return res.status(403).json({ message: "Access denied" });
       }
@@ -868,7 +964,9 @@ router.post(
       );
 
       if (existing.rowCount === 0) {
-        return res.status(404).json({ message: "Suspension order not found" });
+        return res.status(404).json({
+          message: "Suspension order not found",
+        });
       }
 
       const row = existing.rows[0];
@@ -892,13 +990,19 @@ router.post(
         ]
       );
 
-      if (oldApprovedPath && oldApprovedPath !== `/uploads/suspension/${req.file.filename}`) {
+      if (
+        oldApprovedPath &&
+        oldApprovedPath !== `/uploads/suspension/${req.file.filename}`
+      ) {
         removeStoredFile(oldApprovedPath);
       }
 
       return res.json(result.rows[0]);
     } catch (e) {
-      console.error("POST /api/suspension-orders/:id/approved-file ERROR:", e.message);
+      console.error(
+        "POST /api/suspension-orders/:id/approved-file ERROR:",
+        e.message
+      );
       return res.status(500).json({ message: e?.message || "Server error" });
     }
   }
@@ -907,6 +1011,7 @@ router.post(
 router.put("/suspension-orders/:id/approve", requireAuth, async (req, res) => {
   try {
     const id = toInt(req.params.id);
+
     if (!id) return res.status(400).json({ message: "Invalid id" });
 
     const existingRes = await pool.query(
@@ -915,17 +1020,23 @@ router.put("/suspension-orders/:id/approve", requireAuth, async (req, res) => {
     );
 
     if (existingRes.rowCount === 0) {
-      return res.status(404).json({ message: "Suspension order not found" });
+      return res.status(404).json({
+        message: "Suspension order not found",
+      });
     }
 
     const row = existingRes.rows[0];
     const currentStage = getCurrentStage(row);
+    const approverId = toInt(req.user?.id);
+    const approverText = String(approverId || "");
 
     let result;
 
     if (isAreaManager(req)) {
       if (currentStage !== STAGE_AREA) {
-        return res.status(400).json({ message: "This order is not pending Area Manager approval" });
+        return res.status(400).json({
+          message: "This order is not pending Area Manager approval",
+        });
       }
 
       result = await pool.query(
@@ -943,11 +1054,13 @@ router.put("/suspension-orders/:id/approve", requireAuth, async (req, res) => {
         WHERE id = $1
         RETURNING *;
         `,
-        [id, req.user?.id ?? null, STAGE_RM, LABELS[STAGE_RM]]
+        [id, approverId, STAGE_RM, LABELS[STAGE_RM]]
       );
     } else if (isRegionalManager(req)) {
       if (currentStage !== STAGE_RM) {
-        return res.status(400).json({ message: "This order is not pending Regional Manager approval" });
+        return res.status(400).json({
+          message: "This order is not pending Regional Manager approval",
+        });
       }
 
       result = await pool.query(
@@ -965,11 +1078,13 @@ router.put("/suspension-orders/:id/approve", requireAuth, async (req, res) => {
         WHERE id = $1
         RETURNING *;
         `,
-        [id, req.user?.id ?? null, STAGE_AVP, LABELS[STAGE_AVP]]
+        [id, approverId, STAGE_AVP, LABELS[STAGE_AVP]]
       );
     } else if (isAssistantVicePresident(req)) {
       if (currentStage !== STAGE_AVP) {
-        return res.status(400).json({ message: "This order is not pending Assistant Vice President approval" });
+        return res.status(400).json({
+          message: "This order is not pending Assistant Vice President approval",
+        });
       }
 
       result = await pool.query(
@@ -987,11 +1102,13 @@ router.put("/suspension-orders/:id/approve", requireAuth, async (req, res) => {
         WHERE id = $1
         RETURNING *;
         `,
-        [id, req.user?.id ?? null, STAGE_ADMIN, LABELS[STAGE_ADMIN]]
+        [id, approverId, STAGE_ADMIN, LABELS[STAGE_ADMIN]]
       );
     } else if (isAdmin(req) || isHr(req) || isAccounting(req)) {
       if (currentStage !== STAGE_ADMIN) {
-        return res.status(400).json({ message: "This order is not pending Admin/HR/Accounting approval" });
+        return res.status(400).json({
+          message: "This order is not pending Admin/HR/Accounting approval",
+        });
       }
 
       result = await pool.query(
@@ -1001,9 +1118,9 @@ router.put("/suspension-orders/:id/approve", requireAuth, async (req, res) => {
           admin_status = 'Approved',
           admin_approved_by = $2,
           admin_approved_at = NOW(),
-          approved_by = $2,
+          approved_by = $3,
           approved_at = NOW(),
-          approval_stage = $3,
+          approval_stage = $4,
           status = 'Approved',
           rejected_by = NULL,
           rejected_at = NULL,
@@ -1011,14 +1128,16 @@ router.put("/suspension-orders/:id/approve", requireAuth, async (req, res) => {
         WHERE id = $1
         RETURNING *;
         `,
-        [id, req.user?.id ?? null, STAGE_ADMIN]
+        [id, approverId, approverText, STAGE_ADMIN]
       );
     } else {
       return res.status(403).json({ message: "Access denied" });
     }
 
     if (result.rowCount === 0) {
-      return res.status(400).json({ message: "Not found or invalid approval stage" });
+      return res.status(400).json({
+        message: "Not found or invalid approval stage",
+      });
     }
 
     return res.json(result.rows[0]);
@@ -1031,11 +1150,15 @@ router.put("/suspension-orders/:id/approve", requireAuth, async (req, res) => {
 router.put("/suspension-orders/:id/reject", requireAuth, async (req, res) => {
   try {
     const id = toInt(req.params.id);
+
     if (!id) return res.status(400).json({ message: "Invalid id" });
 
     const reason = clean(req.body?.reason);
+
     if (!reason) {
-      return res.status(400).json({ message: "Rejection reason is required" });
+      return res.status(400).json({
+        message: "Rejection reason is required",
+      });
     }
 
     const existingRes = await pool.query(
@@ -1044,17 +1167,25 @@ router.put("/suspension-orders/:id/reject", requireAuth, async (req, res) => {
     );
 
     if (existingRes.rowCount === 0) {
-      return res.status(404).json({ message: "Suspension order not found" });
+      return res.status(404).json({
+        message: "Suspension order not found",
+      });
     }
 
     const row = existingRes.rows[0];
     const currentStage = getCurrentStage(row);
+    const rejecterId = toInt(req.user?.id);
 
     let allowed = false;
+
     if (isAreaManager(req) && currentStage === STAGE_AREA) allowed = true;
     if (isRegionalManager(req) && currentStage === STAGE_RM) allowed = true;
-    if (isAssistantVicePresident(req) && currentStage === STAGE_AVP) allowed = true;
-    if ((isAdmin(req) || isHr(req) || isAccounting(req)) && currentStage === STAGE_ADMIN) allowed = true;
+    if (isAssistantVicePresident(req) && currentStage === STAGE_AVP) {
+      allowed = true;
+    }
+    if ((isAdmin(req) || isHr(req) || isAccounting(req)) && currentStage === STAGE_ADMIN) {
+      allowed = true;
+    }
 
     if (!allowed) {
       return res.status(403).json({ message: "Access denied" });
@@ -1073,7 +1204,7 @@ router.put("/suspension-orders/:id/reject", requireAuth, async (req, res) => {
       WHERE id = $1
       RETURNING *;
       `,
-      [id, req.user?.id ?? null, reason]
+      [id, rejecterId, reason]
     );
 
     return res.json(r.rows[0]);

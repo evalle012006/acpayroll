@@ -202,6 +202,17 @@ export default function Transactions() {
         "president",
       ],
     },
+    {
+      title: "Staff Accounts Payable",
+      desc: "Create and approve staff accounts payable.",
+      path: "/transactions/staff-accounts-payable",
+      roles: [
+        "admin",
+        "president",
+        "hr",
+        "accounting",
+      ],
+    },
   ];
 
   const filteredCards = cards.filter((c) => c.roles.includes(role));

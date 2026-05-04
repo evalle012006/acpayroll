@@ -2,7 +2,6 @@ import React, { useMemo, useState } from "react";
 import "../styles/Approval.css";
 
 import LoanApprovalTab from "../components/approvals/LoanApprovalTab";
-import SAPApprovalTab from "../components/approvals/SAPApprovalTab";
 import ReimbursementApprovalTab from "../components/approvals/ReimbursementApprovalTab";
 
 const readUser = () => {
@@ -18,17 +17,8 @@ const norm = (v) => String(v ?? "").trim().toLowerCase();
 export default function Approval() {
   const user = useMemo(() => readUser(), []);
   const role = norm(user?.role);
-
-  const canSeeSAP =
-    role === "admin" ||
-    role === "president" ||
-    role === "hr" ||
-    role === "accounting";
-
   const [activeTab, setActiveTab] = useState("loan");
-
-  const safeActiveTab =
-    activeTab === "sap" && !canSeeSAP ? "loan" : activeTab;
+  const safeActiveTab = activeTab;
 
   return (
     <div className="approval-page">
@@ -50,16 +40,6 @@ export default function Approval() {
           Loan Requests
         </button>
 
-        {canSeeSAP && (
-          <button
-            type="button"
-            className={safeActiveTab === "sap" ? "active" : ""}
-            onClick={() => setActiveTab("sap")}
-          >
-            Staff Accounts Payable
-          </button>
-        )}
-
         <button
           type="button"
           className={safeActiveTab === "reimbursement" ? "active" : ""}
@@ -71,7 +51,6 @@ export default function Approval() {
 
       <div className="approval-content">
         {safeActiveTab === "loan" && <LoanApprovalTab />}
-        {safeActiveTab === "sap" && canSeeSAP && <SAPApprovalTab />}
         {safeActiveTab === "reimbursement" && <ReimbursementApprovalTab />}
       </div>
     </div>

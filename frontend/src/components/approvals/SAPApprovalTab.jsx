@@ -40,10 +40,7 @@ export default function SAPApprovalTab() {
 
   const [sapRows, setSapRows] = useState([]);
   const [staffList, setStaffList] = useState([]);
-
-  const [showSapModal, setShowSapModal] = useState(false);
   const [showCreateSAP, setShowCreateSAP] = useState(false);
-
   const [loadingSap, setLoadingSap] = useState(false);
   const [creatingSap, setCreatingSap] = useState(false);
   const [processingId, setProcessingId] = useState("");
@@ -68,41 +65,32 @@ export default function SAPApprovalTab() {
     window.location.href = "/login";
   }, []);
 
-  const safeGet = useCallback(
-    async (url, setLoading) => {
-      try {
-        setLoading(true);
-        const res = await api.get(url);
-        return Array.isArray(res.data) ? res.data : [];
-      } catch (err) {
-        console.error(`GET ${url} failed:`, err?.response?.data || err.message);
-        if (err?.response?.status === 401) logout();
-        return [];
-      } finally {
-        setLoading(false);
-      }
-    },
-    [logout]
-  );
-
   const fetchStaff = useCallback(async () => {
     try {
       const res = await api.get("/staff");
       setStaffList(Array.isArray(res.data) ? res.data : []);
     } catch (err) {
-      console.error("Failed to fetch staff:", err?.response?.data || err.message);
       if (err?.response?.status === 401) logout();
       setStaffList([]);
     }
   }, [logout]);
 
   const fetchSap = useCallback(async () => {
-    const data = await safeGet("/staff-accounts-payable", setLoadingSap);
-    setSapRows(data);
-  }, [safeGet]);
+    try {
+      setLoadingSap(true);
+      const res = await api.get("/staff-accounts-payable");
+      setSapRows(Array.isArray(res.data) ? res.data : []);
+    } catch (err) {
+      if (err?.response?.status === 401) logout();
+      setSapRows([]);
+    } finally {
+      setLoadingSap(false);
+    }
+  }, [logout]);
 
   useEffect(() => {
     const token = localStorage.getItem("token");
+
     if (!user || !token) {
       window.location.href = "/login";
       return;
@@ -115,12 +103,10 @@ export default function SAPApprovalTab() {
   }, [user, canViewSAP, fetchStaff, fetchSap]);
 
   useEffect(() => {
-    const isOpen = showSapModal || showCreateSAP;
-    if (!isOpen) return;
+    if (!showCreateSAP) return;
 
     const onKeyDown = (e) => {
       if (e.key === "Escape") {
-        setShowSapModal(false);
         setShowCreateSAP(false);
         setShowSapEmployeeDropdown(false);
       }
@@ -141,7 +127,7 @@ export default function SAPApprovalTab() {
       document.removeEventListener("mousedown", onMouseDown);
       document.body.style.overflow = "";
     };
-  }, [showSapModal, showCreateSAP]);
+  }, [showCreateSAP]);
 
   const buildStaffDisplay = useCallback((s) => {
     if (!s) return "-";
@@ -164,10 +150,7 @@ export default function SAPApprovalTab() {
   }, [staffList]);
 
   const staffDisplayName = useCallback(
-    (staffId) => {
-      const s = staffMap.get(String(staffId));
-      return buildStaffDisplay(s);
-    },
+    (staffId) => buildStaffDisplay(staffMap.get(String(staffId))),
     [staffMap, buildStaffDisplay]
   );
 
@@ -212,8 +195,7 @@ export default function SAPApprovalTab() {
   const sapPreview = useMemo(() => {
     const amount = toNum(sapForm.amount);
     const term = Math.max(1, toNum(sapForm.term));
-    const per_month = term ? amount / term : 0;
-    return { per_month };
+    return { per_month: term ? amount / term : 0 };
   }, [sapForm.amount, sapForm.term]);
 
   const handleSapEmployeeSelect = (employeeId) => {
@@ -274,7 +256,6 @@ export default function SAPApprovalTab() {
       setShowCreateSAP(false);
       await fetchSap();
     } catch (err) {
-      console.error("Failed to create SAP:", err?.response?.data || err.message);
       if (err?.response?.status === 401) return logout();
       alert(err?.response?.data?.message || "Failed to add Staff Accounts Payable.");
     } finally {
@@ -299,7 +280,6 @@ export default function SAPApprovalTab() {
       alert(`SAP ${status.toLowerCase()} successfully.`);
       await fetchSap();
     } catch (err) {
-      console.error("SAP update error:", err?.response?.data || err.message);
       if (err?.response?.status === 401) return logout();
       if (err?.response?.status === 403) return alert("Access denied.");
       alert(err?.response?.data?.message || "Failed to update SAP.");
@@ -313,67 +293,149 @@ export default function SAPApprovalTab() {
     [sapRows]
   );
 
-  if (!canViewSAP) {
-    return null;
-  }
+  if (!canViewSAP) return null;
 
   return (
     <>
-      <div className="approval-grid">
-        <div className="approval-card">
-          <div className="approval-card-head">
-            <div>
-              <div className="approval-card-title">Staff Accounts Payable</div>
-              <div className="approval-card-meta">
-                Pending: <span className="pill">{sapPendingCount}</span>
-              </div>
-            </div>
+      <div className="reg-topbar">
+        <div className="reg-topbar-actions">
+          <button type="button" className="reg-btn reg-btn-outline" onClick={fetchSap}>
+            Refresh
+          </button>
 
-            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-              {canCreateSAP && (
-                <button
-                  className="btn-secondary"
-                  onClick={() => setShowCreateSAP(true)}
-                  type="button"
-                >
-                  + Staff Accounts Payable
-                </button>
+          {canCreateSAP && (
+            <button
+              type="button"
+              className="reg-btn reg-btn-primary"
+              onClick={() => setShowCreateSAP(true)}
+            >
+              + Staff Accounts Payable
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div className="reg-card">
+        <div className="reg-table-wrap">
+          <table className="reg-table">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Employee No</th>
+                <th>Employee</th>
+                <th>Description</th>
+                <th>Amount</th>
+                <th>Term</th>
+                <th>Per Month</th>
+                <th>Balance</th>
+                <th>Status</th>
+                <th>Dates</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+
+            <tbody>
+              {loadingSap ? (
+                <tr>
+                  <td colSpan={11} className="reg-empty">
+                    Loading...
+                  </td>
+                </tr>
+              ) : sapRows.length === 0 ? (
+                <tr>
+                  <td colSpan={11} className="reg-empty">
+                    No Staff Accounts Payable records found.
+                  </td>
+                </tr>
+              ) : (
+                sapRows.map((x) => (
+                  <tr key={x.id ?? `${x.employee_id}-${x.description}`}>
+                    <td>{x.id ?? "-"}</td>
+                    <td>{x.employee_no || "-"}</td>
+                    <td>
+                      <strong>{x.staff_name || staffDisplayName(x.employee_id)}</strong>
+                      <div style={{ fontSize: 12, opacity: 0.75 }}>
+                        Employee ID: {x.employee_id || "-"}
+                      </div>
+                    </td>
+                    <td>{x.description || "-"}</td>
+                    <td>₱ {fmtMoney(x.amount)}</td>
+                    <td>{x.term || "-"}</td>
+                    <td>₱ {fmtMoney(x.per_month)}</td>
+                    <td>₱ {fmtMoney(x.balance)}</td>
+                    <td>
+                      <span className={badgeClass(x.status)}>{x.status || "Pending"}</span>
+                    </td>
+                    <td style={{ fontSize: 12 }}>
+                      <div>Approved: {fmtDate(x.approved_at)}</div>
+                      <div>Rejected: {fmtDate(x.rejected_at)}</div>
+                    </td>
+                    <td>
+                      {x.status === "Pending" && canApproveSAP ? (
+                        <div className="reg-row-actions">
+                          <button
+                            className="reg-mini-btn reg-approve"
+                            onClick={() => updateSapStatus(x.id, "Approved")}
+                            type="button"
+                            disabled={processingId === `sap-${x.id}-Approved`}
+                          >
+                            {processingId === `sap-${x.id}-Approved`
+                              ? "Approving..."
+                              : "Approve"}
+                          </button>
+
+                          <button
+                            className="reg-mini-btn reg-reject"
+                            onClick={() => {
+                              const reason = window.prompt("Reason for rejection?");
+                              if (!reason || !String(reason).trim()) {
+                                alert("Rejection reason is required.");
+                                return;
+                              }
+                              updateSapStatus(x.id, "Rejected", String(reason).trim());
+                            }}
+                            type="button"
+                            disabled={processingId === `sap-${x.id}-Rejected`}
+                          >
+                            {processingId === `sap-${x.id}-Rejected`
+                              ? "Rejecting..."
+                              : "Reject"}
+                          </button>
+                        </div>
+                      ) : (
+                        "-"
+                      )}
+                    </td>
+                  </tr>
+                ))
               )}
-              <button className="btn-primary" onClick={() => setShowSapModal(true)} type="button">
-                View
-              </button>
-            </div>
-          </div>
-
-          <div className="approval-card-body">
-            <div className="mini">
-              {loadingSap ? "Loading SAP..." : "Create payable records and approve/reject them."}
-            </div>
-          </div>
+            </tbody>
+          </table>
         </div>
       </div>
 
       {canCreateSAP && showCreateSAP && (
         <div
-          className="modal-overlay"
+          className="reg-modal-overlay"
           onMouseDown={(e) =>
-            e.target.classList.contains("modal-overlay") && setShowCreateSAP(false)
+            e.target.classList.contains("reg-modal-overlay") && setShowCreateSAP(false)
           }
         >
-          <div className="modal saas-modal" onMouseDown={(e) => e.stopPropagation()}>
-            <div className="modal-head">
+          <div className="reg-modal" onMouseDown={(e) => e.stopPropagation()}>
+            <div className="reg-modal-head">
               <div>
-                <h3 className="modal-title">Add Staff Accounts Payable</h3>
-                <p className="modal-subtitle">Creates a payable record for the employee</p>
+                <h3 className="reg-modal-title">Add Staff Accounts Payable</h3>
+                <p className="reg-subtitle">Creates a payable record for the employee</p>
               </div>
-              <button className="modal-x" type="button" onClick={() => setShowCreateSAP(false)}>
+
+              <button className="reg-x" type="button" onClick={() => setShowCreateSAP(false)}>
                 ✕
               </button>
             </div>
 
-            <form onSubmit={handleCreateSAP} className="modal-form">
-              <div className="modal-grid">
-                <div className="form-group full approval-search-select" ref={sapEmployeeBoxRef}>
+            <form onSubmit={handleCreateSAP} className="reg-form">
+              <div className="reg-grid">
+                <div className="reg-field full" ref={sapEmployeeBoxRef} style={{ position: "relative" }}>
                   <label>Employee</label>
                   <input
                     type="text"
@@ -394,16 +456,16 @@ export default function SAPApprovalTab() {
                   />
 
                   {showSapEmployeeDropdown && (
-                    <div className="approval-search-dropdown">
+                    <div className="reg-search-dropdown">
                       {filteredSapEmployees.length === 0 ? (
-                        <div className="approval-search-empty">No employee found</div>
+                        <div className="reg-search-empty">No employee found</div>
                       ) : (
                         filteredSapEmployees.map((s) => (
                           <button
                             key={s.id}
                             type="button"
                             onClick={() => handleSapEmployeeSelect(s.id)}
-                            className="approval-search-item"
+                            className="reg-search-item"
                           >
                             {s.employee_no ? `${s.employee_no} - ` : ""}
                             {s._display}
@@ -414,17 +476,17 @@ export default function SAPApprovalTab() {
                   )}
                 </div>
 
-                <div className="form-group">
+                <div className="reg-field">
                   <label>Employee No</label>
                   <input value={sapForm.employee_no} readOnly placeholder="Auto-filled" />
                 </div>
 
-                <div className="form-group">
+                <div className="reg-field">
                   <label>Staff Name</label>
                   <input value={sapForm.staff_name} readOnly placeholder="Auto-filled" />
                 </div>
 
-                <div className="form-group full">
+                <div className="reg-field full">
                   <label>Description</label>
                   <textarea
                     value={sapForm.description}
@@ -433,7 +495,7 @@ export default function SAPApprovalTab() {
                   />
                 </div>
 
-                <div className="form-group">
+                <div className="reg-field">
                   <label>Total Amount</label>
                   <input
                     type="number"
@@ -452,7 +514,7 @@ export default function SAPApprovalTab() {
                   />
                 </div>
 
-                <div className="form-group">
+                <div className="reg-field">
                   <label>Term (Months)</label>
                   <input
                     type="number"
@@ -462,7 +524,7 @@ export default function SAPApprovalTab() {
                   />
                 </div>
 
-                <div className="form-group">
+                <div className="reg-field">
                   <label>Balance</label>
                   <input
                     type="number"
@@ -471,146 +533,27 @@ export default function SAPApprovalTab() {
                     required
                   />
                 </div>
-              </div>
 
-              <div className="preview-box">
-                <div>
-                  <span>Per Month</span>
-                  <strong>₱ {sapPreview.per_month.toFixed(2)}</strong>
+                <div className="reg-field">
+                  <label>Per Month</label>
+                  <input value={`₱ ${sapPreview.per_month.toFixed(2)}`} readOnly />
                 </div>
               </div>
 
-              <div className="modal-buttons">
+              <div className="reg-modal-actions">
                 <button
-                  className="btn-secondary"
+                  className="reg-btn reg-btn-outline"
                   type="button"
                   onClick={() => setShowCreateSAP(false)}
                 >
                   Cancel
                 </button>
-                <button className="btn-primary" type="submit" disabled={creatingSap}>
+
+                <button className="reg-btn reg-btn-primary" type="submit" disabled={creatingSap}>
                   {creatingSap ? "Saving..." : "Save"}
                 </button>
               </div>
             </form>
-          </div>
-        </div>
-      )}
-
-      {showSapModal && (
-        <div
-          className="modal-overlay"
-          onMouseDown={(e) => e.target.classList.contains("modal-overlay") && setShowSapModal(false)}
-        >
-          <div className="modal saas-modal" onMouseDown={(e) => e.stopPropagation()}>
-            <div className="modal-head">
-              <div>
-                <h3 className="modal-title">Staff Accounts Payable</h3>
-                <p className="modal-subtitle">Approve/Reject is Admin, President, HR, and Accounting</p>
-              </div>
-              <button className="modal-x" type="button" onClick={() => setShowSapModal(false)}>
-                ✕
-              </button>
-            </div>
-
-            <div className="table-card">
-              <div className="table-wrap">
-                <table className="table">
-                  <thead>
-                    <tr>
-                      <th>ID</th>
-                      <th>Employee</th>
-                      <th>Description</th>
-                      <th>Amount</th>
-                      <th>Term</th>
-                      <th>Per Month</th>
-                      <th>Balance</th>
-                      <th>Status</th>
-                      <th>Dates</th>
-                      <th>Action</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {sapRows.length === 0 ? (
-                      <tr>
-                        <td colSpan={10} className="empty-state">
-                          No SAP records found.
-                        </td>
-                      </tr>
-                    ) : (
-                      sapRows.map((x) => (
-                        <tr key={x.id ?? `${x.employee_id}-${x.description}`}>
-                          <td>{x.id ?? "-"}</td>
-                          <td className="td-strong">
-                            {x.staff_name || staffDisplayName(x.employee_id)}
-                            <div style={{ fontSize: 12, opacity: 0.8 }}>
-                              Employee ID: {x.employee_id || "-"} • Employee No: {x.employee_no || "-"}
-                            </div>
-                          </td>
-                          <td title={x.description || ""}>{x.description || "-"}</td>
-                          <td>₱ {fmtMoney(x.amount)}</td>
-                          <td>{x.term}</td>
-                          <td>₱ {fmtMoney(x.per_month)}</td>
-                          <td>₱ {fmtMoney(x.balance)}</td>
-                          <td>
-                            <span className={badgeClass(x.status)}>{x.status}</span>
-                          </td>
-                          <td style={{ fontSize: 12, opacity: 0.85 }}>
-                            <div>Approved: {fmtDate(x.approved_at)}</div>
-                            <div>Rejected: {fmtDate(x.rejected_at)}</div>
-                          </td>
-                          <td>
-                            {x.status === "Pending" ? (
-                              canApproveSAP ? (
-                                <div className="row-actions">
-                                  <button
-                                    className="btn-success"
-                                    onClick={() => updateSapStatus(x.id, "Approved")}
-                                    type="button"
-                                    disabled={processingId === `sap-${x.id}-Approved`}
-                                  >
-                                    {processingId === `sap-${x.id}-Approved`
-                                      ? "Approving..."
-                                      : "Approve"}
-                                  </button>
-                                  <button
-                                    className="btn-danger"
-                                    onClick={() => {
-                                      const reason = window.prompt("Reason for rejection?");
-                                      if (!reason || !String(reason).trim()) {
-                                        alert("Rejection reason is required.");
-                                        return;
-                                      }
-                                      updateSapStatus(x.id, "Rejected", String(reason).trim());
-                                    }}
-                                    type="button"
-                                    disabled={processingId === `sap-${x.id}-Rejected`}
-                                  >
-                                    {processingId === `sap-${x.id}-Rejected`
-                                      ? "Rejecting..."
-                                      : "Reject"}
-                                  </button>
-                                </div>
-                              ) : (
-                                "-"
-                              )
-                            ) : (
-                              "-"
-                            )}
-                          </td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-
-            <div className="modal-buttons">
-              <button className="btn-secondary" type="button" onClick={() => setShowSapModal(false)}>
-                Close
-              </button>
-            </div>
           </div>
         </div>
       )}
