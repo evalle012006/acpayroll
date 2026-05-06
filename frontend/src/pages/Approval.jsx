@@ -3,6 +3,7 @@ import "../styles/Approval.css";
 
 import LoanApprovalTab from "../components/approvals/LoanApprovalTab";
 import ReimbursementApprovalTab from "../components/approvals/ReimbursementApprovalTab";
+import CBUWithdrawApprovalTab from "../components/approvals/CBUWithdrawApprovalTab";
 
 const readUser = () => {
   try {
@@ -17,6 +18,7 @@ const norm = (v) => String(v ?? "").trim().toLowerCase();
 export default function Approval() {
   const user = useMemo(() => readUser(), []);
   const role = norm(user?.role);
+
   const [activeTab, setActiveTab] = useState("loan");
   const safeActiveTab = activeTab;
 
@@ -26,7 +28,7 @@ export default function Approval() {
         <div>
           <h2 className="approval-title">Approvals</h2>
           <p className="approval-subtitle">
-            Loan approvals, staff accounts payable, and reimbursement requests
+            Loan approvals, CBU withdrawals, and reimbursement requests
           </p>
         </div>
       </div>
@@ -42,6 +44,14 @@ export default function Approval() {
 
         <button
           type="button"
+          className={safeActiveTab === "cbu" ? "active" : ""}
+          onClick={() => setActiveTab("cbu")}
+        >
+          CBU Withdraw
+        </button>
+
+        <button
+          type="button"
           className={safeActiveTab === "reimbursement" ? "active" : ""}
           onClick={() => setActiveTab("reimbursement")}
         >
@@ -51,6 +61,7 @@ export default function Approval() {
 
       <div className="approval-content">
         {safeActiveTab === "loan" && <LoanApprovalTab />}
+        {safeActiveTab === "cbu" && <CBUWithdrawApprovalTab />}
         {safeActiveTab === "reimbursement" && <ReimbursementApprovalTab />}
       </div>
     </div>

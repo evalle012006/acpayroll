@@ -10,6 +10,19 @@ const loanTypes = [
   "Pag-ibig Loan",
 ];
 
+const loanPurposes = [
+  "Emergency",
+  "Medical",
+  "Hospital Bill",
+  "Drivers License",
+  "Motorcycle",
+  "Financial",
+  "Travel",
+  "Mortgage",
+  "Business",
+  "Bill Payment",
+];
+
 const STAGE_LABELS = {
   "area manager": "Area Manager",
   "regional manager": "Regional Manager",
@@ -130,6 +143,7 @@ export default function LoanApprovalTab() {
   const role = norm(user?.role);
 
   const isAdmin = role === "admin";
+  const isIt = role === "it";
   const isHr = role === "hr";
   const isAccounting = role === "accounting";
   const isTread = role === "tread";
@@ -193,6 +207,11 @@ export default function LoanApprovalTab() {
   const [staffList, setStaffList] = useState([]);
   const [branches, setBranches] = useState([]);
 
+  const [searchInput, setSearchInput] = useState("");
+  const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
+
   const [selectedLoanType, setSelectedLoanType] = useState("All");
 
   const [showLoanModal, setShowLoanModal] = useState(false);
@@ -223,6 +242,7 @@ export default function LoanApprovalTab() {
     branch_code: "",
     branch_name: "",
     loan_type: "",
+    loan_purpose: "",
     amount: "",
     term: "",
     interest: "",
@@ -441,13 +461,65 @@ export default function LoanApprovalTab() {
   );
 
   const filteredLoan = useMemo(() => {
+    const q = norm(search);
+
     return loanRequests.filter((item) => {
       if (!canSeeLoanByScope(item)) return false;
 
-      if (selectedLoanType === "All") return true;
-      return item.loan_type === selectedLoanType;
+      if (selectedLoanType !== "All" && item.loan_type !== selectedLoanType) {
+        return false;
+      }
+
+      if (!q) return true;
+
+      const haystack = [
+        item.id,
+        item.staff_id,
+        item.employee_no,
+        item.staff_name,
+        staffDisplayName(item.staff_id),
+        item.applicant_role,
+        item.loan_type,
+        item.loan_purpose,
+        item.amount,
+        item.term,
+        item.interest,
+        item.per_month,
+        item.total,
+        item.status,
+        item.approval_stage,
+        renderChainSummary(item),
+        item.reason,
+        item.created_at,
+        item.approved_at,
+        item.disbursement_date,
+      ]
+        .map((v) => toStr(v).toLowerCase())
+        .join(" ");
+
+      return haystack.includes(q);
     });
-  }, [loanRequests, selectedLoanType, canSeeLoanByScope]);
+  }, [loanRequests, selectedLoanType, canSeeLoanByScope, search, staffDisplayName]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredLoan.length / pageSize));
+
+    const pagedLoan = useMemo(() => {
+      const start = (page - 1) * pageSize;
+      return filteredLoan.slice(start, start + pageSize);
+    }, [filteredLoan, page, pageSize]);
+
+    useEffect(() => {
+      setPage(1);
+    }, [search, selectedLoanType, pageSize]);
+
+    const handleSearch = () => {
+      setSearch(searchInput);
+    };
+
+    const handleClearSearch = () => {
+      setSearchInput("");
+      setSearch("");
+    };
 
   const filteredLoanEmployees = useMemo(() => {
     const q = norm(loanEmployeeSearch);
@@ -486,10 +558,11 @@ export default function LoanApprovalTab() {
       salary: emp?.salary ?? "",
       ecola: emp?.ecola ?? "",
       cbu:
-        emp?.cbu ??
+        emp?.cbu_balance ??
+        emp?.staff_balance_cbu ??
         emp?.current_cbu ??
         emp?.staff_cbu ??
-        emp?.cbu_balance ??
+        emp?.cbu ??
         "",
       date_created: todayDate(),
       branch_id: bid,
@@ -561,6 +634,7 @@ export default function LoanApprovalTab() {
       formData.append("approval_stage", getInitialStageForCurrentUser());
       formData.append("applicant_role", role);
       formData.append("date_created", loanForm.date_created || todayDate());
+      formData.append("loan_purpose", loanForm.loan_purpose);
 
       if (loanForm.attachment) {
         formData.append("attachment", loanForm.attachment);
@@ -854,7 +928,24 @@ export default function LoanApprovalTab() {
                   <label>Loan Type</label>
                   <select
                     value={loanForm.loan_type}
-                    onChange={(e) => setLoanForm((p) => ({ ...p, loan_type: e.target.value }))}
+                    onChange={(e) => {
+                      const value = e.target.value;
+
+                      if (value === "Cash Advance") {
+                        setLoanForm((p) => ({
+                          ...p,
+                          loan_type: value,
+                          amount: 5000,
+                          term: 1,
+                          interest: 0,
+                        }));
+                      } else {
+                        setLoanForm((p) => ({
+                          ...p,
+                          loan_type: value,
+                        }));
+                      }
+                    }}
                     required
                   >
                     <option value="">Select Loan Type</option>
@@ -867,11 +958,30 @@ export default function LoanApprovalTab() {
                 </div>
 
                 <div className="form-group">
+                  <label>Loan Purpose</label>
+                  <select
+                    value={loanForm.loan_purpose}
+                    onChange={(e) =>
+                      setLoanForm((p) => ({ ...p, loan_purpose: e.target.value }))
+                    }
+                    required
+                  >
+                    <option value="">Select Purpose</option>
+                    {loanPurposes.map((p) => (
+                      <option key={p} value={p}>
+                        {p}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="form-group">
                   <label>Amount</label>
                   <input
                     type="number"
                     value={loanForm.amount}
                     onChange={(e) => setLoanForm((p) => ({ ...p, amount: e.target.value }))}
+                    readOnly={loanForm.loan_type === "Cash Advance"}
                     required
                   />
                 </div>
@@ -882,6 +992,7 @@ export default function LoanApprovalTab() {
                     type="number"
                     value={loanForm.term}
                     onChange={(e) => setLoanForm((p) => ({ ...p, term: e.target.value }))}
+                    readOnly={loanForm.loan_type === "Cash Advance"}
                     required
                   />
                 </div>
@@ -892,6 +1003,7 @@ export default function LoanApprovalTab() {
                     type="number"
                     value={loanForm.interest}
                     onChange={(e) => setLoanForm((p) => ({ ...p, interest: e.target.value }))}
+                    readOnly={loanForm.loan_type === "Cash Advance"}
                     required
                   />
                 </div>
@@ -979,24 +1091,40 @@ export default function LoanApprovalTab() {
               ))}
             </div>
 
+            <div className="exit-filter-bar">
+              <div className="exit-search-box">
+                <span className="exit-search-icon">⌕</span>
+                <input
+                  className="exit-search-input"
+                  type="text"
+                  value={searchInput}
+                  onChange={(e) => setSearchInput(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && handleSearch()}
+                  placeholder="Search employee, loan type, status, amount..."
+                />
+              </div>
+
+              <div style={{ display: "flex", gap: 10 }}>
+                <button className="btn-secondary" type="button" onClick={handleSearch}>
+                  Search
+                </button>
+
+                <button className="btn-secondary" type="button" onClick={handleClearSearch}>
+                  Clear
+                </button>
+              </div>
+            </div>
+
             <div className="table-card">
               <div className="table-wrap">
                 <table className="table">
                   <thead>
                     <tr>
-                      <th>ID</th>
                       <th>Employee</th>
                       <th>Applicant Role</th>
                       <th>Loan Type</th>
-                      <th>Amount</th>
-                      <th>Term</th>
-                      <th>Interest</th>
-                      <th>Per Month</th>
-                      <th>Total</th>
                       <th>Status</th>
                       <th>Current Stage</th>
-                      <th>Approval Chain</th>
-                      <th>Files</th>
                       <th>Dates</th>
                       <th>Action</th>
                     </tr>
@@ -1005,19 +1133,18 @@ export default function LoanApprovalTab() {
                   <tbody>
                     {filteredLoan.length === 0 ? (
                       <tr>
-                        <td colSpan={15} className="empty-state">
+                        <td colSpan={7} className="empty-state">
                           No requests found.
                         </td>
                       </tr>
                     ) : (
-                      filteredLoan.map((item) => {
+                      pagedLoan.map((item) => {
                         const currentStage = getCurrentStage(item);
                         const canAct =
                           canParticipateInLoanApproval && canUserActOnLoan(item, role);
 
                         return (
                           <tr key={item.id}>
-                            <td>{item.id ?? "-"}</td>
 
                             <td className="td-strong">
                               {item.staff_name || staffDisplayName(item.staff_id)}
@@ -1028,75 +1155,10 @@ export default function LoanApprovalTab() {
 
                             <td>{item.applicant_role || "-"}</td>
                             <td>{item.loan_type}</td>
-                            <td>₱ {fmtMoney(item.amount)}</td>
-                            <td>{item.term}</td>
-                            <td>{item.interest}%</td>
-                            <td>₱ {fmtMoney(item.per_month)}</td>
-                            <td>₱ {fmtMoney(item.total)}</td>
 
-                            <td>
-                              <span className={badgeClass(item.status)}>{item.status}</span>
-                            </td>
+                            <td><span className={badgeClass(item.status)}>{item.status}</span></td>
 
                             <td>{STAGE_LABELS[currentStage] || "-"}</td>
-
-                            <td style={{ fontSize: 12, lineHeight: 1.5 }}>
-                              {renderChainSummary(item)}
-                            </td>
-
-                            <td>
-                              <div className="row-actions" style={{ flexWrap: "wrap" }}>
-                                {item.attachment_path && canDownloadRequestFile ? (
-                                  <button
-                                    className="btn-secondary"
-                                    type="button"
-                                    onClick={() =>
-                                      downloadLoanFile(
-                                        item.id,
-                                        "request",
-                                        item.attachment_name || ""
-                                      )
-                                    }
-                                  >
-                                    Download Request File
-                                  </button>
-                                ) : null}
-
-                                {item.approved_attachment_path && canDownloadApprovedFile ? (
-                                  <button
-                                    className="btn-secondary"
-                                    type="button"
-                                    onClick={() =>
-                                      downloadLoanFile(
-                                        item.id,
-                                        "approved",
-                                        item.approved_attachment_name || ""
-                                      )
-                                    }
-                                  >
-                                    Download Approved File
-                                  </button>
-                                ) : null}
-
-                                {canUploadApprovedFile && norm(item.status) === "approved" ? (
-                                  <label className="btn-secondary" style={{ cursor: "pointer" }}>
-                                    {uploadingApproved[item.id]
-                                      ? "Uploading..."
-                                      : "Upload Approved Signed File"}
-                                    <input
-                                      type="file"
-                                      style={{ display: "none" }}
-                                      onChange={(e) =>
-                                        uploadApprovedLoanFile(
-                                          item.id,
-                                          e.target.files?.[0] || null
-                                        )
-                                      }
-                                    />
-                                  </label>
-                                ) : null}
-                              </div>
-                            </td>
 
                             <td style={{ fontSize: 12, opacity: 0.85 }}>
                               {norm(item.status) === "approved" ? (
@@ -1158,6 +1220,41 @@ export default function LoanApprovalTab() {
               </div>
             </div>
 
+            <div className="exit-pager">
+              <div className="exit-page-size">
+                <span>Rows per page:</span>
+                <select value={pageSize} onChange={(e) => setPageSize(Number(e.target.value))}>
+                  {[25, 50, 75, 100].map((n) => (
+                    <option key={n} value={n}>
+                      {n}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="exit-page-info">
+                Page {page} of {totalPages}
+              </div>
+
+              <div className="exit-page-buttons">
+                <button
+                  type="button"
+                  disabled={page <= 1}
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                >
+                  Previous
+                </button>
+
+                <button
+                  type="button"
+                  disabled={page >= totalPages}
+                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+
             <div className="modal-buttons">
               <button className="btn-secondary" type="button" onClick={() => setShowLoanModal(false)}>
                 Close
@@ -1212,8 +1309,25 @@ export default function LoanApprovalTab() {
                 </div>
 
                 <div className="form-group">
+                  <label>Branch</label>
+                  <input
+                    value={
+                      selectedLoan.branch_code || selectedLoan.branch_name
+                        ? `${selectedLoan.branch_code || ""} - ${selectedLoan.branch_name || ""}`
+                        : selectedLoan.branch || "-"
+                    }
+                    readOnly
+                  />
+                </div>
+
+                <div className="form-group">
                   <label>Loan Type</label>
                   <input value={selectedLoan.loan_type || "-"} readOnly />
+                </div>
+
+                <div className="form-group">
+                  <label>Loan Purpose</label>
+                  <input value={selectedLoan.loan_purpose || "-"} readOnly />
                 </div>
 
                 <div className="form-group">

@@ -33,6 +33,7 @@ export default function Transactions() {
       roles: [
         "admin",
         "hr",
+        "it",
         "accounting",
         "tread",
         "area manager",
@@ -49,6 +50,7 @@ export default function Transactions() {
       path: "/transactions/leave",
       roles: [
         "admin",
+        "it",
         "hr",
         "accounting",
         "tread",
@@ -67,6 +69,7 @@ export default function Transactions() {
       path: "/transactions/promotion",
       roles: [
         "admin",
+        "it",
         "hr",
         "accounting",
         "tread",
@@ -80,11 +83,12 @@ export default function Transactions() {
       ],
     },
     {
-      title: "Demotion Order",
+      title: "Demotion",
       desc: "Adjust role/position downward.",
       path: "/transactions/demotion",
       roles: [
         "admin",
+        "it",
         "hr",
         "accounting",
         "tread",
@@ -102,6 +106,7 @@ export default function Transactions() {
       path: "/transactions/deployment",
       roles: [
         "admin",
+        "it",
         "hr",
         "accounting",
         "area manager",
@@ -113,11 +118,12 @@ export default function Transactions() {
       ],
     },
     {
-      title: "Suspension Order",
+      title: "Suspension",
       desc: "Temporarily suspend staff work.",
       path: "/transactions/suspension",
       roles: [
         "admin",
+        "it",
         "hr",
         "accounting",
         "tread",
@@ -135,6 +141,7 @@ export default function Transactions() {
       path: "/transactions/soa",
       roles: [
         "admin",
+        "it",
         "hr",
         "accounting",
         "branch manager",
@@ -149,6 +156,7 @@ export default function Transactions() {
       path: "/transactions/exit",
       roles: [
         "admin",
+        "it",
         "hr",
         "accounting",
         "tread",
@@ -158,11 +166,12 @@ export default function Transactions() {
       ],
     },
     {
-      title: "Resignation Requests",
+      title: "Resignation",
       desc: "Create and manage resignation requests.",
       path: "/transactions/resignation",
       roles: [
         "admin",
+        "it",
         "hr",
         "accounting",
         "tread",
@@ -177,11 +186,12 @@ export default function Transactions() {
       ],
     },
     {
-      title: "SBF Order",
+      title: "SBF",
       desc: "Staff Benevolent Fund request.",
       path: "/transactions/sbf",
       roles: [
         "admin",
+        "it",
         "hr",
         "accounting",
         "vice president",
@@ -190,11 +200,12 @@ export default function Transactions() {
       ],
     },
     {
-      title: "Regularization Order",
+      title: "Regularization",
       desc: "Staff Regularization Order",
       path: "/transactions/regularization",
       roles: [
         "admin",
+        "it",
         "hr",
         "accounting",
         "vice president",
@@ -203,11 +214,12 @@ export default function Transactions() {
       ],
     },
     {
-      title: "Staff Accounts Payable",
+      title: "Other Receivables",
       desc: "Create and approve staff accounts payable.",
       path: "/transactions/staff-accounts-payable",
       roles: [
         "admin",
+        "it",
         "president",
         "hr",
         "accounting",

@@ -857,7 +857,7 @@ export default function TransferStaffOrder() {
     <div className="order-page">
       <div className="order-page-header">
         <div>
-          <h2 className="order-title">Transfer Staff Orders</h2>
+          <h2 className="order-title">Transfer Staff</h2>
           <p className="order-subtitle">
             Manage staff transfers between branches.
           </p>
@@ -881,7 +881,7 @@ export default function TransferStaffOrder() {
           </button>
 
           <button className="btn-primary" onClick={openModal} type="button">
-            + Create Transfer Order
+            + Create Transfer
           </button>
         </div>
       </div>

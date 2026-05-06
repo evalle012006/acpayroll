@@ -40,10 +40,19 @@ export default function SAPApprovalTab() {
 
   const [sapRows, setSapRows] = useState([]);
   const [staffList, setStaffList] = useState([]);
+
   const [showCreateSAP, setShowCreateSAP] = useState(false);
+  const [viewSap, setViewSap] = useState(null);
+
   const [loadingSap, setLoadingSap] = useState(false);
   const [creatingSap, setCreatingSap] = useState(false);
   const [processingId, setProcessingId] = useState("");
+
+  const [searchInput, setSearchInput] = useState("");
+  const [search, setSearch] = useState("");
+
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
 
   const [sapEmployeeSearch, setSapEmployeeSearch] = useState("");
   const [showSapEmployeeDropdown, setShowSapEmployeeDropdown] = useState(false);
@@ -103,12 +112,13 @@ export default function SAPApprovalTab() {
   }, [user, canViewSAP, fetchStaff, fetchSap]);
 
   useEffect(() => {
-    if (!showCreateSAP) return;
+    if (!showCreateSAP && !viewSap) return;
 
     const onKeyDown = (e) => {
       if (e.key === "Escape") {
         setShowCreateSAP(false);
         setShowSapEmployeeDropdown(false);
+        setViewSap(null);
       }
     };
 
@@ -127,7 +137,7 @@ export default function SAPApprovalTab() {
       document.removeEventListener("mousedown", onMouseDown);
       document.body.style.overflow = "";
     };
-  }, [showCreateSAP]);
+  }, [showCreateSAP, viewSap]);
 
   const buildStaffDisplay = useCallback((s) => {
     if (!s) return "-";
@@ -184,6 +194,56 @@ export default function SAPApprovalTab() {
     if (!q) return searchableStaff.slice(0, 20);
     return searchableStaff.filter((s) => s._searchBlob.includes(q)).slice(0, 20);
   }, [searchableStaff, sapEmployeeSearch]);
+
+  const filteredRows = useMemo(() => {
+    const q = norm(search);
+
+    if (!q) return sapRows;
+
+    return sapRows.filter((x) => {
+      const haystack = [
+        x.id,
+        x.employee_id,
+        x.employee_no,
+        x.staff_name,
+        staffDisplayName(x.employee_id),
+        x.description,
+        x.amount,
+        x.term,
+        x.per_month,
+        x.balance,
+        x.status,
+        x.created_at,
+        x.approved_at,
+        x.rejected_at,
+        x.rejection_reason,
+      ]
+        .map((v) => toStr(v).toLowerCase())
+        .join(" ");
+
+      return haystack.includes(q);
+    });
+  }, [sapRows, search, staffDisplayName]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredRows.length / pageSize));
+
+  const pagedRows = useMemo(() => {
+    const start = (page - 1) * pageSize;
+    return filteredRows.slice(start, start + pageSize);
+  }, [filteredRows, page, pageSize]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [search, pageSize]);
+
+  const handleSearch = () => {
+    setSearch(searchInput);
+  };
+
+  const handleClearSearch = () => {
+    setSearchInput("");
+    setSearch("");
+  };
 
   const badgeClass = (status) => {
     const s = String(status || "").trim();
@@ -297,33 +357,63 @@ export default function SAPApprovalTab() {
 
   return (
     <>
-      <div className="reg-topbar">
-        <div className="reg-topbar-actions">
-          <button type="button" className="reg-btn reg-btn-outline" onClick={fetchSap}>
-            Refresh
+    <div className="reg-card-head">
+      <div className="reg-topbar-actions">
+        <button type="button" className="reg-btn reg-btn-outline" onClick={fetchSap}>
+          Refresh
+        </button>
+
+        {canCreateSAP && (
+          <button
+            type="button"
+            className="reg-btn reg-btn-primary"
+            onClick={() => setShowCreateSAP(true)}
+          >
+            + Add
           </button>
-
-          {canCreateSAP && (
-            <button
-              type="button"
-              className="reg-btn reg-btn-primary"
-              onClick={() => setShowCreateSAP(true)}
-            >
-              + Staff Accounts Payable
-            </button>
-          )}
-        </div>
+        )}
       </div>
-
+    </div>
       <div className="reg-card">
+        <div className="reg-card-head">
+          <div>
+            <div className="reg-card-title">Staff Accounts Payable List</div>
+            <div className="reg-subtitle">
+              Pending: <b>{sapPendingCount}</b> • Results: <b>{filteredRows.length}</b>
+            </div>
+          </div>
+        </div>
+
+        <div className="exit-filter-bar">
+          <div className="exit-search-box">
+            <span className="exit-search-icon">⌕</span>
+            <input
+              className="exit-search-input"
+              type="text"
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleSearch()}
+              placeholder="Search employee, employee no, status, amount..."
+            />
+          </div>
+
+          <div style={{ display: "flex", gap: 10 }}>
+            <button className="reg-btn reg-btn-outline" type="button" onClick={handleSearch}>
+              Search
+            </button>
+
+            <button className="reg-btn reg-btn-outline" type="button" onClick={handleClearSearch}>
+              Clear
+            </button>
+          </div>
+        </div>
+
         <div className="reg-table-wrap">
           <table className="reg-table">
             <thead>
               <tr>
-                <th>ID</th>
                 <th>Employee No</th>
                 <th>Employee</th>
-                <th>Description</th>
                 <th>Amount</th>
                 <th>Term</th>
                 <th>Per Month</th>
@@ -337,20 +427,19 @@ export default function SAPApprovalTab() {
             <tbody>
               {loadingSap ? (
                 <tr>
-                  <td colSpan={11} className="reg-empty">
+                  <td colSpan={9} className="reg-empty">
                     Loading...
                   </td>
                 </tr>
-              ) : sapRows.length === 0 ? (
+              ) : filteredRows.length === 0 ? (
                 <tr>
-                  <td colSpan={11} className="reg-empty">
+                  <td colSpan={9} className="reg-empty">
                     No Staff Accounts Payable records found.
                   </td>
                 </tr>
               ) : (
-                sapRows.map((x) => (
+                pagedRows.map((x) => (
                   <tr key={x.id ?? `${x.employee_id}-${x.description}`}>
-                    <td>{x.id ?? "-"}</td>
                     <td>{x.employee_no || "-"}</td>
                     <td>
                       <strong>{x.staff_name || staffDisplayName(x.employee_id)}</strong>
@@ -358,7 +447,6 @@ export default function SAPApprovalTab() {
                         Employee ID: {x.employee_id || "-"}
                       </div>
                     </td>
-                    <td>{x.description || "-"}</td>
                     <td>₱ {fmtMoney(x.amount)}</td>
                     <td>{x.term || "-"}</td>
                     <td>₱ {fmtMoney(x.per_month)}</td>
@@ -371,46 +459,89 @@ export default function SAPApprovalTab() {
                       <div>Rejected: {fmtDate(x.rejected_at)}</div>
                     </td>
                     <td>
-                      {x.status === "Pending" && canApproveSAP ? (
-                        <div className="reg-row-actions">
-                          <button
-                            className="reg-mini-btn reg-approve"
-                            onClick={() => updateSapStatus(x.id, "Approved")}
-                            type="button"
-                            disabled={processingId === `sap-${x.id}-Approved`}
-                          >
-                            {processingId === `sap-${x.id}-Approved`
-                              ? "Approving..."
-                              : "Approve"}
-                          </button>
+                      <div className="reg-row-actions">
+                        <button
+                          className="reg-mini-btn"
+                          type="button"
+                          onClick={() => setViewSap(x)}
+                        >
+                          View
+                        </button>
 
-                          <button
-                            className="reg-mini-btn reg-reject"
-                            onClick={() => {
-                              const reason = window.prompt("Reason for rejection?");
-                              if (!reason || !String(reason).trim()) {
-                                alert("Rejection reason is required.");
-                                return;
-                              }
-                              updateSapStatus(x.id, "Rejected", String(reason).trim());
-                            }}
-                            type="button"
-                            disabled={processingId === `sap-${x.id}-Rejected`}
-                          >
-                            {processingId === `sap-${x.id}-Rejected`
-                              ? "Rejecting..."
-                              : "Reject"}
-                          </button>
-                        </div>
-                      ) : (
-                        "-"
-                      )}
+                        {x.status === "Pending" && canApproveSAP ? (
+                          <>
+                            <button
+                              className="reg-mini-btn reg-approve"
+                              onClick={() => updateSapStatus(x.id, "Approved")}
+                              type="button"
+                              disabled={processingId === `sap-${x.id}-Approved`}
+                            >
+                              {processingId === `sap-${x.id}-Approved`
+                                ? "Approving..."
+                                : "Approve"}
+                            </button>
+
+                            <button
+                              className="reg-mini-btn reg-reject"
+                              onClick={() => {
+                                const reason = window.prompt("Reason for rejection?");
+                                if (!reason || !String(reason).trim()) {
+                                  alert("Rejection reason is required.");
+                                  return;
+                                }
+                                updateSapStatus(x.id, "Rejected", String(reason).trim());
+                              }}
+                              type="button"
+                              disabled={processingId === `sap-${x.id}-Rejected`}
+                            >
+                              {processingId === `sap-${x.id}-Rejected`
+                                ? "Rejecting..."
+                                : "Reject"}
+                            </button>
+                          </>
+                        ) : null}
+                      </div>
                     </td>
                   </tr>
                 ))
               )}
             </tbody>
           </table>
+        </div>
+
+        <div className="exit-pager">
+          <div className="exit-page-size">
+            <span>Rows per page:</span>
+            <select value={pageSize} onChange={(e) => setPageSize(Number(e.target.value))}>
+              {[25, 50, 75, 100].map((n) => (
+                <option key={n} value={n}>
+                  {n}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="exit-page-info">
+            Page {page} of {totalPages}
+          </div>
+
+          <div className="exit-page-buttons">
+            <button
+              type="button"
+              disabled={page <= 1}
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+            >
+              Previous
+            </button>
+
+            <button
+              type="button"
+              disabled={page >= totalPages}
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+            >
+              Next
+            </button>
+          </div>
         </div>
       </div>
 
@@ -435,7 +566,11 @@ export default function SAPApprovalTab() {
 
             <form onSubmit={handleCreateSAP} className="reg-form">
               <div className="reg-grid">
-                <div className="reg-field full" ref={sapEmployeeBoxRef} style={{ position: "relative" }}>
+                <div
+                  className="reg-field full"
+                  ref={sapEmployeeBoxRef}
+                  style={{ position: "relative" }}
+                >
                   <label>Employee</label>
                   <input
                     type="text"
@@ -554,6 +689,117 @@ export default function SAPApprovalTab() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {viewSap && (
+        <div
+          className="reg-modal-overlay"
+          onMouseDown={(e) =>
+            e.target.classList.contains("reg-modal-overlay") && setViewSap(null)
+          }
+        >
+          <div className="reg-modal" onMouseDown={(e) => e.stopPropagation()}>
+            <div className="reg-modal-head">
+              <div>
+                <h3 className="reg-modal-title">Staff Accounts Payable Details</h3>
+                <p className="reg-subtitle">{viewSap.staff_name || "-"}</p>
+              </div>
+
+              <button className="reg-x" type="button" onClick={() => setViewSap(null)}>
+                ✕
+              </button>
+            </div>
+
+            <div className="reg-form">
+              <div className="reg-grid">
+                <div className="reg-field">
+                  <label>ID</label>
+                  <input value={viewSap.id ?? "-"} readOnly />
+                </div>
+
+                <div className="reg-field">
+                  <label>Employee ID</label>
+                  <input value={viewSap.employee_id || "-"} readOnly />
+                </div>
+
+                <div className="reg-field">
+                  <label>Employee No</label>
+                  <input value={viewSap.employee_no || "-"} readOnly />
+                </div>
+
+                <div className="reg-field">
+                  <label>Employee Name</label>
+                  <input
+                    value={viewSap.staff_name || staffDisplayName(viewSap.employee_id)}
+                    readOnly
+                  />
+                </div>
+
+                <div className="reg-field">
+                  <label>Amount</label>
+                  <input value={`₱ ${fmtMoney(viewSap.amount)}`} readOnly />
+                </div>
+
+                <div className="reg-field">
+                  <label>Term</label>
+                  <input value={viewSap.term || "-"} readOnly />
+                </div>
+
+                <div className="reg-field">
+                  <label>Per Month</label>
+                  <input value={`₱ ${fmtMoney(viewSap.per_month)}`} readOnly />
+                </div>
+
+                <div className="reg-field">
+                  <label>Balance</label>
+                  <input value={`₱ ${fmtMoney(viewSap.balance)}`} readOnly />
+                </div>
+
+                <div className="reg-field">
+                  <label>Status</label>
+                  <input value={viewSap.status || "Pending"} readOnly />
+                </div>
+
+                <div className="reg-field">
+                  <label>Created Date</label>
+                  <input value={fmtDate(viewSap.created_at)} readOnly />
+                </div>
+
+                <div className="reg-field">
+                  <label>Approved Date</label>
+                  <input value={fmtDate(viewSap.approved_at)} readOnly />
+                </div>
+
+                <div className="reg-field">
+                  <label>Rejected Date</label>
+                  <input value={fmtDate(viewSap.rejected_at)} readOnly />
+                </div>
+
+                <div className="reg-field full">
+                  <label>Description</label>
+                  <textarea value={viewSap.description || "-"} readOnly />
+                </div>
+
+                {viewSap.rejection_reason ? (
+                  <div className="reg-field full">
+                    <label>Rejection Reason</label>
+                    <textarea value={viewSap.rejection_reason} readOnly />
+                  </div>
+                ) : null}
+              </div>
+
+              <div className="reg-modal-actions">
+                <button
+                  className="reg-btn reg-btn-outline"
+                  type="button"
+                  onClick={() => setViewSap(null)}
+                >
+                  Close
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

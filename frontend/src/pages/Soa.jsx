@@ -441,7 +441,7 @@ export default function Soa() {
 
           {canCreate && (
             <button className="btn-primary" onClick={() => setShowCreate(true)} type="button">
-              + Create Settlement
+              + Create
             </button>
           )}
         </div>

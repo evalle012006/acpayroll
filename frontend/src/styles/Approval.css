@@ -609,3 +609,28 @@
     width: 100%;
   }
 }
+
+[data-theme="light"] .reg-modal input,
+[data-theme="light"] .reg-modal textarea,
+[data-theme="light"] .reg-modal select,
+[data-theme="light"] .modal input,
+[data-theme="light"] .modal textarea,
+[data-theme="light"] .modal select {
+  background: #ffffff !important;
+  color: #0f172a !important;
+  border-color: rgba(15, 23, 42, 0.18) !important;
+}
+
+[data-theme="light"] .reg-modal input[readonly],
+[data-theme="light"] .reg-modal textarea[readonly],
+[data-theme="light"] .modal input[readonly],
+[data-theme="light"] .modal textarea[readonly] {
+  color: #0f172a !important;
+  -webkit-text-fill-color: #0f172a !important;
+  opacity: 1 !important;
+}
+
+[data-theme="light"] .reg-modal label,
+[data-theme="light"] .modal label {
+  color: #2563eb !important;
+}

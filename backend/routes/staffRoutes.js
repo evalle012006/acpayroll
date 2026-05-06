@@ -466,11 +466,14 @@ router.get("/staff", requireAuth, async (req, res) => {
   try {
     if (isTopManagement(req)) {
       const r = await pool.query(`
-        SELECT s.*,
-               b.name AS branch_name,
-               b.code AS branch_code
+        SELECT
+          s.*,
+          b.name AS branch_name,
+          b.code AS branch_code,
+          COALESCE(sbal.cbu, 0) AS cbu_balance
         FROM public.staff s
         LEFT JOIN public.branches b ON b.id = s.branch_id
+        LEFT JOIN public.staff_balances sbal ON sbal.employee_no = s.employee_no
         ORDER BY s.id DESC
       `);
       return res.json(r.rows);

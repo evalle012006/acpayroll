@@ -296,7 +296,7 @@ export default function DemotionOrder() {
     <div className="po-page">
       <div className="po-topbar">
         <div>
-          <h2 className="po-title">Demotion Orders</h2>
+          <h2 className="po-title">Demotion</h2>
           <p className="po-subtitle">Create and manage demotion orders.</p>
         </div>
 

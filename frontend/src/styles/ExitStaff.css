@@ -322,8 +322,8 @@
 ========================= */
 
 .exit-table-wrap {
-  overflow: auto;
-  max-height: calc(100vh - 380px);
+  overflow-y: auto;
+  height: calc(100vh - 480px);
 }
 
 .exit-table {
@@ -509,7 +509,8 @@
   }
 
   .exit-table-wrap {
-    max-height: unset;
+    height: auto;
+    min-height: 420px;
   }
 }
 
@@ -542,4 +543,52 @@
 
 [data-theme="light"] .exit-table tbody tr:hover td {
   background: rgba(37, 99, 235, 0.06) !important;
+}
+
+.exit-pager {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 14px 16px;
+  border-top: 1px solid var(--border);
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.exit-page-size,
+.exit-page-buttons {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.exit-page-size span,
+.exit-page-info {
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--muted);
+}
+
+.exit-page-size select {
+  min-height: 38px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--text);
+  padding: 6px 10px;
+}
+
+.exit-page-buttons button {
+  padding: 8px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--panel-2);
+  color: var(--text);
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.exit-page-buttons button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }

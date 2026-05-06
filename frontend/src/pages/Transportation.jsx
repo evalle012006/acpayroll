@@ -424,8 +424,6 @@ function Transportation() {
         repairing +
         additionalMonitoring;
 
-      // Suspension transportation is automatically deducted from approved suspension orders.
-      // It is intentionally hidden as a separate table column.
       const totalDeduction =
         motorcycle +
         other +

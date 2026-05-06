@@ -281,3 +281,44 @@
   padding-bottom: 10px;
 }
 
+/* Login readability fix */
+.auth-card,
+.auth-card * {
+  opacity: 1 !important;
+}
+
+.auth-title,
+.auth-head h2,
+.field span {
+  color: #0f172a !important;
+}
+
+.auth-subtitle,
+.auth-head p,
+.social-title,
+.copyright {
+  color: #64748b !important;
+}
+
+.field input {
+  color: #0f172a !important;
+  background: #f8fafc !important;
+}
+
+[data-theme="dark"] .auth-title,
+[data-theme="dark"] .auth-head h2,
+[data-theme="dark"] .field span {
+  color: #e5edf8 !important;
+}
+
+[data-theme="dark"] .auth-subtitle,
+[data-theme="dark"] .auth-head p,
+[data-theme="dark"] .social-title,
+[data-theme="dark"] .copyright {
+  color: #94a3b8 !important;
+}
+
+[data-theme="dark"] .field input {
+  color: #e5edf8 !important;
+  background: #0f172a !important;
+}

@@ -879,7 +879,12 @@ router.put(
           return res.status(400).json({ message: "Invalid current status for approval" });
         }
 
-        const r = await pool.query(sql, [id, req.user?.id ?? null]);
+        const params =
+        currentStatus === "Pending Vice President"
+          ? [id]
+          : [id, req.user?.id ?? null];
+
+      const r = await pool.query(sql, params);
 
         if (r.rowCount === 0) return res.status(404).json({ message: "Not found" });
       }

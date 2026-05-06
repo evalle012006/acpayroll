@@ -491,7 +491,7 @@ export default function ExitStaffOrders() {
     <div className="exit-page">
       <div className="exit-topbar">
         <div>
-          <h2 className="exit-title">Exit Staff Orders</h2>
+          <h2 className="exit-title">Exit Staff</h2>
           <p className="exit-subtitle">Manage staff resignations, AWOL, and terminations.</p>
         </div>
 

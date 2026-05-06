@@ -41,11 +41,7 @@ export default function StaffInformation() {
   const canEditStaff =
     role === "admin" ||
     role === "hr" ||
-    role === "accounting" ||
-    role === "branch manager" ||
-    role === "area manager" ||
-    role === "regional manager" ||
-    role === "assistant vice president";
+    role === "accounting" ;
 
   const [staff, setStaff] = useState([]);
   const [branches, setBranches] = useState([]);
@@ -498,7 +494,7 @@ export default function StaffInformation() {
 
   const openEdit = async (s) => {
     if (!canEditStaff) {
-      alert("Only Admin, HR, Accounting, and Branch Manager can edit staff.");
+      alert("Only Admin, HR, and Accounting can edit staff.");
       return;
     }
 
@@ -945,14 +941,16 @@ export default function StaffInformation() {
                                 <FaEye />
                               </button>
 
-                              <button
-                                className="action-btn btn-edit icon-only"
-                                onClick={() => openEdit(s)}
-                                type="button"
-                                title="Edit"
-                              >
-                                <FaEdit />
-                              </button>
+                              {canEditStaff && (
+                                <button
+                                  className="action-btn btn-edit icon-only"
+                                  onClick={() => openEdit(s)}
+                                  type="button"
+                                  title="Edit"
+                                >
+                                  <FaEdit />
+                                </button>
+                              )}
                             </div>
                           </td>
                         </tr>

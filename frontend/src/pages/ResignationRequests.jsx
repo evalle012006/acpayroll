@@ -400,7 +400,7 @@ export default function ResignationRequests() {
     <div className="po-page">
       <div className="po-topbar">
         <div>
-          <h2 className="po-title">Resignation Requests</h2>
+          <h2 className="po-title">Resignation</h2>
           <p className="po-subtitle">
             Branch Manager → Area Manager → Regional Manager → Assistant Vice President → Admin/HR/Accounting
           </p>
@@ -415,7 +415,7 @@ export default function ResignationRequests() {
           </button>
           {canCreate && (
             <button className="po-btn po-btn-primary" onClick={openCreate} type="button">
-              + Create Resignation Request
+              + Add
             </button>
           )}
         </div>

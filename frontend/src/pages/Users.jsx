@@ -38,6 +38,9 @@ const Users = () => {
   const [branches, setBranches] = useState([]);
   const [loading, setLoading] = useState(false);
 
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
+
   const [search, setSearch] = useState("");
   const [showModal, setShowModal] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -137,6 +140,17 @@ const Users = () => {
         String(r.department || "").toLowerCase().includes(q)
     );
   }, [rows, search]);
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+
+  const pagedRows = useMemo(() => {
+    const start = (page - 1) * pageSize;
+    return filtered.slice(start, start + pageSize);
+  }, [filtered, page, pageSize]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [search, pageSize]);
 
   const uniqueAreas = useMemo(() => {
     const set = new Set(rows.map((r) => toStr(r.area)).filter(Boolean));
@@ -379,7 +393,8 @@ const Users = () => {
           />
 
           <div className="pill">
-            Results: <strong>{filtered.length}</strong>
+            Results: <strong>{filtered.length}</strong> • Showing{" "}
+            <strong>{pagedRows.length}</strong>
           </div>
         </div>
 
@@ -414,7 +429,7 @@ const Users = () => {
                     </td>
                   </tr>
                 ) : (
-                  filtered.map((u) => (
+                  pagedRows.map((u) => (
                     <tr key={u.id}>
                       <td className="mono">{u.id}</td>
                       <td className="strong">{u.username}</td>
@@ -465,6 +480,48 @@ const Users = () => {
             </table>
           )}
         </div>
+
+          <div className="users-pager">
+            <div className="users-page-size">
+              <span>Rows per page:</span>
+              <select
+                className="input"
+                value={pageSize}
+                onChange={(e) => setPageSize(Number(e.target.value))}
+              >
+                {[25, 50, 75, 100].map((n) => (
+                  <option key={n} value={n}>
+                    {n}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="users-page-info">
+              Page {page} of {totalPages}
+            </div>
+
+            <div className="users-page-buttons">
+              <button
+                className="btn-secondary"
+                type="button"
+                disabled={page <= 1}
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+              >
+                Previous
+              </button>
+
+              <button
+                className="btn-secondary"
+                type="button"
+                disabled={page >= totalPages}
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              >
+                Next
+              </button>
+            </div>
+          </div>
+
       </div>
 
       {showModal && (

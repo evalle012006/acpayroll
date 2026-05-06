@@ -361,7 +361,7 @@ export default function RegularizationOrders() {
     <div className="reg-page">
       <div className="reg-topbar">
         <div>
-          <h2 className="reg-title">Regularization Orders</h2>
+          <h2 className="reg-title">Regularization</h2>
           <p className="reg-subtitle">Create and manage staff regularization orders.</p>
         </div>
 
@@ -376,7 +376,7 @@ export default function RegularizationOrders() {
 
           {canCreate && (
             <button className="reg-btn reg-btn-primary" onClick={openCreate} type="button">
-              + Create Regularization
+              + Create
             </button>
           )}
         </div>

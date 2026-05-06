@@ -590,7 +590,7 @@ export default function PromotionOrder() {
 
           {canCreatePromotion && (
             <button className="po-btn po-btn-primary" type="button" onClick={() => setShowCreate(true)}>
-              + Create Promotion Order
+              + Create Promotion
             </button>
           )}
         </div>
