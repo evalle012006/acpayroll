@@ -673,7 +673,7 @@ export default function LeaveTransactions() {
                 pagedLeave.map((item) => (
                   <tr key={item.id}>
                     <td>{item.transaction_code || item.id}</td>
-                    <td className="td-strong">{item.staff_name || "-"}</td>
+                    <td className="td-strong">{item.staff_name || `Employee #${item.employee_id}` || "-"}</td>
                     <td>{item.leave_type}</td>
                     <td>{fmtDate(item.date_created)}</td>
                     <td>{fmtDate(item.start_date)}</td>
