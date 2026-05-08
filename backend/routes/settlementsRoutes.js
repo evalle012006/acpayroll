@@ -220,6 +220,7 @@ router.post(
       const employee_no = toStr(req.body?.employee_no);
       const employee_name = toStr(req.body?.employee_name);
       const prev_branch = toStr(req.body?.prev_branch);
+      const description = toStr(req.body?.description);
 
       const settlement_branch_id = toInt(req.body?.settlement_branch_id);
       const settlement_branch_code = toStr(req.body?.settlement_branch_code);
@@ -294,6 +295,7 @@ router.post(
           employee_no,
           employee_name,
           prev_branch,
+          description,
 
           cbu,
           cashbond,
@@ -321,10 +323,10 @@ router.post(
         )
         VALUES (
           $1,$2,$3,$4,
-          $5,$6,$7,$8,$9,$10,$11,$12,$13,$14,
-          $15,$16,$17,
+          $5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,
+          $16,$17,
           $18,$19,$20,
-          $21,$22,$23,$24
+          $21,$22,$23,$24,$25
         )
         RETURNING *;
         `,
@@ -333,6 +335,7 @@ router.post(
           employee_no,
           employee_name,
           prev_branch || null,
+          description || null,
 
           cbu,
           cashbond,

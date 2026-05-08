@@ -40,6 +40,7 @@ const regularizationOrdersRoutes = require("./routes/regularizationOrdersRoutes"
 const resignationRequestsRoutes = require("./routes/resignationRequestsRoutes");
 const reimbursementRequestsRoutes = require("./routes/reimbursementRequestsRoutes");
 const cbuWithdrawRoutes = require("./routes/cbuWithdrawRoutes");
+const boardResolutionRoutes = require("./routes/boardResolutionRoutes");
 
 const app = express();
 
@@ -94,6 +95,7 @@ app.use("/api", regularizationOrdersRoutes);
 app.use("/api", resignationRequestsRoutes);
 app.use("/api/reimbursement-requests", reimbursementRequestsRoutes);
 app.use("/api", cbuWithdrawRoutes);
+app.use("/api", boardResolutionRoutes);
 
 app.get("/test", (_req, res) => {
   res.send("Backend is working!");

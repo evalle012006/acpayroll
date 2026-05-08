@@ -234,9 +234,20 @@ const getInitialStatusByDepartment = (req, department) => {
   }
 
   /*
-    BACK OFFICE / OTHER DEPARTMENTS:
-    Direct to Senior Vice President of department.
+    BACK OFFICE / MAIN OFFICE:
+    IT Department -> Assistant Vice President
+    Others -> Senior Vice President
   */
+
+  const dept = norm(department);
+
+  if (
+    dept === "it" ||
+    dept === "it department"
+  ) {
+    return "Pending Assistant Vice President";
+  }
+
   return "Pending Senior Vice President";
 };
 
@@ -890,14 +901,41 @@ router.put(
           currentStatus ===
           "Pending Assistant Vice President"
         ) {
-          sql = `
-            UPDATE public.leave_requests
-            SET
-              status = 'Pending Vice President',
-              division_approved_by = $2,
-              division_approved_at = NOW()
-            WHERE id = $1
-          `;
+
+          const dept = norm(access.row.department);
+
+          /*
+            IT Department:
+            AVP is final approver
+          */
+          if (
+            dept === "it" ||
+            dept === "it department"
+          ) {
+            sql = `
+              UPDATE public.leave_requests
+              SET
+                status = 'Approved',
+                division_approved_by = $2,
+                division_approved_at = NOW()
+              WHERE id = $1
+            `;
+          }
+
+          /*
+            OPERATION:
+            Continue to Vice President
+          */
+          else {
+            sql = `
+              UPDATE public.leave_requests
+              SET
+                status = 'Pending Vice President',
+                division_approved_by = $2,
+                division_approved_at = NOW()
+              WHERE id = $1
+            `;
+          }
         }
 
         else if (

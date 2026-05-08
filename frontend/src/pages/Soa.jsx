@@ -95,6 +95,7 @@ export default function Soa() {
 
     separation_pay: "",
     cash_assistance: "",
+    description: "",
   });
 
   const branchMap = useMemo(() => {
@@ -241,6 +242,7 @@ export default function Soa() {
 
       separation_pay: "",
       cash_assistance: "",
+      description: "",
     });
 
     setStaffSearch("");
@@ -375,6 +377,7 @@ export default function Soa() {
 
       formData.append("total_benefits", totalBenefits);
       formData.append("net_settlement", netSettlement);
+      formData.append("description", toStr(form.description));
 
       if (attachmentFile) {
         formData.append("attachment", attachmentFile);
@@ -482,6 +485,7 @@ export default function Soa() {
                 <th>Benefits</th>
                 <th>Liabilities</th>
                 <th>Net</th>
+                <th>Description</th>
                 <th>File</th>
                 <th>Created</th>
                 <th style={{ width: 240 }}>Action</th>
@@ -491,13 +495,13 @@ export default function Soa() {
             <tbody>
               {loadingList ? (
                 <tr>
-                  <td colSpan={10} className="empty-state">
+                  <td colSpan={11} className="empty-state">
                     Loading…
                   </td>
                 </tr>
               ) : settlements.length === 0 ? (
                 <tr>
-                  <td colSpan={10} className="empty-state">
+                  <td colSpan={11} className="empty-state">
                     No settlement records found.
                   </td>
                 </tr>
@@ -524,6 +528,13 @@ export default function Soa() {
                     <td>{money(r.total_benefits)}</td>
                     <td>{money(r.liabilities)}</td>
                     <td>{money(r.net_settlement)}</td>
+                    <td>
+                      {r.description
+                        ? r.description.length > 60
+                          ? `${r.description.slice(0, 60)}...`
+                          : r.description
+                        : "-"}
+                    </td>
 
                     <td>
                       {r.attachment_path ? (
@@ -847,6 +858,18 @@ export default function Soa() {
                     onChange={(e) => setAttachmentFile(e.target.files?.[0] || null)}
                   />
                 </div>
+
+                <div className="form-group full">
+                  <label>Description</label>
+
+                  <textarea
+                    name="description"
+                    value={form.description}
+                    onChange={onChange}
+                    rows={4}
+                    placeholder="Settlement description..."
+                  />
+                </div>
               </div>
 
               <div
@@ -1011,6 +1034,11 @@ export default function Soa() {
                   <tr>
                     <td>Created</td>
                     <td>{fmtDate(viewRow.created_at)}</td>
+                  </tr>
+
+                  <tr>
+                    <td>Description</td>
+                    <td>{viewRow.description || "-"}</td>
                   </tr>
                 </tbody>
               </table>

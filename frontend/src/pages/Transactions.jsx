@@ -228,6 +228,23 @@ export default function Transactions() {
         "accounting",
       ],
     },
+    {
+  title: "Board Resolution Requests",
+    desc: "Create and approve board resolution requests.",
+    path: "/transactions/board-resolution",
+    roles: [
+      "admin",
+      "it",
+      "hr",
+      "accounting",
+      "tread",
+      "regional manager",
+      "assistant vice president",
+      "vice president",
+      "senior vice president",
+      "president",
+    ],
+  },
   ];
 
   const filteredCards = cards.filter((c) => c.roles.includes(role));
