@@ -6,6 +6,7 @@ import api from "../api/axiosClient";
 const toStr = (v) => String(v ?? "").trim();
 const norm = (v) => toStr(v).toLowerCase();
 const toDate10 = (v) => (v ? String(v).slice(0, 10) : "");
+const todayDate = () => new Date().toISOString().slice(0, 10);
 
 const readUser = () => {
   try {
@@ -19,6 +20,7 @@ const displayNameParts = (s) => {
   const ln = toStr(s?.last_name);
   const fn = toStr(s?.first_name);
   const mn = toStr(s?.middle_name);
+
   const built = `${ln}${ln && fn ? ", " : ""}${fn}${mn ? ` ${mn}` : ""}`
     .replace(/\s+/g, " ")
     .trim();
@@ -30,21 +32,48 @@ export default function ExitStaff() {
   const navigate = useNavigate();
   const user = useMemo(() => readUser(), []);
 
-  const canManageOrders = ["admin", "hr", "accounting"].includes(norm(user?.role));
+  const role = norm(user?.role);
+
+  const canManageOrders =
+    role === "admin" ||
+    role === "it" ||
+    role === "hr" ||
+    role === "accounting";
 
   const [viewStaff, setViewStaff] = useState(null);
+  const [showReApply, setShowReApply] = useState(false);
+  const [reApplyStaffRow, setReApplyStaffRow] = useState(null);
+
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
   const [rows, setRows] = useState([]);
+  const [branches, setBranches] = useState([]);
+
   const [loading, setLoading] = useState(false);
+  const [loadingBranches, setLoadingBranches] = useState(false);
   const [err, setErr] = useState("");
+
   const [keyword, setKeyword] = useState("");
   const [typeFilter, setTypeFilter] = useState("all");
+  const [reApplyingId, setReApplyingId] = useState("");
+
+  const [reApplyForm, setReApplyForm] = useState({
+    branch_id: "",
+    branch_code: "",
+    branch_name: "",
+    area: "",
+    region: "",
+    division: "",
+    position: "",
+    start_date: todayDate(),
+    remarks: "",
+  });
 
   const loadExitStaff = useCallback(async () => {
     try {
       setLoading(true);
       setErr("");
+
       const res = await api.get("/exit-staff");
       setRows(Array.isArray(res.data) ? res.data : []);
     } catch (e) {
@@ -55,15 +84,35 @@ export default function ExitStaff() {
     }
   }, []);
 
+  const loadBranches = useCallback(async () => {
+    try {
+      setLoadingBranches(true);
+
+      const res = await api.get("/branches-all");
+      setBranches(Array.isArray(res.data) ? res.data : []);
+    } catch (e) {
+      console.error("Failed to load branches:", e?.response?.data || e.message);
+      setBranches([]);
+    } finally {
+      setLoadingBranches(false);
+    }
+  }, []);
+
   useEffect(() => {
     loadExitStaff();
-  }, [loadExitStaff]);
+    loadBranches();
+  }, [loadExitStaff, loadBranches]);
 
   useEffect(() => {
-    if (!viewStaff) return;
+    const isOpen = viewStaff || showReApply;
+
+    if (!isOpen) return;
 
     const onKeyDown = (e) => {
-      if (e.key === "Escape") setViewStaff(null);
+      if (e.key === "Escape") {
+        setViewStaff(null);
+        closeReApplyModal();
+      }
     };
 
     document.addEventListener("keydown", onKeyDown);
@@ -73,7 +122,120 @@ export default function ExitStaff() {
       document.removeEventListener("keydown", onKeyDown);
       document.body.style.overflow = "";
     };
-  }, [viewStaff]);
+  }, [viewStaff, showReApply]);
+
+  const closeReApplyModal = () => {
+    setShowReApply(false);
+    setReApplyStaffRow(null);
+    setReApplyForm({
+      branch_id: "",
+      branch_code: "",
+      branch_name: "",
+      area: "",
+      region: "",
+      division: "",
+      position: "",
+      start_date: todayDate(),
+      remarks: "",
+    });
+  };
+
+  const openReApplyModal = (row) => {
+    if (!canManageOrders) {
+      alert("Access denied.");
+      return;
+    }
+
+    const currentBranchId = row?.branch_id ? String(row.branch_id) : "";
+    const currentBranch = branches.find(
+      (b) => String(b.id) === String(currentBranchId)
+    );
+
+    setReApplyStaffRow(row);
+    setViewStaff(null);
+
+    setReApplyForm({
+      branch_id: currentBranchId,
+      branch_code: currentBranch?.code || row?.branch_code || "",
+      branch_name: currentBranch?.name || row?.branch_name || "",
+      area: currentBranch?.area || row?.area || "",
+      region: currentBranch?.region || row?.region || "",
+      division: currentBranch?.division || row?.division || "",
+      position: row?.position || "",
+      start_date: todayDate(),
+      remarks: "",
+    });
+
+    setShowReApply(true);
+  };
+
+  const handleReApplyBranchChange = (branchId) => {
+    const branch = branches.find((b) => String(b.id) === String(branchId));
+
+    setReApplyForm((prev) => ({
+      ...prev,
+      branch_id: branch ? String(branch.id) : "",
+      branch_code: branch?.code || "",
+      branch_name: branch?.name || "",
+      area: branch?.area || "",
+      region: branch?.region || "",
+      division: branch?.division || "",
+    }));
+  };
+
+  const submitReApplyStaff = async (e) => {
+    e.preventDefault();
+
+    if (!canManageOrders) return alert("Access denied.");
+
+    const staffId = reApplyStaffRow?.id;
+
+    if (!staffId) {
+      alert("Invalid staff id.");
+      return;
+    }
+
+    if (!reApplyForm.branch_id) {
+      alert("Branch is required.");
+      return;
+    }
+
+    if (!toStr(reApplyForm.position)) {
+      alert("Position is required.");
+      return;
+    }
+
+    if (!reApplyForm.start_date) {
+      alert("Start date is required.");
+      return;
+    }
+
+    if (!window.confirm("Re-apply this staff and make them active again?")) {
+      return;
+    }
+
+    try {
+      setReApplyingId(String(staffId));
+
+      await api.put(`/exit-staff/${staffId}/reapply`, {
+        branch_id: Number(reApplyForm.branch_id),
+        area: reApplyForm.area,
+        region: reApplyForm.region,
+        division: reApplyForm.division,
+        position: reApplyForm.position,
+        start_date: reApplyForm.start_date,
+        remarks: reApplyForm.remarks,
+      });
+
+      alert("Staff re-applied successfully.");
+      closeReApplyModal();
+      await loadExitStaff();
+    } catch (err) {
+      alert(err?.response?.data?.message || "Failed to re-apply staff.");
+    } finally {
+      setReApplyingId("");
+    }
+  };
 
   const filteredRows = useMemo(() => {
     const q = norm(keyword);
@@ -97,6 +259,9 @@ export default function ExitStaff() {
         r.position,
         r.exit_type,
         r.exit_remarks,
+        r.area,
+        r.region,
+        r.division,
       ]
         .map(toStr)
         .join(" ")
@@ -201,6 +366,7 @@ export default function ExitStaff() {
       <div className="exit-card">
         <div className="exit-card-head">
           <div className="exit-card-title">Exit Staff List</div>
+
           <div className="exit-card-meta">
             {filteredRows.length} Record{filteredRows.length === 1 ? "" : "s"}
           </div>
@@ -209,6 +375,7 @@ export default function ExitStaff() {
         <div className="exit-filter-bar">
           <div className="exit-search-box">
             <span className="exit-search-icon">⌕</span>
+
             <input
               className="exit-search-input"
               type="text"
@@ -262,18 +429,38 @@ export default function ExitStaff() {
                     <td className="exit-mono">
                       {r.staff_code || r.employee_no || "-"}
                     </td>
+
                     <td className="exit-strong">{displayNameParts(r)}</td>
+
                     <td>{`${r.branch_code || "-"} - ${r.branch_name || "-"}`}</td>
+
                     <td>{r.department || "-"}</td>
+
                     <td>{r.position || "-"}</td>
+
                     <td>
-                      <button
-                        className="exit-btn exit-btn-outline"
-                        type="button"
-                        onClick={() => setViewStaff(r)}
-                      >
-                        View
-                      </button>
+                      <div className="exit-action-icons">
+                        <button
+                          className="exit-icon-btn view"
+                          type="button"
+                          title="View Staff"
+                          onClick={() => setViewStaff(r)}
+                        >
+                          👁
+                        </button>
+
+                        {canManageOrders && (
+                          <button
+                            className="exit-icon-btn reapply"
+                            type="button"
+                            title="Re-Apply Staff"
+                            disabled={reApplyingId === String(r.id) || loadingBranches}
+                            onClick={() => openReApplyModal(r)}
+                          >
+                            ↺
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))
@@ -285,6 +472,7 @@ export default function ExitStaff() {
         <div className="exit-pager">
           <div className="exit-page-size">
             <span>Rows per page:</span>
+
             <select
               value={pageSize}
               onChange={(e) => setPageSize(Number(e.target.value))}
@@ -451,6 +639,16 @@ export default function ExitStaff() {
               </div>
 
               <div className="modal-buttons">
+                {canManageOrders && (
+                  <button
+                    className="btn-primary"
+                    type="button"
+                    onClick={() => openReApplyModal(viewStaff)}
+                  >
+                    Re-Apply Staff
+                  </button>
+                )}
+
                 <button
                   className="btn-secondary"
                   type="button"
@@ -460,6 +658,148 @@ export default function ExitStaff() {
                 </button>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {showReApply && reApplyStaffRow && (
+        <div
+          className="modal-overlay"
+          onMouseDown={(e) =>
+            e.target.classList.contains("modal-overlay") && closeReApplyModal()
+          }
+        >
+          <div
+            className="modal saas-modal"
+            style={{ maxWidth: 850, width: "95vw" }}
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <div className="modal-head">
+              <div>
+                <h3 className="modal-title">Re-Apply Staff</h3>
+                <p className="modal-subtitle">
+                  {displayNameParts(reApplyStaffRow)} • Employee No:{" "}
+                  {reApplyStaffRow.employee_no || "-"}
+                </p>
+              </div>
+
+              <button
+                className="modal-x"
+                type="button"
+                onClick={closeReApplyModal}
+              >
+                ✕
+              </button>
+            </div>
+
+            <form className="modal-form" onSubmit={submitReApplyStaff}>
+              <div className="modal-grid">
+                <div className="form-group">
+                  <label>Employee Name</label>
+                  <input value={displayNameParts(reApplyStaffRow)} readOnly />
+                </div>
+
+                <div className="form-group">
+                  <label>Employee No</label>
+                  <input value={reApplyStaffRow.employee_no || "-"} readOnly />
+                </div>
+
+                <div className="form-group full">
+                  <label>Branch</label>
+                  <select
+                    value={reApplyForm.branch_id}
+                    onChange={(e) => handleReApplyBranchChange(e.target.value)}
+                    required
+                  >
+                    <option value="">Select Branch</option>
+                    {branches.map((b) => (
+                      <option key={b.id} value={b.id}>
+                        {b.code} - {b.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="form-group">
+                  <label>Area</label>
+                  <input value={reApplyForm.area || ""} readOnly />
+                </div>
+
+                <div className="form-group">
+                  <label>Region</label>
+                  <input value={reApplyForm.region || ""} readOnly />
+                </div>
+
+                <div className="form-group">
+                  <label>Division</label>
+                  <input value={reApplyForm.division || ""} readOnly />
+                </div>
+
+                <div className="form-group">
+                  <label>Position</label>
+                  <input
+                    value={reApplyForm.position}
+                    onChange={(e) =>
+                      setReApplyForm((p) => ({
+                        ...p,
+                        position: e.target.value,
+                      }))
+                    }
+                    placeholder="Enter new/current position"
+                    required
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label>Re-Apply Start Date</label>
+                  <input
+                    type="date"
+                    value={reApplyForm.start_date}
+                    onChange={(e) =>
+                      setReApplyForm((p) => ({
+                        ...p,
+                        start_date: e.target.value,
+                      }))
+                    }
+                    required
+                  />
+                </div>
+
+                <div className="form-group full">
+                  <label>Remarks</label>
+                  <textarea
+                    value={reApplyForm.remarks}
+                    onChange={(e) =>
+                      setReApplyForm((p) => ({
+                        ...p,
+                        remarks: e.target.value,
+                      }))
+                    }
+                    placeholder="Optional remarks..."
+                  />
+                </div>
+              </div>
+
+              <div className="modal-buttons">
+                <button
+                  className="btn-secondary"
+                  type="button"
+                  onClick={closeReApplyModal}
+                >
+                  Cancel
+                </button>
+
+                <button
+                  className="btn-primary"
+                  type="submit"
+                  disabled={reApplyingId === String(reApplyStaffRow.id)}
+                >
+                  {reApplyingId === String(reApplyStaffRow.id)
+                    ? "Saving..."
+                    : "Confirm Re-Apply"}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

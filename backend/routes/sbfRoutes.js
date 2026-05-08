@@ -12,6 +12,7 @@ const toNum = (v) => {
 const canViewSbf = (req) =>
   hasAnyRole(req, [
     "admin",
+    "it",
     "hr",
     "accounting",
     "branch manager",
@@ -29,6 +30,7 @@ const canCreateSbf = canViewSbf;
 const canApproveSbf = (req) =>
   hasAnyRole(req, [
     "admin",
+    "it",
     "hr",
     "accounting",
     "assistant vice president",
@@ -40,6 +42,7 @@ const canApproveSbf = (req) =>
 
 const SBF_VIEW_ROLES = [
   "admin",
+  "it",
   "hr",
   "accounting",
   "branch manager",
@@ -54,6 +57,7 @@ const SBF_VIEW_ROLES = [
 
 const SBF_APPROVER_ROLES = [
   "admin",
+  "it",
   "hr",
   "accounting",
   "assistant vice president",

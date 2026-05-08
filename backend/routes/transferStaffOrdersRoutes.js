@@ -4,7 +4,24 @@ const pool = require("../db");
 const path = require("path");
 const fs = require("fs");
 const multer = require("multer");
-const { requireAuth, requireRole } = require("../middlewares/authMiddleware");
+
+const { requireAuth } = require("../middlewares/authMiddleware");
+const { requirePermission } = require("../utils/permissions");
+
+const {
+  isAdmin,
+  isIT,
+  isHr,
+  isAccounting,
+  isTread,
+  isBranchManager,
+  isAreaManager,
+  isRegionalManager,
+  isAssistantVicePresident,
+  isVicePresident,
+  isSeniorVicePresident,
+  isPresident,
+} = require("../utils/roleAccess");
 
 const toInt = (v) => {
   const n = Number(v);
@@ -20,23 +37,9 @@ const toDateOrNull = (v) => {
 
 const toStr = (v) => String(v ?? "").trim();
 
-const roleLower = (req) => String(req.user?.role || "").trim().toLowerCase();
-const isAdmin = (req) => roleLower(req) === "admin";
-const isHr = (req) => roleLower(req) === "hr";
-const isAccounting = (req) => roleLower(req) === "accounting";
-const isTread = (req) => roleLower(req) === "tread";
-const isBranchManager = (req) => roleLower(req) === "branch manager";
-const isAreaManager = (req) => roleLower(req) === "area manager";
-const isRegionalManager = (req) => roleLower(req) === "regional manager";
-const isAssistantVicePresident = (req) =>
-  roleLower(req) === "assistant vice president";
-const isVicePresident = (req) => roleLower(req) === "vice president";
-const isSeniorVicePresident = (req) =>
-  roleLower(req) === "senior vice president";
-const isPresident = (req) => roleLower(req) === "president";
-
 const isTopManagement = (req) =>
   isAdmin(req) ||
+  isIT(req) ||
   isHr(req) ||
   isAccounting(req) ||
   isVicePresident(req) ||
@@ -59,12 +62,10 @@ const displayName = (row) => {
   const built = `${ln}${ln && fn ? ", " : ""}${fn}${mn ? ` ${mn}` : ""}`
     .replace(/\s+/g, " ")
     .trim();
+
   return built || toStr(row?.fullname) || "-";
 };
 
-/* =========================================================
-   UPLOAD CONFIG
-========================================================= */
 const uploadsRoot = path.join(process.cwd(), "uploads");
 const transferUploadsDir = path.join(uploadsRoot, "transfer-staff-orders");
 
@@ -81,6 +82,7 @@ const storage = multer.diskStorage({
     const base = path
       .basename(file.originalname || "file", ext)
       .replace(/[^a-zA-Z0-9-_]/g, "_");
+
     cb(null, `${Date.now()}-${Math.round(Math.random() * 1e9)}-${base}${ext}`);
   },
 });
@@ -128,6 +130,7 @@ async function generateTransferOrderNo(client) {
 
   const mm = String(month).padStart(2, "0");
   const nnnn = String(nextVal).padStart(4, "0");
+
   return `${prefix}-${year}-${mm}-${nnnn}`;
 }
 
@@ -155,97 +158,86 @@ async function canAccessTransferOrderFiles(req, orderRow) {
   return false;
 }
 
-/* =========================================================
-   GET ALL TRANSFER STAFF ORDERS
-========================================================= */
-router.get("/transfer-staff-orders", requireAuth, async (req, res) => {
-  try {
-    const branchId = getUserBranchId(req);
-    const userArea = getUserArea(req);
+router.get(
+  "/transfer-staff-orders",
+  requireAuth,
+  requirePermission("transfer_staff_order", "view"),
+  async (req, res) => {
+    try {
+      const branchId = getUserBranchId(req);
+      const userArea = getUserArea(req);
 
-    if (canViewAllTransferOrders(req)) {
-      const r = await pool.query(
-        `
-        SELECT *
-        FROM public.transfer_staff_orders
-        ORDER BY created_at DESC
-        `
-      );
-      return res.json(r.rows);
+      if (canViewAllTransferOrders(req)) {
+        const r = await pool.query(`
+          SELECT *
+          FROM public.transfer_staff_orders
+          ORDER BY created_at DESC
+        `);
+
+        return res.json(r.rows);
+      }
+
+      if (isBranchManager(req)) {
+        if (!branchId) return res.json([]);
+
+        const r = await pool.query(
+          `
+          SELECT *
+          FROM public.transfer_staff_orders
+          WHERE prev_branch_id = $1
+          ORDER BY created_at DESC
+          `,
+          [branchId]
+        );
+
+        return res.json(r.rows);
+      }
+
+      if (isAreaManager(req)) {
+        if (!userArea) return res.json([]);
+
+        const r = await pool.query(
+          `
+          SELECT *
+          FROM public.transfer_staff_orders
+          WHERE LOWER(TRIM(COALESCE(area, ''))) = LOWER(TRIM($1))
+          ORDER BY created_at DESC
+          `,
+          [userArea]
+        );
+
+        return res.json(r.rows);
+      }
+
+      if (isRegionalManager(req)) {
+        const userRegion = getUserRegion(req);
+        if (!userRegion) return res.json([]);
+
+        const r = await pool.query(
+          `
+          SELECT *
+          FROM public.transfer_staff_orders
+          WHERE LOWER(TRIM(COALESCE(region, ''))) = LOWER(TRIM($1))
+          ORDER BY created_at DESC
+          `,
+          [userRegion]
+        );
+
+        return res.json(r.rows);
+      }
+
+      return res.status(403).json({ message: "Access denied" });
+    } catch (e) {
+      console.error("GET /api/transfer-staff-orders ERROR:", e.message);
+      return res.status(500).json({ message: "Server error" });
     }
-
-    if (isBranchManager(req)) {
-      if (!branchId) return res.json([]);
-
-      const r = await pool.query(
-        `
-        SELECT *
-        FROM public.transfer_staff_orders
-        WHERE prev_branch_id = $1
-        ORDER BY created_at DESC
-        `,
-        [branchId]
-      );
-      return res.json(r.rows);
-    }
-
-    if (isAreaManager(req)) {
-      if (!userArea) return res.json([]);
-
-      const r = await pool.query(
-        `
-        SELECT *
-        FROM public.transfer_staff_orders
-        WHERE LOWER(TRIM(COALESCE(area, ''))) = LOWER(TRIM($1))
-        ORDER BY created_at DESC
-        `,
-        [userArea]
-      );
-      return res.json(r.rows);
-    }
-
-    if (isRegionalManager(req)) {
-      const userRegion = getUserRegion(req);
-      if (!userRegion) return res.json([]);
-
-      const r = await pool.query(
-        `
-        SELECT *
-        FROM public.transfer_staff_orders
-        WHERE LOWER(TRIM(COALESCE(region, ''))) = LOWER(TRIM($1))
-        ORDER BY created_at DESC
-        `,
-        [userRegion]
-      );
-
-      return res.json(r.rows);
-    }
-
-    return res.status(403).json({ message: "Access denied" });
-  } catch (e) {
-    console.error("GET /api/transfer-staff-orders ERROR:", e.message);
-    return res.status(500).json({ message: "Server error" });
   }
-});
+);
 
-/* =========================================================
-   CREATE TRANSFER STAFF ORDER
-========================================================= */
 router.post(
   "/transfer-staff-orders",
   requireAuth,
-  requireRole([
-    "admin",
-    "hr",
-    "accounting",
-    "branch manager",
-    "area manager",
-    "regional manager",
-    "assistant vice president",
-    "vice president",
-    "senior vice president",
-    "president",
-  ]),
+  requirePermission("transfer_staff_order", "create"),
   async (req, res) => {
     const client = await pool.connect();
 
@@ -269,30 +261,37 @@ router.post(
         await client.query("ROLLBACK");
         return res.status(400).json({ message: "Employee required" });
       }
+
       if (!prev_branch_id || !to_branch_id) {
         await client.query("ROLLBACK");
         return res.status(400).json({ message: "Branches required" });
       }
+
       if (!division) {
         await client.query("ROLLBACK");
         return res.status(400).json({ message: "Division required" });
       }
+
       if (!area) {
         await client.query("ROLLBACK");
         return res.status(400).json({ message: "Area required" });
       }
+
       if (!region) {
         await client.query("ROLLBACK");
         return res.status(400).json({ message: "Region required" });
       }
+
       if (!date_created) {
         await client.query("ROLLBACK");
         return res.status(400).json({ message: "Date created required" });
       }
+
       if (!effective_date) {
         await client.query("ROLLBACK");
         return res.status(400).json({ message: "Effective date required" });
       }
+
       if (!details) {
         await client.query("ROLLBACK");
         return res.status(400).json({ message: "Details required" });
@@ -300,6 +299,7 @@ router.post(
 
       if (isBranchManager(req)) {
         const myBranch = getUserBranchId(req);
+
         if (!myBranch || Number(myBranch) !== Number(prev_branch_id)) {
           await client.query("ROLLBACK");
           return res.status(403).json({ message: "Access denied" });
@@ -308,6 +308,7 @@ router.post(
 
       if (isAreaManager(req)) {
         const myArea = getUserArea(req);
+
         if (!myArea || myArea.toLowerCase() !== area.toLowerCase()) {
           await client.query("ROLLBACK");
           return res.status(403).json({ message: "Access denied" });
@@ -331,6 +332,7 @@ router.post(
 
       if (isRegionalManager(req)) {
         const myRegion = getUserRegion(req);
+
         if (!myRegion || myRegion.toLowerCase() !== region.toLowerCase()) {
           await client.query("ROLLBACK");
           return res.status(403).json({ message: "Access denied" });
@@ -404,7 +406,7 @@ router.post(
             'Pending',$16,
             $17,$18,$19
           )
-        RETURNING *;
+        RETURNING *
         `,
         [
           orderNo,
@@ -441,15 +443,14 @@ router.post(
   }
 );
 
-/* =========================================================
-   LIST FILES OF A TRANSFER ORDER
-========================================================= */
 router.get(
   "/transfer-staff-orders/:id/files",
   requireAuth,
+  requirePermission("transfer_staff_order", "view"),
   async (req, res) => {
     try {
       const transferOrderId = toInt(req.params.id);
+
       if (!transferOrderId) {
         return res.status(400).json({ message: "Invalid transfer order id" });
       }
@@ -501,35 +502,23 @@ router.get(
   }
 );
 
-/* =========================================================
-   UPLOAD FILES TO A TRANSFER ORDER
-========================================================= */
 router.post(
   "/transfer-staff-orders/:id/files",
   requireAuth,
-  requireRole([
-    "admin",
-    "hr",
-    "accounting",
-    "branch manager",
-    "area manager",
-    "regional manager",
-    "assistant vice president",
-    "vice president",
-    "senior vice president",
-    "president",
-  ]),
+  requirePermission("transfer_staff_order", "create"),
   upload.array("files", 10),
   async (req, res) => {
     const client = await pool.connect();
 
     try {
       const transferOrderId = toInt(req.params.id);
+
       if (!transferOrderId) {
         return res.status(400).json({ message: "Invalid transfer order id" });
       }
 
       const files = Array.isArray(req.files) ? req.files : [];
+
       if (files.length === 0) {
         return res.status(400).json({ message: "No files uploaded" });
       }
@@ -600,15 +589,14 @@ router.post(
   }
 );
 
-/* =========================================================
-   DOWNLOAD TRANSFER FILE
-========================================================= */
 router.get(
   "/transfer-staff-orders/files/:fileId/download",
   requireAuth,
+  requirePermission("transfer_staff_order", "view"),
   async (req, res) => {
     try {
       const fileId = toInt(req.params.fileId);
+
       if (!fileId) {
         return res.status(400).json({ message: "Invalid file id" });
       }
@@ -654,29 +642,24 @@ router.get(
         row.original_name || row.filename || "download"
       );
     } catch (e) {
-      console.error("GET /api/transfer-staff-orders/files/:fileId/download ERROR:", e.message);
+      console.error(
+        "GET /api/transfer-staff-orders/files/:fileId/download ERROR:",
+        e.message
+      );
+
       return res.status(500).json({ message: "Server error" });
     }
   }
 );
 
-/* =========================================================
-   APPROVE TRANSFER STAFF ORDER
-========================================================= */
 router.put(
   "/transfer-staff-orders/:id/approve",
   requireAuth,
-  requireRole([
-    "admin",
-    "hr",
-    "accounting",
-    "vice president",
-    "senior vice president",
-    "president",
-  ]),
+  requirePermission("transfer_staff_order", "approve"),
   async (req, res) => {
     try {
       const id = toInt(req.params.id);
+
       if (!id) return res.status(400).json({ message: "Invalid id" });
 
       const r = await pool.query(
@@ -690,7 +673,7 @@ router.put(
           rejected_at=NULL,
           rejection_reason=NULL
         WHERE id=$1 AND status='Pending'
-        RETURNING *;
+        RETURNING *
         `,
         [id, req.user?.id ?? null]
       );
@@ -722,26 +705,18 @@ router.put(
   }
 );
 
-/* =========================================================
-   REJECT TRANSFER STAFF ORDER
-========================================================= */
 router.put(
   "/transfer-staff-orders/:id/reject",
   requireAuth,
-  requireRole([
-    "admin",
-    "hr",
-    "accounting",
-    "vice president",
-    "senior vice president",
-    "president",
-  ]),
+  requirePermission("transfer_staff_order", "reject"),
   async (req, res) => {
     try {
       const id = toInt(req.params.id);
+
       if (!id) return res.status(400).json({ message: "Invalid id" });
 
       const reason = toStr(req.body?.reason);
+
       if (!reason) {
         return res.status(400).json({ message: "Rejection reason is required" });
       }
@@ -757,7 +732,7 @@ router.put(
           approved_by=NULL,
           approved_at=NULL
         WHERE id=$1 AND status='Pending'
-        RETURNING *;
+        RETURNING *
         `,
         [id, req.user?.id ?? null, reason]
       );

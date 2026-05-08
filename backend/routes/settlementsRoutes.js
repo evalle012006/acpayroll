@@ -1,10 +1,26 @@
 const express = require("express");
 const router = express.Router();
 const pool = require("../db");
-const { requireAuth, requireRole } = require("../middlewares/authMiddleware");
+const { requireAuth } = require("../middlewares/authMiddleware");
+const { requirePermission } = require("../utils/permissions");
 const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
+
+const {
+  isAdmin,
+  isIT,
+  isHr,
+  isAccounting,
+  isTread,
+  isBranchManager,
+  isAreaManager,
+  isRegionalManager,
+  isAssistantVicePresident,
+  isVicePresident,
+  isSeniorVicePresident,
+  isPresident,
+} = require("../utils/roleAccess");
 
 const toNum = (v) => {
   const n = Number(v ?? 0);
@@ -18,35 +34,24 @@ const toInt = (v) => {
 
 const toStr = (v) => String(v ?? "").trim();
 
-const roleLower = (req) => String(req.user?.role || "").trim().toLowerCase();
-
-const isAdmin = (req) => roleLower(req) === "admin";
-const isHr = (req) => roleLower(req) === "hr";
-const isAccounting = (req) => roleLower(req) === "accounting";
-const isTread = (req) => roleLower(req) === "tread";
-const isBranchManager = (req) => roleLower(req) === "branch manager";
-
 const canViewSettlements = (req) =>
   isAdmin(req) ||
+  isIT(req) ||
   isHr(req) ||
   isAccounting(req) ||
   isTread(req) ||
-  isBranchManager(req);
-
-const canCreateSettlement = (req) =>
-  isAdmin(req) || isHr(req) || isAccounting(req);
-
-const canDeleteSettlement = (req) =>
-  isAdmin(req) || isHr(req) || isAccounting(req);
-
-const canDownloadSettlementFile = (req) =>
-  isAdmin(req) ||
-  isHr(req) ||
-  isAccounting(req) ||
-  isTread(req) ||
-  isBranchManager(req);
+  isBranchManager(req) ||
+  isAreaManager(req) ||
+  isRegionalManager(req) ||
+  isAssistantVicePresident(req) ||
+  isVicePresident(req) ||
+  isSeniorVicePresident(req) ||
+  isPresident(req);
 
 const getUserBranchCode = (req) => toStr(req.user?.branch_id);
+const getUserArea = (req) => toStr(req.user?.area);
+const getUserRegion = (req) => toStr(req.user?.region);
+const getUserDivision = (req) => toStr(req.user?.division);
 
 const uploadDir = path.join(__dirname, "..", "uploads", "settlements");
 
@@ -101,58 +106,116 @@ async function getBranchByIdOrCode({ id, code }) {
   return null;
 }
 
-router.get("/settlements", requireAuth, async (req, res) => {
-  try {
-    if (!canViewSettlements(req)) {
-      return res.status(403).json({ message: "Access denied" });
-    }
+router.get(
+  "/settlements",
+  requireAuth,
+  requirePermission("statement_of_account", "view"),
+  async (req, res) => {
+    try {
+      if (!canViewSettlements(req)) {
+        return res.status(403).json({ message: "Access denied" });
+      }
 
-    if (isBranchManager(req)) {
-      const branchCode = getUserBranchCode(req);
+      if (isBranchManager(req)) {
+        const branchCode = getUserBranchCode(req);
 
-      if (!branchCode) return res.json([]);
+        if (!branchCode) return res.json([]);
+
+        const r = await pool.query(
+          `
+          SELECT *
+          FROM public.settlements
+          WHERE LOWER(TRIM(COALESCE(settlement_branch_code, ''))) = LOWER(TRIM($1))
+          ORDER BY id DESC
+          `,
+          [branchCode]
+        );
+
+        return res.json(r.rows);
+      }
+
+      if (isAreaManager(req)) {
+        const area = getUserArea(req);
+
+        if (!area) return res.json([]);
+
+        const r = await pool.query(
+          `
+          SELECT st.*
+          FROM public.settlements st
+          LEFT JOIN public.staff s ON s.id = st.staff_id
+          WHERE LOWER(TRIM(COALESCE(s.area, ''))) = LOWER(TRIM($1))
+          ORDER BY st.id DESC
+          `,
+          [area]
+        );
+
+        return res.json(r.rows);
+      }
+
+      if (isRegionalManager(req)) {
+        const region = getUserRegion(req);
+
+        if (!region) return res.json([]);
+
+        const r = await pool.query(
+          `
+          SELECT st.*
+          FROM public.settlements st
+          LEFT JOIN public.staff s ON s.id = st.staff_id
+          WHERE LOWER(TRIM(COALESCE(s.region, ''))) = LOWER(TRIM($1))
+          ORDER BY st.id DESC
+          `,
+          [region]
+        );
+
+        return res.json(r.rows);
+      }
+
+      if (isAssistantVicePresident(req)) {
+        const division = getUserDivision(req);
+
+        if (!division) return res.json([]);
+
+        const r = await pool.query(
+          `
+          SELECT st.*
+          FROM public.settlements st
+          LEFT JOIN public.staff s ON s.id = st.staff_id
+          WHERE LOWER(TRIM(COALESCE(s.division, ''))) = LOWER(TRIM($1))
+          ORDER BY st.id DESC
+          `,
+          [division]
+        );
+
+        return res.json(r.rows);
+      }
 
       const r = await pool.query(
         `
         SELECT *
         FROM public.settlements
-        WHERE LOWER(TRIM(COALESCE(settlement_branch_code, ''))) = LOWER(TRIM($1))
         ORDER BY id DESC
-        `,
-        [branchCode]
+        `
       );
 
       return res.json(r.rows);
+    } catch (e) {
+      console.error("GET /api/settlements FULL ERROR:", e);
+      return res.status(500).json({ message: e.message || "Server error" });
     }
-
-    const r = await pool.query(
-      `
-      SELECT *
-      FROM public.settlements
-      ORDER BY id DESC
-      `
-    );
-
-    return res.json(r.rows);
-  } catch (e) {
-    console.error("GET /api/settlements FULL ERROR:", e);
-    return res.status(500).json({ message: e.message || "Server error" });
   }
-});
+);
 
 router.post(
   "/settlements",
   requireAuth,
-  requireRole(["admin", "hr", "accounting"]),
+  requirePermission("statement_of_account", "create"),
   upload.single("attachment"),
   async (req, res) => {
     const client = await pool.connect();
 
     try {
-      if (!canCreateSettlement(req)) {
-        return res.status(403).json({ message: "Access denied" });
-      }
-
       const staff_id = toInt(req.body?.staff_id);
       const employee_no = toStr(req.body?.employee_no);
       const employee_name = toStr(req.body?.employee_name);
@@ -160,7 +223,6 @@ router.post(
 
       const settlement_branch_id = toInt(req.body?.settlement_branch_id);
       const settlement_branch_code = toStr(req.body?.settlement_branch_code);
-      const settlement_branch_name = toStr(req.body?.settlement_branch_name);
 
       if (!staff_id) return res.status(400).json({ message: "staff_id is required" });
       if (!employee_no) return res.status(400).json({ message: "employee_no is required" });
@@ -313,71 +375,91 @@ router.post(
   }
 );
 
-router.get("/settlements/:id/download", requireAuth, async (req, res) => {
-  try {
-    if (!canDownloadSettlementFile(req)) {
-      return res.status(403).json({ message: "Access denied" });
-    }
+router.get(
+  "/settlements/:id/download",
+  requireAuth,
+  requirePermission("statement_of_account", "view"),
+  async (req, res) => {
+    try {
+      const id = toInt(req.params.id);
+      if (!id) return res.status(400).json({ message: "Invalid id" });
 
-    const id = toInt(req.params.id);
-    if (!id) return res.status(400).json({ message: "Invalid id" });
+      const r = await pool.query(
+        `
+        SELECT
+          st.id,
+          st.staff_id,
+          st.settlement_branch_code,
+          st.attachment_path,
+          st.attachment_name,
+          s.area,
+          s.region,
+          s.division
+        FROM public.settlements st
+        LEFT JOIN public.staff s ON s.id = st.staff_id
+        WHERE st.id = $1
+        LIMIT 1
+        `,
+        [id]
+      );
 
-    const r = await pool.query(
-      `
-      SELECT
-        id,
-        settlement_branch_code,
-        attachment_path,
-        attachment_name
-      FROM public.settlements
-      WHERE id = $1
-      LIMIT 1
-      `,
-      [id]
-    );
-
-    if (r.rowCount === 0) {
-      return res.status(404).json({ message: "Settlement not found" });
-    }
-
-    const row = r.rows[0];
-
-    if (isBranchManager(req)) {
-      const branchCode = getUserBranchCode(req);
-
-      if (toStr(row.settlement_branch_code).toLowerCase() !== branchCode.toLowerCase()) {
-        return res.status(403).json({ message: "Access denied" });
+      if (r.rowCount === 0) {
+        return res.status(404).json({ message: "Settlement not found" });
       }
+
+      const row = r.rows[0];
+
+      if (isBranchManager(req)) {
+        const branchCode = getUserBranchCode(req);
+
+        if (toStr(row.settlement_branch_code).toLowerCase() !== branchCode.toLowerCase()) {
+          return res.status(403).json({ message: "Access denied" });
+        }
+      }
+
+      if (isAreaManager(req)) {
+        if (toStr(row.area).toLowerCase() !== getUserArea(req).toLowerCase()) {
+          return res.status(403).json({ message: "Access denied" });
+        }
+      }
+
+      if (isRegionalManager(req)) {
+        if (toStr(row.region).toLowerCase() !== getUserRegion(req).toLowerCase()) {
+          return res.status(403).json({ message: "Access denied" });
+        }
+      }
+
+      if (isAssistantVicePresident(req)) {
+        if (toStr(row.division).toLowerCase() !== getUserDivision(req).toLowerCase()) {
+          return res.status(403).json({ message: "Access denied" });
+        }
+      }
+
+      if (!row.attachment_path) {
+        return res.status(404).json({ message: "No settlement file found" });
+      }
+
+      const rel = String(row.attachment_path).replace(/^\/uploads\//, "");
+      const filePath = path.join(__dirname, "..", "uploads", rel);
+
+      if (!fs.existsSync(filePath)) {
+        return res.status(404).json({ message: "File not found" });
+      }
+
+      return res.download(filePath, row.attachment_name || path.basename(filePath));
+    } catch (e) {
+      console.error("GET /api/settlements/:id/download FULL ERROR:", e);
+      return res.status(500).json({ message: e.message || "Server error" });
     }
-
-    if (!row.attachment_path) {
-      return res.status(404).json({ message: "No settlement file found" });
-    }
-
-    const rel = String(row.attachment_path).replace(/^\/uploads\//, "");
-    const filePath = path.join(__dirname, "..", "uploads", rel);
-
-    if (!fs.existsSync(filePath)) {
-      return res.status(404).json({ message: "File not found" });
-    }
-
-    return res.download(filePath, row.attachment_name || path.basename(filePath));
-  } catch (e) {
-    console.error("GET /api/settlements/:id/download FULL ERROR:", e);
-    return res.status(500).json({ message: e.message || "Server error" });
   }
-});
+);
 
 router.delete(
   "/settlements/:id",
   requireAuth,
-  requireRole(["admin", "hr", "accounting"]),
+  requirePermission("statement_of_account", "delete"),
   async (req, res) => {
     try {
-      if (!canDeleteSettlement(req)) {
-        return res.status(403).json({ message: "Access denied" });
-      }
-
       const id = toInt(req.params.id);
       if (!id) return res.status(400).json({ message: "Invalid id" });
 

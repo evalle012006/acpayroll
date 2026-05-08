@@ -40,47 +40,46 @@ const stageLabel = (stage) => {
   if (s === "regional manager") return "Regional Manager";
   if (s === "assistant vice president") return "Assistant Vice President";
   if (s === "vice president") return "Vice President";
-  if (s === "svp") return "Senior Vice President";
-  if (s === "senior vice president") return "Senior Vice President";
-  if (s === "final") return "HR/Admin/Accounting";
   if (s === "approved") return "Approved";
 
   return stage || "Pending";
 };
 
+const canBypass = (role) => ["admin", "it"].includes(norm(role));
+
 const canApproveStage = (role, stage) => {
   const r = norm(role);
   const s = norm(stage);
+
+  if (canBypass(r)) return true;
 
   if (s === "branch manager") return r === "branch manager";
   if (s === "area manager") return r === "area manager";
   if (s === "regional manager") return r === "regional manager";
   if (s === "assistant vice president") return r === "assistant vice president";
   if (s === "vice president") return r === "vice president";
-  if (s === "svp" || s === "senior vice president") return r === "senior vice president";
-  if (s === "final") return ["admin", "hr", "accounting"].includes(r);
 
   return false;
 };
 
-const chainText = (x) => {
-  const mainOffice = ["svp", "senior vice president", "final"].includes(
-    norm(x?.approval_stage)
-  );
-
-  if (mainOffice) {
-    return "Senior Vice President → HR/Admin/Accounting";
-  }
-
-  return "Branch Manager → Area Manager → Regional Manager → Assistant Vice President → Vice President";
-};
+const chainText = () =>
+  "Branch Manager → Area Manager → Regional Manager → Assistant Vice President → Vice President";
 
 export default function CBUWithdrawApprovalTab() {
   const user = useMemo(() => readUser(), []);
   const role = norm(user?.role);
 
-  const canCreate = ["admin", "hr", "accounting"].includes(role);
-  const canUploadApprovedFile = ["admin", "hr", "accounting"].includes(role);
+  const canCreate = [
+    "admin",
+    "it",
+    "hr",
+    "accounting",
+    "branch manager",
+    "area manager",
+    "regional manager",
+    "assistant vice president",
+    "vice president",
+  ].includes(role);
 
   const [rows, setRows] = useState([]);
   const [staffList, setStaffList] = useState([]);
@@ -90,10 +89,12 @@ export default function CBUWithdrawApprovalTab() {
   const [showCreate, setShowCreate] = useState(false);
 
   const [selected, setSelected] = useState(null);
+  const [selectedApprovalFile, setSelectedApprovalFile] = useState(null);
+  const [approvalFiles, setApprovalFiles] = useState({});
+
   const [loading, setLoading] = useState(false);
   const [creating, setCreating] = useState(false);
   const [processingId, setProcessingId] = useState("");
-  const [uploadingId, setUploadingId] = useState("");
 
   const [employeeSearch, setEmployeeSearch] = useState("");
   const [showEmployeeDropdown, setShowEmployeeDropdown] = useState(false);
@@ -262,6 +263,7 @@ export default function CBUWithdrawApprovalTab() {
     if (!form.employee_id) return alert("Please select employee.");
     if (!form.amount || Number(form.amount) <= 0) return alert("Amount is required.");
     if (!toStr(form.reason)) return alert("Reason is required.");
+    if (!form.attachment) return alert("Please attach the request file.");
 
     try {
       setCreating(true);
@@ -272,8 +274,7 @@ export default function CBUWithdrawApprovalTab() {
       fd.append("reason", form.reason);
       fd.append("date_created", form.date_created || todayDate());
       fd.append("disbursement_date", form.disbursement_date || "");
-
-      if (form.attachment) fd.append("photo", form.attachment);
+      fd.append("photo", form.attachment);
 
       await api.post("/cbu-withdrawals", fd, {
         headers: { "Content-Type": "multipart/form-data" },
@@ -303,16 +304,55 @@ export default function CBUWithdrawApprovalTab() {
       }
     }
 
-    if (!window.confirm(`${status} this CBU withdrawal?`)) return;
+    if (status === "Approved" && !approvalFiles[item.id]) {
+      alert("Please upload the signed/approved CBU file before approving.");
+      return;
+    }
+
+    if (
+      !window.confirm(
+        status === "Approved"
+          ? "Approve this CBU withdrawal and submit the uploaded signed file to the next approver?"
+          : "Reject this CBU withdrawal?"
+      )
+    ) {
+      return;
+    }
 
     try {
       setProcessingId(`${item.id}-${status}`);
 
-      await api.put(`/cbu-withdrawals/${item.id}`, {
-        status,
-        rejection_reason: reason,
-        approval_stage: item.approval_stage,
+      const fd = new FormData();
+      fd.append("status", status);
+      fd.append("rejection_reason", reason || "");
+      fd.append("approval_stage", item.approval_stage || "");
+
+      if (status === "Approved") {
+        fd.append("photo", approvalFiles[item.id]);
+      }
+
+      await api.put(`/cbu-withdrawals/${item.id}`, fd, {
+        headers: { "Content-Type": "multipart/form-data" },
       });
+
+      alert(
+        status === "Approved"
+          ? "CBU withdrawal approved and signed file submitted."
+          : "CBU withdrawal rejected."
+      );
+
+      setApprovalFiles((prev) => {
+        const copy = { ...prev };
+        delete copy[item.id];
+        return copy;
+      });
+
+      setSelectedApprovalFile(null);
+
+      if (selected?.id === item.id) {
+        setSelected(null);
+        setShowView(false);
+      }
 
       await loadData();
     } catch (err) {
@@ -322,7 +362,7 @@ export default function CBUWithdrawApprovalTab() {
     }
   };
 
-  const downloadFile = async (id, type) => {
+  const downloadFile = async (id, type = "latest") => {
     try {
       const res = await api.get(`/cbu-withdrawals/${id}/download/${type}`);
 
@@ -337,28 +377,6 @@ export default function CBUWithdrawApprovalTab() {
     }
   };
 
-  const uploadApprovedFile = async (id, file) => {
-    if (!id || !file) return;
-
-    try {
-      setUploadingId(String(id));
-
-      const fd = new FormData();
-      fd.append("photo", file);
-
-      await api.post(`/cbu-withdrawals/${id}/approved-file`, fd, {
-        headers: { "Content-Type": "multipart/form-data" },
-      });
-
-      alert("Approved CBU withdrawal file uploaded.");
-      await loadData();
-    } catch (err) {
-      alert(err?.response?.data?.message || "Failed to upload approved file.");
-    } finally {
-      setUploadingId("");
-    }
-  };
-
   const badgeClass = (status) => {
     const s = norm(status);
     if (s === "approved") return "badge badge-approved";
@@ -370,11 +388,13 @@ export default function CBUWithdrawApprovalTab() {
 
   const openView = (item) => {
     setSelected(item);
+    setSelectedApprovalFile(null);
     setShowView(true);
   };
 
   const closeView = () => {
     setSelected(null);
+    setSelectedApprovalFile(null);
     setShowView(false);
   };
 
@@ -419,7 +439,7 @@ export default function CBUWithdrawApprovalTab() {
             <div className="mini">
               {loading
                 ? "Loading CBU withdraw requests..."
-                : "Review and approve or reject CBU withdraw requests."}
+                : "Download latest file, upload signed file, then approve."}
             </div>
           </div>
         </div>
@@ -436,7 +456,9 @@ export default function CBUWithdrawApprovalTab() {
             <div className="modal-head">
               <div>
                 <h3 className="modal-title">CBU Withdraw</h3>
-                <p className="modal-subtitle">Submit CBU withdraw request</p>
+                <p className="modal-subtitle">
+                  Submit the initial request file for approval.
+                </p>
               </div>
 
               <button
@@ -578,9 +600,10 @@ export default function CBUWithdrawApprovalTab() {
                 </div>
 
                 <div className="form-group full">
-                  <label>Request File</label>
+                  <label>Initial Request File</label>
                   <input
                     type="file"
+                    required
                     onChange={(e) =>
                       setForm((p) => ({
                         ...p,
@@ -621,7 +644,7 @@ export default function CBUWithdrawApprovalTab() {
               <div>
                 <h3 className="modal-title">CBU Withdraw Requests</h3>
                 <p className="modal-subtitle">
-                  Approve or reject CBU withdrawal requests
+                  Download latest file, upload signed file, then approve.
                 </p>
               </div>
 
@@ -645,7 +668,7 @@ export default function CBUWithdrawApprovalTab() {
                       <th>Amount</th>
                       <th>Status</th>
                       <th>Stage</th>
-                      <th>Date Filed</th>
+                      <th>Latest File</th>
                       <th>Action</th>
                     </tr>
                   </thead>
@@ -681,9 +704,21 @@ export default function CBUWithdrawApprovalTab() {
                               </span>
                             </td>
                             <td>{stageLabel(stage)}</td>
-                            <td>{fmtDate(x.created_at)}</td>
                             <td>
-                              <div className="row-actions">
+                              {x.attachment_path ? (
+                                <button
+                                  className="btn-secondary"
+                                  type="button"
+                                  onClick={() => downloadFile(x.id, "latest")}
+                                >
+                                  Download Latest
+                                </button>
+                              ) : (
+                                <span className="mini">No file</span>
+                              )}
+                            </td>
+                            <td>
+                              <div className="row-actions loan-row-actions">
                                 <button
                                   className="btn-secondary"
                                   type="button"
@@ -694,6 +729,29 @@ export default function CBUWithdrawApprovalTab() {
 
                                 {canApproveThis ? (
                                   <>
+                                    <label className="loan-upload-pill">
+                                      <input
+                                        type="file"
+                                        hidden
+                                        onChange={(e) =>
+                                          setApprovalFiles((prev) => ({
+                                            ...prev,
+                                            [x.id]: e.target.files?.[0] || null,
+                                          }))
+                                        }
+                                      />
+                                      📎 {approvalFiles[x.id]?.name ? "Change File" : "Upload File"}
+                                    </label>
+
+                                    {approvalFiles[x.id]?.name ? (
+                                      <span
+                                        className="loan-file-name"
+                                        title={approvalFiles[x.id].name}
+                                      >
+                                        {approvalFiles[x.id].name}
+                                      </span>
+                                    ) : null}
+
                                     <button
                                       className="btn-success"
                                       type="button"
@@ -702,7 +760,7 @@ export default function CBUWithdrawApprovalTab() {
                                     >
                                       {processingId === `${x.id}-Approved`
                                         ? "Approving..."
-                                        : "Approve"}
+                                        : "Upload + Approve"}
                                     </button>
 
                                     <button
@@ -803,7 +861,7 @@ export default function CBUWithdrawApprovalTab() {
 
                 <div className="form-group">
                   <label>Approval Chain</label>
-                  <input value={chainText(selected)} readOnly />
+                  <input value={chainText()} readOnly />
                 </div>
 
                 <div className="form-group">
@@ -856,49 +914,82 @@ export default function CBUWithdrawApprovalTab() {
                 ) : null}
 
                 <div className="form-group full">
-                  <label>Files</label>
-                  <div className="row-actions" style={{ gap: 10, flexWrap: "wrap" }}>
-                    {selected.attachment_path ? (
-                      <button
-                        className="btn-secondary"
-                        type="button"
-                        onClick={() => downloadFile(selected.id, "request")}
-                      >
-                        Download Request File
-                      </button>
-                    ) : (
-                      <span className="mini">No request file.</span>
-                    )}
-
-                    {selected.approved_attachment_path ? (
-                      <button
-                        className="btn-secondary"
-                        type="button"
-                        onClick={() => downloadFile(selected.id, "approved")}
-                      >
-                        Download Approved File
-                      </button>
-                    ) : null}
-
-                    {canUploadApprovedFile && norm(selected.status) === "approved" ? (
-                      <label className="btn-secondary" style={{ cursor: "pointer" }}>
-                        {uploadingId === String(selected.id)
-                          ? "Uploading..."
-                          : "Upload Approved File"}
-                        <input
-                          type="file"
-                          hidden
-                          onChange={(e) =>
-                            uploadApprovedFile(selected.id, e.target.files?.[0] || null)
-                          }
-                        />
-                      </label>
-                    ) : null}
-                  </div>
+                  <label>Latest File</label>
+                  {selected.attachment_path ? (
+                    <button
+                      className="btn-secondary"
+                      type="button"
+                      onClick={() => downloadFile(selected.id, "latest")}
+                    >
+                      Download Latest File
+                    </button>
+                  ) : (
+                    <span className="mini">No file.</span>
+                  )}
                 </div>
+
+                {norm(selected.status) === "pending" &&
+                  canApproveStage(role, selected.approval_stage) ? (
+                  <div className="form-group full">
+                    <label>Upload Signed File Before Approving</label>
+
+                    <label className="loan-upload-pill" style={{ width: "fit-content" }}>
+                      <input
+                        type="file"
+                        hidden
+                        onChange={(e) => {
+                          const file = e.target.files?.[0] || null;
+                          setSelectedApprovalFile(file);
+                          setApprovalFiles((prev) => ({
+                            ...prev,
+                            [selected.id]: file,
+                          }));
+                        }}
+                      />
+                      📎 {selectedApprovalFile?.name ? "Change File" : "Upload File"}
+                    </label>
+
+                    {selectedApprovalFile?.name ? (
+                      <span className="loan-file-name" title={selectedApprovalFile.name}>
+                        {selectedApprovalFile.name}
+                      </span>
+                    ) : null}
+
+                    <small style={{ opacity: 0.75, display: "block", marginTop: 8 }}>
+                      This file replaces the previous file. The next approver downloads this new file.
+                    </small>
+                  </div>
+                ) : null}
               </div>
 
               <div className="modal-buttons">
+                {norm(selected.status) === "pending" &&
+                  canApproveStage(role, selected.approval_stage) ? (
+                  <>
+                    <button
+                      className="btn-success"
+                      type="button"
+                      disabled={processingId === `${selected.id}-Approved`}
+                      onClick={() => updateStatus(selected, "Approved")}
+                    >
+                      {processingId === `${selected.id}-Approved`
+                        ? "Approving..."
+                        : "Upload + Approve"}
+                    </button>
+
+                    <button
+                      className="btn-danger"
+                      type="button"
+                      disabled={processingId === `${selected.id}-Rejected`}
+                      onClick={() => updateStatus(selected, "Rejected")}
+                    >
+                      {processingId === `${selected.id}-Rejected`
+                        ? "Rejecting..."
+                        : "Reject"}
+                    </button>
+                  </>
+                ) : null}
+
                 <button className="btn-secondary" type="button" onClick={closeView}>
                   Close
                 </button>

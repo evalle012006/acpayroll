@@ -19,7 +19,40 @@ export default function Approval() {
   const user = useMemo(() => readUser(), []);
   const role = norm(user?.role);
 
-  const [activeTab, setActiveTab] = useState("loan");
+  const isAdmin = role === "admin";
+  const isIt = role === "it";
+  const isHr = role === "hr";
+  const isAccounting = role === "accounting";
+  const isTread = role === "tread";
+
+  const isAreaManager = role === "area manager";
+  const isRegionalManager = role === "regional manager";
+  const isAssistantVicePresident =
+    role === "assistant vice president";
+
+  const isVicePresident = role === "vice president";
+  const isSeniorVicePresident =
+    role === "senior vice president";
+
+  const isPresident = role === "president";
+
+  const canAccessLoanApproval =
+    isAdmin ||
+    isIt ||
+    isHr ||
+    isAccounting ||
+    isTread ||
+    isAreaManager ||
+    isRegionalManager ||
+    isAssistantVicePresident ||
+    isVicePresident ||
+    isSeniorVicePresident ||
+    isPresident;
+
+  const [activeTab, setActiveTab] = useState(
+    canAccessLoanApproval ? "loan" : "cbu"
+  );
+
   const safeActiveTab = activeTab;
 
   return (
@@ -27,6 +60,7 @@ export default function Approval() {
       <div className="approval-page-header">
         <div>
           <h2 className="approval-title">Approvals</h2>
+
           <p className="approval-subtitle">
             Loan approvals, CBU withdrawals, and reimbursement requests
           </p>
@@ -34,13 +68,15 @@ export default function Approval() {
       </div>
 
       <div className="approval-tabs">
-        <button
-          type="button"
-          className={safeActiveTab === "loan" ? "active" : ""}
-          onClick={() => setActiveTab("loan")}
-        >
-          Loan Requests
-        </button>
+        {canAccessLoanApproval && (
+          <button
+            type="button"
+            className={safeActiveTab === "loan" ? "active" : ""}
+            onClick={() => setActiveTab("loan")}
+          >
+            Loan Requests
+          </button>
+        )}
 
         <button
           type="button"
@@ -60,9 +96,16 @@ export default function Approval() {
       </div>
 
       <div className="approval-content">
-        {safeActiveTab === "loan" && <LoanApprovalTab />}
-        {safeActiveTab === "cbu" && <CBUWithdrawApprovalTab />}
-        {safeActiveTab === "reimbursement" && <ReimbursementApprovalTab />}
+        {safeActiveTab === "loan" &&
+          canAccessLoanApproval && <LoanApprovalTab />}
+
+        {safeActiveTab === "cbu" && (
+          <CBUWithdrawApprovalTab />
+        )}
+
+        {safeActiveTab === "reimbursement" && (
+          <ReimbursementApprovalTab />
+        )}
       </div>
     </div>
   );

@@ -8,8 +8,10 @@ const hasAnyRole = (req, roles = []) => {
 };
 
 const VIEW_ONLY_ROLES = ["tread"];
+
 const CREATOR_ROLES = [
   "admin",
+  "it",
   "hr",
   "accounting",
   "branch manager",
@@ -20,16 +22,20 @@ const CREATOR_ROLES = [
   "senior vice president",
   "president",
 ];
+
 const FINAL_APPROVER_ROLES = [
   "admin",
+  "it",
   "hr",
   "accounting",
   "vice president",
   "senior vice president",
   "president",
 ];
+
 const FULL_VIEW_ROLES = [
   "admin",
+  "it",
   "hr",
   "accounting",
   "tread",
@@ -40,6 +46,7 @@ const FULL_VIEW_ROLES = [
 ];
 
 const isAdmin = (req) => hasAnyRole(req, ["admin"]);
+const isIT = (req) => hasAnyRole(req, ["it"]);
 const isHr = (req) => hasAnyRole(req, ["hr"]);
 const isAccounting = (req) => hasAnyRole(req, ["accounting"]);
 const isTread = (req) => hasAnyRole(req, ["tread"]);
@@ -62,11 +69,14 @@ module.exports = {
   normalizeRole,
   getRole,
   hasAnyRole,
+
   VIEW_ONLY_ROLES,
   CREATOR_ROLES,
   FINAL_APPROVER_ROLES,
   FULL_VIEW_ROLES,
+
   isAdmin,
+  isIT,
   isHr,
   isAccounting,
   isTread,
@@ -77,6 +87,7 @@ module.exports = {
   isVicePresident,
   isSeniorVicePresident,
   isPresident,
+
   canViewAll,
   canCreate,
   canFinalApprove,

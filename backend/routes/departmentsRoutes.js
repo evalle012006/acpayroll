@@ -1,7 +1,24 @@
 const express = require("express");
 const router = express.Router();
 const pool = require("../db");
-const { requireAuth, requireRole } = require("../middlewares/authMiddleware");
+
+const { requireAuth } = require("../middlewares/authMiddleware");
+const { requirePermission } = require("../utils/permissions");
+
+const {
+  isAdmin,
+  isIT,
+  isHr,
+  isAccounting,
+  isTread,
+  isBranchManager,
+  isAreaManager,
+  isRegionalManager,
+  isAssistantVicePresident,
+  isVicePresident,
+  isSeniorVicePresident,
+  isPresident,
+} = require("../utils/roleAccess");
 
 const toInt = (v) => {
   const n = Number(v);
@@ -9,194 +26,425 @@ const toInt = (v) => {
 };
 
 const clean = (v) => String(v ?? "").trim();
+const toStr = (v) => String(v ?? "").trim();
 
-router.get("/departments", requireAuth, async (_req, res) => {
-  try {
-    const r = await pool.query(
-      `SELECT id, code, name, description, created_at, updated_at
-       FROM public.departments
-       ORDER BY id ASC`
-    );
-    return res.json(r.rows);
-  } catch (e) {
-    console.error("GET /api/departments ERROR:", e.message);
-    return res.status(500).json({ message: "Server error" });
-  }
-});
+const getUserBranchCode = (req) => toStr(req.user?.branch_id);
+const getUserArea = (req) => toStr(req.user?.area);
+const getUserRegion = (req) => toStr(req.user?.region);
+const getUserDivision = (req) => toStr(req.user?.division);
+
+async function getBranchIdFromCode(branchCode) {
+  const code = toStr(branchCode);
+
+  if (!code) return null;
+
+  const r = await pool.query(
+    `
+    SELECT id
+    FROM public.branches
+    WHERE LOWER(TRIM(code)) = LOWER(TRIM($1))
+    LIMIT 1
+    `,
+    [code]
+  );
+
+  if (r.rowCount === 0) return null;
+
+  return r.rows[0].id;
+}
+
+function canViewAllDepartments(req) {
+  return (
+    isAdmin(req) ||
+    isIT(req) ||
+    isHr(req) ||
+    isAccounting(req) ||
+    isTread(req) ||
+    isVicePresident(req) ||
+    isSeniorVicePresident(req) ||
+    isPresident(req)
+  );
+}
 
 router.get(
-  "/departments/:id/staff",
+  "/departments",
   requireAuth,
-  requireRole([
-    "admin",
-    "hr",
-    "accounting",
-    "tread",
-    "branch manager",
-    "vice president",
-    "senior vice president",
-    "president",
-  ]),
-  async (req, res) => {
+  async (_req, res) => {
     try {
-      const id = toInt(req.params.id);
-      if (!id) return res.status(400).json({ message: "Invalid department id" });
+      const r = await pool.query(`
+        SELECT
+          id,
+          code,
+          name,
+          description,
+          created_at,
+          updated_at
+        FROM public.departments
+        ORDER BY id ASC
+      `);
 
-      const dep = await pool.query(
-        `SELECT id, name FROM public.departments WHERE id=$1`,
-        [id]
-      );
-      if (dep.rowCount === 0) {
-        return res.status(404).json({ message: "Department not found" });
-      }
-
-      const depName = String(dep.rows[0].name || "").trim();
-
-      const role = String(req.user?.role || "").trim().toLowerCase();
-      const bid = req.user?.branch_id ?? null;
-
-      if (
-        role === "admin" ||
-        role === "hr" ||
-        role === "accounting" ||
-        role === "tread" ||
-        role === "vice president" ||
-        role === "senior vice president" ||
-        role === "president"
-      ) {
-        const r = await pool.query(
-          `
-          SELECT
-            s.*,
-            br.code AS branch_code,
-            br.name AS branch_name
-          FROM public.staff s
-          LEFT JOIN public.branches br ON br.id = s.branch_id
-          WHERE COALESCE(s.department,'') = $1
-          ORDER BY s.fullname ASC
-          `,
-          [depName]
-        );
-        return res.json(r.rows);
-      }
-
-      if (role === "branch manager") {
-        if (!bid) return res.json([]);
-        const r = await pool.query(
-          `
-          SELECT
-            s.*,
-            br.code AS branch_code,
-            br.name AS branch_name
-          FROM public.staff s
-          LEFT JOIN public.branches br ON br.id = s.branch_id
-          WHERE COALESCE(s.department,'') = $1
-            AND s.branch_id = $2
-          ORDER BY s.fullname ASC
-          `,
-          [depName, bid]
-        );
-        return res.json(r.rows);
-      }
-
-      return res.status(403).json({ message: "Access denied" });
+      return res.json(r.rows);
     } catch (e) {
-      console.error("GET /api/departments/:id/staff ERROR:", e.message);
-      return res.status(500).json({ message: "Server error" });
+      console.error("GET /api/departments ERROR:", e.message);
+
+      return res.status(500).json({
+        message: "Server error",
+      });
     }
   }
 );
 
-router.post("/departments", requireAuth, requireRole(["admin"]), async (req, res) => {
-  try {
-    const code = clean(req.body?.code);
-    const name = clean(req.body?.name);
-    const description = clean(req.body?.description);
+router.get(
+  "/departments/:id/staff",
+  requireAuth,
+  requirePermission("staff_information", "view"),
+  async (req, res) => {
+    try {
+      const id = toInt(req.params.id);
 
-    if (!name) return res.status(400).json({ message: "name is required" });
-
-    if (code) {
-      const exists = await pool.query(
-        `SELECT id FROM public.departments WHERE code = $1 LIMIT 1`,
-        [code]
-      );
-      if (exists.rowCount > 0) {
-        return res.status(409).json({ message: "Department code already exists" });
+      if (!id) {
+        return res.status(400).json({
+          message: "Invalid department id",
+        });
       }
-    }
 
-    const r = await pool.query(
-      `INSERT INTO public.departments (code, name, description)
-       VALUES ($1, $2, $3)
-       RETURNING id, code, name, description, created_at, updated_at`,
-      [code || null, name, description || null]
-    );
-
-    return res.json({ message: "Department created", department: r.rows[0] });
-  } catch (e) {
-    console.error("POST /api/departments ERROR:", e.message);
-    return res.status(500).json({ message: "Server error" });
-  }
-});
-
-router.put("/departments/:id", requireAuth, requireRole(["admin"]), async (req, res) => {
-  try {
-    const id = toInt(req.params.id);
-    if (!id) return res.status(400).json({ message: "Invalid department id" });
-
-    const code = clean(req.body?.code);
-    const name = clean(req.body?.name);
-    const description = clean(req.body?.description);
-
-    if (!name) return res.status(400).json({ message: "name is required" });
-
-    if (code) {
-      const exists = await pool.query(
-        `SELECT id FROM public.departments WHERE code=$1 AND id <> $2 LIMIT 1`,
-        [code, id]
+      const dep = await pool.query(
+        `
+        SELECT id, name
+        FROM public.departments
+        WHERE id = $1
+        `,
+        [id]
       );
-      if (exists.rowCount > 0) {
-        return res.status(409).json({ message: "Department code already exists" });
+
+      if (dep.rowCount === 0) {
+        return res.status(404).json({
+          message: "Department not found",
+        });
       }
+
+      const depName = clean(dep.rows[0].name);
+
+      if (canViewAllDepartments(req)) {
+        const r = await pool.query(
+          `
+          SELECT
+            s.*,
+            br.code AS branch_code,
+            br.name AS branch_name
+          FROM public.staff s
+          LEFT JOIN public.branches br
+            ON br.id = s.branch_id
+          WHERE COALESCE(s.department, '') = $1
+          ORDER BY s.fullname ASC
+          `,
+          [depName]
+        );
+
+        return res.json(r.rows);
+      }
+
+      if (isBranchManager(req)) {
+        const branchCode = getUserBranchCode(req);
+
+        if (!branchCode) return res.json([]);
+
+        const branchId = await getBranchIdFromCode(branchCode);
+
+        if (!branchId) return res.json([]);
+
+        const r = await pool.query(
+          `
+          SELECT
+            s.*,
+            br.code AS branch_code,
+            br.name AS branch_name
+          FROM public.staff s
+          LEFT JOIN public.branches br
+            ON br.id = s.branch_id
+          WHERE COALESCE(s.department, '') = $1
+            AND s.branch_id = $2
+          ORDER BY s.fullname ASC
+          `,
+          [depName, branchId]
+        );
+
+        return res.json(r.rows);
+      }
+
+      if (isAreaManager(req)) {
+        const area = getUserArea(req);
+
+        if (!area) return res.json([]);
+
+        const r = await pool.query(
+          `
+          SELECT
+            s.*,
+            br.code AS branch_code,
+            br.name AS branch_name
+          FROM public.staff s
+          LEFT JOIN public.branches br
+            ON br.id = s.branch_id
+          WHERE COALESCE(s.department, '') = $1
+            AND LOWER(TRIM(COALESCE(s.area, ''))) = LOWER(TRIM($2))
+          ORDER BY s.fullname ASC
+          `,
+          [depName, area]
+        );
+
+        return res.json(r.rows);
+      }
+
+      if (isRegionalManager(req)) {
+        const region = getUserRegion(req);
+
+        if (!region) return res.json([]);
+
+        const r = await pool.query(
+          `
+          SELECT
+            s.*,
+            br.code AS branch_code,
+            br.name AS branch_name
+          FROM public.staff s
+          LEFT JOIN public.branches br
+            ON br.id = s.branch_id
+          WHERE COALESCE(s.department, '') = $1
+            AND LOWER(TRIM(COALESCE(s.region, ''))) = LOWER(TRIM($2))
+          ORDER BY s.fullname ASC
+          `,
+          [depName, region]
+        );
+
+        return res.json(r.rows);
+      }
+
+      if (isAssistantVicePresident(req)) {
+        const division = getUserDivision(req);
+
+        if (!division) return res.json([]);
+
+        const r = await pool.query(
+          `
+          SELECT
+            s.*,
+            br.code AS branch_code,
+            br.name AS branch_name
+          FROM public.staff s
+          LEFT JOIN public.branches br
+            ON br.id = s.branch_id
+          WHERE COALESCE(s.department, '') = $1
+            AND LOWER(TRIM(COALESCE(s.division, ''))) = LOWER(TRIM($2))
+          ORDER BY s.fullname ASC
+          `,
+          [depName, division]
+        );
+
+        return res.json(r.rows);
+      }
+
+      return res.status(403).json({
+        message: "Access denied",
+      });
+    } catch (e) {
+      console.error("GET /api/departments/:id/staff ERROR:", e.message);
+
+      return res.status(500).json({
+        message: "Server error",
+      });
     }
-
-    const r = await pool.query(
-      `UPDATE public.departments
-       SET code=$1,
-           name=$2,
-           description=$3,
-           updated_at=NOW()
-       WHERE id=$4
-       RETURNING id, code, name, description, created_at, updated_at`,
-      [code || null, name, description || null, id]
-    );
-
-    if (r.rowCount === 0) return res.status(404).json({ message: "Department not found" });
-
-    return res.json({ message: "Department updated", department: r.rows[0] });
-  } catch (e) {
-    console.error("PUT /api/departments/:id ERROR:", e.message);
-    return res.status(500).json({ message: "Server error" });
   }
-});
+);
 
-router.delete("/departments/:id", requireAuth, requireRole(["admin"]), async (req, res) => {
-  try {
-    const id = toInt(req.params.id);
-    if (!id) return res.status(400).json({ message: "Invalid department id" });
+router.post(
+  "/departments",
+  requireAuth,
+  requirePermission("department", "create"),
+  async (req, res) => {
+    try {
+      const code = clean(req.body?.code);
+      const name = clean(req.body?.name);
+      const description = clean(req.body?.description);
 
-    const r = await pool.query(
-      `DELETE FROM public.departments WHERE id=$1 RETURNING id`,
-      [id]
-    );
+      if (!name) {
+        return res.status(400).json({
+          message: "name is required",
+        });
+      }
 
-    if (r.rowCount === 0) return res.status(404).json({ message: "Department not found" });
+      if (code) {
+        const exists = await pool.query(
+          `
+          SELECT id
+          FROM public.departments
+          WHERE code = $1
+          LIMIT 1
+          `,
+          [code]
+        );
 
-    return res.json({ message: "Department deleted" });
-  } catch (e) {
-    console.error("DELETE /api/departments/:id ERROR:", e.message);
-    return res.status(500).json({ message: "Server error" });
+        if (exists.rowCount > 0) {
+          return res.status(409).json({
+            message: "Department code already exists",
+          });
+        }
+      }
+
+      const r = await pool.query(
+        `
+        INSERT INTO public.departments
+          (code, name, description)
+        VALUES
+          ($1, $2, $3)
+        RETURNING
+          id,
+          code,
+          name,
+          description,
+          created_at,
+          updated_at
+        `,
+        [code || null, name, description || null]
+      );
+
+      return res.json({
+        message: "Department created",
+        department: r.rows[0],
+      });
+    } catch (e) {
+      console.error("POST /api/departments ERROR:", e.message);
+
+      return res.status(500).json({
+        message: "Server error",
+      });
+    }
   }
-});
+);
+
+router.put(
+  "/departments/:id",
+  requireAuth,
+  requirePermission("department", "edit"),
+  async (req, res) => {
+    try {
+      const id = toInt(req.params.id);
+
+      if (!id) {
+        return res.status(400).json({
+          message: "Invalid department id",
+        });
+      }
+
+      const code = clean(req.body?.code);
+      const name = clean(req.body?.name);
+      const description = clean(req.body?.description);
+
+      if (!name) {
+        return res.status(400).json({
+          message: "name is required",
+        });
+      }
+
+      if (code) {
+        const exists = await pool.query(
+          `
+          SELECT id
+          FROM public.departments
+          WHERE code = $1
+            AND id <> $2
+          LIMIT 1
+          `,
+          [code, id]
+        );
+
+        if (exists.rowCount > 0) {
+          return res.status(409).json({
+            message: "Department code already exists",
+          });
+        }
+      }
+
+      const r = await pool.query(
+        `
+        UPDATE public.departments
+        SET
+          code = $1,
+          name = $2,
+          description = $3,
+          updated_at = NOW()
+        WHERE id = $4
+        RETURNING
+          id,
+          code,
+          name,
+          description,
+          created_at,
+          updated_at
+        `,
+        [code || null, name, description || null, id]
+      );
+
+      if (r.rowCount === 0) {
+        return res.status(404).json({
+          message: "Department not found",
+        });
+      }
+
+      return res.json({
+        message: "Department updated",
+        department: r.rows[0],
+      });
+    } catch (e) {
+      console.error("PUT /api/departments/:id ERROR:", e.message);
+
+      return res.status(500).json({
+        message: "Server error",
+      });
+    }
+  }
+);
+
+router.delete(
+  "/departments/:id",
+  requireAuth,
+  requirePermission("department", "delete"),
+  async (req, res) => {
+    try {
+      const id = toInt(req.params.id);
+
+      if (!id) {
+        return res.status(400).json({
+          message: "Invalid department id",
+        });
+      }
+
+      const r = await pool.query(
+        `
+        DELETE FROM public.departments
+        WHERE id = $1
+        RETURNING id
+        `,
+        [id]
+      );
+
+      if (r.rowCount === 0) {
+        return res.status(404).json({
+          message: "Department not found",
+        });
+      }
+
+      return res.json({
+        message: "Department deleted",
+      });
+    } catch (e) {
+      console.error("DELETE /api/departments/:id ERROR:", e.message);
+
+      return res.status(500).json({
+        message: "Server error",
+      });
+    }
+  }
+);
 
 module.exports = router;

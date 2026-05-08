@@ -1,7 +1,8 @@
 const express = require("express");
 const router = express.Router();
 const pool = require("../db");
-const { requireAuth, requireRole } = require("../middlewares/authMiddleware");
+const { requireAuth } = require("../middlewares/authMiddleware");
+const { requirePermission } = require("../utils/permissions");
 
 const toNum = (v) => {
   const n = Number(v ?? 0);
@@ -13,19 +14,7 @@ const clean = (v) => String(v ?? "").trim();
 router.get(
   "/comp-rates",
   requireAuth,
-  requireRole([
-    "admin",
-    "tread",
-    "branch manager",
-    "hr",
-    "accounting",
-    "area manager",
-    "regional manager",
-    "assistant vice president",
-    "vice president",
-    "senior vice president",
-    "president",
-  ]),
+  requirePermission("comp_rate", "view"),
   async (_req, res) => {
     try {
       const r = await pool.query(`
@@ -68,7 +57,7 @@ router.get(
 router.post(
   "/comp-rates",
   requireAuth,
-  requireRole(["admin", "tread"]),
+  requirePermission("comp_rate", "create"),
   async (req, res) => {
     try {
       const position = clean(req.body?.position);
@@ -190,7 +179,7 @@ router.post(
 router.put(
   "/comp-rates/:id",
   requireAuth,
-  requireRole(["admin", "tread"]),
+  requirePermission("comp_rate", "edit"),
   async (req, res) => {
     try {
       const id = Number(req.params.id);
@@ -315,7 +304,7 @@ router.put(
 router.delete(
   "/comp-rates/:id",
   requireAuth,
-  requireRole(["admin", "tread"]),
+  requirePermission("comp_rate", "delete"),
   async (req, res) => {
     try {
       const id = Number(req.params.id);

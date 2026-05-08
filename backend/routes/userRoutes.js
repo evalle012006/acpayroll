@@ -21,7 +21,7 @@ const USER_RETURN_FIELDS = `
   department
 `;
 
-router.get("/", requireAuth, requireRole(["admin"]), async (_req, res) => {
+router.get("/", requireAuth, requireRole(["admin", "it"]), async (_req, res) => {
   try {
     const result = await pool.query(
       `
@@ -38,7 +38,7 @@ router.get("/", requireAuth, requireRole(["admin"]), async (_req, res) => {
   }
 });
 
-router.post("/", requireAuth, requireRole(["admin"]), async (req, res) => {
+router.post("/", requireAuth, requireRole(["admin", "it"]), async (req, res) => {
   try {
     const username = clean(req.body?.username);
     const password = clean(req.body?.password);
@@ -115,7 +115,7 @@ router.post("/", requireAuth, requireRole(["admin"]), async (req, res) => {
   }
 });
 
-router.put("/:id", requireAuth, requireRole(["admin"]), async (req, res) => {
+router.put("/:id", requireAuth, requireRole(["admin", "it"]), async (req, res) => {
   try {
     const id = Number(req.params.id);
 
@@ -210,7 +210,7 @@ router.put("/:id", requireAuth, requireRole(["admin"]), async (req, res) => {
 router.put(
   "/:id/reset-password",
   requireAuth,
-  requireRole(["admin"]),
+  requireRole(["admin", "it"]),
   async (req, res) => {
     try {
       const id = Number(req.params.id);
@@ -256,7 +256,7 @@ router.put(
   }
 );
 
-router.delete("/:id", requireAuth, requireRole(["admin"]), async (req, res) => {
+router.delete("/:id", requireAuth, requireRole(["admin", "it"]), async (req, res) => {
   try {
     const id = Number(req.params.id);
 

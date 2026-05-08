@@ -1,7 +1,23 @@
 const express = require("express");
 const router = express.Router();
 const pool = require("../db");
-const { requireAuth, requireRole } = require("../middlewares/authMiddleware");
+const { requireAuth } = require("../middlewares/authMiddleware");
+const { requirePermission } = require("../utils/permissions");
+
+const {
+  isAdmin,
+  isIT,
+  isHr,
+  isAccounting,
+  isTread,
+  isBranchManager,
+  isAreaManager,
+  isRegionalManager,
+  isAssistantVicePresident,
+  isVicePresident,
+  isSeniorVicePresident,
+  isPresident,
+} = require("../utils/roleAccess");
 
 const toNum = (v) => {
   const n = Number(v ?? 0);
@@ -11,57 +27,15 @@ const toNum = (v) => {
 const clean = (v) => String(v ?? "").trim();
 const toStr = (v) => String(v ?? "").trim();
 
-const roleLower = (req) => String(req.user?.role || "").trim().toLowerCase();
-
-const isAdmin = (req) => roleLower(req) === "admin";
-const isHr = (req) => roleLower(req) === "hr";
-const isAccounting = (req) => roleLower(req) === "accounting";
-const isTread = (req) => roleLower(req) === "tread";
-const isBranchManager = (req) => roleLower(req) === "branch manager";
-const isAreaManager = (req) => roleLower(req) === "area manager";
-const isRegionalManager = (req) => roleLower(req) === "regional manager";
-const isAssistantVicePresident = (req) =>
-  roleLower(req) === "assistant vice president";
-const isVicePresident = (req) => roleLower(req) === "vice president";
-const isSeniorVicePresident = (req) =>
-  roleLower(req) === "senior vice president";
-const isPresident = (req) => roleLower(req) === "president";
-
 const getUserBranchCode = (req) => toStr(req.user?.branch_id);
 const getUserArea = (req) => toStr(req.user?.area);
 const getUserRegion = (req) => toStr(req.user?.region);
 const getUserDivision = (req) => toStr(req.user?.division);
 
-const VIEW_ALLOWED_ROLES = [
-  "admin",
-  "hr",
-  "accounting",
-  "tread",
-  "branch manager",
-  "area manager",
-  "regional manager",
-  "assistant vice president",
-  "vice president",
-  "senior vice president",
-  "president",
-];
-
-const EDIT_ALLOWED_ROLES = [
-  "admin",
-  "hr",
-  "accounting",
-  "branch manager",
-  "area manager",
-  "regional manager",
-  "assistant vice president",
-  "vice president",
-  "senior vice president",
-  "president",
-];
-
 function isTopLevelViewer(req) {
   return (
     isAdmin(req) ||
+    isIT(req) ||
     isHr(req) ||
     isAccounting(req) ||
     isTread(req) ||
@@ -174,11 +148,12 @@ async function getScopedStaffRowByEmployeeNo(client, employeeNo) {
 
 async function canAccessEmployeeNo(client, req, employeeNo) {
   const staffRow = await getScopedStaffRowByEmployeeNo(client, employeeNo);
+
   if (!staffRow) {
     return { ok: false, code: 404, message: "Staff not found" };
   }
 
-  if (isTopLevelViewer(req) || isPresident(req)) {
+  if (isTopLevelViewer(req)) {
     return { ok: true, staffRow };
   }
 
@@ -198,6 +173,7 @@ async function canAccessEmployeeNo(client, req, employeeNo) {
 
   if (isAreaScopedViewer(req)) {
     const area = getUserArea(req);
+
     if (!area || toStr(staffRow.area).toLowerCase() !== area.toLowerCase()) {
       return { ok: false, code: 403, message: "Access denied" };
     }
@@ -207,6 +183,7 @@ async function canAccessEmployeeNo(client, req, employeeNo) {
 
   if (isRegionScopedViewer(req)) {
     const region = getUserRegion(req);
+
     if (!region || toStr(staffRow.region).toLowerCase() !== region.toLowerCase()) {
       return { ok: false, code: 403, message: "Access denied" };
     }
@@ -216,10 +193,8 @@ async function canAccessEmployeeNo(client, req, employeeNo) {
 
   if (isDivisionScopedViewer(req)) {
     const division = getUserDivision(req);
-    if (
-      !division ||
-      toStr(staffRow.division).toLowerCase() !== division.toLowerCase()
-    ) {
+
+    if (!division || toStr(staffRow.division).toLowerCase() !== division.toLowerCase()) {
       return { ok: false, code: 403, message: "Access denied" };
     }
 
@@ -232,10 +207,10 @@ async function canAccessEmployeeNo(client, req, employeeNo) {
 router.get(
   "/staff-balances",
   requireAuth,
-  requireRole(VIEW_ALLOWED_ROLES),
+  requirePermission("staff_balance", "view"),
   async (req, res) => {
     try {
-      if (isTopLevelViewer(req) || isPresident(req)) {
+      if (isTopLevelViewer(req)) {
         const r = await pool.query(`
           SELECT
             sb.*,
@@ -253,6 +228,7 @@ router.get(
           LEFT JOIN public.staff s ON s.employee_no = sb.employee_no
           ORDER BY sb.id DESC
         `);
+
         return res.json(r.rows);
       }
 
@@ -386,20 +362,23 @@ router.get(
 router.put(
   "/staff-balances/:employeeNo",
   requireAuth,
-  requireRole(EDIT_ALLOWED_ROLES),
+  requirePermission("staff_balance", "edit"),
   async (req, res) => {
     const client = await pool.connect();
+
     try {
       if (isViewOnlyUser(req)) {
         return res.status(403).json({ message: "Access denied" });
       }
 
       const employeeNo = clean(req.params.employeeNo);
+
       if (!employeeNo) {
         return res.status(400).json({ message: "Invalid employee no" });
       }
 
       const access = await canAccessEmployeeNo(client, req, employeeNo);
+
       if (!access.ok) {
         return res.status(access.code).json({ message: access.message });
       }
@@ -466,6 +445,7 @@ router.put(
       try {
         await client.query("ROLLBACK");
       } catch {}
+
       console.error("PUT /api/staff-balances/:employeeNo ERROR:", e);
       return res.status(500).json({ message: e.message || "Server error" });
     } finally {
@@ -477,16 +457,19 @@ router.put(
 router.get(
   "/staff-balances/:employeeNo",
   requireAuth,
-  requireRole(VIEW_ALLOWED_ROLES),
+  requirePermission("staff_balance", "view"),
   async (req, res) => {
     const client = await pool.connect();
+
     try {
       const employeeNo = clean(req.params.employeeNo);
+
       if (!employeeNo) {
         return res.status(400).json({ message: "Invalid employee no" });
       }
 
       const access = await canAccessEmployeeNo(client, req, employeeNo);
+
       if (!access.ok) {
         return res.status(access.code).json({ message: access.message });
       }
@@ -557,6 +540,7 @@ router.get(
       try {
         await client.query("ROLLBACK");
       } catch {}
+
       console.error("GET /api/staff-balances/:employeeNo ERROR:", e);
       return res.status(500).json({ message: e.message || "Server error" });
     } finally {
@@ -568,9 +552,10 @@ router.get(
 router.post(
   "/staff-balances/bootstrap",
   requireAuth,
-  requireRole(["admin"]),
+  requirePermission("staff_balance", "edit"),
   async (_req, res) => {
     const client = await pool.connect();
+
     try {
       await client.query("BEGIN");
 
@@ -614,11 +599,16 @@ router.post(
       );
 
       await client.query("COMMIT");
-      return res.json({ message: "Bootstrap done", inserted: r.rowCount });
+
+      return res.json({
+        message: "Bootstrap done",
+        inserted: r.rowCount,
+      });
     } catch (e) {
       try {
         await client.query("ROLLBACK");
       } catch {}
+
       console.error("POST /api/staff-balances/bootstrap ERROR:", e);
       return res.status(500).json({ message: e.message || "Server error" });
     } finally {

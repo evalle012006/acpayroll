@@ -29,14 +29,34 @@ export default function Soa() {
   const role = String(user?.role || "").trim().toLowerCase();
 
   const isAdmin = role === "admin";
+  const isIt = role === "it";
   const isHr = role === "hr";
   const isAccounting = role === "accounting";
   const isTread = role === "tread";
   const isBranchManager = role === "branch manager";
+  const isAreaManager = role === "area manager";
+  const isRegionalManager = role === "regional manager";
+  const isAssistantVicePresident = role === "assistant vice president";
+  const isVicePresident = role === "vice president";
+  const isSeniorVicePresident = role === "senior vice president";
+  const isPresident = role === "president";
 
-  const canView = isAdmin || isHr || isAccounting || isTread || isBranchManager;
-  const canCreate = isAdmin || isHr || isAccounting;
-  const canDelete = isAdmin || isHr || isAccounting;
+  const canView =
+    isAdmin ||
+    isIt ||
+    isHr ||
+    isAccounting ||
+    isTread ||
+    isBranchManager ||
+    isAreaManager ||
+    isRegionalManager ||
+    isAssistantVicePresident ||
+    isVicePresident ||
+    isSeniorVicePresident ||
+    isPresident;
+
+  const canCreate = isAdmin || isIt || isHr || isAccounting || isTread;
+  const canDelete = isAdmin || isIt;
 
   const [staffList, setStaffList] = useState([]);
   const [branches, setBranches] = useState([]);
@@ -99,6 +119,9 @@ export default function Soa() {
             s.position,
             s.branch_name,
             s.branch_code,
+            s.area,
+            s.region,
+            s.division,
           ]
             .map((x) => toStr(x).toLowerCase())
             .join(" ");
@@ -559,7 +582,7 @@ export default function Soa() {
               <div>
                 <h3 className="modal-title">Create Settlement</h3>
                 <p className="modal-subtitle">
-                  Pick the settlement branch. Only that branch can see the record.
+                  Pick the settlement branch. Managers can view based on their scope.
                 </p>
               </div>
 
@@ -734,13 +757,7 @@ export default function Soa() {
 
                 <div className="form-group">
                   <label>CBU</label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    name="cbu"
-                    value={form.cbu}
-                    onChange={onChange}
-                  />
+                  <input type="number" step="0.01" name="cbu" value={form.cbu} onChange={onChange} />
                 </div>
 
                 <div className="form-group">
@@ -875,8 +892,7 @@ export default function Soa() {
                 <h3 className="modal-title">Settlement Record</h3>
                 <p className="modal-subtitle">
                   {viewRow.employee_name} • Employee No: {viewRow.employee_no} •
-                  Settlement Branch:{" "}
-                  {viewRow.settlement_branch_code || "-"} -{" "}
+                  Settlement Branch: {viewRow.settlement_branch_code || "-"} -{" "}
                   {viewRow.settlement_branch_name || "-"}
                 </p>
               </div>

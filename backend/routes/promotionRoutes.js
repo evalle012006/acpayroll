@@ -25,25 +25,58 @@ const toDateOrNull = (v) => {
 
 const toStr = (v) => String(v ?? "").trim();
 const norm = (v) => toStr(v).toLowerCase();
-
 const roleLower = (req) => norm(req.user?.role);
 
 const isAdmin = (req) => roleLower(req) === "admin";
+const isIT = (req) => roleLower(req) === "it";
 const isHr = (req) => roleLower(req) === "hr";
 const isAccounting = (req) => roleLower(req) === "accounting";
 const isTread = (req) => roleLower(req) === "tread";
 const isBranchManager = (req) => roleLower(req) === "branch manager";
 const isAreaManager = (req) => roleLower(req) === "area manager";
 const isRegionalManager = (req) => roleLower(req) === "regional manager";
-const isAssistantVicePresident = (req) => roleLower(req) === "assistant vice president";
+const isAssistantVicePresident = (req) =>
+  roleLower(req) === "assistant vice president";
 const isVicePresident = (req) => roleLower(req) === "vice president";
 const isSeniorVicePresident = (req) => roleLower(req) === "senior vice president";
 const isPresident = (req) => roleLower(req) === "president";
 
-const isFinalApprover = (req) => isAdmin(req) || isHr(req) || isAccounting(req);
+const OPERATION_DEPTS = ["operation", "operations", "payroll"];
+const BACK_OFFICE_DEPTS = [
+  "it",
+  "it department",
+  "accounting",
+  "accounting department",
+  "hr",
+  "hr department",
+  "human resources",
+  "tread",
+  "tread department",
+];
+
+const isOperationDepartment = (department) =>
+  OPERATION_DEPTS.includes(norm(department));
+
+const isBackOfficeDepartment = (department) =>
+  BACK_OFFICE_DEPTS.includes(norm(department));
+
+const isFinalUploaderForDepartment = (req, department) => {
+  if (isAdmin(req)) return true;
+
+  if (isOperationDepartment(department)) {
+    return isHr(req) || isAccounting(req) || isIT(req);
+  }
+
+  if (isBackOfficeDepartment(department)) {
+    return isHr(req) || isAccounting(req);
+  }
+
+  return isHr(req) || isAccounting(req);
+};
 
 const isTopManagement = (req) =>
   isAdmin(req) ||
+  isIT(req) ||
   isHr(req) ||
   isAccounting(req) ||
   isTread(req) ||
@@ -69,8 +102,7 @@ async function getBranchIdFromCode(branchCode) {
     [code]
   );
 
-  if (r.rowCount === 0) return null;
-  return r.rows[0].id;
+  return r.rows[0]?.id || null;
 }
 
 async function getUserBranchId(req) {
@@ -89,54 +121,38 @@ const STAGE_COLUMN = {
   "regional manager": "regional_manager_status",
   "assistant vice president": "assistant_vice_president_status",
   "vice president": "vice_president_status",
-  tread: "tread_status",
-  final: "final_status",
+  "senior vice president": "senior_vice_president_status",
+  "final upload": "final_status",
 };
 
-const getInitialApprovalStage = (promotedRole) => {
-  const r = norm(promotedRole);
+const getPromotionChain = (department) => {
+  if (isBackOfficeDepartment(department)) {
+    return ["senior vice president", "final upload"];
+  }
 
-  if (r === "area manager") return "regional manager";
-  if (r === "regional manager") return "assistant vice president";
-  if (r === "assistant vice president") return "vice president";
-  if (r === "vice president") return "tread";
-  if (r === "senior vice president") return "tread";
-  if (r === "president") return "tread";
-
-  return "area manager";
+  return [
+    "branch manager",
+    "area manager",
+    "regional manager",
+    "assistant vice president",
+    "vice president",
+    "final upload",
+  ];
 };
 
-const getPromotionChain = (promotedRole) => {
-  const r = norm(promotedRole);
-
-  if (r === "area manager") {
-    return ["regional manager", "assistant vice president", "vice president", "tread", "final"];
-  }
-
-  if (r === "regional manager") {
-    return ["assistant vice president", "vice president", "tread", "final"];
-  }
-
-  if (r === "assistant vice president") {
-    return ["vice president", "tread", "final"];
-  }
-
-  if (r === "vice president" || r === "senior vice president" || r === "president") {
-    return ["tread", "final"];
-  }
-
-  return ["area manager", "regional manager", "assistant vice president", "vice president", "tread", "final"];
-};
+const getInitialApprovalStage = (department) => getPromotionChain(department)[0];
 
 const canRoleActAtStage = (req, stage) => {
   const role = roleLower(req);
 
-  if (stage === "final") return isFinalApprover(req);
+  if (isAdmin(req)) return true;
+
+  if (stage === "branch manager") return role === "branch manager";
   if (stage === "area manager") return role === "area manager";
   if (stage === "regional manager") return role === "regional manager";
   if (stage === "assistant vice president") return role === "assistant vice president";
   if (stage === "vice president") return role === "vice president";
-  if (stage === "tread") return role === "tread";
+  if (stage === "senior vice president") return role === "senior vice president";
 
   return false;
 };
@@ -153,7 +169,8 @@ const storage = multer.diskStorage({
     const ext = path.extname(file.originalname || "");
     const base = path
       .basename(file.originalname || "attachment", ext)
-      .replace(/[^a-zA-Z0-9-_]/g, "_");
+      .replace(/[^a-zA-Z0-9-_]/g, "_")
+      .slice(0, 80);
 
     cb(null, `${Date.now()}-${base}${ext}`);
   },
@@ -161,9 +178,7 @@ const storage = multer.diskStorage({
 
 const upload = multer({
   storage,
-  limits: {
-    fileSize: 15 * 1024 * 1024,
-  },
+  limits: { fileSize: 50 * 1024 * 1024 },
 });
 
 async function generateOrderNo(client, prefix) {
@@ -201,22 +216,32 @@ async function generateOrderNo(client, prefix) {
     [prefix, year, month]
   );
 
-  const mm = String(month).padStart(2, "0");
-  const nnnn = String(nextVal).padStart(4, "0");
-
-  return `${prefix}-${year}-${mm}-${nnnn}`;
+  return `${prefix}-${year}-${String(month).padStart(2, "0")}-${String(nextVal).padStart(4, "0")}`;
 }
+
+const ALL_PROMOTION_ROLES = [
+  "admin",
+  "it",
+  "hr",
+  "accounting",
+  "tread",
+  "branch manager",
+  "area manager",
+  "regional manager",
+  "assistant vice president",
+  "vice president",
+  "senior vice president",
+  "president",
+];
 
 router.get("/promotion-orders", requireAuth, async (req, res) => {
   try {
     if (isTopManagement(req) || isAssistantVicePresident(req)) {
-      const r = await pool.query(
-        `
+      const r = await pool.query(`
         SELECT *
         FROM public.promotion_orders
         ORDER BY created_at DESC
-        `
-      );
+      `);
 
       return res.json(r.rows);
     }
@@ -231,6 +256,7 @@ router.get("/promotion-orders", requireAuth, async (req, res) => {
         FROM public.promotion_orders po
         JOIN public.staff s ON s.id = po.employee_id
         WHERE s.branch_id = $1
+           OR po.approval_stage = 'branch manager'
         ORDER BY po.created_at DESC
         `,
         [bid]
@@ -287,19 +313,7 @@ router.get("/promotion-orders", requireAuth, async (req, res) => {
 router.get(
   "/promotion-orders/staff/:id",
   requireAuth,
-  requireRole([
-    "admin",
-    "hr",
-    "accounting",
-    "tread",
-    "branch manager",
-    "area manager",
-    "regional manager",
-    "assistant vice president",
-    "vice president",
-    "senior vice president",
-    "president",
-  ]),
+  requireRole(ALL_PROMOTION_ROLES),
   async (req, res) => {
     try {
       const employeeId = toInt(req.params.id);
@@ -310,7 +324,7 @@ router.get(
 
       const staffRes = await pool.query(
         `
-        SELECT id, branch_id, area, region, division
+        SELECT id, branch_id, area, region, division, department
         FROM public.staff
         WHERE id = $1
         LIMIT 1
@@ -375,6 +389,7 @@ router.post(
   requireAuth,
   requireRole([
     "admin",
+    "it",
     "hr",
     "accounting",
     "branch manager",
@@ -398,6 +413,7 @@ router.post(
       const effective_date = toDateOrNull(b.effective_date);
 
       const employee_name = toStr(b.employee_name);
+      const departmentFromBody = toStr(b.department);
       const old_position = toStr(b.old_position);
       const new_position = toStr(b.new_position);
 
@@ -415,12 +431,6 @@ router.post(
 
       const details = toStr(b.details || b.remarks);
 
-      const attachment_path = req.file
-        ? `/uploads/promotion-orders/${req.file.filename}`
-        : null;
-      const attachment_name = req.file ? req.file.originalname : null;
-      const attachment_mime = req.file ? req.file.mimetype : null;
-
       if (!employee_id) {
         await client.query("ROLLBACK");
         return res.status(400).json({ message: "Employee is required" });
@@ -436,6 +446,11 @@ router.post(
         return res.status(400).json({ message: "Effective date is required" });
       }
 
+      if (!req.file) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({ message: "Promotion request file is required" });
+      }
+
       const staffRes = await client.query(
         `
         SELECT
@@ -445,6 +460,7 @@ router.post(
           area,
           region,
           division,
+          department,
           last_name,
           first_name,
           middle_name,
@@ -463,6 +479,14 @@ router.post(
       }
 
       const staffRow = staffRes.rows[0];
+      const department = departmentFromBody || toStr(staffRow.department);
+
+      if (!department) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({
+          message: "Employee department is required. Make sure staff.department is saved.",
+        });
+      }
 
       if (isBranchManager(req)) {
         const bid = await getUserBranchId(req);
@@ -496,9 +520,16 @@ router.post(
         }
       }
 
-      const applicantRole = roleLower(req);
-      const approvalStage = getInitialApprovalStage(old_position || staffRow.position);
+      const attachment_path = `/uploads/promotion-orders/${req.file.filename}`;
+      const attachment_name = req.file.originalname || null;
+      const attachment_mime = req.file.mimetype || null;
 
+      const applicantRole = roleLower(req);
+      const approvalStage =
+        norm(department) === "it department" &&
+        (norm(present_branch_name).includes("main office") || norm(present_branch_code) === "b000")
+          ? "senior vice president"
+          : getInitialApprovalStage(department);
       const orderNo = await generateOrderNo(client, "PRO");
 
       const ins = await client.query(
@@ -508,6 +539,7 @@ router.post(
             order_no,
             employee_id,
             employee_name,
+            department,
             old_position,
             new_position,
             old_salary,
@@ -530,6 +562,9 @@ router.post(
             attachment_path,
             attachment_name,
             attachment_mime,
+            approved_attachment_path,
+            approved_attachment_name,
+            approved_attachment_mime,
             applicant_role,
             approval_stage,
             branch_manager_status,
@@ -537,16 +572,17 @@ router.post(
             regional_manager_status,
             assistant_vice_president_status,
             vice_president_status,
-            tread_status,
+            senior_vice_president_status,
             final_status
           )
         VALUES
           (
-            $1, $2, $3, $4, $5, $6, $7, $8::date, $9, 'Pending', $10,
-            $11, $12, $13, $14, $15,
-            $16, $17, $18, $19, $20, $21,
-            $22, $23, $24,
-            $25, $26,
+            $1, $2, $3, $4, $5, $6, $7, $8, $9::date, $10, 'Pending', $11,
+            $12, $13, $14, $15, $16,
+            $17, $18, $19, $20, $21, $22,
+            $23, $24, $25,
+            NULL, NULL, NULL,
+            $26, $27,
             'Pending',
             'Pending',
             'Pending',
@@ -561,6 +597,7 @@ router.post(
           orderNo,
           employee_id,
           employee_name || toStr(staffRow.fullname),
+          department,
           old_position || toStr(staffRow.position) || null,
           new_position,
           old_salary || toNum(staffRow.salary),
@@ -604,16 +641,14 @@ router.put(
   requireAuth,
   requireRole([
     "admin",
-    "hr",
-    "accounting",
-    "tread",
+    "branch manager",
     "area manager",
     "regional manager",
     "assistant vice president",
     "vice president",
     "senior vice president",
-    "president",
   ]),
+  upload.single("attachment"),
   async (req, res) => {
     const client = await pool.connect();
 
@@ -625,6 +660,13 @@ router.put(
       if (!id) {
         await client.query("ROLLBACK");
         return res.status(400).json({ message: "Invalid id" });
+      }
+
+      if (!req.file) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({
+          message: "Please upload the signed/approved promotion file before approving.",
+        });
       }
 
       const cur = await client.query(
@@ -649,11 +691,19 @@ router.put(
         return res.status(400).json({ message: "Order already finalized" });
       }
 
-      const chain = getPromotionChain(order.old_position);
+      const department = toStr(order.department);
+      const chain = getPromotionChain(department);
       let currentStage = norm(order.approval_stage);
 
       if (!chain.includes(currentStage)) {
         currentStage = chain[0];
+      }
+
+      if (currentStage === "final upload") {
+        await client.query("ROLLBACK");
+        return res.status(400).json({
+          message: "This promotion is already for final file upload.",
+        });
       }
 
       if (!canRoleActAtStage(req, currentStage)) {
@@ -668,63 +718,34 @@ router.put(
         return res.status(400).json({ message: "Invalid approval stage" });
       }
 
+      const latestPath = `/uploads/promotion-orders/${req.file.filename}`;
+      const latestName = req.file.originalname || null;
+      const latestMime = req.file.mimetype || null;
+
       const currentIndex = chain.indexOf(currentStage);
       const nextStage = chain[currentIndex + 1];
-
-      if (!nextStage) {
-        await client.query(
-          `
-          UPDATE public.promotion_orders
-          SET
-            status='Approved',
-            ${column}='Approved',
-            approved_by=$2,
-            approved_at=COALESCE(approved_at, NOW()),
-            rejected_by=NULL,
-            rejected_at=NULL,
-            rejection_reason=NULL,
-            approval_stage=NULL
-          WHERE id=$1
-          `,
-          [id, req.user?.id ?? null]
-        );
-
-        await client.query(
-          `
-          UPDATE public.staff
-          SET
-            "position" = $1,
-            salary = $2,
-            ecola = $3,
-            branch_id = $4
-          WHERE id = $5
-          `,
-          [
-            order.new_position,
-            toNum(order.new_salary),
-            toNum(order.new_ecola),
-            order.present_branch_id ? Number(order.present_branch_id) : null,
-            order.employee_id,
-          ]
-        );
-
-        await client.query("COMMIT");
-        return res.json({ message: "Promotion fully approved" });
-      }
 
       await client.query(
         `
         UPDATE public.promotion_orders
         SET
           ${column}='Approved',
-          approval_stage=$2
+          approval_stage=$2,
+          rejected_by=NULL,
+          rejected_at=NULL,
+          rejection_reason=NULL,
+          attachment_path=$3,
+          attachment_name=$4,
+          attachment_mime=$5
         WHERE id=$1
         `,
-        [id, nextStage]
+        [id, nextStage, latestPath, latestName, latestMime]
       );
 
       await client.query("COMMIT");
-      return res.json({ message: `Moved to ${nextStage}` });
+      return res.json({
+        message: `Promotion approved and latest file replaced. Moved to ${nextStage}.`,
+      });
     } catch (e) {
       await client.query("ROLLBACK");
       console.error("PUT /api/promotion-orders/:id/approve ERROR:", e);
@@ -736,20 +757,10 @@ router.put(
 );
 
 router.put(
-  "/promotion-orders/:id/reject",
+  "/promotion-orders/:id/final-upload",
   requireAuth,
-  requireRole([
-    "admin",
-    "hr",
-    "accounting",
-    "tread",
-    "area manager",
-    "regional manager",
-    "assistant vice president",
-    "vice president",
-    "senior vice president",
-    "president",
-  ]),
+  requireRole(["admin", "it", "hr", "accounting"]),
+  upload.single("attachment"),
   async (req, res) => {
     const client = await pool.connect();
 
@@ -763,7 +774,134 @@ router.put(
         return res.status(400).json({ message: "Invalid id" });
       }
 
+      if (!req.file) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({
+          message: "Please upload the final approved promotion file.",
+        });
+      }
+
+      const cur = await client.query(
+        `
+        SELECT *
+        FROM public.promotion_orders
+        WHERE id = $1
+        FOR UPDATE
+        `,
+        [id]
+      );
+
+      if (cur.rowCount === 0) {
+        await client.query("ROLLBACK");
+        return res.status(404).json({ message: "Promotion order not found" });
+      }
+
+      const order = cur.rows[0];
+
+      if (norm(order.status) === "approved" || norm(order.status) === "rejected") {
+        await client.query("ROLLBACK");
+        return res.status(400).json({ message: "Order already finalized" });
+      }
+
+      if (norm(order.approval_stage) !== "final upload") {
+        await client.query("ROLLBACK");
+        return res.status(400).json({
+          message: "Promotion is not yet ready for final upload.",
+        });
+      }
+
+      const department = toStr(order.department);
+
+      if (!isFinalUploaderForDepartment(req, department)) {
+        await client.query("ROLLBACK");
+        return res.status(403).json({
+          message: "You are not allowed to upload the final promotion file.",
+        });
+      }
+
+      const latestPath = `/uploads/promotion-orders/${req.file.filename}`;
+      const latestName = req.file.originalname || null;
+      const latestMime = req.file.mimetype || null;
+
+      await client.query(
+        `
+        UPDATE public.promotion_orders
+        SET
+          status='Approved',
+          final_status='Approved',
+          approved_by=$2,
+          approved_at=NOW(),
+          rejected_by=NULL,
+          rejected_at=NULL,
+          rejection_reason=NULL,
+          approval_stage=NULL,
+          attachment_path=$3,
+          attachment_name=$4,
+          attachment_mime=$5,
+          approved_attachment_path=$3,
+          approved_attachment_name=$4,
+          approved_attachment_mime=$5
+        WHERE id=$1
+        `,
+        [id, req.user?.id ?? null, latestPath, latestName, latestMime]
+      );
+
+      await client.query(
+        `
+        UPDATE public.staff
+        SET
+          "position" = $1,
+          salary = $2,
+          ecola = $3,
+          branch_id = $4
+        WHERE id = $5
+        `,
+        [
+          order.new_position,
+          toNum(order.new_salary),
+          toNum(order.new_ecola),
+          order.present_branch_id ? Number(order.present_branch_id) : null,
+          order.employee_id,
+        ]
+      );
+
+      await client.query("COMMIT");
+      return res.json({ message: "Promotion finalized and staff updated." });
+    } catch (e) {
+      await client.query("ROLLBACK");
+      console.error("PUT /api/promotion-orders/:id/final-upload ERROR:", e);
+      return res.status(500).json({ message: e?.message || "Server error" });
+    } finally {
+      client.release();
+    }
+  }
+);
+
+router.put(
+  "/promotion-orders/:id/reject",
+  requireAuth,
+  requireRole([
+    "admin",
+    "branch manager",
+    "area manager",
+    "regional manager",
+    "assistant vice president",
+    "vice president",
+    "senior vice president",
+  ]),
+  async (req, res) => {
+    const client = await pool.connect();
+
+    try {
+      await client.query("BEGIN");
+
+      const id = toInt(req.params.id);
       const reason = toStr(req.body?.reason);
+
+      if (!id) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({ message: "Invalid id" });
+      }
 
       if (!reason) {
         await client.query("ROLLBACK");
@@ -792,11 +930,19 @@ router.put(
         return res.status(400).json({ message: "Order already finalized" });
       }
 
-      const chain = getPromotionChain(order.old_position);
+      const department = toStr(order.department);
+      const chain = getPromotionChain(department);
       let currentStage = norm(order.approval_stage);
 
       if (!chain.includes(currentStage)) {
         currentStage = chain[0];
+      }
+
+      if (currentStage === "final upload") {
+        await client.query("ROLLBACK");
+        return res.status(400).json({
+          message: "This promotion is already for final upload and cannot be rejected here.",
+        });
       }
 
       if (!canRoleActAtStage(req, currentStage)) {
@@ -813,7 +959,7 @@ router.put(
           status='Rejected',
           ${column}='Rejected',
           rejected_by=$2,
-          rejected_at=COALESCE(rejected_at, NOW()),
+          rejected_at=NOW(),
           rejection_reason=$3,
           approved_by=NULL,
           approved_at=NULL
@@ -834,68 +980,6 @@ router.put(
   }
 );
 
-router.post(
-  "/promotion-orders/:id/approved-file",
-  requireAuth,
-  requireRole(["admin", "hr", "accounting"]),
-  upload.single("attachment"),
-  async (req, res) => {
-    try {
-      const id = toInt(req.params.id);
-
-      if (!id) {
-        return res.status(400).json({ message: "Invalid id" });
-      }
-
-      if (!req.file) {
-        return res.status(400).json({ message: "Attachment is required" });
-      }
-
-      const r = await pool.query(
-        `
-        SELECT id, status
-        FROM public.promotion_orders
-        WHERE id = $1
-        LIMIT 1
-        `,
-        [id]
-      );
-
-      if (r.rowCount === 0) {
-        return res.status(404).json({ message: "Promotion order not found" });
-      }
-
-      if (norm(r.rows[0].status) !== "approved") {
-        return res.status(400).json({
-          message: "Approved file can only be uploaded after final approval",
-        });
-      }
-
-      const approved_attachment_path = `/uploads/promotion-orders/${req.file.filename}`;
-      const approved_attachment_name = req.file.originalname || null;
-      const approved_attachment_mime = req.file.mimetype || null;
-
-      const upd = await pool.query(
-        `
-        UPDATE public.promotion_orders
-        SET
-          approved_attachment_path=$2,
-          approved_attachment_name=$3,
-          approved_attachment_mime=$4
-        WHERE id=$1
-        RETURNING *
-        `,
-        [id, approved_attachment_path, approved_attachment_name, approved_attachment_mime]
-      );
-
-      return res.json(upd.rows[0]);
-    } catch (e) {
-      console.error("POST /api/promotion-orders/:id/approved-file ERROR:", e);
-      return res.status(500).json({ message: e?.message || "Server error" });
-    }
-  }
-);
-
 router.get("/promotion-orders/:id/download/:type", requireAuth, async (req, res) => {
   try {
     const id = toInt(req.params.id);
@@ -905,7 +989,7 @@ router.get("/promotion-orders/:id/download/:type", requireAuth, async (req, res)
       return res.status(400).json({ message: "Invalid id" });
     }
 
-    if (!["request", "approved"].includes(type)) {
+    if (!["request", "approved", "latest"].includes(type)) {
       return res.status(400).json({ message: "Invalid attachment type" });
     }
 
@@ -930,16 +1014,16 @@ router.get("/promotion-orders/:id/download/:type", requireAuth, async (req, res)
 
     const row = r.rows[0];
 
-    const targetPath =
-      type === "request" ? row.attachment_path : row.approved_attachment_path;
+    let targetPath = row.attachment_path;
+    let targetName = row.attachment_name;
 
-    const targetName =
-      type === "request" ? row.attachment_name : row.approved_attachment_name;
+    if (type === "approved") {
+      targetPath = row.approved_attachment_path || row.attachment_path;
+      targetName = row.approved_attachment_name || row.attachment_name;
+    }
 
     if (!targetPath) {
-      return res.status(404).json({
-        message: type === "request" ? "No request file found" : "No approved file found",
-      });
+      return res.status(404).json({ message: "No promotion file found" });
     }
 
     const rel = String(targetPath).replace(/^\/uploads\//, "");

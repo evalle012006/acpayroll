@@ -4,7 +4,8 @@ const pool = require("../db");
 const path = require("path");
 const fs = require("fs");
 const multer = require("multer");
-const { requireAuth, requireRole } = require("../middlewares/authMiddleware");
+const { requireAuth } = require("../middlewares/authMiddleware");
+const { requirePermission } = require("../utils/permissions");
 
 const toInt = (v) => {
   const n = Number(v);
@@ -16,7 +17,8 @@ const norm = (v) => toStr(v).toLowerCase();
 
 const roleLower = (req) => norm(req.user?.role);
 
-const isAdmin = (req) => roleLower(req) === "admin";
+const isAdmin = (req) => ["admin", "it"].includes(roleLower(req));
+const isIT = (req) => roleLower(req) === "it";
 const isHr = (req) => roleLower(req) === "hr";
 const isAccounting = (req) => roleLower(req) === "accounting";
 const isTread = (req) => roleLower(req) === "tread";
@@ -34,36 +36,43 @@ const getUserBranchCode = (req) => toStr(req.user?.branch_id);
 const getUserArea = (req) => toStr(req.user?.area);
 const getUserRegion = (req) => toStr(req.user?.region);
 const getUserDivision = (req) => toStr(req.user?.division);
+const getUserDepartment = (req) => toStr(req.user?.department);
 
-const VIEW_OR_CREATE_ROLES = [
-  "admin",
-  "hr",
-  "accounting",
-  "tread",
-  "branch manager",
-  "area manager",
-  "regional manager",
-  "assistant vice president",
-  "vice president",
-  "senior vice president",
-  "president",
+const OPERATION_DEPARTMENTS = [
+  "operation",
+  "operations",
+  "operation department",
+  "operations department",
+  "payroll",
+  "payroll department",
 ];
 
-const APPROVER_ROLES = [
-  "admin",
-  "hr",
+const BACK_OFFICE_DEPARTMENTS = [
+  "it",
+  "it department",
   "accounting",
+  "accounting department",
+  "hr",
+  "hr department",
+  "human resources",
+  "human resources department",
+  "audit",
+  "audit department",
   "tread",
-  "area manager",
-  "regional manager",
-  "assistant vice president",
-  "vice president",
-  "senior vice president",
-  "president",
+  "tread department",
+  "office",
+  "main office",
+  "office of the president",
 ];
+
+const isOperationDepartment = (department) =>
+  OPERATION_DEPARTMENTS.includes(norm(department));
+
+const isBackOfficeDepartment = (department) =>
+  BACK_OFFICE_DEPARTMENTS.includes(norm(department));
 
 const isFinalApprover = (req) =>
-  isAdmin(req) || isHr(req) || isAccounting(req) || isTread(req);
+  isAdmin(req) || isHr(req) || isAccounting(req) || isTread(req) || isIT(req);
 
 const isFullViewer = (req) =>
   isFinalApprover(req) ||
@@ -80,10 +89,7 @@ const isRequestViewer = (req) =>
   isPresident(req);
 
 const canUploadApprovedLeave = (req) =>
-  isFinalApprover(req) ||
-  isVicePresident(req) ||
-  isSeniorVicePresident(req) ||
-  isPresident(req);
+  isAdmin(req) || isIT(req) || isHr(req) || isAccounting(req);
 
 async function getBranchIdFromCode(branchCode) {
   const code = toStr(branchCode);
@@ -176,6 +182,7 @@ const baseLeaveSelect = `
     s.region,
     s.division,
     s.branch_id,
+    s.department,
 
     req_file.file_name AS request_attachment_name,
     req_file.file_path AS request_attachment_path,
@@ -211,17 +218,26 @@ const baseLeaveSelect = `
   ) appr_file ON true
 `;
 
-const initialPendingStatusForRequester = (req) => {
-  if (isAreaManager(req)) return "Pending Regional Manager";
-  if (isRegionalManager(req)) return "Pending Assistant Vice President";
-  if (isAssistantVicePresident(req)) return "Pending Vice President";
-  if (isVicePresident(req)) return "Pending Admin";
-
-  if (isFinalApprover(req) || isSeniorVicePresident(req) || isPresident(req)) {
-    return "Pending Admin";
+const getInitialStatusByDepartment = (req, department) => {
+  /*
+    OPERATION:
+    Branch Manager -> Area Manager -> Regional Manager ->
+    Assistant Vice President -> Vice President -> Pending Admin
+  */
+  if (isOperationDepartment(department)) {
+    if (isBranchManager(req)) return "Pending Area Manager";
+    if (isAreaManager(req)) return "Pending Regional Manager";
+    if (isRegionalManager(req)) return "Pending Assistant Vice President";
+    if (isAssistantVicePresident(req)) return "Pending Vice President";
+    if (isVicePresident(req)) return "Pending Admin";
+    return "Pending Branch Manager";
   }
 
-  return "Pending Area Manager";
+  /*
+    BACK OFFICE / OTHER DEPARTMENTS:
+    Direct to Senior Vice President of department.
+  */
+  return "Pending Senior Vice President";
 };
 
 const canActOnLeave = async (req, leaveId) => {
@@ -234,7 +250,8 @@ const canActOnLeave = async (req, leaveId) => {
       s.area,
       s.branch_id,
       s.region,
-      s.division
+      s.division,
+      s.department
     FROM public.leave_requests lr
     JOIN public.staff s ON s.id = lr.employee_id
     WHERE lr.id = $1
@@ -258,6 +275,18 @@ const canActOnLeave = async (req, leaveId) => {
     };
   }
 
+  if (status === "Pending Branch Manager") {
+    if (!isBranchManager(req) && !isFinalApprover(req) && !isPresident(req)) {
+      return {
+        ok: false,
+        code: 403,
+        message: "Only branch manager can act on this stage",
+      };
+    }
+
+    return { ok: true, row };
+  }
+
   if (status === "Pending Area Manager") {
     if (
       !isAreaManager(req) &&
@@ -265,7 +294,11 @@ const canActOnLeave = async (req, leaveId) => {
       !isSeniorVicePresident(req) &&
       !isPresident(req)
     ) {
-      return { ok: false, code: 403, message: "Only area manager can act on this stage" };
+      return {
+        ok: false,
+        code: 403,
+        message: "Only area manager can act on this stage",
+      };
     }
 
     if (isAreaManager(req) && norm(row.area) !== norm(getUserArea(req))) {
@@ -337,6 +370,32 @@ const canActOnLeave = async (req, leaveId) => {
     return { ok: true, row };
   }
 
+  if (status === "Pending Senior Vice President") {
+    if (!isSeniorVicePresident(req) && !isPresident(req) && !isFinalApprover(req)) {
+      return {
+        ok: false,
+        code: 403,
+        message: "Only senior vice president can act on this stage",
+      };
+    }
+
+    const userDepartment = getUserDepartment(req);
+
+    if (
+      isSeniorVicePresident(req) &&
+      userDepartment &&
+      norm(userDepartment) !== norm(row.department)
+    ) {
+      return {
+        ok: false,
+        code: 403,
+        message: "You can only approve leave requests for your department",
+      };
+    }
+
+    return { ok: true, row };
+  }
+
   if (status === "Pending Admin") {
     if (
       !isFinalApprover(req) &&
@@ -359,7 +418,11 @@ const canActOnLeave = async (req, leaveId) => {
 
 router.get("/leave-requests", requireAuth, async (req, res) => {
   try {
-    if (isFullViewer(req) || isRegionalManager(req) || isAssistantVicePresident(req)) {
+    if (
+      isFullViewer(req) ||
+      isRegionalManager(req) ||
+      isAssistantVicePresident(req)
+    ) {
       const r = await pool.query(`
         ${baseLeaveSelect}
         ORDER BY lr.entry_date DESC NULLS LAST, lr.id DESC
@@ -394,7 +457,8 @@ router.get("/leave-requests", requireAuth, async (req, res) => {
       const r = await pool.query(
         `
         ${baseLeaveSelect}
-        WHERE LOWER(TRIM(COALESCE(s.area, ''))) = LOWER(TRIM($1))
+        WHERE LOWER(TRIM(COALESCE(s.area, ''))) =
+              LOWER(TRIM($1))
         ORDER BY lr.entry_date DESC NULLS LAST, lr.id DESC
         `,
         [area]
@@ -403,119 +467,25 @@ router.get("/leave-requests", requireAuth, async (req, res) => {
       return res.json(r.rows);
     }
 
-    return res.status(403).json({ message: "Access denied" });
+    return res.status(403).json({
+      message: "Access denied",
+    });
   } catch (e) {
-    console.error("GET /api/leave-requests ERROR:", e.message);
-    return res.status(500).json({ message: e?.message || "Server error" });
+    console.error(
+      "GET /api/leave-requests ERROR:",
+      e.message
+    );
+
+    return res.status(500).json({
+      message: e?.message || "Server error",
+    });
   }
 });
-
-router.get(
-  "/leave-requests/staff/:staffId",
-  requireAuth,
-  requireRole(VIEW_OR_CREATE_ROLES),
-  async (req, res) => {
-    try {
-      const staffId = toInt(req.params.staffId);
-      if (!staffId) return res.status(400).json({ message: "Invalid staff id" });
-
-      if (isBranchManager(req)) {
-        const bid = await getBranchIdFromCode(getUserBranchCode(req));
-        if (!bid) return res.status(403).json({ message: "Access denied" });
-
-        const chk = await pool.query(
-          `
-          SELECT id
-          FROM public.staff
-          WHERE id = $1
-            AND branch_id = $2
-          `,
-          [staffId, bid]
-        );
-
-        if (chk.rowCount === 0) {
-          return res.status(403).json({ message: "Access denied" });
-        }
-      }
-
-      if (isAreaManager(req)) {
-        const area = getUserArea(req);
-        if (!area) return res.status(403).json({ message: "Access denied" });
-
-        const chk = await pool.query(
-          `
-          SELECT id
-          FROM public.staff
-          WHERE id = $1
-            AND LOWER(TRIM(COALESCE(area, ''))) = LOWER(TRIM($2))
-          `,
-          [staffId, area]
-        );
-
-        if (chk.rowCount === 0) {
-          return res.status(403).json({ message: "Access denied" });
-        }
-      }
-
-      if (isRegionalManager(req)) {
-        const region = getUserRegion(req);
-        if (!region) return res.status(403).json({ message: "Access denied" });
-
-        const chk = await pool.query(
-          `
-          SELECT id
-          FROM public.staff
-          WHERE id = $1
-            AND LOWER(TRIM(COALESCE(region, ''))) = LOWER(TRIM($2))
-          `,
-          [staffId, region]
-        );
-
-        if (chk.rowCount === 0) {
-          return res.status(403).json({ message: "Access denied" });
-        }
-      }
-
-      if (isAssistantVicePresident(req)) {
-        const division = getUserDivision(req);
-        if (!division) return res.status(403).json({ message: "Access denied" });
-
-        const chk = await pool.query(
-          `
-          SELECT id
-          FROM public.staff
-          WHERE id = $1
-            AND LOWER(TRIM(COALESCE(division, ''))) = LOWER(TRIM($2))
-          `,
-          [staffId, division]
-        );
-
-        if (chk.rowCount === 0) {
-          return res.status(403).json({ message: "Access denied" });
-        }
-      }
-
-      const r = await pool.query(
-        `
-        ${baseLeaveSelect}
-        WHERE lr.employee_id = $1
-        ORDER BY lr.entry_date DESC NULLS LAST, lr.id DESC
-        `,
-        [staffId]
-      );
-
-      return res.json(r.rows);
-    } catch (e) {
-      console.error("GET /api/leave-requests/staff/:staffId ERROR:", e.message);
-      return res.status(500).json({ message: e?.message || "Server error" });
-    }
-  }
-);
 
 router.post(
   "/leave-requests",
   requireAuth,
-  requireRole(VIEW_OR_CREATE_ROLES),
+  requirePermission("leave_request", "create"),
   upload.single("attachment"),
   async (req, res) => {
     const client = await pool.connect();
@@ -523,22 +493,21 @@ router.post(
     try {
       await client.query("BEGIN");
 
-      const { employee_id, leave_type, date_created, start_date, end_date, reason } =
-        req.body;
+      const {
+        employee_id,
+        leave_type,
+        date_created,
+        start_date,
+        end_date,
+        reason,
+      } = req.body;
 
       if (!employee_id) {
         await client.query("ROLLBACK");
-        return res.status(400).json({ message: "employee_id is required" });
-      }
 
-      if (!leave_type) {
-        await client.query("ROLLBACK");
-        return res.status(400).json({ message: "leave_type is required" });
-      }
-
-      if (!date_created) {
-        await client.query("ROLLBACK");
-        return res.status(400).json({ message: "date_created is required" });
+        return res.status(400).json({
+          message: "employee_id is required",
+        });
       }
 
       const staffRes = await client.query(
@@ -546,6 +515,7 @@ router.post(
         SELECT
           id,
           fullname,
+          department,
           first_name,
           middle_name,
           last_name
@@ -558,30 +528,26 @@ router.post(
 
       if (staffRes.rowCount === 0) {
         await client.query("ROLLBACK");
-        return res.status(404).json({ message: "Staff not found" });
+
+        return res.status(404).json({
+          message: "Staff not found",
+        });
       }
 
-      const staffName = buildStaffName(staffRes.rows[0]);
+      const staff = staffRes.rows[0];
 
-      const isIndefiniteLeave = leave_type === "Indefinite Leave";
+      const staffName = buildStaffName(staff);
+
+      const isIndefiniteLeave =
+        leave_type === "Indefinite Leave";
+
       let total_no_of_days = 0;
 
       if (!isIndefiniteLeave) {
-        if (!start_date || !end_date) {
-          await client.query("ROLLBACK");
-          return res.status(400).json({
-            message: "start_date and end_date are required",
-          });
-        }
-
-        if (String(start_date) > String(end_date)) {
-          await client.query("ROLLBACK");
-          return res.status(400).json({
-            message: "Start date must be on or before end date",
-          });
-        }
-
-        total_no_of_days = diffDaysInclusive(start_date, end_date);
+        total_no_of_days = diffDaysInclusive(
+          start_date,
+          end_date
+        );
       }
 
       const seqRes = await client.query(`
@@ -589,8 +555,15 @@ router.post(
       `);
 
       const leaveSeq = Number(seqRes.rows[0].n);
-      const transaction_code = `LV-${String(leaveSeq).padStart(7, "0")}`;
-      const status = initialPendingStatusForRequester(req);
+
+      const transaction_code = `LV-${String(
+        leaveSeq
+      ).padStart(7, "0")}`;
+
+      const status = getInitialStatusByDepartment(
+        req,
+        staff.department
+      );
 
       const insertRes = await client.query(
         `
@@ -608,7 +581,9 @@ router.post(
           transaction_code,
           entry_date
         )
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,NOW())
+        VALUES (
+          $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,NOW()
+        )
         RETURNING *
         `,
         [
@@ -642,7 +617,10 @@ router.post(
             uploaded_by,
             uploaded_by_role
           )
-          VALUES ($1,$2,$3,$4,$5,'request',$6,$7)
+          VALUES (
+            $1,$2,$3,$4,$5,
+            'request',$6,$7
+          )
           `,
           [
             leaveId,
@@ -680,8 +658,15 @@ router.post(
       return res.json(finalRow.rows[0]);
     } catch (err) {
       await client.query("ROLLBACK");
-      console.error("CREATE LEAVE ERROR:", err.message);
-      return res.status(500).json({ message: err.message });
+
+      console.error(
+        "CREATE LEAVE ERROR:",
+        err.message
+      );
+
+      return res.status(500).json({
+        message: err.message,
+      });
     } finally {
       client.release();
     }
@@ -691,15 +676,7 @@ router.post(
 router.post(
   "/leave-requests/:id/approved-file",
   requireAuth,
-  requireRole([
-    "admin",
-    "hr",
-    "accounting",
-    "tread",
-    "vice president",
-    "senior vice president",
-    "president",
-  ]),
+  requirePermission("leave_request", "upload_approved"),
   upload.single("attachment"),
   async (req, res) => {
     const client = await pool.connect();
@@ -707,60 +684,90 @@ router.post(
     try {
       await client.query("BEGIN");
 
-      const leaveId = String(req.params.id || "").trim();
-
-      if (!leaveId) {
-        await client.query("ROLLBACK");
-        return res.status(400).json({ message: "Invalid leave request id" });
-      }
+      const leaveId = String(
+        req.params.id || ""
+      ).trim();
 
       if (!req.file) {
         await client.query("ROLLBACK");
-        return res.status(400).json({ message: "Attachment is required" });
+
+        return res.status(400).json({
+          message: "Attachment is required",
+        });
       }
 
       if (!canUploadApprovedLeave(req)) {
         await client.query("ROLLBACK");
-        return res.status(403).json({ message: "Access denied" });
+
+        return res.status(403).json({
+          message: "Access denied",
+        });
       }
 
-      const leaveCheck = await client.query(
+      /*
+        DELETE OLD APPROVED FILES
+      */
+      const oldFiles = await client.query(
         `
-        SELECT id, status
-        FROM public.leave_requests
-        WHERE id = $1
-        LIMIT 1
+        SELECT file_path
+        FROM public.leave_attachments
+        WHERE leave_request_id = $1
+          AND attachment_type = 'approved'
         `,
         [leaveId]
       );
 
-      if (leaveCheck.rowCount === 0) {
-        await client.query("ROLLBACK");
-        return res.status(404).json({ message: "Leave request not found" });
-      }
+      for (const old of oldFiles.rows) {
+        try {
+          const rel = String(
+            old.file_path || ""
+          ).replace(/^\/uploads\//, "");
 
-      if (String(leaveCheck.rows[0].status || "") !== "Approved") {
-        await client.query("ROLLBACK");
-        return res.status(400).json({
-          message: "Approved file can only be uploaded after approval",
-        });
+          const oldPath = path.join(
+            __dirname,
+            "..",
+            "uploads",
+            rel
+          );
+
+          if (fs.existsSync(oldPath)) {
+            fs.unlinkSync(oldPath);
+          }
+        } catch (e) {
+          console.error(
+            "DELETE OLD FILE ERROR:",
+            e.message
+          );
+        }
       }
 
       await client.query(
         `
+        DELETE FROM public.leave_attachments
+        WHERE leave_request_id = $1
+          AND attachment_type = 'approved'
+        `,
+        [leaveId]
+      );
+
+      await client.query(
+        `
         INSERT INTO public.leave_attachments
-          (
-            leave_request_id,
-            file_name,
-            file_path,
-            file_mime,
-            file_size,
-            attachment_type,
-            uploaded_by,
-            uploaded_by_role
-          )
+        (
+          leave_request_id,
+          file_name,
+          file_path,
+          file_mime,
+          file_size,
+          attachment_type,
+          uploaded_by,
+          uploaded_by_role
+        )
         VALUES
-          ($1, $2, $3, $4, $5, 'approved', $6, $7)
+        (
+          $1,$2,$3,$4,$5,
+          'approved',$6,$7
+        )
         `,
         [
           leaveId,
@@ -774,134 +781,87 @@ router.post(
       );
 
       await client.query("COMMIT");
-      return res.json({ message: "Approved leave file uploaded" });
+
+      return res.json({
+        message:
+          "Approved leave file uploaded",
+      });
     } catch (e) {
       await client.query("ROLLBACK");
-      console.error("POST /api/leave-requests/:id/approved-file ERROR:", e.message);
-      return res.status(500).json({ message: e?.message || "Server error" });
+
+      console.error(
+        "UPLOAD APPROVED FILE ERROR:",
+        e.message
+      );
+
+      return res.status(500).json({
+        message: e?.message || "Server error",
+      });
     } finally {
       client.release();
     }
   }
 );
 
-router.get("/leave-requests/:id/download/:type", requireAuth, async (req, res) => {
-  try {
-    const id = String(req.params.id || "").trim();
-    const type = String(req.params.type || "").trim().toLowerCase();
-
-    if (!id) return res.status(400).json({ message: "Invalid id" });
-
-    if (!["request", "approved"].includes(type)) {
-      return res.status(400).json({ message: "Invalid attachment type" });
-    }
-
-    const leaveRes = await pool.query(
-      `
-      SELECT id, employee_id, status
-      FROM public.leave_requests
-      WHERE id = $1
-      LIMIT 1
-      `,
-      [id]
-    );
-
-    if (leaveRes.rowCount === 0) {
-      return res.status(404).json({ message: "Leave request not found" });
-    }
-
-    if (type === "request" && !isRequestViewer(req)) {
-      return res.status(403).json({ message: "Access denied" });
-    }
-
-    if (type === "approved") {
-      const allowed =
-        isFinalApprover(req) ||
-        isRegionalManager(req) ||
-        isAssistantVicePresident(req) ||
-        isAreaManager(req) ||
-        isVicePresident(req) ||
-        isSeniorVicePresident(req) ||
-        isPresident(req);
-
-      if (!allowed) return res.status(403).json({ message: "Access denied" });
-    }
-
-    const r = await pool.query(
-      `
-      SELECT file_name, file_path, file_mime
-      FROM public.leave_attachments
-      WHERE leave_request_id = $1
-        AND attachment_type = $2
-      ORDER BY id DESC
-      LIMIT 1
-      `,
-      [id, type]
-    );
-
-    if (r.rowCount === 0) {
-      return res.status(404).json({ message: "No attachment found" });
-    }
-
-    const row = r.rows[0];
-    const rel = String(row.file_path).replace(/^\/uploads\//, "");
-    const filePath = path.join(__dirname, "..", "uploads", rel);
-
-    if (!fs.existsSync(filePath)) {
-      return res.status(404).json({ message: "Attachment file not found" });
-    }
-
-    return res.download(filePath, row.file_name || path.basename(filePath));
-  } catch (e) {
-    console.error("GET /api/leave-requests/:id/download/:type ERROR:", e.message);
-    return res.status(500).json({ message: e?.message || "Server error" });
-  }
-});
-
 router.put(
   "/leave-requests/:id",
   requireAuth,
-  requireRole(APPROVER_ROLES),
+  requirePermission("leave_request", "approve"),
   async (req, res) => {
     try {
       const id = String(req.params.id || "").trim();
 
-      if (!id) return res.status(400).json({ message: "Invalid id" });
-
-      const action = String(req.body?.action || req.body?.status || "").trim();
-      const rejectionReason = toStr(req.body?.rejection_reason);
-
-      if (!["approve", "Approved", "reject", "Rejected"].includes(action)) {
-        return res.status(400).json({ message: "Action must be approve or reject" });
-      }
+      const action = String(
+        req.body?.action || ""
+      ).trim();
 
       const access = await canActOnLeave(req, id);
 
       if (!access.ok) {
-        return res.status(access.code).json({ message: access.message });
+        return res.status(access.code).json({
+          message: access.message,
+        });
       }
 
-      const currentStatus = toStr(access.row.status);
+      const currentStatus = toStr(
+        access.row.status
+      );
 
       if (action.toLowerCase() === "reject") {
-        const r = await pool.query(
+        await pool.query(
           `
           UPDATE public.leave_requests
           SET
             status = 'Rejected',
             rejection_reason = $2
           WHERE id = $1
-          RETURNING id
           `,
-          [id, rejectionReason || null]
+          [
+            id,
+            toStr(req.body?.rejection_reason),
+          ]
         );
-
-        if (r.rowCount === 0) return res.status(404).json({ message: "Not found" });
       } else {
         let sql = "";
         let params = [id, req.user?.id ?? null];
 
-        if (currentStatus === "Pending Area Manager") {
+        if (
+          currentStatus ===
+          "Pending Branch Manager"
+        ) {
+          sql = `
+            UPDATE public.leave_requests
+            SET
+              status = 'Pending Area Manager'
+            WHERE id = $1
+          `;
+          params = [id];
+        }
+
+        else if (
+          currentStatus ===
+          "Pending Area Manager"
+        ) {
           sql = `
             UPDATE public.leave_requests
             SET
@@ -909,9 +869,13 @@ router.put(
               area_approved_by = $2,
               area_approved_at = NOW()
             WHERE id = $1
-            RETURNING id
           `;
-        } else if (currentStatus === "Pending Regional Manager") {
+        }
+
+        else if (
+          currentStatus ===
+          "Pending Regional Manager"
+        ) {
           sql = `
             UPDATE public.leave_requests
             SET
@@ -919,9 +883,13 @@ router.put(
               regional_approved_by = $2,
               regional_approved_at = NOW()
             WHERE id = $1
-            RETURNING id
           `;
-        } else if (currentStatus === "Pending Assistant Vice President") {
+        }
+
+        else if (
+          currentStatus ===
+          "Pending Assistant Vice President"
+        ) {
           sql = `
             UPDATE public.leave_requests
             SET
@@ -929,18 +897,39 @@ router.put(
               division_approved_by = $2,
               division_approved_at = NOW()
             WHERE id = $1
-            RETURNING id
           `;
-        } else if (currentStatus === "Pending Vice President") {
+        }
+
+        else if (
+          currentStatus ===
+          "Pending Vice President"
+        ) {
           sql = `
             UPDATE public.leave_requests
             SET
               status = 'Pending Admin'
             WHERE id = $1
-            RETURNING id
           `;
           params = [id];
-        } else if (currentStatus === "Pending Admin") {
+        }
+
+        else if (
+          currentStatus ===
+          "Pending Senior Vice President"
+        ) {
+          sql = `
+            UPDATE public.leave_requests
+            SET
+              status = 'Approved'
+            WHERE id = $1
+          `;
+          params = [id];
+        }
+
+        else if (
+          currentStatus ===
+          "Pending Admin"
+        ) {
           sql = `
             UPDATE public.leave_requests
             SET
@@ -948,17 +937,17 @@ router.put(
               admin_approved_by = $2,
               admin_approved_at = NOW()
             WHERE id = $1
-            RETURNING id
           `;
-        } else {
+        }
+
+        else {
           return res.status(400).json({
-            message: "Invalid current status for approval",
+            message:
+              "Invalid current status for approval",
           });
         }
 
-        const r = await pool.query(sql, params);
-
-        if (r.rowCount === 0) return res.status(404).json({ message: "Not found" });
+        await pool.query(sql, params);
       }
 
       const finalRow = await pool.query(
@@ -971,8 +960,89 @@ router.put(
 
       return res.json(finalRow.rows[0]);
     } catch (e) {
-      console.error("PUT /api/leave-requests/:id ERROR:", e.message);
-      return res.status(500).json({ message: e?.message || "Server error" });
+      console.error(
+        "PUT /api/leave-requests/:id ERROR:",
+        e.message
+      );
+
+      return res.status(500).json({
+        message: e?.message || "Server error",
+      });
+    }
+  }
+);
+
+router.get(
+  "/leave-requests/:id/download/:type",
+  requireAuth,
+  async (req, res) => {
+    try {
+      const leaveId = String(req.params.id || "").trim();
+
+      const type = String(req.params.type || "")
+        .trim()
+        .toLowerCase();
+
+      if (!["request", "approved"].includes(type)) {
+        return res.status(400).json({
+          message: "Invalid attachment type",
+        });
+      }
+
+      const r = await pool.query(
+        `
+        SELECT
+          file_name,
+          file_path,
+          file_mime
+        FROM public.leave_attachments
+        WHERE leave_request_id = $1
+          AND attachment_type = $2
+        ORDER BY id DESC
+        LIMIT 1
+        `,
+        [leaveId, type]
+      );
+
+      if (r.rowCount === 0) {
+        return res.status(404).json({
+          message: "File not found",
+        });
+      }
+
+      const row = r.rows[0];
+
+      const rel = String(row.file_path || "").replace(
+        /^\/uploads\//,
+        ""
+      );
+
+      const absPath = path.join(
+        __dirname,
+        "..",
+        "uploads",
+        rel
+      );
+
+      if (!fs.existsSync(absPath)) {
+        return res.status(404).json({
+          message: "Physical file missing",
+        });
+      }
+
+      return res.download(
+        absPath,
+        row.file_name || undefined
+      );
+    } catch (e) {
+      console.error(
+        "DOWNLOAD LEAVE FILE ERROR:",
+        e.message
+      );
+
+      return res.status(500).json({
+        message: e?.message || "Server error",
+      });
     }
   }
 );

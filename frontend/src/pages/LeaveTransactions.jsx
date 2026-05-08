@@ -1,5 +1,13 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+
 import { useNavigate } from "react-router-dom";
+
 import "../styles/LeaveTransactions.css";
 import api from "../api/axiosClient";
 
@@ -24,49 +32,98 @@ const LEAVE_CREDIT_MAP = {
 
 const readUser = () => {
   try {
-    return JSON.parse(localStorage.getItem("user") || "null");
+    return JSON.parse(
+      localStorage.getItem("user") || "null"
+    );
   } catch {
     return null;
   }
 };
 
-const fmtDate = (d) => (d ? String(d).split("T")[0] : "-");
-const todayDate = () => new Date().toISOString().slice(0, 10);
+const fmtDate = (d) =>
+  d ? String(d).split("T")[0] : "-";
+
+const todayDate = () =>
+  new Date().toISOString().slice(0, 10);
 
 const toNum = (v) => {
   const n = Number(v ?? 0);
   return Number.isFinite(n) ? n : 0;
 };
 
-const diffDaysInclusive = (startDate, endDate) => {
+const diffDaysInclusive = (
+  startDate,
+  endDate
+) => {
   if (!startDate || !endDate) return 0;
+
   const a = new Date(startDate);
   const b = new Date(endDate);
-  if (Number.isNaN(a.getTime()) || Number.isNaN(b.getTime())) return 0;
-  const ms = b.setHours(0, 0, 0, 0) - a.setHours(0, 0, 0, 0);
+
+  if (
+    Number.isNaN(a.getTime()) ||
+    Number.isNaN(b.getTime())
+  ) {
+    return 0;
+  }
+
+  const ms =
+    b.setHours(0, 0, 0, 0) -
+    a.setHours(0, 0, 0, 0);
+
   return Math.floor(ms / 86400000) + 1;
 };
 
 const isPdfFile = (mime, name) =>
-  String(mime || "").toLowerCase() === "application/pdf" ||
-  String(name || "").toLowerCase().endsWith(".pdf");
+  String(mime || "").toLowerCase() ===
+    "application/pdf" ||
+  String(name || "")
+    .toLowerCase()
+    .endsWith(".pdf");
 
 export default function LeaveTransactions() {
   const navigate = useNavigate();
-  const user = useMemo(() => readUser(), []);
-  const role = String(user?.role || "").trim().toLowerCase();
 
-  const isAdmin = role === "admin";
+  const user = useMemo(() => readUser(), []);
+
+  const role = String(user?.role || "")
+    .trim()
+    .toLowerCase();
+
+  /*
+    GLOBAL ROLE CHECKS
+  */
+
+  const isAdmin = ["admin", "it"].includes(role);
+  const isIT = role === "it";
   const isHr = role === "hr";
   const isAccounting = role === "accounting";
   const isTread = role === "tread";
-  const isAreaManager = role === "area manager";
-  const isBranchManager = role === "branch manager";
-  const isRegionalManager = role === "regional manager";
-  const isAssistantVicePresident = role === "assistant vice president";
-  const isVicePresident = role === "vice president";
-  const isSeniorVicePresident = role === "senior vice president";
-  const isPresident = role === "president";
+
+  const isBranchManager =
+    role === "branch manager";
+
+  const isAreaManager =
+    role === "area manager";
+
+  const isRegionalManager =
+    role === "regional manager";
+
+  const isAssistantVicePresident =
+    role === "assistant vice president";
+
+  const isVicePresident =
+    role === "vice president";
+
+  const isSeniorVicePresident =
+    role === "senior vice president";
+
+  const isPresident =
+    role === "president";
+
+  /*
+    CREATE LEAVE ACCESS
+  */
 
   const canCreateLeave =
     isAdmin ||
@@ -81,59 +138,114 @@ export default function LeaveTransactions() {
     isSeniorVicePresident ||
     isPresident;
 
+  /*
+    FILE ACCESS
+  */
+
   const canViewRequestFile =
     isAdmin ||
     isHr ||
     isAccounting ||
     isTread ||
     isRegionalManager ||
-    isAssistantVicePresident;
+    isAssistantVicePresident ||
+    isVicePresident ||
+    isSeniorVicePresident ||
+    isPresident;
 
   const canViewApprovedFile =
     isAdmin ||
     isHr ||
     isAccounting ||
-    isTread ||
     isRegionalManager ||
     isAssistantVicePresident ||
-    isAreaManager;
+    isAreaManager ||
+    isVicePresident ||
+    isSeniorVicePresident ||
+    isPresident;
 
-  const canUploadApprovedFile = isAdmin || isHr || isAccounting || isTread;
+  /*
+    FINAL APPROVED FILE UPLOAD
+    ONLY:
+    ADMIN / IT / HR / ACCOUNTING
+  */
+
+  const canUploadApprovedFile =
+    isAdmin ||
+    isIT ||
+    isHr ||
+    isAccounting;
 
   const employeePickerRef = useRef(null);
 
-  const [staffList, setStaffList] = useState([]);
-  const [branches, setBranches] = useState([]);
-  const [leaveRequests, setLeaveRequests] = useState([]);
+  const [staffList, setStaffList] =
+    useState([]);
 
-  const [loadingCreate, setLoadingCreate] = useState(false);
-  const [loadingList, setLoadingList] = useState(false);
-  const [uploadingApproved, setUploadingApproved] = useState({});
+  const [branches, setBranches] =
+    useState([]);
 
-  const [selectedLeaveType, setSelectedLeaveType] = useState("All");
+  const [leaveRequests, setLeaveRequests] =
+    useState([]);
+
+  const [loadingCreate, setLoadingCreate] =
+    useState(false);
+
+  const [loadingList, setLoadingList] =
+    useState(false);
+
+  const [
+    uploadingApproved,
+    setUploadingApproved,
+  ] = useState({});
+
+  const [
+    selectedLeaveType,
+    setSelectedLeaveType,
+  ] = useState("All");
+
   const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(25);
-  const [showCreateLeave, setShowCreateLeave] = useState(false);
 
-  const [leaveForm, setLeaveForm] = useState({
-    employee_id: "",
-    staff_name: "",
-    branch_id: "",
-    branch_code: "",
-    branch_name: "",
-    leave_type: "",
-    date_created: todayDate(),
-    start_date: "",
-    end_date: "",
-    total_no_of_days: 0,
-    reason: "",
-  });
+  const [pageSize, setPageSize] =
+    useState(25);
 
-  const isIndefiniteLeave = leaveForm.leave_type === "Indefinite Leave";
+  const [
+    showCreateLeave,
+    setShowCreateLeave,
+  ] = useState(false);
 
-  const [attachmentFile, setAttachmentFile] = useState(null);
-  const [employeeSearch, setEmployeeSearch] = useState("");
-  const [showEmployeeDropdown, setShowEmployeeDropdown] = useState(false);
+  const [leaveForm, setLeaveForm] =
+    useState({
+      employee_id: "",
+      staff_name: "",
+      branch_id: "",
+      branch_code: "",
+      branch_name: "",
+      leave_type: "",
+      date_created: todayDate(),
+      start_date: "",
+      end_date: "",
+      total_no_of_days: 0,
+      reason: "",
+    });
+
+  const isIndefiniteLeave =
+    leaveForm.leave_type ===
+    "Indefinite Leave";
+
+  const [attachmentFile, setAttachmentFile] =
+    useState(null);
+
+  const [employeeSearch, setEmployeeSearch] =
+    useState("");
+
+  const [
+    showEmployeeDropdown,
+    setShowEmployeeDropdown,
+  ] = useState(false);
+
+  /*
+    LOGOUT
+  */
 
   const logout = useCallback(() => {
     localStorage.removeItem("token");
@@ -141,51 +253,123 @@ export default function LeaveTransactions() {
     window.location.href = "/login";
   }, []);
 
+  /*
+    FETCH STAFF
+  */
+
   const fetchStaff = useCallback(async () => {
     try {
       const res = await api.get("/staff");
-      setStaffList(Array.isArray(res.data) ? res.data : []);
+
+      setStaffList(
+        Array.isArray(res.data)
+          ? res.data
+          : []
+      );
     } catch (err) {
-      if (err?.response?.status === 401) logout();
+      if (err?.response?.status === 401) {
+        logout();
+      }
+
       setStaffList([]);
     }
   }, [logout]);
 
-  const fetchBranches = useCallback(async () => {
-    try {
-      const res = await api.get("/branches");
-      setBranches(Array.isArray(res.data) ? res.data : []);
-    } catch (err) {
-      if (err?.response?.status === 401) logout();
-      setBranches([]);
-    }
-  }, [logout]);
+  /*
+    FETCH BRANCHES
+  */
+
+  const fetchBranches = useCallback(
+    async () => {
+      try {
+        const res = await api.get(
+          "/branches"
+        );
+
+        setBranches(
+          Array.isArray(res.data)
+            ? res.data
+            : []
+        );
+      } catch (err) {
+        if (
+          err?.response?.status === 401
+        ) {
+          logout();
+        }
+
+        setBranches([]);
+      }
+    },
+    [logout]
+  );
+
+  /*
+    BRANCH MAP
+  */
 
   const branchMap = useMemo(() => {
     const m = new Map();
-    (branches || []).forEach((b) => m.set(Number(b.id), b));
+
+    (branches || []).forEach((b) =>
+      m.set(Number(b.id), b)
+    );
+
     return m;
   }, [branches]);
+
+  /*
+    FETCH LEAVE REQUESTS
+  */
 
   const fetchLeave = useCallback(async () => {
     try {
       setLoadingList(true);
-      const res = await api.get("/leave-requests");
-      setLeaveRequests(Array.isArray(res.data) ? res.data : []);
+
+      const res = await api.get(
+        "/leave-requests"
+      );
+
+      setLeaveRequests(
+        Array.isArray(res.data)
+          ? res.data
+          : []
+      );
     } catch (err) {
-      if (err?.response?.status === 401) logout();
+      if (err?.response?.status === 401) {
+        logout();
+      }
+
       setLeaveRequests([]);
     } finally {
       setLoadingList(false);
     }
   }, [logout]);
 
+  /*
+    REFRESH
+  */
+
   const handleRefresh = useCallback(async () => {
-    await Promise.all([fetchStaff(), fetchBranches(), fetchLeave()]);
-  }, [fetchStaff, fetchBranches, fetchLeave]);
+    await Promise.all([
+      fetchStaff(),
+      fetchBranches(),
+      fetchLeave(),
+    ]);
+  }, [
+    fetchStaff,
+    fetchBranches,
+    fetchLeave,
+  ]);
+
+  /*
+    INITIAL LOAD
+  */
 
   useEffect(() => {
-    const token = localStorage.getItem("token");
+    const token =
+      localStorage.getItem("token");
+
     if (!user || !token) {
       window.location.href = "/login";
       return;
@@ -194,34 +378,75 @@ export default function LeaveTransactions() {
     fetchStaff();
     fetchBranches();
     fetchLeave();
-  }, [user, fetchStaff, fetchBranches, fetchLeave]);
+  }, [
+    user,
+    fetchStaff,
+    fetchBranches,
+    fetchLeave,
+  ]);
+
+  /*
+    MODAL ESC
+  */
 
   useEffect(() => {
     if (!showCreateLeave) return;
 
     const onKeyDown = (e) => {
-      if (e.key === "Escape") setShowCreateLeave(false);
+      if (e.key === "Escape") {
+        setShowCreateLeave(false);
+      }
     };
 
-    document.addEventListener("keydown", onKeyDown);
-    document.body.style.overflow = "hidden";
+    document.addEventListener(
+      "keydown",
+      onKeyDown
+    );
+
+    document.body.style.overflow =
+      "hidden";
 
     return () => {
-      document.removeEventListener("keydown", onKeyDown);
+      document.removeEventListener(
+        "keydown",
+        onKeyDown
+      );
+
       document.body.style.overflow = "";
     };
   }, [showCreateLeave]);
 
+  /*
+    CLICK OUTSIDE EMPLOYEE PICKER
+  */
+
   useEffect(() => {
     const onMouseDown = (e) => {
-      if (employeePickerRef.current && !employeePickerRef.current.contains(e.target)) {
+      if (
+        employeePickerRef.current &&
+        !employeePickerRef.current.contains(
+          e.target
+        )
+      ) {
         setShowEmployeeDropdown(false);
       }
     };
 
-    document.addEventListener("mousedown", onMouseDown);
-    return () => document.removeEventListener("mousedown", onMouseDown);
+    document.addEventListener(
+      "mousedown",
+      onMouseDown
+    );
+
+    return () =>
+      document.removeEventListener(
+        "mousedown",
+        onMouseDown
+      );
   }, []);
+
+  /*
+    AUTO DAYS
+  */
 
   useEffect(() => {
     if (isIndefiniteLeave) {
@@ -231,24 +456,36 @@ export default function LeaveTransactions() {
         end_date: "",
         total_no_of_days: "",
       }));
+
       return;
     }
 
     setLeaveForm((prev) => ({
       ...prev,
-      total_no_of_days: diffDaysInclusive(prev.start_date, prev.end_date),
+      total_no_of_days:
+        diffDaysInclusive(
+          prev.start_date,
+          prev.end_date
+        ),
     }));
-  }, [leaveForm.start_date, leaveForm.end_date, isIndefiniteLeave]);
+  }, [
+    leaveForm.start_date,
+    leaveForm.end_date,
+    isIndefiniteLeave,
+  ]);
 
-  const filteredEmployees = useMemo(() => {
+    const filteredEmployees = useMemo(() => {
     const q = employeeSearch.toLowerCase();
+
     if (!q) return staffList.slice(0, 30);
 
-    return (staffList || []).filter((s) => {
-      const name = String(s.fullname || "").toLowerCase();
-      const empNo = String(s.employee_no || "").toLowerCase();
-      return name.includes(q) || empNo.includes(q);
-    });
+    return (staffList || [])
+      .filter((s) => {
+        const name = String(s.fullname || "").toLowerCase();
+        const empNo = String(s.employee_no || "").toLowerCase();
+        return name.includes(q) || empNo.includes(q);
+      })
+      .slice(0, 30);
   }, [staffList, employeeSearch]);
 
   const handleLeaveEmployeeSelect = (employeeId) => {
@@ -258,7 +495,7 @@ export default function LeaveTransactions() {
 
     setLeaveForm((prev) => ({
       ...prev,
-      employee_id: employeeId,
+      employee_id: String(employeeId || ""),
       staff_name: emp?.fullname || "",
       branch_id: bid ? String(bid) : "",
       branch_code: b?.code || "",
@@ -268,6 +505,7 @@ export default function LeaveTransactions() {
     setEmployeeSearch(
       emp ? `${emp.employee_no ? `${emp.employee_no} - ` : ""}${emp.fullname || "-"}` : ""
     );
+
     setShowEmployeeDropdown(false);
   };
 
@@ -285,6 +523,7 @@ export default function LeaveTransactions() {
       total_no_of_days: 0,
       reason: "",
     });
+
     setAttachmentFile(null);
     setEmployeeSearch("");
     setShowEmployeeDropdown(false);
@@ -302,7 +541,8 @@ export default function LeaveTransactions() {
         .reduce((sum, l) => {
           return (
             sum +
-            (toNum(l.total_no_of_days) || diffDaysInclusive(l.start_date, l.end_date))
+            (toNum(l.total_no_of_days) ||
+              diffDaysInclusive(l.start_date, l.end_date))
           );
         }, 0);
     },
@@ -319,10 +559,18 @@ export default function LeaveTransactions() {
     );
 
     const available = toNum(selectedStaff?.[creditField]);
-    const used = getApprovedUsedLeave(leaveForm.employee_id, leaveForm.leave_type);
+    const used = getApprovedUsedLeave(
+      leaveForm.employee_id,
+      leaveForm.leave_type
+    );
 
     return available - used;
-  }, [leaveForm.employee_id, leaveForm.leave_type, staffList, getApprovedUsedLeave]);
+  }, [
+    leaveForm.employee_id,
+    leaveForm.leave_type,
+    staffList,
+    getApprovedUsedLeave,
+  ]);
 
   const handleCreateLeave = async (e) => {
     e.preventDefault();
@@ -340,7 +588,11 @@ export default function LeaveTransactions() {
         return alert("Start date must be on or before end date.");
       }
 
-      const requestedDays = diffDaysInclusive(leaveForm.start_date, leaveForm.end_date);
+      const requestedDays = diffDaysInclusive(
+        leaveForm.start_date,
+        leaveForm.end_date
+      );
+
       const remainingLeave = getLeaveRemaining();
 
       if (remainingLeave <= 0) {
@@ -358,6 +610,7 @@ export default function LeaveTransactions() {
       setLoadingCreate(true);
 
       const formData = new FormData();
+
       formData.append("employee_id", leaveForm.employee_id);
       formData.append("leave_type", leaveForm.leave_type);
       formData.append("date_created", leaveForm.date_created);
@@ -373,14 +626,16 @@ export default function LeaveTransactions() {
         headers: { "Content-Type": "multipart/form-data" },
       });
 
-      alert("Leave request submitted!");
+      alert("Leave request submitted.");
       resetForm();
       setShowCreateLeave(false);
+
       await fetchLeave();
       await fetchStaff();
     } catch (err) {
       if (err?.response?.status === 401) return logout();
       if (err?.response?.status === 403) return alert("Access denied.");
+
       alert(err?.response?.data?.message || "Failed to submit leave request.");
     } finally {
       setLoadingCreate(false);
@@ -390,11 +645,16 @@ export default function LeaveTransactions() {
   const canApproveThisRow = (item) => {
     const status = String(item.status || "").trim();
 
+    if (status === "Pending Branch Manager") return isBranchManager;
     if (status === "Pending Area Manager") return isAreaManager;
     if (status === "Pending Regional Manager") return isRegionalManager;
     if (status === "Pending Assistant Vice President") return isAssistantVicePresident;
     if (status === "Pending Vice President") return isVicePresident;
-    if (status === "Pending Admin") return isAdmin || isHr || isAccounting || isTread;
+    if (status === "Pending Senior Vice President") return isSeniorVicePresident || isPresident;
+
+    if (status === "Pending Admin") {
+      return isAdmin || isIT || isHr || isAccounting || isTread;
+    }
 
     return false;
   };
@@ -405,18 +665,22 @@ export default function LeaveTransactions() {
         action,
         rejection_reason: action === "reject" ? "Rejected by approver" : "",
       });
+
       await fetchLeave();
       await fetchStaff();
     } catch (err) {
       if (err?.response?.status === 401) return logout();
       if (err?.response?.status === 403) return alert("Access denied.");
+
       alert(err?.response?.data?.message || "Failed to update leave request");
     }
   };
 
   const filteredLeave = useMemo(() => {
     return (leaveRequests || []).filter((x) =>
-      selectedLeaveType === "All" ? true : String(x.leave_type) === selectedLeaveType
+      selectedLeaveType === "All"
+        ? true
+        : String(x.leave_type) === selectedLeaveType
     );
   }, [leaveRequests, selectedLeaveType]);
 
@@ -428,12 +692,33 @@ export default function LeaveTransactions() {
   }, [filteredLeave, page, pageSize]);
 
   useEffect(() => {
-  setPage(1);
-}, [selectedLeaveType, pageSize]);
+    setPage(1);
+  }, [selectedLeaveType, pageSize]);
 
   useEffect(() => {
     if (page > totalPages) setPage(totalPages);
   }, [page, totalPages]);
+
+  const getApprovalLabel = (status) => {
+    switch (String(status || "").trim()) {
+      case "Pending Branch Manager":
+        return "Waiting Branch Manager";
+      case "Pending Area Manager":
+        return "Waiting Area Manager";
+      case "Pending Regional Manager":
+        return "Waiting Regional Manager";
+      case "Pending Assistant Vice President":
+        return "Waiting AVP";
+      case "Pending Vice President":
+        return "Waiting VP";
+      case "Pending Senior Vice President":
+        return "Waiting SVP";
+      case "Pending Admin":
+        return "Waiting HR/Admin";
+      default:
+        return status || "-";
+    }
+  };
 
   const badgeClass = (status) => {
     if (status === "Approved") return "badge badge-approved";
@@ -451,11 +736,14 @@ export default function LeaveTransactions() {
       const blob = new Blob([res.data]);
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement("a");
+
       a.href = url;
       a.download = fallbackName || `leave-${id}-${type}`;
+
       document.body.appendChild(a);
       a.click();
       a.remove();
+
       window.URL.revokeObjectURL(url);
     } catch (err) {
       alert(err?.response?.data?.message || "Failed to download file.");
@@ -464,8 +752,12 @@ export default function LeaveTransactions() {
 
   const uploadApprovedFile = async (leaveId, file) => {
     if (!file) return;
+
     try {
-      setUploadingApproved((prev) => ({ ...prev, [leaveId]: true }));
+      setUploadingApproved((prev) => ({
+        ...prev,
+        [leaveId]: true,
+      }));
 
       const formData = new FormData();
       formData.append("attachment", file);
@@ -479,48 +771,47 @@ export default function LeaveTransactions() {
     } catch (err) {
       alert(err?.response?.data?.message || "Failed to upload approved file.");
     } finally {
-      setUploadingApproved((prev) => ({ ...prev, [leaveId]: false }));
+      setUploadingApproved((prev) => ({
+        ...prev,
+        [leaveId]: false,
+      }));
     }
   };
 
   const renderRequestFileAction = (item) => {
     if (!item.request_attachment_path) return null;
 
-    if (canViewRequestFile) {
-      const label = isPdfFile(item.request_attachment_mime, item.request_attachment_name)
-        ? "Download Request PDF"
-        : "Download Request File";
+    if (!canViewRequestFile) return null;
 
-      return (
-        <button
-          className="btn-secondary"
-          type="button"
-          onClick={() =>
-            downloadAttachment(item.id, "request", item.request_attachment_name || "")
-          }
-        >
-          {label}
-        </button>
-      );
-    }
+    const label = isPdfFile(
+      item.request_attachment_mime,
+      item.request_attachment_name
+    )
+      ? "Request PDF"
+      : "Request File";
 
-    if (isAreaManager) {
-      return (
-        <button className="btn-secondary" type="button" disabled>
-          Request File Uploaded
-        </button>
-      );
-    }
-
-    return null;
+    return (
+      <button
+        className="btn-secondary"
+        type="button"
+        onClick={() =>
+          downloadAttachment(item.id, "request", item.request_attachment_name || "")
+        }
+      >
+        {label}
+      </button>
+    );
   };
 
   const renderApprovedFileAction = (item) => {
     if (!item.approved_attachment_path || !canViewApprovedFile) return null;
 
-    const label = isPdfFile(item.approved_attachment_mime, item.approved_attachment_name)
-      ? "Download Approved PDF"
-      : "Download Approved File";
+    const label = isPdfFile(
+      item.approved_attachment_mime,
+      item.approved_attachment_name
+    )
+      ? "Approved PDF"
+      : "Approved File";
 
     return (
       <button
@@ -535,7 +826,7 @@ export default function LeaveTransactions() {
     );
   };
 
-  const getPageNumbers = () => {
+    const getPageNumbers = () => {
     const pages = [];
     const maxButtons = 5;
 
@@ -546,7 +837,10 @@ export default function LeaveTransactions() {
       start = Math.max(1, end - maxButtons + 1);
     }
 
-    for (let i = start; i <= end; i++) pages.push(i);
+    for (let i = start; i <= end; i++) {
+      pages.push(i);
+    }
+
     return pages;
   };
 
@@ -554,21 +848,49 @@ export default function LeaveTransactions() {
     <div className="approval-page">
       <div className="approval-page-header">
         <div>
-          <h2 className="approval-title">Leave Transactions</h2>
-          <p className="approval-subtitle">Create and manage leave requests</p>
+          <h2 className="approval-title">
+            Leave Transactions
+          </h2>
+
+          <p className="approval-subtitle">
+            Create and manage leave requests
+          </p>
         </div>
 
-        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-          <button className="btn-secondary" onClick={() => navigate(-1)} type="button">
+        <div
+          style={{
+            display: "flex",
+            gap: 10,
+            flexWrap: "wrap",
+          }}
+        >
+          <button
+            className="btn-secondary"
+            onClick={() => navigate(-1)}
+            type="button"
+          >
             ← Back
           </button>
 
-          <button className="btn-secondary" onClick={handleRefresh} type="button" disabled={loadingList}>
-            {loadingList ? "Refreshing..." : "Refresh"}
+          <button
+            className="btn-secondary"
+            onClick={handleRefresh}
+            type="button"
+            disabled={loadingList}
+          >
+            {loadingList
+              ? "Refreshing..."
+              : "Refresh"}
           </button>
 
           {canCreateLeave && (
-            <button className="btn-primary" onClick={() => setShowCreateLeave(true)} type="button">
+            <button
+              className="btn-primary"
+              onClick={() =>
+                setShowCreateLeave(true)
+              }
+              type="button"
+            >
               + Add Leave
             </button>
           )}
@@ -579,8 +901,14 @@ export default function LeaveTransactions() {
         {leaveTypes.map((t) => (
           <button
             key={t}
-            className={`chip ${selectedLeaveType === t ? "active" : ""}`}
-            onClick={() => setSelectedLeaveType(t)}
+            className={`chip ${
+              selectedLeaveType === t
+                ? "active"
+                : ""
+            }`}
+            onClick={() =>
+              setSelectedLeaveType(t)
+            }
             type="button"
           >
             {t}
@@ -594,12 +922,27 @@ export default function LeaveTransactions() {
 
           <select
             value={pageSize}
-            onChange={(e) => setPageSize(Number(e.target.value))}
+            onChange={(e) =>
+              setPageSize(
+                Number(e.target.value)
+              )
+            }
           >
-            <option value={25}>25</option>
-            <option value={50}>50</option>
-            <option value={75}>75</option>
-            <option value={100}>100</option>
+            <option value={25}>
+              25
+            </option>
+
+            <option value={50}>
+              50
+            </option>
+
+            <option value={75}>
+              75
+            </option>
+
+            <option value={100}>
+              100
+            </option>
           </select>
         </div>
 
@@ -608,7 +951,11 @@ export default function LeaveTransactions() {
             className="leave-page-btn"
             type="button"
             disabled={page <= 1}
-            onClick={() => setPage((p) => Math.max(1, p - 1))}
+            onClick={() =>
+              setPage((p) =>
+                Math.max(1, p - 1)
+              )
+            }
           >
             ‹
           </button>
@@ -616,7 +963,9 @@ export default function LeaveTransactions() {
           {getPageNumbers().map((p) => (
             <button
               key={p}
-              className={`leave-page-number ${page === p ? "active" : ""}`}
+              className={`leave-page-number ${
+                page === p ? "active" : ""
+              }`}
               type="button"
               onClick={() => setPage(p)}
             >
@@ -628,7 +977,14 @@ export default function LeaveTransactions() {
             className="leave-page-btn"
             type="button"
             disabled={page >= totalPages}
-            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+            onClick={() =>
+              setPage((p) =>
+                Math.min(
+                  totalPages,
+                  p + 1
+                )
+              )
+            }
           >
             ›
           </button>
@@ -652,70 +1008,161 @@ export default function LeaveTransactions() {
                 <th>End</th>
                 <th>Days</th>
                 <th>Status</th>
-                <th style={{ width: 460 }}>Action</th>
+                <th style={{ width: 460 }}>
+                  Action
+                </th>
               </tr>
             </thead>
 
             <tbody>
               {loadingList ? (
                 <tr>
-                  <td colSpan={9} className="empty-state">
+                  <td
+                    colSpan={9}
+                    className="empty-state"
+                  >
                     Loading…
                   </td>
                 </tr>
-              ) : filteredLeave.length === 0 ? (
+              ) : filteredLeave.length ===
+                0 ? (
                 <tr>
-                  <td colSpan={9} className="empty-state">
+                  <td
+                    colSpan={9}
+                    className="empty-state"
+                  >
                     No requests found.
                   </td>
                 </tr>
               ) : (
                 pagedLeave.map((item) => (
                   <tr key={item.id}>
-                    <td>{item.transaction_code || item.id}</td>
-                    <td className="td-strong">{item.staff_name || `Employee #${item.employee_id}` || "-"}</td>
-                    <td>{item.leave_type}</td>
-                    <td>{fmtDate(item.date_created)}</td>
-                    <td>{fmtDate(item.start_date)}</td>
-                    <td>{fmtDate(item.end_date)}</td>
                     <td>
-                      {item.leave_type === "Indefinite Leave"
-                        ? ""
-                        : item.total_no_of_days ?? 0}
+                      {item.transaction_code ||
+                        item.id}
                     </td>
-                    <td>
-                      <span className={badgeClass(item.status)}>{item.status}</span>
-                    </td>
-                    <td>
-                      <div className="row-actions" style={{ flexWrap: "wrap" }}>
-                        {renderRequestFileAction(item)}
-                        {renderApprovedFileAction(item)}
 
-                        {canUploadApprovedFile && item.status === "Approved" ? (
-                          <label className="btn-secondary" style={{ cursor: "pointer" }}>
-                            {uploadingApproved[item.id] ? "Uploading..." : "Upload Approved File"}
+                    <td className="td-strong">
+                      {item.staff_name ||
+                        `Employee #${item.employee_id}` ||
+                        "-"}
+                    </td>
+
+                    <td>
+                      {item.leave_type}
+                    </td>
+
+                    <td>
+                      {fmtDate(
+                        item.date_created
+                      )}
+                    </td>
+
+                    <td>
+                      {fmtDate(
+                        item.start_date
+                      )}
+                    </td>
+
+                    <td>
+                      {fmtDate(
+                        item.end_date
+                      )}
+                    </td>
+
+                    <td>
+                      {item.leave_type ===
+                      "Indefinite Leave"
+                        ? ""
+                        : item.total_no_of_days ??
+                          0}
+                    </td>
+
+                    <td>
+                      <span
+                        className={badgeClass(
+                          item.status
+                        )}
+                      >
+                        {getApprovalLabel(
+                          item.status
+                        )}
+                      </span>
+                    </td>
+
+                    <td>
+                      <div className="row-actions">
+                        {renderRequestFileAction(
+                          item
+                        )}
+
+                        {renderApprovedFileAction(
+                          item
+                        )}
+
+                        {canUploadApprovedFile &&
+                        item.status ===
+                          "Approved" ? (
+                          <label
+                            className="btn-secondary"
+                            style={{
+                              cursor:
+                                "pointer",
+                            }}
+                          >
+                            {uploadingApproved[
+                              item.id
+                            ]
+                              ? "Uploading..."
+                              : "Upload Approved File"}
+
                             <input
                               type="file"
                               accept=".pdf,.png,.jpg,.jpeg,.doc,.docx"
-                              style={{ display: "none" }}
-                              onChange={(e) => uploadApprovedFile(item.id, e.target.files?.[0] || null)}
+                              style={{
+                                display:
+                                  "none",
+                              }}
+                              onChange={(
+                                e
+                              ) =>
+                                uploadApprovedFile(
+                                  item.id,
+                                  e.target
+                                    .files?.[0] ||
+                                    null
+                                )
+                              }
                             />
                           </label>
                         ) : null}
 
-                        {canApproveThisRow(item) ? (
+                        {canApproveThisRow(
+                          item
+                        ) ? (
                           <>
                             <button
                               className="btn-success"
                               type="button"
-                              onClick={() => updateLeaveStatus(item.id, "approve")}
+                              onClick={() =>
+                                updateLeaveStatus(
+                                  item.id,
+                                  "approve"
+                                )
+                              }
                             >
                               Approve
                             </button>
+
                             <button
                               className="btn-danger"
                               type="button"
-                              onClick={() => updateLeaveStatus(item.id, "reject")}
+                              onClick={() =>
+                                updateLeaveStatus(
+                                  item.id,
+                                  "reject"
+                                )
+                              }
                             >
                               Reject
                             </button>
@@ -735,42 +1182,70 @@ export default function LeaveTransactions() {
         <div
           className="modal-overlay"
           onMouseDown={(e) =>
-            e.target.classList.contains("modal-overlay") && setShowCreateLeave(false)
+            e.target.classList.contains("modal-overlay") &&
+            setShowCreateLeave(false)
           }
         >
           <div
             className="modal saas-modal"
             onMouseDown={(e) => e.stopPropagation()}
-            style={{ overflow: "visible" }}
+            style={{
+              overflow: "visible",
+              maxWidth: "950px",
+              width: "95%",
+            }}
           >
             <div className="modal-head">
               <div>
-                <h3 className="modal-title">Add Leave Request</h3>
-                <p className="modal-subtitle">Submitted into approval chain automatically</p>
+                <h3 className="modal-title">
+                  Add Leave Request
+                </h3>
+
+                <p className="modal-subtitle">
+                  Submitted into approval chain automatically
+                </p>
               </div>
-              <button className="modal-x" type="button" onClick={() => setShowCreateLeave(false)}>
+
+              <button
+                className="modal-x"
+                type="button"
+                onClick={() => setShowCreateLeave(false)}
+              >
                 ✕
               </button>
             </div>
 
-            <form onSubmit={handleCreateLeave} className="modal-form" style={{ overflow: "visible" }}>
-              <div className="modal-grid" style={{ overflow: "visible" }}>
+            <form
+              onSubmit={handleCreateLeave}
+              className="modal-form"
+              style={{
+                overflow: "visible",
+              }}
+            >
+              <div
+                className="modal-grid"
+                style={{
+                  overflow: "visible",
+                }}
+              >
                 <div
                   className="form-group"
                   ref={employeePickerRef}
-                  style={{ position: "relative", zIndex: 50 }}
+                  style={{
+                    position: "relative",
+                    zIndex: 50,
+                  }}
                 >
-                  <label htmlFor="employee_id_search">Employee</label>
+                  <label>Employee</label>
 
                   <input
-                    id="employee_id_search"
-                    name="employee_id_search"
                     type="text"
                     placeholder="Search Employee..."
                     value={employeeSearch}
                     onChange={(e) => {
                       setEmployeeSearch(e.target.value);
                       setShowEmployeeDropdown(true);
+
                       setLeaveForm((prev) => ({
                         ...prev,
                         employee_id: "",
@@ -780,66 +1255,48 @@ export default function LeaveTransactions() {
                         branch_name: "",
                       }));
                     }}
-                    onFocus={() => setShowEmployeeDropdown(true)}
-                    autoComplete="off"
+                    onFocus={() =>
+                      setShowEmployeeDropdown(true)
+                    }
                     required={!leaveForm.employee_id}
                   />
 
                   {showEmployeeDropdown && (
-                    <div
-                      style={{
-                        position: "absolute",
-                        top: "100%",
-                        left: 0,
-                        right: 0,
-                        marginTop: 6,
-                        maxHeight: 220,
-                        overflowY: "auto",
-                        background: "#0f1a2e",
-                        border: "1px solid rgba(255,255,255,0.1)",
-                        borderRadius: 8,
-                        zIndex: 9999,
-                        boxShadow: "0 10px 24px rgba(0,0,0,0.4)",
-                      }}
-                    >
+                    <div className="approval-search-dropdown">
                       {filteredEmployees.length === 0 ? (
-                        <div style={{ padding: 10, color: "#9aa7bd" }}>No results</div>
+                        <div className="approval-search-empty">
+                          No results
+                        </div>
                       ) : (
                         filteredEmployees.map((s) => (
-                          <div
+                          <button
                             key={s.id}
-                            style={{
-                              padding: 10,
-                              cursor: "pointer",
-                              borderBottom: "1px solid rgba(255,255,255,0.05)",
-                              color: "#e7edf7",
-                              transition: "background 0.15s ease",
-                            }}
-                            onMouseEnter={(e) => {
-                              e.currentTarget.style.background = "#1e293b";
-                            }}
-                            onMouseLeave={(e) => {
-                              e.currentTarget.style.background = "transparent";
-                            }}
-                            onClick={() => handleLeaveEmployeeSelect(s.id)}
+                            type="button"
+                            className="approval-search-item"
+                            onClick={() =>
+                              handleLeaveEmployeeSelect(
+                                s.id
+                              )
+                            }
                           >
-                            {(s.employee_no ? `${s.employee_no} - ` : "") + (s.fullname || "-")}
-                          </div>
+                            {(s.employee_no
+                              ? `${s.employee_no} - `
+                              : "") +
+                              (s.fullname || "-")}
+                          </button>
                         ))
                       )}
                     </div>
                   )}
-
-                  <input type="hidden" name="employee_id" value={leaveForm.employee_id} />
                 </div>
 
                 <div className="form-group">
-                  <label htmlFor="branch_snapshot">Branch</label>
+                  <label>Branch</label>
+
                   <input
-                    id="branch_snapshot"
-                    name="branch_snapshot"
                     value={
-                      leaveForm.branch_code || leaveForm.branch_name
+                      leaveForm.branch_code ||
+                      leaveForm.branch_name
                         ? `${leaveForm.branch_code} - ${leaveForm.branch_name}`
                         : ""
                     }
@@ -849,44 +1306,61 @@ export default function LeaveTransactions() {
                 </div>
 
                 <div className="form-group">
-                  <label htmlFor="leave_type">Leave Type</label>
+                  <label>Leave Type</label>
+
                   <select
-                    id="leave_type"
-                    name="leave_type"
                     value={leaveForm.leave_type}
                     onChange={(e) =>
                       setLeaveForm((p) => ({
                         ...p,
                         leave_type: e.target.value,
-                        start_date: e.target.value === "Indefinite Leave" ? "" : p.start_date,
-                        end_date: e.target.value === "Indefinite Leave" ? "" : p.end_date,
-                        total_no_of_days: e.target.value === "Indefinite Leave" ? "" : p.total_no_of_days,
+                        start_date:
+                          e.target.value ===
+                          "Indefinite Leave"
+                            ? ""
+                            : p.start_date,
+                        end_date:
+                          e.target.value ===
+                          "Indefinite Leave"
+                            ? ""
+                            : p.end_date,
+                        total_no_of_days:
+                          e.target.value ===
+                          "Indefinite Leave"
+                            ? ""
+                            : p.total_no_of_days,
                       }))
                     }
                     required
                   >
-                    <option value="">Select Leave Type</option>
-                    <option value="Annual Leave">Annual Leave</option>
-                    <option value="Sick Leave">Sick Leave</option>
-                    <option value="Maternity Leave">Maternity Leave</option>
-                    <option value="Paternity Leave">Paternity Leave</option>
-                    <option value="Emergency Leave">Emergency Leave</option>
-                    <option value="Indefinite Leave">Indefinite Leave</option>
-                    <option value="Leave Without Pay">Leave Without Pay</option>
+                    <option value="">
+                      Select Leave Type
+                    </option>
+
+                    {leaveTypes
+                      .filter((x) => x !== "All")
+                      .map((x) => (
+                        <option
+                          key={x}
+                          value={x}
+                        >
+                          {x}
+                        </option>
+                      ))}
                   </select>
                 </div>
 
                 <div className="form-group">
-                  <label htmlFor="date_created">Date Created</label>
+                  <label>Date Created</label>
+
                   <input
-                    id="date_created"
-                    name="date_created"
                     type="date"
                     value={leaveForm.date_created}
                     onChange={(e) =>
                       setLeaveForm((p) => ({
                         ...p,
-                        date_created: e.target.value,
+                        date_created:
+                          e.target.value,
                       }))
                     }
                     required
@@ -894,17 +1368,17 @@ export default function LeaveTransactions() {
                 </div>
 
                 <div className="form-group">
-                  <label htmlFor="start_date">Start Date</label>
+                  <label>Start Date</label>
+
                   <input
-                    id="start_date"
-                    name="start_date"
                     type="date"
                     value={leaveForm.start_date}
                     disabled={isIndefiniteLeave}
                     onChange={(e) =>
                       setLeaveForm((p) => ({
                         ...p,
-                        start_date: e.target.value,
+                        start_date:
+                          e.target.value,
                       }))
                     }
                     required={!isIndefiniteLeave}
@@ -912,17 +1386,17 @@ export default function LeaveTransactions() {
                 </div>
 
                 <div className="form-group">
-                  <label htmlFor="end_date">End Date</label>
+                  <label>End Date</label>
+
                   <input
-                    id="end_date"
-                    name="end_date"
                     type="date"
                     value={leaveForm.end_date}
                     disabled={isIndefiniteLeave}
                     onChange={(e) =>
                       setLeaveForm((p) => ({
                         ...p,
-                        end_date: e.target.value,
+                        end_date:
+                          e.target.value,
                       }))
                     }
                     required={!isIndefiniteLeave}
@@ -930,37 +1404,50 @@ export default function LeaveTransactions() {
                 </div>
 
                 <div className="form-group">
-                  <label htmlFor="total_no_of_days">Total No. of Days</label>
+                  <label>Total No. of Days</label>
+
                   <input
-                    id="total_no_of_days"
-                    name="total_no_of_days"
-                    value={isIndefiniteLeave ? "" : leaveForm.total_no_of_days}
+                    value={
+                      isIndefiniteLeave
+                        ? ""
+                        : leaveForm.total_no_of_days
+                    }
                     readOnly
-                    placeholder={isIndefiniteLeave ? "N/A for indefinite leave" : "Auto-calculated"}
+                    placeholder={
+                      isIndefiniteLeave
+                        ? "N/A for indefinite leave"
+                        : "Auto-calculated"
+                    }
                   />
                 </div>
 
                 <div className="form-group">
-                  <label htmlFor="attachment">Upload Leave File</label>
+                  <label>
+                    Upload Leave File
+                  </label>
+
                   <input
-                    id="attachment"
-                    name="attachment"
                     type="file"
                     accept=".pdf,.png,.jpg,.jpeg,.doc,.docx"
-                    onChange={(e) => setAttachmentFile(e.target.files?.[0] || null)}
+                    onChange={(e) =>
+                      setAttachmentFile(
+                        e.target.files?.[0] ||
+                          null
+                      )
+                    }
                   />
                 </div>
 
                 <div className="form-group full">
-                  <label htmlFor="reason">Reason (optional)</label>
+                  <label>Reason</label>
+
                   <textarea
-                    id="reason"
-                    name="reason"
                     value={leaveForm.reason}
                     onChange={(e) =>
                       setLeaveForm((p) => ({
                         ...p,
-                        reason: e.target.value,
+                        reason:
+                          e.target.value,
                       }))
                     }
                     placeholder="Optional reason"
@@ -969,11 +1456,24 @@ export default function LeaveTransactions() {
               </div>
 
               <div className="modal-buttons">
-                <button className="btn-secondary" type="button" onClick={() => setShowCreateLeave(false)}>
+                <button
+                  className="btn-secondary"
+                  type="button"
+                  onClick={() =>
+                    setShowCreateLeave(false)
+                  }
+                >
                   Cancel
                 </button>
-                <button className="btn-primary" type="submit" disabled={loadingCreate}>
-                  {loadingCreate ? "Submitting..." : "Submit"}
+
+                <button
+                  className="btn-primary"
+                  type="submit"
+                  disabled={loadingCreate}
+                >
+                  {loadingCreate
+                    ? "Submitting..."
+                    : "Submit"}
                 </button>
               </div>
             </form>

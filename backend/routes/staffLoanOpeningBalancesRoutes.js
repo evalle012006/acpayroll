@@ -1,7 +1,24 @@
 const express = require("express");
 const router = express.Router();
 const pool = require("../db");
-const { requireAuth, requireRole } = require("../middlewares/authMiddleware");
+
+const { requireAuth } = require("../middlewares/authMiddleware");
+const { requirePermission } = require("../utils/permissions");
+
+const {
+  isAdmin,
+  isIT,
+  isHr,
+  isAccounting,
+  isTread,
+  isBranchManager,
+  isAreaManager,
+  isRegionalManager,
+  isAssistantVicePresident,
+  isVicePresident,
+  isSeniorVicePresident,
+  isPresident,
+} = require("../utils/roleAccess");
 
 const toStr = (v) => String(v ?? "").trim();
 
@@ -24,23 +41,9 @@ const toDateOrNull = (v) => {
   return /^\d{4}-\d{2}-\d{2}$/.test(d) ? d : null;
 };
 
-const roleLower = (req) => String(req.user?.role || "").trim().toLowerCase();
-const isAdmin = (req) => roleLower(req) === "admin";
-const isHr = (req) => roleLower(req) === "hr";
-const isAccounting = (req) => roleLower(req) === "accounting";
-const isTread = (req) => roleLower(req) === "tread";
-const isBranchManager = (req) => roleLower(req) === "branch manager";
-const isAreaManager = (req) => roleLower(req) === "area manager";
-const isRegionalManager = (req) => roleLower(req) === "regional manager";
-const isAssistantVicePresident = (req) =>
-  roleLower(req) === "assistant vice president";
-const isVicePresident = (req) => roleLower(req) === "vice president";
-const isSeniorVicePresident = (req) =>
-  roleLower(req) === "senior vice president";
-const isPresident = (req) => roleLower(req) === "president";
-
 const isTopManagement = (req) =>
   isAdmin(req) ||
+  isIT(req) ||
   isHr(req) ||
   isAccounting(req) ||
   isTread(req) ||
@@ -124,11 +127,13 @@ function normalizePayload(body = {}) {
   const months_paid = toInt(body.months_paid) ?? 0;
 
   let per_month = toNum(body.per_month);
+
   if ((!per_month || per_month <= 0) && total_amount > 0 && term_months > 0) {
     per_month = Number((total_amount / term_months).toFixed(2));
   }
 
   let remaining_balance = toNum(body.remaining_balance);
+
   if (total_amount > 0) {
     remaining_balance = Math.max(
       0,
@@ -136,12 +141,8 @@ function normalizePayload(body = {}) {
     );
   }
 
-  const loan_type = toStr(body.loan_type);
-  const status = toStr(body.status) || "Active";
-  const remarks = toStr(body.remarks) || null;
-
   return {
-    loan_type,
+    loan_type: toStr(body.loan_type),
     original_amount,
     interest,
     interest_amount,
@@ -152,35 +153,30 @@ function normalizePayload(body = {}) {
     remaining_balance,
     start_date: toDateOrNull(body.start_date),
     effective_date: toDateOrNull(body.effective_date),
-    status,
-    remarks,
+    status: toStr(body.status) || "Active",
+    remarks: toStr(body.remarks) || null,
   };
 }
 
 router.get(
   "/staff-loan-opening-balances/staff/:staffId",
   requireAuth,
-  requireRole([
-    "admin",
-    "hr",
-    "accounting",
-    "tread",
-    "branch manager",
-    "area manager",
-    "regional manager",
-    "assistant vice president",
-    "vice president",
-    "senior vice president",
-    "president",
-  ]),
+  requirePermission("staff_loan_opening_balance", "view"),
   async (req, res) => {
     const client = await pool.connect();
+
     try {
       const staffId = toInt(req.params.staffId);
-      if (!staffId) return res.status(400).json({ message: "Invalid staff id" });
+
+      if (!staffId) {
+        return res.status(400).json({ message: "Invalid staff id" });
+      }
 
       const allowed = await canAccessStaffById(client, req, staffId);
-      if (!allowed) return res.status(403).json({ message: "Access denied" });
+
+      if (!allowed) {
+        return res.status(403).json({ message: "Access denied" });
+      }
 
       const r = await client.query(
         `
@@ -194,7 +190,11 @@ router.get(
 
       return res.json(r.rows);
     } catch (e) {
-      console.error("GET /api/staff-loan-opening-balances/staff/:staffId ERROR:", e.message);
+      console.error(
+        "GET /api/staff-loan-opening-balances/staff/:staffId ERROR:",
+        e.message
+      );
+
       return res.status(500).json({ message: "Server error" });
     } finally {
       client.release();
@@ -205,19 +205,22 @@ router.get(
 router.post(
   "/staff-loan-opening-balances",
   requireAuth,
-  requireRole(["admin", "hr", "accounting", "tread", "area manager"]),
+  requirePermission("staff_loan_opening_balance", "create"),
   async (req, res) => {
     const client = await pool.connect();
+
     try {
       await client.query("BEGIN");
 
       const staff_id = toInt(req.body?.staff_id);
+
       if (!staff_id) {
         await client.query("ROLLBACK");
         return res.status(400).json({ message: "staff_id is required" });
       }
 
       const allowed = await canAccessStaffById(client, req, staff_id);
+
       if (!allowed) {
         await client.query("ROLLBACK");
         return res.status(403).json({ message: "Access denied" });
@@ -239,6 +242,7 @@ router.post(
       }
 
       const payload = normalizePayload(req.body);
+
       if (!payload.loan_type) {
         await client.query("ROLLBACK");
         return res.status(400).json({ message: "loan_type is required" });
@@ -268,7 +272,7 @@ router.post(
           )
         VALUES
           ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12::date,$13::date,$14,$15,$16,$16)
-        RETURNING *;
+        RETURNING *
         `,
         [
           staff_id,
@@ -291,11 +295,16 @@ router.post(
       );
 
       await client.query("COMMIT");
+
       return res.json(ins.rows[0]);
     } catch (e) {
       await client.query("ROLLBACK");
+
       console.error("POST /api/staff-loan-opening-balances ERROR:", e.message);
-      return res.status(500).json({ message: e?.message || "Server error" });
+
+      return res.status(500).json({
+        message: e?.message || "Server error",
+      });
     } finally {
       client.release();
     }
@@ -305,13 +314,15 @@ router.post(
 router.put(
   "/staff-loan-opening-balances/:id",
   requireAuth,
-  requireRole(["admin", "hr", "accounting", "tread", "area manager"]),
+  requirePermission("staff_loan_opening_balance", "edit"),
   async (req, res) => {
     const client = await pool.connect();
+
     try {
       await client.query("BEGIN");
 
       const id = toInt(req.params.id);
+
       if (!id) {
         await client.query("ROLLBACK");
         return res.status(400).json({ message: "Invalid id" });
@@ -332,13 +343,19 @@ router.put(
         return res.status(404).json({ message: "Record not found" });
       }
 
-      const allowed = await canAccessStaffById(client, req, existing.rows[0].staff_id);
+      const allowed = await canAccessStaffById(
+        client,
+        req,
+        existing.rows[0].staff_id
+      );
+
       if (!allowed) {
         await client.query("ROLLBACK");
         return res.status(403).json({ message: "Access denied" });
       }
 
       const payload = normalizePayload(req.body);
+
       if (!payload.loan_type) {
         await client.query("ROLLBACK");
         return res.status(400).json({ message: "loan_type is required" });
@@ -364,7 +381,7 @@ router.put(
           updated_by = $15,
           updated_at = NOW()
         WHERE id = $1
-        RETURNING *;
+        RETURNING *
         `,
         [
           id,
@@ -386,11 +403,19 @@ router.put(
       );
 
       await client.query("COMMIT");
+
       return res.json(upd.rows[0]);
     } catch (e) {
       await client.query("ROLLBACK");
-      console.error("PUT /api/staff-loan-opening-balances/:id ERROR:", e.message);
-      return res.status(500).json({ message: e?.message || "Server error" });
+
+      console.error(
+        "PUT /api/staff-loan-opening-balances/:id ERROR:",
+        e.message
+      );
+
+      return res.status(500).json({
+        message: e?.message || "Server error",
+      });
     } finally {
       client.release();
     }
@@ -400,11 +425,14 @@ router.put(
 router.delete(
   "/staff-loan-opening-balances/:id",
   requireAuth,
-  requireRole(["admin", "hr", "accounting", "tread"]),
+  requirePermission("staff_loan_opening_balance", "delete"),
   async (req, res) => {
     try {
       const id = toInt(req.params.id);
-      if (!id) return res.status(400).json({ message: "Invalid id" });
+
+      if (!id) {
+        return res.status(400).json({ message: "Invalid id" });
+      }
 
       const r = await pool.query(
         `
@@ -419,9 +447,16 @@ router.delete(
         return res.status(404).json({ message: "Record not found" });
       }
 
-      return res.json({ message: "Deleted", id: r.rows[0].id });
+      return res.json({
+        message: "Deleted",
+        id: r.rows[0].id,
+      });
     } catch (e) {
-      console.error("DELETE /api/staff-loan-opening-balances/:id ERROR:", e.message);
+      console.error(
+        "DELETE /api/staff-loan-opening-balances/:id ERROR:",
+        e.message
+      );
+
       return res.status(500).json({ message: "Server error" });
     }
   }

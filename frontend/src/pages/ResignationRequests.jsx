@@ -38,7 +38,8 @@ export default function ResignationRequests() {
   const user = useMemo(() => readUser(), []);
   const role = norm(user?.role);
 
-  const isAdmin = role === "admin";
+  const isAdmin = ["admin", "it"].includes(role);
+  const isIt = role === "it";
   const isAreaManager = role === "area manager";
   const isRegionalManager = role === "regional manager";
   const isAssistantVicePresident = role === "assistant vice president";

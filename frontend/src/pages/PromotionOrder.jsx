@@ -8,6 +8,11 @@ const toNum = (v) => {
   return Number.isFinite(n) ? n : 0;
 };
 
+const money = (v) => {
+  const n = toNum(v);
+  return n ? n.toLocaleString() : "0";
+};
+
 const toStr = (v) => String(v ?? "").trim();
 const norm = (v) => toStr(v).toLowerCase();
 
@@ -21,54 +26,43 @@ const readUser = () => {
 
 const fmtDate = (d) => (d ? String(d).slice(0, 10) : "-");
 
+const OPERATION_DEPTS = ["operation", "operations", "payroll", "operation department"];
+const BACK_OFFICE_DEPTS = [
+  "it",
+  "it department",
+  "accounting",
+  "accounting department",
+  "hr",
+  "hr department",
+  "human resources",
+  "tread",
+  "tread department",
+  "office of the president",
+];
+
+const isOperationDept = (dept) => OPERATION_DEPTS.includes(norm(dept));
+const isBackOfficeDept = (dept) => BACK_OFFICE_DEPTS.includes(norm(dept));
+
 const STAGE_LABELS = {
+  "branch manager": "Branch Manager",
   "area manager": "Area Manager",
   "regional manager": "Regional Manager",
   "assistant vice president": "Assistant Vice President",
   "vice president": "Vice President",
-  tread: "Tread",
-  final: "Admin / HR / Finance",
+  "senior vice president": "Senior Vice President",
+  "final upload": "Final File Upload",
 };
 
-const getPromotionChain = (oldPosition) => {
-  const r = norm(oldPosition);
+const getDepartment = (o) =>
+  o?.department ||
+  o?.staff_department ||
+  o?.promoted_staff_department ||
+  o?.employee_department ||
+  "";
 
-  if (r === "area manager") {
-    return ["regional manager", "assistant vice president", "vice president", "tread", "final"];
-  }
-
-  if (r === "regional manager") {
-    return ["assistant vice president", "vice president", "tread", "final"];
-  }
-
-  if (r === "assistant vice president") {
-    return ["vice president", "tread", "final"];
-  }
-
-  if (r === "vice president" || r === "senior vice president" || r === "president") {
-    return ["tread", "final"];
-  }
-
-  return ["area manager", "regional manager", "assistant vice president", "vice president", "tread", "final"];
-};
-
-const getStageStatus = (o, stage) => {
-  const map = {
-    "area manager": o.area_manager_status,
-    "regional manager": o.regional_manager_status,
-    "assistant vice president": o.assistant_vice_president_status,
-    "vice president": o.vice_president_status,
-    tread: o.tread_status,
-    final: o.final_status,
-  };
-
-  return map[stage] || "Pending";
-};
-
-const renderChainSummary = (o) => {
-  return getPromotionChain(o.old_position)
-    .map((stage) => `${STAGE_LABELS[stage]}: ${getStageStatus(o, stage)}`)
-    .join(" | ");
+const getCurrentStageLabel = (o) => {
+  const stage = norm(o?.approval_stage);
+  return STAGE_LABELS[stage] || "-";
 };
 
 export default function PromotionOrder() {
@@ -77,9 +71,9 @@ export default function PromotionOrder() {
   const role = norm(user?.role);
 
   const isAdmin = role === "admin";
+  const isIt = role === "it";
   const isHr = role === "hr";
   const isAccounting = role === "accounting";
-  const isTread = role === "tread";
   const isBranchManager = role === "branch manager";
   const isAreaManager = role === "area manager";
   const isRegionalManager = role === "regional manager";
@@ -90,6 +84,7 @@ export default function PromotionOrder() {
 
   const canCreatePromotion =
     isAdmin ||
+    isIt ||
     isHr ||
     isAccounting ||
     isBranchManager ||
@@ -105,20 +100,27 @@ export default function PromotionOrder() {
 
     const stage = norm(o.approval_stage);
 
-    if (stage === "area manager") return isAreaManager;
-    if (stage === "regional manager") return isRegionalManager;
-    if (stage === "assistant vice president") return isAssistantVicePresident;
-    if (stage === "vice president") return isVicePresident;
-    if (stage === "tread") return isTread;
-    if (stage === "final") return isAdmin || isHr || isAccounting;
+    if (stage === "branch manager") return isBranchManager || isAdmin;
+    if (stage === "area manager") return isAreaManager || isAdmin;
+    if (stage === "regional manager") return isRegionalManager || isAdmin;
+    if (stage === "assistant vice president") return isAssistantVicePresident || isAdmin;
+    if (stage === "vice president") return isVicePresident || isAdmin;
+    if (stage === "senior vice president") return isSeniorVicePresident || isAdmin;
 
     return false;
   };
 
-  const canUploadApprovedFile = (o) =>
-    (isAdmin || isHr || isAccounting) && norm(o?.status) === "approved";
+  const canFinalUpload = (o) => {
+    if (!o || norm(o.status) !== "pending") return false;
+    if (norm(o.approval_stage) !== "final upload") return false;
 
-  const canDownloadFile = true;
+    const dept = getDepartment(o);
+
+    if (isOperationDept(dept)) return isAdmin || isHr || isAccounting || isIt;
+    if (isBackOfficeDept(dept)) return isAdmin || isHr || isAccounting;
+
+    return isAdmin || isHr || isAccounting;
+  };
 
   const [staff, setStaff] = useState([]);
   const [branches, setBranches] = useState([]);
@@ -133,10 +135,13 @@ export default function PromotionOrder() {
   const [uploadingId, setUploadingId] = useState("");
 
   const [showCreate, setShowCreate] = useState(false);
+  const [approvalFiles, setApprovalFiles] = useState({});
+  const [viewOrder, setViewOrder] = useState(null);
 
   const [form, setForm] = useState({
     employee_id: "",
     employee_name: "",
+    department: "",
     old_position: "",
     new_position: "",
     old_salary: "",
@@ -195,6 +200,7 @@ export default function PromotionOrder() {
 
   const filteredStaff = useMemo(() => {
     const q = norm(employeeQuery);
+
     const list = !q
       ? staff
       : staff.filter((s) => {
@@ -206,6 +212,8 @@ export default function PromotionOrder() {
             s.last_name,
             s.middle_name,
             s.position,
+            s.department,
+            s.department_name,
             s.area,
             s.region,
             s.division,
@@ -225,14 +233,7 @@ export default function PromotionOrder() {
     const list = !q
       ? branches
       : branches.filter((b) => {
-          const hay = [
-            b.id,
-            b.code,
-            b.name,
-            b.area,
-            b.region,
-            b.division,
-          ]
+          const hay = [b.id, b.code, b.name, b.area, b.region, b.division]
             .map(norm)
             .join(" ");
 
@@ -240,17 +241,15 @@ export default function PromotionOrder() {
         });
 
     return list.sort((a, b) =>
-      `${a.code || ""} ${a.name || ""}`.localeCompare(
-        `${b.code || ""} ${b.name || ""}`
-      )
+      `${a.code || ""} ${a.name || ""}`.localeCompare(`${b.code || ""} ${b.name || ""}`)
     );
   }, [branches, branchSearch]);
 
-  const closeModal = () => {
-    setShowCreate(false);
+  const resetForm = () => {
     setForm({
       employee_id: "",
       employee_name: "",
+      department: "",
       old_position: "",
       new_position: "",
       old_salary: "",
@@ -266,6 +265,11 @@ export default function PromotionOrder() {
       present_branch_code: "",
       present_branch_name: "",
     });
+  };
+
+  const closeModal = () => {
+    setShowCreate(false);
+    resetForm();
     setEmployeeSearch("");
     setEmployeeQuery("");
     setBranchSearch("");
@@ -290,12 +294,9 @@ export default function PromotionOrder() {
   const loadBranches = useCallback(async () => {
     try {
       setLoadingBranches(true);
-
       const res = await api.get("/branches-all");
-
       setBranches(Array.isArray(res.data) ? res.data : []);
-    } catch (err) {
-      console.error("Failed to load all branches:", err?.response?.data || err.message);
+    } catch {
       setBranches([]);
     } finally {
       setLoadingBranches(false);
@@ -375,6 +376,7 @@ export default function PromotionOrder() {
       ...p,
       employee_id: idStr,
       employee_name: s?.fullname || "",
+      department: s?.department || s?.department_name || "",
       old_position: s?.position || "",
       new_position: "",
       old_salary: String(toNum(s?.salary)),
@@ -432,9 +434,11 @@ export default function PromotionOrder() {
     e.preventDefault();
 
     if (!selectedEmployee || !form.employee_id) return alert("Employee is required");
+    if (!form.department.trim()) return alert("Employee department is required.");
     if (!form.new_position.trim()) return alert("New position is required.");
     if (!form.effective_date.trim()) return alert("Effective date is required.");
     if (!form.present_branch_id.trim()) return alert("Present branch is required.");
+    if (!attachmentFile) return alert("Promotion request file is required.");
 
     try {
       setSaving(true);
@@ -442,6 +446,7 @@ export default function PromotionOrder() {
       const formData = new FormData();
       formData.append("employee_id", parseInt(String(selectedEmployee.id), 10));
       formData.append("employee_name", form.employee_name.trim());
+      formData.append("department", form.department.trim());
       formData.append("old_position", form.old_position.trim());
       formData.append("new_position", form.new_position.trim());
       formData.append("old_salary", toNum(form.old_salary));
@@ -450,23 +455,19 @@ export default function PromotionOrder() {
       formData.append("new_ecola", toNum(form.new_ecola));
       formData.append("effective_date", form.effective_date.slice(0, 10));
       formData.append("remarks", form.remarks.trim());
-
       formData.append("prev_branch_id", form.prev_branch_id ? Number(form.prev_branch_id) : "");
       formData.append("prev_branch_code", form.prev_branch_code);
       formData.append("prev_branch_name", form.prev_branch_name);
       formData.append("present_branch_id", form.present_branch_id ? Number(form.present_branch_id) : "");
       formData.append("present_branch_code", form.present_branch_code);
       formData.append("present_branch_name", form.present_branch_name);
-
-      if (attachmentFile) {
-        formData.append("attachment", attachmentFile);
-      }
+      formData.append("attachment", attachmentFile);
 
       await api.post("/promotion-orders", formData, {
         headers: { "Content-Type": "multipart/form-data" },
       });
 
-      alert("Promotion order created and sent to approval chain.");
+      alert("Promotion order created.");
       closeModal();
       await loadOrders();
     } catch (err) {
@@ -476,28 +477,7 @@ export default function PromotionOrder() {
     }
   };
 
-  const approve = async (id) => {
-    try {
-      await api.put(`/promotion-orders/${id}/approve`);
-      await loadOrders();
-    } catch (err) {
-      alert(err?.response?.data?.message || "Failed to approve.");
-    }
-  };
-
-  const reject = async (id) => {
-    const reason = prompt("Enter rejection reason:");
-    if (!reason || !reason.trim()) return;
-
-    try {
-      await api.put(`/promotion-orders/${id}/reject`, { reason: reason.trim() });
-      await loadOrders();
-    } catch (err) {
-      alert(err?.response?.data?.message || "Failed to reject.");
-    }
-  };
-
-  const downloadFile = async (id, type, fallbackName = "") => {
+  const downloadFile = async (id, type = "latest", fallbackName = "") => {
     try {
       const res = await api.get(`/promotion-orders/${id}/download/${type}`, {
         responseType: "blob",
@@ -519,25 +499,79 @@ export default function PromotionOrder() {
     }
   };
 
-  const uploadApprovedFile = async (orderId, file) => {
-    if (!file) return;
+  const approve = async (order) => {
+    const file = approvalFiles[order.id];
+
+    if (!file) {
+      alert("Please upload the signed/approved promotion file before approving.");
+      return;
+    }
 
     try {
-      setUploadingId(String(orderId));
+      setUploadingId(String(order.id));
 
       const formData = new FormData();
       formData.append("attachment", file);
 
-      await api.post(`/promotion-orders/${orderId}/approved-file`, formData, {
+      await api.put(`/promotion-orders/${order.id}/approve`, formData, {
         headers: { "Content-Type": "multipart/form-data" },
       });
 
-      alert("Approved promotion file uploaded.");
+      setApprovalFiles((prev) => {
+        const copy = { ...prev };
+        delete copy[order.id];
+        return copy;
+      });
+
       await loadOrders();
     } catch (err) {
-      alert(err?.response?.data?.message || "Failed to upload approved file.");
+      alert(err?.response?.data?.message || "Failed to approve.");
     } finally {
       setUploadingId("");
+    }
+  };
+
+  const finalUpload = async (order) => {
+    const file = approvalFiles[order.id];
+
+    if (!file) {
+      alert("Please upload the final approved promotion file.");
+      return;
+    }
+
+    try {
+      setUploadingId(String(order.id));
+
+      const formData = new FormData();
+      formData.append("attachment", file);
+
+      await api.put(`/promotion-orders/${order.id}/final-upload`, formData, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+
+      setApprovalFiles((prev) => {
+        const copy = { ...prev };
+        delete copy[order.id];
+        return copy;
+      });
+
+      await loadOrders();
+    } catch (err) {
+      alert(err?.response?.data?.message || "Failed to upload final file.");
+    } finally {
+      setUploadingId("");
+    }
+  };
+
+  const reject = async (id) => {
+    const reason = prompt("Enter rejection reason:");
+    if (!reason || !reason.trim()) return;
+
+    try {
+      await api.put(`/promotion-orders/${id}/reject`, { reason: reason.trim() });
+      await loadOrders();
+    } catch (err) {
+      alert(err?.response?.data?.message || "Failed to reject.");
     }
   };
 
@@ -571,12 +605,17 @@ export default function PromotionOrder() {
     return b ? `${b.code || ""} - ${b.name || ""}`.trim() : "-";
   };
 
+  const closeViewOrder = () => setViewOrder(null);
+
   return (
     <div className="po-page">
       <div className="po-topbar">
         <div>
           <h2 className="po-title">Promotion Orders</h2>
-          <p className="po-subtitle">Manage staff promotions and approval chain.</p>
+          <p className="po-subtitle">
+            Operation: Branch Manager to Vice President, then final upload.
+            Back office: Senior Vice President, then final upload.
+          </p>
         </div>
 
         <div className="po-actions">
@@ -612,27 +651,24 @@ export default function PromotionOrder() {
                 <th>PRESENT BRANCH</th>
                 <th>OLD POSITION</th>
                 <th>NEW POSITION</th>
-                <th className="num">OLD SALARY</th>
-                <th className="num">NEW SALARY</th>
                 <th>EFFECTIVE</th>
                 <th>STATUS</th>
                 <th>CURRENT STAGE</th>
-                <th>APPROVAL CHAIN</th>
-                <th>FILES</th>
-                <th style={{ width: 180 }}>ACTIONS</th>
+                <th>LATEST FILE</th>
+                <th>ACTION</th>
               </tr>
             </thead>
 
             <tbody>
               {loadingOrders ? (
                 <tr>
-                  <td colSpan={14} className="po-empty">
+                  <td colSpan={11} className="po-empty">
                     Loading promotion orders…
                   </td>
                 </tr>
               ) : orders.length === 0 ? (
                 <tr>
-                  <td colSpan={14} className="po-empty">
+                  <td colSpan={11} className="po-empty">
                     No promotion orders found.
                   </td>
                 </tr>
@@ -640,6 +676,7 @@ export default function PromotionOrder() {
                 orders.map((o) => {
                   const isPending = norm(o.status) === "pending";
                   const canAct = canApproveStage(o);
+                  const canUploadFinal = canFinalUpload(o);
 
                   return (
                     <tr key={o.id}>
@@ -649,71 +686,133 @@ export default function PromotionOrder() {
                       <td>{resolvePresentBranchText(o)}</td>
                       <td>{o.old_position || "-"}</td>
                       <td>{o.new_position || "-"}</td>
-                      <td className="num">{toNum(o.old_salary).toLocaleString()}</td>
-                      <td className="num">{toNum(o.new_salary).toLocaleString()}</td>
                       <td>{fmtDate(o.effective_date)}</td>
 
                       <td>
-                        <span className={badgeClass(o.status)}>{o.status || "Pending"}</span>
+                        <span className={badgeClass(o.status)}>
+                          {o.status || "Pending"}
+                        </span>
                       </td>
 
-                      <td>{STAGE_LABELS[norm(o.approval_stage)] || "-"}</td>
-
-                      <td style={{ fontSize: 12, lineHeight: 1.5 }}>
-                        {renderChainSummary(o)}
-                      </td>
+                      <td>{getCurrentStageLabel(o)}</td>
 
                       <td>
-                        <div className="po-row-actions">
-                          {o.attachment_path && canDownloadFile ? (
-                            <button
-                              className="po-mini-btn"
-                              type="button"
-                              onClick={() => downloadFile(o.id, "request", o.attachment_name || "")}
-                            >
-                              Request File
-                            </button>
-                          ) : null}
-
-                          {o.approved_attachment_path && canDownloadFile ? (
-                            <button
-                              className="po-mini-btn"
-                              type="button"
-                              onClick={() =>
-                                downloadFile(o.id, "approved", o.approved_attachment_name || "")
-                              }
-                            >
-                              Approved File
-                            </button>
-                          ) : null}
-
-                          {canUploadApprovedFile(o) ? (
-                            <label className="po-mini-btn" style={{ cursor: "pointer" }}>
-                              {uploadingId === String(o.id) ? "Uploading..." : "Upload Approved"}
-                              <input
-                                type="file"
-                                hidden
-                                accept=".pdf,.png,.jpg,.jpeg,.doc,.docx"
-                                onChange={(e) => uploadApprovedFile(o.id, e.target.files?.[0] || null)}
-                              />
-                            </label>
-                          ) : null}
-                        </div>
+                        {o.attachment_path ? (
+                          <button
+                            className="po-mini-btn po-download-btn"
+                            type="button"
+                            onClick={() => downloadFile(o.id, "latest", o.attachment_name || "")}
+                          >
+                            Download Latest
+                          </button>
+                        ) : (
+                          <span className="po-dash">No file</span>
+                        )}
                       </td>
 
                       <td>
                         {canAct && isPending ? (
-                          <div className="po-row-actions">
-                            <button className="po-mini-btn po-approve" type="button" onClick={() => approve(o.id)}>
-                              Approve
-                            </button>
+                          <div className="po-action-stack">
+                            <div className="po-file-actions">
+                              <button
+                                className="po-mini-btn po-view-btn"
+                                type="button"
+                                onClick={() => setViewOrder(o)}
+                              >
+                                View
+                              </button>
 
-                            <button className="po-mini-btn po-reject" type="button" onClick={() => reject(o.id)}>
-                              Reject
+                              <label className="po-mini-btn po-upload-btn">
+                                {approvalFiles[o.id]?.name ? "Change File" : "Upload File"}
+                                <input
+                                  type="file"
+                                  hidden
+                                  accept=".pdf,.png,.jpg,.jpeg,.doc,.docx"
+                                  onChange={(e) =>
+                                    setApprovalFiles((prev) => ({
+                                      ...prev,
+                                      [o.id]: e.target.files?.[0] || null,
+                                    }))
+                                  }
+                                />
+                              </label>
+                            </div>
+
+                            {approvalFiles[o.id]?.name ? (
+                              <div className="po-file-name" title={approvalFiles[o.id].name}>
+                                {approvalFiles[o.id].name}
+                              </div>
+                            ) : null}
+
+                            <div className="po-file-actions">
+                              <button
+                                className="po-mini-btn po-approve"
+                                type="button"
+                                disabled={uploadingId === String(o.id)}
+                                onClick={() => approve(o)}
+                              >
+                                {uploadingId === String(o.id) ? "Approving..." : "Upload + Approve"}
+                              </button>
+
+                              <button
+                                className="po-mini-btn po-reject"
+                                type="button"
+                                onClick={() => reject(o.id)}
+                              >
+                                Reject
+                              </button>
+                            </div>
+                          </div>
+                        ) : canUploadFinal && isPending ? (
+                          <div className="po-action-stack">
+                            <div className="po-file-actions">
+                              <button
+                                className="po-mini-btn po-view-btn"
+                                type="button"
+                                onClick={() => setViewOrder(o)}
+                              >
+                                View
+                              </button>
+
+                              <label className="po-mini-btn po-upload-btn">
+                                {approvalFiles[o.id]?.name ? "Change File" : "Upload Final"}
+                                <input
+                                  type="file"
+                                  hidden
+                                  accept=".pdf,.png,.jpg,.jpeg,.doc,.docx"
+                                  onChange={(e) =>
+                                    setApprovalFiles((prev) => ({
+                                      ...prev,
+                                      [o.id]: e.target.files?.[0] || null,
+                                    }))
+                                  }
+                                />
+                              </label>
+                            </div>
+
+                            {approvalFiles[o.id]?.name ? (
+                              <div className="po-file-name" title={approvalFiles[o.id].name}>
+                                {approvalFiles[o.id].name}
+                              </div>
+                            ) : null}
+
+                            <button
+                              className="po-mini-btn po-approve"
+                              type="button"
+                              disabled={uploadingId === String(o.id)}
+                              onClick={() => finalUpload(o)}
+                            >
+                              {uploadingId === String(o.id) ? "Uploading..." : "Submit Final"}
                             </button>
                           </div>
                         ) : (
-                          <span className="po-dash">-</span>
+                          <button
+                            className="po-mini-btn po-view-btn"
+                            type="button"
+                            onClick={() => setViewOrder(o)}
+                          >
+                            View
+                          </button>
                         )}
                       </td>
                     </tr>
@@ -725,16 +824,96 @@ export default function PromotionOrder() {
         </div>
       </div>
 
+      {viewOrder && (
+        <div className="po-modal-overlay" onMouseDown={closeViewOrder}>
+          <div className="po-record-modal" onMouseDown={(e) => e.stopPropagation()}>
+            <div className="po-modal-head">
+              <div>
+                <h3 className="po-modal-title">Promotion Record</h3>
+                <p className="po-modal-sub">
+                  {viewOrder.employee_name || "-"} • Order No:{" "}
+                  {viewOrder.order_no || `PRO-${viewOrder.id}`}
+                </p>
+              </div>
+
+              <button className="po-x" type="button" onClick={closeViewOrder}>
+                ✕
+              </button>
+            </div>
+
+            <div className="po-record-badges">
+              <span>Status: {viewOrder.status || "Pending"}</span>
+              <span>Current Stage: {getCurrentStageLabel(viewOrder)}</span>
+              <span>Department: {getDepartment(viewOrder) || "-"}</span>
+            </div>
+
+            <div className="po-record-table">
+              <div><strong>Order No</strong><span>{viewOrder.order_no || `PRO-${viewOrder.id}`}</span></div>
+              <div><strong>Employee Name</strong><span>{viewOrder.employee_name || "-"}</span></div>
+              <div><strong>Department</strong><span>{getDepartment(viewOrder) || "-"}</span></div>
+              <div><strong>Previous Branch</strong><span>{resolvePrevBranchText(viewOrder)}</span></div>
+              <div><strong>Present Branch</strong><span>{resolvePresentBranchText(viewOrder)}</span></div>
+              <div><strong>Old Position</strong><span>{viewOrder.old_position || "-"}</span></div>
+              <div><strong>New Position</strong><span>{viewOrder.new_position || "-"}</span></div>
+              <div><strong>Old Salary</strong><span>{money(viewOrder.old_salary)}</span></div>
+              <div><strong>New Salary</strong><span>{money(viewOrder.new_salary)}</span></div>
+              <div><strong>Old ECOLA</strong><span>{money(viewOrder.old_ecola)}</span></div>
+              <div><strong>New ECOLA</strong><span>{money(viewOrder.new_ecola)}</span></div>
+              <div><strong>Effective Date</strong><span>{fmtDate(viewOrder.effective_date)}</span></div>
+              <div><strong>Details / Remarks</strong><span>{viewOrder.details || "-"}</span></div>
+              <div><strong>Branch Manager Status</strong><span>{viewOrder.branch_manager_status || "-"}</span></div>
+              <div><strong>Area Manager Status</strong><span>{viewOrder.area_manager_status || "-"}</span></div>
+              <div><strong>Regional Manager Status</strong><span>{viewOrder.regional_manager_status || "-"}</span></div>
+              <div><strong>Assistant VP Status</strong><span>{viewOrder.assistant_vice_president_status || "-"}</span></div>
+              <div><strong>Vice President Status</strong><span>{viewOrder.vice_president_status || "-"}</span></div>
+              <div><strong>Senior VP Status</strong><span>{viewOrder.senior_vice_president_status || "-"}</span></div>
+              <div><strong>Final Status</strong><span>{viewOrder.final_status || "-"}</span></div>
+
+              <div>
+                <strong>File</strong>
+                <span>
+                  {viewOrder.attachment_path ? (
+                    <button
+                      className="po-mini-btn po-download-btn"
+                      type="button"
+                      onClick={() =>
+                        downloadFile(viewOrder.id, "latest", viewOrder.attachment_name || "")
+                      }
+                    >
+                      Download File
+                    </button>
+                  ) : (
+                    "No file"
+                  )}
+                </span>
+              </div>
+
+              <div><strong>Created</strong><span>{fmtDate(viewOrder.created_at)}</span></div>
+            </div>
+
+            <div className="po-modal-actions">
+              <button className="po-btn po-btn-primary" type="button" onClick={closeViewOrder}>
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {canCreatePromotion && showCreate && (
         <div
           className="po-modal-overlay"
-          onMouseDown={(e) => e.target.classList.contains("po-modal-overlay") && closeModal()}
+          onMouseDown={(e) =>
+            e.target.classList.contains("po-modal-overlay") && closeModal()
+          }
         >
           <div className="po-modal" onMouseDown={(e) => e.stopPropagation()}>
             <div className="po-modal-head">
               <div>
                 <h3 className="po-modal-title">Create Promotion Order</h3>
-                <p className="po-modal-sub">Order will follow approval chain based on the employee’s current position.</p>
+                <p className="po-modal-sub">
+                  Approval chain will be based on the promoted staff department.
+                </p>
               </div>
 
               <button className="po-x" type="button" onClick={closeModal}>
@@ -755,25 +934,7 @@ export default function PromotionOrder() {
                       setEmployeeQuery(value);
                       setShowEmployeeResults(true);
                       setSelectedEmployee(null);
-
-                      setForm((p) => ({
-                        ...p,
-                        employee_id: "",
-                        employee_name: "",
-                        old_position: "",
-                        new_position: "",
-                        old_salary: "",
-                        new_salary: "",
-                        old_ecola: "",
-                        new_ecola: "",
-                        prev_branch_id: "",
-                        prev_branch_code: "",
-                        prev_branch_name: "",
-                        present_branch_id: "",
-                        present_branch_code: "",
-                        present_branch_name: "",
-                      }));
-
+                      resetForm();
                       setBranchSearch("");
                     }}
                     onFocus={() => setShowEmployeeResults(true)}
@@ -781,46 +942,21 @@ export default function PromotionOrder() {
                   />
 
                   {showEmployeeResults && (
-                    <div
-                      style={{
-                        position: "absolute",
-                        top: "100%",
-                        left: 0,
-                        right: 0,
-                        marginTop: 6,
-                        maxHeight: 240,
-                        overflowY: "auto",
-                        background: "#0f1a2e",
-                        border: "1px solid rgba(255,255,255,0.1)",
-                        borderRadius: 10,
-                        zIndex: 9999,
-                        boxShadow: "0 12px 30px rgba(0,0,0,0.35)",
-                      }}
-                    >
+                    <div className="po-search-dropdown">
                       {loadingStaff ? (
-                        <div style={{ padding: 12, color: "#9aa7bd" }}>Loading staff...</div>
+                        <div className="po-search-empty">Loading staff...</div>
                       ) : filteredStaff.length === 0 ? (
-                        <div style={{ padding: 12, color: "#9aa7bd" }}>No employee found.</div>
+                        <div className="po-search-empty">No employee found.</div>
                       ) : (
                         filteredStaff.map((s) => (
-                          <div
+                          <button
                             key={s.id}
-                            style={{
-                              padding: "10px 12px",
-                              cursor: "pointer",
-                              borderBottom: "1px solid rgba(255,255,255,0.05)",
-                              color: "#e7edf7",
-                            }}
-                            onMouseEnter={(e) => {
-                              e.currentTarget.style.background = "#1e293b";
-                            }}
-                            onMouseLeave={(e) => {
-                              e.currentTarget.style.background = "transparent";
-                            }}
+                            type="button"
+                            className="po-search-item"
                             onClick={() => onSelectEmployee(s.id)}
                           >
                             {(s.employee_no ? `${s.employee_no} - ` : "") + (s.fullname || "-")}
-                          </div>
+                          </button>
                         ))
                       )}
                     </div>
@@ -828,11 +964,18 @@ export default function PromotionOrder() {
                 </div>
 
                 <div className="po-field">
+                  <label>Department</label>
+                  <input value={form.department} readOnly placeholder="Auto-filled" />
+                </div>
+
+                <div className="po-field">
                   <label>Effective Date</label>
                   <input
                     type="date"
                     value={form.effective_date}
-                    onChange={(e) => setForm((p) => ({ ...p, effective_date: e.target.value }))}
+                    onChange={(e) =>
+                      setForm((p) => ({ ...p, effective_date: e.target.value }))
+                    }
                     required
                   />
                 </div>
@@ -840,7 +983,9 @@ export default function PromotionOrder() {
                 <div className="po-field">
                   <label>Previous Branch</label>
                   <input
-                    value={`${form.prev_branch_code || ""}${form.prev_branch_name ? ` - ${form.prev_branch_name}` : ""}`}
+                    value={`${form.prev_branch_code || ""}${
+                      form.prev_branch_name ? ` - ${form.prev_branch_name}` : ""
+                    }`}
                     readOnly
                     placeholder="Auto-filled"
                   />
@@ -869,46 +1014,21 @@ export default function PromotionOrder() {
                   />
 
                   {showBranchResults && (
-                    <div
-                      style={{
-                        position: "absolute",
-                        top: "100%",
-                        left: 0,
-                        right: 0,
-                        marginTop: 6,
-                        maxHeight: 240,
-                        overflowY: "auto",
-                        background: "#0f1a2e",
-                        border: "1px solid rgba(255,255,255,0.1)",
-                        borderRadius: 10,
-                        zIndex: 9999,
-                        boxShadow: "0 12px 30px rgba(0,0,0,0.35)",
-                      }}
-                    >
+                    <div className="po-search-dropdown">
                       {loadingBranches ? (
-                        <div style={{ padding: 12, color: "#9aa7bd" }}>Loading branches...</div>
+                        <div className="po-search-empty">Loading branches...</div>
                       ) : filteredBranches.length === 0 ? (
-                        <div style={{ padding: 12, color: "#9aa7bd" }}>No branch found.</div>
+                        <div className="po-search-empty">No branch found.</div>
                       ) : (
                         filteredBranches.map((b) => (
-                          <div
+                          <button
                             key={b.id}
-                            style={{
-                              padding: "10px 12px",
-                              cursor: "pointer",
-                              borderBottom: "1px solid rgba(255,255,255,0.05)",
-                              color: "#e7edf7",
-                            }}
-                            onMouseEnter={(e) => {
-                              e.currentTarget.style.background = "#1e293b";
-                            }}
-                            onMouseLeave={(e) => {
-                              e.currentTarget.style.background = "transparent";
-                            }}
+                            type="button"
+                            className="po-search-item"
                             onClick={() => onSelectPresentBranch(b.id)}
                           >
                             {`${b.code || ""} - ${b.name || ""}`.trim()}
-                          </div>
+                          </button>
                         ))
                       )}
                     </div>
@@ -922,8 +1042,14 @@ export default function PromotionOrder() {
 
                 <div className="po-field">
                   <label>New Position</label>
-                  <select value={form.new_position} onChange={(e) => onSelectNewPosition(e.target.value)} required>
-                    <option value="">{loadingRates ? "Loading positions..." : "Select New Position"}</option>
+                  <select
+                    value={form.new_position}
+                    onChange={(e) => onSelectNewPosition(e.target.value)}
+                    required
+                  >
+                    <option value="">
+                      {loadingRates ? "Loading positions..." : "Select New Position"}
+                    </option>
                     {positionOptions.map((r) => (
                       <option key={r.id || r.position} value={r.position}>
                         {r.position}
@@ -932,41 +1058,12 @@ export default function PromotionOrder() {
                   </select>
                 </div>
 
-                <div className="po-field">
-                  <label>Previous Salary</label>
-                  <input value={form.old_salary} readOnly placeholder="Auto-filled" />
-                </div>
-
-                <div className="po-field">
-                  <label>New Salary</label>
-                  <input
-                    type="number"
-                    value={form.new_salary}
-                    onChange={(e) => setForm((p) => ({ ...p, new_salary: e.target.value }))}
-                    placeholder="Auto-filled from System Rates"
-                  />
-                </div>
-
-                <div className="po-field">
-                  <label>Previous Ecola</label>
-                  <input value={form.old_ecola} readOnly placeholder="Auto-filled" />
-                </div>
-
-                <div className="po-field">
-                  <label>New Ecola</label>
-                  <input
-                    type="number"
-                    value={form.new_ecola}
-                    onChange={(e) => setForm((p) => ({ ...p, new_ecola: e.target.value }))}
-                    placeholder="Auto-filled from System Rates"
-                  />
-                </div>
-
                 <div className="po-field full">
                   <label>Attach Request File</label>
                   <input
                     type="file"
                     accept=".pdf,.png,.jpg,.jpeg,.doc,.docx"
+                    required
                     onChange={(e) => setAttachmentFile(e.target.files?.[0] || null)}
                   />
                 </div>

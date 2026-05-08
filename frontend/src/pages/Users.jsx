@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import "../styles/Users.css";
 import api from "../api/axiosClient";
+import { RxReset } from "react-icons/rx";
+import { MdDelete } from "react-icons/md";
+import { FaEdit } from "react-icons/fa";
 
 const roleOptions = [
   { label: "Admin", value: "admin" },
@@ -416,8 +419,8 @@ const Users = () => {
                   <th style={{ width: 160 }}>Area</th>
                   <th style={{ width: 160 }}>Region</th>
                   <th style={{ width: 180 }}>Division</th>
-                  <th style={{ width: 140 }}>Created</th>
-                  <th style={{ width: 320 }}>Actions</th>
+                  <th style={{ width: 240 }}>Created</th>
+                  <th style={{ width: 170 }}>Actions</th>
                 </tr>
               </thead>
 
@@ -449,27 +452,30 @@ const Users = () => {
                       <td>
                         <div className="row-actions">
                           <button
-                            className="btn-secondary"
+                            className="users-icon-btn edit"
                             type="button"
                             onClick={() => openEdit(u)}
+                            title="Edit User"
                           >
-                            Edit
+                            <FaEdit />
                           </button>
 
                           <button
-                            className="btn-secondary"
+                            className="users-icon-btn reset"
                             type="button"
                             onClick={() => openReset(u)}
+                            title="Reset Password"
                           >
-                            Reset Password
+                            <RxReset />
                           </button>
 
                           <button
-                            className="btn-danger"
+                            className="users-icon-btn delete"
                             type="button"
                             onClick={() => onDelete(u.id)}
+                            title="Delete User"
                           >
-                            Delete
+                            <MdDelete />
                           </button>
                         </div>
                       </td>

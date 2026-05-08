@@ -40,8 +40,10 @@ export default function StaffInformation() {
 
   const canEditStaff =
     role === "admin" ||
+    role === "it" ||
     role === "hr" ||
-    role === "accounting" ;
+    role === "tread" ||
+    role === "accounting";
 
   const [staff, setStaff] = useState([]);
   const [branches, setBranches] = useState([]);

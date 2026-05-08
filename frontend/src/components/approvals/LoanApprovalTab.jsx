@@ -28,9 +28,19 @@ const STAGE_LABELS = {
   "regional manager": "Regional Manager",
   "assistant vice president": "Assistant Vice President",
   "vice president": "Vice President",
+  admin: "Admin / Final Approval",
 };
 
-const FINAL_APPROVER_ROLES = ["vice president"];
+const FINAL_APPROVER_ROLES = [
+  "admin",
+  "it",
+  "hr",
+  "accounting",
+  "tread",
+  "vice president",
+  "senior vice president",
+  "president",
+];
 
 const readUser = () => {
   try {
@@ -60,18 +70,11 @@ const fmtDate = (d) => (d ? String(d).slice(0, 10) : "-");
 const getDynamicApprovalChain = (item) => {
   const applicantRole = norm(item?.applicant_role);
 
-  if (applicantRole === "vice president") {
-    return ["vice president"];
-  }
-
-  if (applicantRole === "assistant vice president") {
-    return ["vice president"];
-  }
-
+  if (applicantRole === "vice president") return ["vice president"];
+  if (applicantRole === "assistant vice president") return ["vice president"];
   if (applicantRole === "regional manager") {
     return ["assistant vice president", "vice president"];
   }
-
   if (applicantRole === "area manager") {
     return ["regional manager", "assistant vice president", "vice president"];
   }
@@ -103,6 +106,7 @@ const getCurrentStage = (item) => {
   const explicit = norm(item?.approval_stage);
 
   if (chain.includes(explicit)) return explicit;
+  if (explicit === "admin") return "admin";
 
   for (const role of chain) {
     const status = norm(getChainStatus(item, role));
@@ -118,13 +122,25 @@ const canUserActOnLoan = (item, role) => {
   const overall = norm(item?.status);
   if (overall === "approved" || overall === "rejected") return false;
 
+  const normalizedRole = norm(role);
+
+  if (
+    normalizedRole === "admin" ||
+    normalizedRole === "it" ||
+    normalizedRole === "hr" ||
+    normalizedRole === "accounting" ||
+    normalizedRole === "tread"
+  ) {
+    return true;
+  }
+
   const stage = getCurrentStage(item);
 
   if (stage === "admin") {
     return isFinalApprover(role);
   }
 
-  return norm(role) === stage;
+  return normalizedRole === stage;
 };
 
 const renderChainSummary = (item) => {
@@ -157,6 +173,7 @@ export default function LoanApprovalTab() {
 
   const canCreateLoan =
     isAdmin ||
+    isIt ||
     isHr ||
     isAccounting ||
     isTread ||
@@ -170,15 +187,7 @@ export default function LoanApprovalTab() {
 
   const canParticipateInLoanApproval =
     isAdmin ||
-    isHr ||
-    isAccounting ||
-    isAreaManager ||
-    isRegionalManager ||
-    isAssistantVicePresident ||
-    isVicePresident;
-
-  const canDownloadRequestFile =
-    isAdmin ||
+    isIt ||
     isHr ||
     isAccounting ||
     isTread ||
@@ -189,8 +198,9 @@ export default function LoanApprovalTab() {
     isSeniorVicePresident ||
     isPresident;
 
-  const canDownloadApprovedFile =
+  const canDownloadLoanFile =
     isAdmin ||
+    isIt ||
     isHr ||
     isAccounting ||
     isTread ||
@@ -200,8 +210,6 @@ export default function LoanApprovalTab() {
     isVicePresident ||
     isSeniorVicePresident ||
     isPresident;
-
-  const canUploadApprovedFile = isAdmin || isHr || isAccounting;
 
   const [loanRequests, setLoanRequests] = useState([]);
   const [staffList, setStaffList] = useState([]);
@@ -222,7 +230,8 @@ export default function LoanApprovalTab() {
   const [loadingLoan, setLoadingLoan] = useState(false);
   const [creatingLoan, setCreatingLoan] = useState(false);
   const [processingId, setProcessingId] = useState("");
-  const [uploadingApproved, setUploadingApproved] = useState({});
+  const [approvalFiles, setApprovalFiles] = useState({});
+  const [viewApprovalFile, setViewApprovalFile] = useState(null);
 
   const [loanEmployeeSearch, setLoanEmployeeSearch] = useState("");
   const [showLoanEmployeeDropdown, setShowLoanEmployeeDropdown] = useState(false);
@@ -302,6 +311,7 @@ export default function LoanApprovalTab() {
 
   useEffect(() => {
     const token = localStorage.getItem("token");
+
     if (!user || !token) {
       window.location.href = "/login";
       return;
@@ -359,9 +369,9 @@ export default function LoanApprovalTab() {
 
     const built =
       s.fullname ||
-      `${s.last_name || ""}${s.last_name && s.first_name ? ", " : ""}${s.first_name || ""}${
-        s.middle_name ? ` ${s.middle_name}` : ""
-      }`
+      `${s.last_name || ""}${s.last_name && s.first_name ? ", " : ""}${
+        s.first_name || ""
+      }${s.middle_name ? ` ${s.middle_name}` : ""}`
         .replace(/\s+/g, " ")
         .trim();
 
@@ -379,6 +389,7 @@ export default function LoanApprovalTab() {
   const searchableStaff = useMemo(() => {
     return staffList.map((s) => {
       const display = buildStaffDisplay(s);
+
       const searchBlob = [
         s.id,
         s.employee_no,
@@ -408,6 +419,7 @@ export default function LoanApprovalTab() {
     (item) => {
       if (
         isAdmin ||
+        isIt ||
         isHr ||
         isAccounting ||
         isTread ||
@@ -444,6 +456,7 @@ export default function LoanApprovalTab() {
     },
     [
       isAdmin,
+      isIt,
       isHr,
       isAccounting,
       isTread,
@@ -488,6 +501,8 @@ export default function LoanApprovalTab() {
         item.total,
         item.status,
         item.approval_stage,
+        item.attachment_name,
+        item.approved_attachment_name,
         renderChainSummary(item),
         item.reason,
         item.created_at,
@@ -503,34 +518,38 @@ export default function LoanApprovalTab() {
 
   const totalPages = Math.max(1, Math.ceil(filteredLoan.length / pageSize));
 
-    const pagedLoan = useMemo(() => {
-      const start = (page - 1) * pageSize;
-      return filteredLoan.slice(start, start + pageSize);
-    }, [filteredLoan, page, pageSize]);
+  const pagedLoan = useMemo(() => {
+    const start = (page - 1) * pageSize;
+    return filteredLoan.slice(start, start + pageSize);
+  }, [filteredLoan, page, pageSize]);
 
-    useEffect(() => {
-      setPage(1);
-    }, [search, selectedLoanType, pageSize]);
+  useEffect(() => {
+    setPage(1);
+  }, [search, selectedLoanType, pageSize]);
 
-    const handleSearch = () => {
-      setSearch(searchInput);
-    };
+  const handleSearch = () => {
+    setSearch(searchInput);
+  };
 
-    const handleClearSearch = () => {
-      setSearchInput("");
-      setSearch("");
-    };
+  const handleClearSearch = () => {
+    setSearchInput("");
+    setSearch("");
+  };
 
   const filteredLoanEmployees = useMemo(() => {
     const q = norm(loanEmployeeSearch);
+
     if (!q) return searchableStaff.slice(0, 20);
+
     return searchableStaff.filter((s) => s._searchBlob.includes(q)).slice(0, 20);
   }, [searchableStaff, loanEmployeeSearch]);
 
   const badgeClass = (status) => {
     const s = String(status || "").trim().toLowerCase();
+
     if (s === "approved") return "badge badge-approved";
     if (s === "rejected") return "badge badge-rejected";
+
     return "badge badge-pending";
   };
 
@@ -540,6 +559,7 @@ export default function LoanApprovalTab() {
     const term = Math.max(1, toNum(loanForm.term));
     const total = amount + (amount * interest) / 100;
     const per_month = term ? total / term : total;
+
     return { total, per_month };
   }, [loanForm.amount, loanForm.interest, loanForm.term]);
 
@@ -573,6 +593,7 @@ export default function LoanApprovalTab() {
     setLoanEmployeeSearch(
       emp ? `${emp.employee_no ? `${emp.employee_no} - ` : ""}${buildStaffDisplay(emp)}` : ""
     );
+
     setShowLoanEmployeeDropdown(false);
   };
 
@@ -591,12 +612,14 @@ export default function LoanApprovalTab() {
       branch_code: "",
       branch_name: "",
       loan_type: "",
+      loan_purpose: "",
       amount: "",
       term: "",
       interest: "",
       reason: "",
       attachment: null,
     });
+
     setLoanEmployeeSearch("");
     setShowLoanEmployeeDropdown(false);
   };
@@ -606,6 +629,7 @@ export default function LoanApprovalTab() {
     if (role === "assistant vice president") return "vice president";
     if (role === "regional manager") return "assistant vice president";
     if (role === "area manager") return "regional manager";
+
     return "area manager";
   };
 
@@ -618,10 +642,16 @@ export default function LoanApprovalTab() {
     const total = amount + (amount * interest) / 100;
     const per_month = term ? total / term : total;
 
+    if (!loanForm.attachment) {
+      alert("Please attach the loan request file before submitting.");
+      return;
+    }
+
     try {
       setCreatingLoan(true);
 
       const formData = new FormData();
+
       formData.append("staff_id", loanForm.staff_id);
       formData.append("loan_type", loanForm.loan_type);
       formData.append("reason", loanForm.reason);
@@ -635,10 +665,7 @@ export default function LoanApprovalTab() {
       formData.append("applicant_role", role);
       formData.append("date_created", loanForm.date_created || todayDate());
       formData.append("loan_purpose", loanForm.loan_purpose);
-
-      if (loanForm.attachment) {
-        formData.append("attachment", loanForm.attachment);
-      }
+      formData.append("attachment", loanForm.attachment);
 
       await api.post("/loan-requests", formData, {
         headers: { "Content-Type": "multipart/form-data" },
@@ -658,21 +685,84 @@ export default function LoanApprovalTab() {
     }
   };
 
-  const updateLoanStatus = async (id, action) => {
+  const downloadLoanFile = async (id, type = "latest", fallbackName = "") => {
+    try {
+      const res = await api.get(`/loan-requests/${id}/download/${type}`, {
+        responseType: "blob",
+      });
+
+      const blob = new Blob([res.data]);
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+
+      a.href = url;
+      a.download = fallbackName || `loan-${id}-${type}`;
+
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      alert(err?.response?.data?.message || "Failed to download file.");
+    }
+  };
+
+  const updateLoanStatus = async (item, action) => {
+    const id = item?.id;
+
     if (!id) {
       alert("Loan record has no valid id.");
       return;
     }
 
+    if (action === "approve" && !approvalFiles[id]) {
+      alert(
+        "Please upload the signed/approved file first. The uploaded file will replace the previous file for the next approver."
+      );
+      return;
+    }
+
     const ok = window.confirm(
-      `Are you sure you want to ${String(action).toLowerCase()} this loan request?`
+      action === "approve"
+        ? "Approve this loan and submit the newly uploaded signed file to the next approver?"
+        : "Reject this loan request?"
     );
+
     if (!ok) return;
 
     try {
       setProcessingId(`loan-${id}-${action}`);
-      await api.put(`/loan-requests/${id}`, { action });
-      alert(`Loan request ${String(action).toLowerCase()}d successfully.`);
+
+      const formData = new FormData();
+      formData.append("action", action);
+
+      if (action === "approve") {
+        formData.append("attachment", approvalFiles[id]);
+      }
+
+      await api.put(`/loan-requests/${id}`, formData, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+
+      alert(
+        action === "approve"
+          ? "Loan approved and signed file submitted successfully."
+          : "Loan request rejected successfully."
+      );
+
+      setApprovalFiles((prev) => {
+        const copy = { ...prev };
+        delete copy[id];
+        return copy;
+      });
+
+      if (selectedLoan?.id === id) {
+        setViewApprovalFile(null);
+        setShowLoanView(false);
+        setSelectedLoan(null);
+      }
+
       await fetchLoan();
     } catch (err) {
       console.error("Loan update error:", err?.response?.data || err.message);
@@ -684,55 +774,15 @@ export default function LoanApprovalTab() {
     }
   };
 
-  const downloadLoanFile = async (id, type, fallbackName = "") => {
-    try {
-      const res = await api.get(`/loan-requests/${id}/download/${type}`, {
-        responseType: "blob",
-      });
-
-      const blob = new Blob([res.data]);
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = fallbackName || `loan-${id}-${type}`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      window.URL.revokeObjectURL(url);
-    } catch (err) {
-      alert(err?.response?.data?.message || "Failed to download file.");
-    }
-  };
-
-  const uploadApprovedLoanFile = async (loanId, file) => {
-    if (!file) return;
-
-    try {
-      setUploadingApproved((prev) => ({ ...prev, [loanId]: true }));
-
-      const formData = new FormData();
-      formData.append("attachment", file);
-
-      await api.post(`/loan-requests/${loanId}/approved-file`, formData, {
-        headers: { "Content-Type": "multipart/form-data" },
-      });
-
-      alert("Approved signed loan file uploaded.");
-      await fetchLoan();
-    } catch (err) {
-      alert(err?.response?.data?.message || "Failed to upload approved signed file.");
-    } finally {
-      setUploadingApproved((prev) => ({ ...prev, [loanId]: false }));
-    }
-  };
-
   const openLoanView = (loan) => {
     setSelectedLoan(loan);
+    setViewApprovalFile(null);
     setShowLoanView(true);
   };
 
   const closeLoanView = () => {
     setSelectedLoan(null);
+    setViewApprovalFile(null);
     setShowLoanView(false);
   };
 
@@ -764,7 +814,11 @@ export default function LoanApprovalTab() {
                 </button>
               )}
 
-              <button className="btn-primary" onClick={() => setShowLoanModal(true)} type="button">
+              <button
+                className="btn-primary"
+                onClick={() => setShowLoanModal(true)}
+                type="button"
+              >
                 View
               </button>
             </div>
@@ -774,7 +828,7 @@ export default function LoanApprovalTab() {
             <div className="mini">
               {loadingLoan
                 ? "Loading loan requests..."
-                : "Final approval is handled by Vice President."}
+                : "Approvers must download the latest file, sign it, upload it, then approve."}
             </div>
           </div>
         </div>
@@ -791,12 +845,17 @@ export default function LoanApprovalTab() {
             <div className="modal-head">
               <div>
                 <h3 className="modal-title">Add Loan Request</h3>
+
                 <p className="modal-subtitle">
-                  Initial approval stage: {STAGE_LABELS[getInitialStageForCurrentUser()]}
+                  Upload the first loan file. Every approver will replace it with the newly signed file.
                 </p>
               </div>
 
-              <button className="modal-x" type="button" onClick={() => setShowCreateLoan(false)}>
+              <button
+                className="modal-x"
+                type="button"
+                onClick={() => setShowCreateLoan(false)}
+              >
                 ✕
               </button>
             </div>
@@ -805,12 +864,14 @@ export default function LoanApprovalTab() {
               <div className="modal-grid">
                 <div className="form-group approval-search-select" ref={loanEmployeeBoxRef}>
                   <label>Employee</label>
+
                   <input
                     type="text"
                     value={loanEmployeeSearch}
                     onChange={(e) => {
                       setLoanEmployeeSearch(e.target.value);
                       setShowLoanEmployeeDropdown(true);
+
                       setLoanForm((p) => ({
                         ...p,
                         staff_id: "",
@@ -1009,9 +1070,10 @@ export default function LoanApprovalTab() {
                 </div>
 
                 <div className="form-group full">
-                  <label>Attach Request File</label>
+                  <label>Attach Initial Loan File</label>
                   <input
                     type="file"
+                    required
                     onChange={(e) =>
                       setLoanForm((p) => ({
                         ...p,
@@ -1019,6 +1081,9 @@ export default function LoanApprovalTab() {
                       }))
                     }
                   />
+                  <small style={{ opacity: 0.75 }}>
+                    This is the first file. Each approver will replace it with the latest signed file.
+                  </small>
                 </div>
 
                 <div className="form-group full">
@@ -1036,6 +1101,7 @@ export default function LoanApprovalTab() {
                   <span>Total with Interest</span>
                   <strong>₱ {loanPreview.total.toFixed(2)}</strong>
                 </div>
+
                 <div>
                   <span>Per Month</span>
                   <strong>₱ {loanPreview.per_month.toFixed(2)}</strong>
@@ -1050,6 +1116,7 @@ export default function LoanApprovalTab() {
                 >
                   Cancel
                 </button>
+
                 <button className="btn-primary" type="submit" disabled={creatingLoan}>
                   {creatingLoan ? "Submitting..." : "Submit"}
                 </button>
@@ -1070,10 +1137,16 @@ export default function LoanApprovalTab() {
             <div className="modal-head">
               <div>
                 <h3 className="modal-title">Loan Requests</h3>
-                <p className="modal-subtitle">Filter by type and follow approval chain</p>
+                <p className="modal-subtitle">
+                  Download latest file, upload signed file, then approve.
+                </p>
               </div>
 
-              <button className="modal-x" type="button" onClick={() => setShowLoanModal(false)}>
+              <button
+                className="modal-x"
+                type="button"
+                onClick={() => setShowLoanModal(false)}
+              >
                 ✕
               </button>
             </div>
@@ -1125,7 +1198,7 @@ export default function LoanApprovalTab() {
                       <th>Loan Type</th>
                       <th>Status</th>
                       <th>Current Stage</th>
-                      <th>Dates</th>
+                      <th>Latest File</th>
                       <th>Action</th>
                     </tr>
                   </thead>
@@ -1145,7 +1218,6 @@ export default function LoanApprovalTab() {
 
                         return (
                           <tr key={item.id}>
-
                             <td className="td-strong">
                               {item.staff_name || staffDisplayName(item.staff_id)}
                               <div style={{ fontSize: 12, opacity: 0.75 }}>
@@ -1156,26 +1228,36 @@ export default function LoanApprovalTab() {
                             <td>{item.applicant_role || "-"}</td>
                             <td>{item.loan_type}</td>
 
-                            <td><span className={badgeClass(item.status)}>{item.status}</span></td>
+                            <td>
+                              <span className={badgeClass(item.status)}>
+                                {item.status}
+                              </span>
+                            </td>
 
                             <td>{STAGE_LABELS[currentStage] || "-"}</td>
 
-                            <td style={{ fontSize: 12, opacity: 0.85 }}>
-                              {norm(item.status) === "approved" ? (
-                                <>
-                                  <div>Approved: {fmtDate(item.approved_at)}</div>
-                                  <div>Disbursed: {fmtDate(item.disbursement_date)}</div>
-                                </>
+                            <td style={{ fontSize: 12 }}>
+                              {item.attachment_path && canDownloadLoanFile ? (
+                                <button
+                                  className="btn-secondary"
+                                  type="button"
+                                  onClick={() =>
+                                    downloadLoanFile(
+                                      item.id,
+                                      "latest",
+                                      item.attachment_name || item.approved_attachment_name || ""
+                                    )
+                                  }
+                                >
+                                  Download Latest
+                                </button>
                               ) : (
-                                <>
-                                  <div>Approved: -</div>
-                                  <div>Disbursed: -</div>
-                                </>
+                                "No file"
                               )}
                             </td>
 
                             <td>
-                              <div className="row-actions">
+                              <div className="row-actions loan-row-actions">
                                 <button
                                   className="btn-secondary"
                                   onClick={() => openLoanView(item)}
@@ -1184,22 +1266,42 @@ export default function LoanApprovalTab() {
                                   View
                                 </button>
 
-                                {canAct ? (
+                                {canAct && (
                                   <>
+                                    <label className="loan-upload-pill">
+                                      <input
+                                        type="file"
+                                        hidden
+                                        onChange={(e) =>
+                                          setApprovalFiles((prev) => ({
+                                            ...prev,
+                                            [item.id]: e.target.files?.[0] || null,
+                                          }))
+                                        }
+                                      />
+                                      📎 {approvalFiles[item.id]?.name ? "Change File" : "Upload File"}
+                                    </label>
+
+                                    {approvalFiles[item.id]?.name && (
+                                      <span className="loan-file-name" title={approvalFiles[item.id].name}>
+                                        {approvalFiles[item.id].name}
+                                      </span>
+                                    )}
+
                                     <button
                                       className="btn-success"
-                                      onClick={() => updateLoanStatus(item.id, "approve")}
+                                      onClick={() => updateLoanStatus(item, "approve")}
                                       type="button"
                                       disabled={processingId === `loan-${item.id}-approve`}
                                     >
                                       {processingId === `loan-${item.id}-approve`
                                         ? "Approving..."
-                                        : "Approve"}
+                                        : "Upload + Approve"}
                                     </button>
 
                                     <button
                                       className="btn-danger"
-                                      onClick={() => updateLoanStatus(item.id, "reject")}
+                                      onClick={() => updateLoanStatus(item, "reject")}
                                       type="button"
                                       disabled={processingId === `loan-${item.id}-reject`}
                                     >
@@ -1208,7 +1310,7 @@ export default function LoanApprovalTab() {
                                         : "Reject"}
                                     </button>
                                   </>
-                                ) : null}
+                                )}
                               </div>
                             </td>
                           </tr>
@@ -1223,6 +1325,7 @@ export default function LoanApprovalTab() {
             <div className="exit-pager">
               <div className="exit-page-size">
                 <span>Rows per page:</span>
+
                 <select value={pageSize} onChange={(e) => setPageSize(Number(e.target.value))}>
                   {[25, 50, 75, 100].map((n) => (
                     <option key={n} value={n}>
@@ -1256,7 +1359,11 @@ export default function LoanApprovalTab() {
             </div>
 
             <div className="modal-buttons">
-              <button className="btn-secondary" type="button" onClick={() => setShowLoanModal(false)}>
+              <button
+                className="btn-secondary"
+                type="button"
+                onClick={() => setShowLoanModal(false)}
+              >
                 Close
               </button>
             </div>
@@ -1273,6 +1380,7 @@ export default function LoanApprovalTab() {
             <div className="modal-head">
               <div>
                 <h3 className="modal-title">Loan Application Details</h3>
+
                 <p className="modal-subtitle">
                   {selectedLoan.staff_name || staffDisplayName(selectedLoan.staff_id)}
                 </p>
@@ -1313,7 +1421,9 @@ export default function LoanApprovalTab() {
                   <input
                     value={
                       selectedLoan.branch_code || selectedLoan.branch_name
-                        ? `${selectedLoan.branch_code || ""} - ${selectedLoan.branch_name || ""}`
+                        ? `${selectedLoan.branch_code || ""} - ${
+                            selectedLoan.branch_name || ""
+                          }`
                         : selectedLoan.branch || "-"
                     }
                     readOnly
@@ -1381,46 +1491,54 @@ export default function LoanApprovalTab() {
                 </div>
 
                 <div className="form-group full">
-                  <label>Original Request File</label>
-                  {selectedLoan.attachment_path ? (
+                  <label>Latest Loan File</label>
+                  {selectedLoan.attachment_path && canDownloadLoanFile ? (
                     <button
                       type="button"
                       className="btn-secondary"
                       onClick={() =>
                         downloadLoanFile(
                           selectedLoan.id,
-                          "request",
-                          selectedLoan.attachment_name || ""
+                          "latest",
+                          selectedLoan.attachment_name || selectedLoan.approved_attachment_name || ""
                         )
                       }
                     >
-                      Download Request File
+                      Download Latest File
                     </button>
                   ) : (
-                    <input value="No request file" readOnly />
+                    <input value="No loan file" readOnly />
                   )}
                 </div>
 
-                <div className="form-group full">
-                  <label>Approved Signed File</label>
-                  {selectedLoan.approved_attachment_path ? (
-                    <button
-                      type="button"
-                      className="btn-secondary"
-                      onClick={() =>
-                        downloadLoanFile(
-                          selectedLoan.id,
-                          "approved",
-                          selectedLoan.approved_attachment_name || ""
-                        )
-                      }
-                    >
-                      Download Approved File
-                    </button>
-                  ) : (
-                    <input value="No approved signed file" readOnly />
+                {norm(selectedLoan.status) !== "approved" &&
+                  canParticipateInLoanApproval &&
+                  canUserActOnLoan(selectedLoan, role) && (
+                    <div className="form-group full">
+                      <label>Upload Signed File Before Approving</label>
+                      <input
+                        type="file"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0] || null;
+                          setViewApprovalFile(file);
+                          setApprovalFiles((prev) => ({
+                            ...prev,
+                            [selectedLoan.id]: file,
+                          }));
+                        }}
+                      />
+                      <small style={{ opacity: 0.75 }}>
+                        This file replaces the previous file. The next approver will download this new file.
+                      </small>
+                    </div>
                   )}
-                </div>
+
+                {viewApprovalFile && (
+                  <div className="form-group full">
+                    <label>Selected File</label>
+                    <input value={viewApprovalFile.name} readOnly />
+                  </div>
+                )}
 
                 <div className="form-group full">
                   <label>Reason</label>
@@ -1429,6 +1547,34 @@ export default function LoanApprovalTab() {
               </div>
 
               <div className="modal-buttons">
+                {norm(selectedLoan.status) !== "approved" &&
+                  canParticipateInLoanApproval &&
+                  canUserActOnLoan(selectedLoan, role) && (
+                    <>
+                      <button
+                        className="btn-success"
+                        type="button"
+                        disabled={processingId === `loan-${selectedLoan.id}-approve`}
+                        onClick={() => updateLoanStatus(selectedLoan, "approve")}
+                      >
+                        {processingId === `loan-${selectedLoan.id}-approve`
+                          ? "Approving..."
+                          : "Upload + Approve"}
+                      </button>
+
+                      <button
+                        className="btn-danger"
+                        type="button"
+                        disabled={processingId === `loan-${selectedLoan.id}-reject`}
+                        onClick={() => updateLoanStatus(selectedLoan, "reject")}
+                      >
+                        {processingId === `loan-${selectedLoan.id}-reject`
+                          ? "Rejecting..."
+                          : "Reject"}
+                      </button>
+                    </>
+                  )}
+
                 <button className="btn-secondary" type="button" onClick={closeLoanView}>
                   Close
                 </button>

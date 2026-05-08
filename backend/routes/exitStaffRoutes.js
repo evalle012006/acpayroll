@@ -1,7 +1,21 @@
 const express = require("express");
 const router = express.Router();
 const pool = require("../db");
-const { requireAuth, requireRole } = require("../middlewares/authMiddleware");
+const { requireAuth } = require("../middlewares/authMiddleware");
+const { requirePermission } = require("../utils/permissions");
+
+const {
+  isAdmin,
+  isIT,
+  isHr,
+  isAccounting,
+  isTread,
+  isBranchManager,
+  isAssistantVicePresident,
+  isVicePresident,
+  isSeniorVicePresident,
+  isPresident,
+} = require("../utils/roleAccess");
 
 /* ---------------- Helpers ---------------- */
 const toInt = (v) => {
@@ -21,19 +35,9 @@ const todayDate = () => new Date().toISOString().slice(0, 10);
 const clean = (v) => String(v ?? "").trim();
 const norm = (v) => clean(v).toLowerCase();
 
-const roleLower = (req) => norm(req.user?.role);
-const isAdmin = (req) => roleLower(req) === "admin";
-const isHr = (req) => roleLower(req) === "hr";
-const isAccounting = (req) => roleLower(req) === "accounting";
-const isTread = (req) => roleLower(req) === "tread";
-const isBranchManager = (req) => roleLower(req) === "branch manager";
-const isAssistantVicePresident = (req) => roleLower(req) === "assistant vice president";
-const isVicePresident = (req) => roleLower(req) === "vice president";
-const isSeniorVicePresident = (req) => roleLower(req) === "senior vice president";
-const isPresident = (req) => roleLower(req) === "president";
-
 const isTopManagement = (req) =>
   isAdmin(req) ||
+  isIT(req) ||
   isHr(req) ||
   isAccounting(req) ||
   isTread(req) ||
@@ -55,10 +59,21 @@ const normalizeExitType = (v) => {
   return clean(v);
 };
 
+const buildEmployeeName = (row) => {
+  const ln = clean(row?.last_name);
+  const fn = clean(row?.first_name);
+  const mn = clean(row?.middle_name);
+
+  const built = `${ln}${ln && fn ? ", " : ""}${fn}${mn ? ` ${mn}` : ""}`
+    .replace(/\s+/g, " ")
+    .trim();
+
+  return built || clean(row?.fullname) || clean(row?.employee_name);
+};
+
 /**
- * Makes staff inactive only when approved exit_date/effective_date is today or past.
- * This is called before GET routes so future-effective approved exits become inactive
- * automatically once the date arrives.
+ * Makes staff inactive only when an approved exit is due.
+ * It will NOT inactivate staff who were re-applied after the old exit date.
  */
 const applyDueExitStaff = async () => {
   await pool.query(`
@@ -70,119 +85,136 @@ const applyDueExitStaff = async () => {
       AND eso.effective_date IS NOT NULL
       AND eso.effective_date <= CURRENT_DATE
       AND LOWER(TRIM(COALESCE(s.status, ''))) <> 'inactive'
+      AND NOT EXISTS (
+        SELECT 1
+        FROM public.status_history sh
+        WHERE sh.employee_no = eso.employee_no
+          AND LOWER(TRIM(COALESCE(sh.status, ''))) = 'active'
+          AND LOWER(TRIM(COALESCE(sh.reason, ''))) = 're-apply'
+          AND sh.effective_date IS NOT NULL
+          AND sh.effective_date > eso.effective_date
+      )
   `);
 };
 
 /* =========================================================
-   EXIT STAFF (inactive list)
+   EXIT STAFF inactive list
 ========================================================= */
-router.get("/exit-staff", requireAuth, async (req, res) => {
-  try {
-    await applyDueExitStaff();
+router.get(
+  "/exit-staff",
+  requireAuth,
+  requirePermission("exit_staff_order", "view"),
+  async (req, res) => {
+    try {
+      await applyDueExitStaff();
 
-    if (!isTopManagement(req) && !isBranchManager(req)) {
-      return res.status(403).json({ message: "Access denied" });
+      if (!isTopManagement(req) && !isBranchManager(req)) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      const params = [];
+      let sql = `
+        SELECT
+          s.id,
+          s.employee_no,
+          s.fullname,
+          s.last_name,
+          s.first_name,
+          s.middle_name,
+          s.branch_id,
+          b.code AS branch_code,
+          b.name AS branch_name,
+          s.department,
+          s.position,
+          s.status,
+          s.exit_type,
+          s.exit_date,
+          s.exit_remarks,
+          s.area,
+          s.region,
+          s.division,
+          s.start_date,
+          s.regularization_date
+        FROM public.staff s
+        LEFT JOIN public.branches b ON b.id = s.branch_id
+        WHERE LOWER(TRIM(COALESCE(s.status, ''))) = 'inactive'
+          AND LOWER(TRIM(COALESCE(s.exit_type, ''))) IN ('awol', 'resigned', 'terminated', 'deceased')
+      `;
+
+      if (isBranchManager(req)) {
+        const bid = getUserBranchId(req);
+        if (!bid) return res.json([]);
+
+        params.push(bid);
+        sql += ` AND s.branch_id = $${params.length}`;
+      }
+
+      sql += `
+        ORDER BY
+          s.exit_date DESC NULLS LAST,
+          s.last_name ASC,
+          s.first_name ASC
+      `;
+
+      const r = await pool.query(sql, params);
+      return res.json(r.rows);
+    } catch (e) {
+      console.error("GET /exit-staff ERROR:", e.message);
+      return res.status(500).json({ message: "Server error" });
     }
-
-    const params = [];
-    let sql = `
-      SELECT
-        s.id,
-        s.employee_no,
-        s.fullname,
-        s.last_name,
-        s.first_name,
-        s.middle_name,
-        s.branch_id,
-        b.code AS branch_code,
-        b.name AS branch_name,
-        s.department,
-        s.position,
-        s.status,
-        s.exit_type,
-        s.exit_date,
-        s.exit_remarks
-      FROM public.staff s
-      LEFT JOIN public.branches b ON b.id = s.branch_id
-      WHERE LOWER(TRIM(COALESCE(s.status, ''))) = 'inactive'
-        AND LOWER(TRIM(COALESCE(s.exit_type, ''))) IN ('awol', 'resigned', 'terminated', 'deceased')
-    `;
-
-    if (isBranchManager(req)) {
-      const bid = getUserBranchId(req);
-      if (!bid) return res.json([]);
-      params.push(bid);
-      sql += ` AND s.branch_id = $${params.length}`;
-    }
-
-    sql += `
-      ORDER BY
-        s.exit_date DESC NULLS LAST,
-        s.last_name ASC,
-        s.first_name ASC
-    `;
-
-    const r = await pool.query(sql, params);
-    return res.json(r.rows);
-  } catch (e) {
-    console.error("GET /exit-staff ERROR:", e.message);
-    return res.status(500).json({ message: "Server error" });
   }
-});
+);
 
 /* =========================================================
    EXIT STAFF ORDERS
 ========================================================= */
-router.get("/exit-staff-orders", requireAuth, async (req, res) => {
-  try {
-    await applyDueExitStaff();
+router.get(
+  "/exit-staff-orders",
+  requireAuth,
+  requirePermission("exit_staff_order", "view"),
+  async (req, res) => {
+    try {
+      await applyDueExitStaff();
 
-    if (isTopManagement(req)) {
-      const r = await pool.query(`
-        SELECT *
-        FROM public.exit_staff_orders
-        ORDER BY id DESC
-      `);
-      return res.json(r.rows);
+      if (isTopManagement(req)) {
+        const r = await pool.query(`
+          SELECT *
+          FROM public.exit_staff_orders
+          ORDER BY id DESC
+        `);
+
+        return res.json(r.rows);
+      }
+
+      if (isBranchManager(req)) {
+        const bid = getUserBranchId(req);
+        if (!bid) return res.json([]);
+
+        const r = await pool.query(
+          `
+          SELECT *
+          FROM public.exit_staff_orders
+          WHERE branch_id = $1
+          ORDER BY id DESC
+          `,
+          [bid]
+        );
+
+        return res.json(r.rows);
+      }
+
+      return res.status(403).json({ message: "Access denied" });
+    } catch (e) {
+      console.error("GET /exit-staff-orders ERROR:", e.message);
+      return res.status(500).json({ message: "Server error" });
     }
-
-    if (isBranchManager(req)) {
-      const bid = getUserBranchId(req);
-      if (!bid) return res.json([]);
-
-      const r = await pool.query(
-        `
-        SELECT *
-        FROM public.exit_staff_orders
-        WHERE branch_id = $1
-        ORDER BY id DESC
-        `,
-        [bid]
-      );
-
-      return res.json(r.rows);
-    }
-
-    return res.status(403).json({ message: "Access denied" });
-  } catch (e) {
-    console.error("GET /exit-staff-orders ERROR:", e.message);
-    return res.status(500).json({ message: "Server error" });
   }
-});
+);
 
 router.post(
   "/exit-staff-orders",
   requireAuth,
-  requireRole([
-    "admin",
-    "hr",
-    "accounting",
-    "branch manager",
-    "assistant vice president",
-    "vice president",
-    "senior vice president",
-    "president",
-  ]),
+  requirePermission("exit_staff_order", "create"),
   async (req, res) => {
     const client = await pool.connect();
 
@@ -267,6 +299,7 @@ router.post(
 
       if (isBranchManager(req)) {
         const userBranchId = getUserBranchId(req);
+
         if (!userBranchId || Number(userBranchId) !== Number(staff.branch_id)) {
           await client.query("ROLLBACK");
           return res.status(403).json({
@@ -310,11 +343,7 @@ router.post(
       }
 
       const employee_name =
-        clean(req.body?.employee_name) ||
-        clean(staff.fullname) ||
-        [clean(staff.last_name), clean(staff.first_name), clean(staff.middle_name)]
-          .filter(Boolean)
-          .join(", ");
+        clean(req.body?.employee_name) || buildEmployeeName(staff);
 
       const seq = await client.query(
         `SELECT nextval('public.exit_staff_orders_id_seq') AS n`
@@ -411,15 +440,7 @@ router.post(
 router.put(
   "/exit-staff-orders/:id/approve",
   requireAuth,
-  requireRole([
-    "admin",
-    "hr",
-    "accounting",
-    "assistant vice president",
-    "vice president",
-    "senior vice president",
-    "president",
-  ]),
+  requirePermission("exit_staff_order", "approve"),
   async (req, res) => {
     const client = await pool.connect();
 
@@ -427,6 +448,7 @@ router.put(
       await client.query("BEGIN");
 
       const id = toInt(req.params.id);
+
       if (!id) {
         await client.query("ROLLBACK");
         return res.status(400).json({ message: "Invalid id" });
@@ -481,9 +503,9 @@ router.put(
 
       if (staffRes.rowCount === 0) {
         await client.query("ROLLBACK");
-        return res
-          .status(404)
-          .json({ message: "Staff record not found for this employee number" });
+        return res.status(404).json({
+          message: "Staff record not found for this employee number",
+        });
       }
 
       const orderUpdate = await client.query(
@@ -562,21 +584,14 @@ router.put(
 router.put(
   "/exit-staff-orders/:id/reject",
   requireAuth,
-  requireRole([
-    "admin",
-    "hr",
-    "accounting",
-    "assistant vice president",
-    "vice president",
-    "senior vice president",
-    "president",
-  ]),
+  requirePermission("exit_staff_order", "reject"),
   async (req, res) => {
     try {
       const id = toInt(req.params.id);
       const reason = clean(req.body?.reason);
 
       if (!id) return res.status(400).json({ message: "Invalid id" });
+
       if (!reason) {
         return res.status(400).json({ message: "Rejection reason required" });
       }
@@ -610,13 +625,175 @@ router.put(
   }
 );
 
+router.put(
+  "/exit-staff/:id/reapply",
+  requireAuth,
+  requirePermission("exit_staff_order", "approve"),
+  async (req, res) => {
+    const client = await pool.connect();
+
+    try {
+      await client.query("BEGIN");
+
+      const id = toInt(req.params.id);
+
+      if (!id) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({ message: "Invalid staff id" });
+      }
+
+      const branch_id = toInt(req.body?.branch_id);
+      const position = clean(req.body?.position);
+      const start_date = toDate(req.body?.start_date) || todayDate();
+      const remarks = clean(req.body?.remarks);
+
+      if (!branch_id) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({ message: "Branch is required" });
+      }
+
+      if (!position) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({ message: "Position is required" });
+      }
+
+      const staffRes = await client.query(
+        `
+        SELECT
+          id,
+          employee_no,
+          fullname,
+          last_name,
+          first_name,
+          middle_name,
+          status
+        FROM public.staff
+        WHERE id = $1
+        FOR UPDATE
+        `,
+        [id]
+      );
+
+      if (staffRes.rowCount === 0) {
+        await client.query("ROLLBACK");
+        return res.status(404).json({ message: "Staff not found" });
+      }
+
+      const branchRes = await client.query(
+        `
+        SELECT
+          id,
+          code,
+          name,
+          area,
+          region,
+          division
+        FROM public.branches
+        WHERE id = $1
+        LIMIT 1
+        `,
+        [branch_id]
+      );
+
+      if (branchRes.rowCount === 0) {
+        await client.query("ROLLBACK");
+        return res.status(404).json({ message: "Branch not found" });
+      }
+
+      const branch = branchRes.rows[0];
+      const staff = staffRes.rows[0];
+
+      await client.query(
+        `
+        UPDATE public.exit_staff_orders
+        SET
+          status = 'Approved',
+          remarks = TRIM(COALESCE(remarks, '') || E'\\nRe-applied on ' || $2::text)
+        WHERE employee_no = $1
+          AND LOWER(TRIM(COALESCE(status, ''))) = 'approved'
+        `,
+        [clean(staff.employee_no), start_date]
+      );
+
+      const updated = await client.query(
+        `
+        UPDATE public.staff
+        SET
+          status = 'Active',
+          branch_id = $2,
+          area = $3,
+          region = $4,
+          division = $5,
+          "position" = $6,
+          start_date = $7::date,
+          exit_type = NULL,
+          exit_date = NULL,
+          exit_remarks = NULL
+        WHERE id = $1
+        RETURNING
+          id,
+          employee_no,
+          fullname,
+          last_name,
+          first_name,
+          middle_name,
+          branch_id,
+          area,
+          region,
+          division,
+          "position",
+          status
+        `,
+        [
+          id,
+          branch.id,
+          clean(branch.area) || clean(req.body?.area) || "",
+          clean(branch.region) || clean(req.body?.region) || "",
+          clean(branch.division) || clean(req.body?.division) || "",
+          position,
+          start_date,
+        ]
+      );
+
+      try {
+        await client.query(
+          `
+          INSERT INTO public.status_history
+            (employee_no, effective_date, status, reason, remarks)
+          VALUES
+            ($1, $2::date, 'Active', 'Re-Apply', $3)
+          ON CONFLICT DO NOTHING
+          `,
+          [clean(staff.employee_no), start_date, remarks || null]
+        );
+      } catch (historyErr) {
+        console.warn("status_history reapply insert skipped:", historyErr.message);
+      }
+
+      await client.query("COMMIT");
+
+      return res.json({
+        message: "Staff re-applied successfully",
+        staff: updated.rows[0],
+      });
+    } catch (e) {
+      await client.query("ROLLBACK");
+      console.error("PUT /api/exit-staff/:id/reapply ERROR:", e);
+      return res.status(500).json({ message: e?.message || "Server error" });
+    } finally {
+      client.release();
+    }
+  }
+);
+
 router.delete(
   "/exit-staff-orders/:id",
   requireAuth,
-  requireRole(["admin", "hr", "accounting"]),
+  requirePermission("exit_staff_order", "delete"),
   async (req, res) => {
     try {
       const id = toInt(req.params.id);
+
       if (!id) return res.status(400).json({ message: "Invalid id" });
 
       const check = await pool.query(

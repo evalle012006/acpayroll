@@ -23,7 +23,9 @@ const norm = (v) => clean(v).toLowerCase();
 
 const roleLower = (req) => norm(req.user?.role);
 
-const isAdmin = (req) => roleLower(req) === "admin";
+const isAdmin = (req) =>
+      ["admin", "it"].includes(roleLower(req));
+
 const isHr = (req) => roleLower(req) === "hr";
 const isAccounting = (req) => roleLower(req) === "accounting";
 const isTread = (req) => roleLower(req) === "tread";
@@ -196,6 +198,7 @@ router.post(
   requireAuth,
   requireRole([
     "admin",
+    "it",
     "hr",
     "accounting",
     "tread",
@@ -768,6 +771,7 @@ router.delete(
   requireAuth,
   requireRole([
     "admin",
+    "it",
     "hr",
     "accounting",
     "tread",

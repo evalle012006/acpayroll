@@ -32,7 +32,7 @@ export default function SystemRates() {
   }, []);
 
   const role = String(user?.role || "").trim().toLowerCase();
-  const isAdmin = role === "admin";
+  const isAdmin = ["admin", "it"].includes(role);
 
   const [showModal, setShowModal] = useState(false);
   const [modalMode, setModalMode] = useState("view"); // view | edit | create

@@ -1,103 +1,90 @@
-/* PromotionOrder.css — matched to TransferStaffOrder.css */
-
-/* page */
 .po-page {
-  display: flex;
-  flex-direction: column;
-  gap: 18px;
   padding: 22px;
-  color: var(--text);
+  color: #eef5ff;
 }
 
 .po-topbar {
   display: flex;
   justify-content: space-between;
-  align-items: flex-end;
-  gap: 16px;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 18px;
 }
 
 .po-title {
   margin: 0;
   font-size: 24px;
   font-weight: 900;
-  color: var(--text);
 }
 
 .po-subtitle {
-  margin-top: 6px;
+  margin: 6px 0 0;
   font-size: 13px;
-  font-weight: 600;
-  color: var(--muted);
+  color: #94a3b8;
+  font-weight: 700;
 }
 
-/* header buttons (keep your variants, but align base look) */
 .po-actions {
   display: flex;
   gap: 10px;
   flex-wrap: wrap;
 }
 
-.po-btn {
-  border: 1px solid var(--border);
+.po-btn,
+.po-mini-btn {
+  border: 1px solid rgba(148, 163, 184, 0.25);
   border-radius: 10px;
-  padding: 10px 14px;
-  font-weight: 800;
   cursor: pointer;
+  font-weight: 900;
   transition: 0.15s ease;
-  user-select: none;
-  background: var(--panel);
-  color: var(--text);
+  color: #eef5ff;
 }
 
-.po-btn:disabled {
-  opacity: 0.7;
+.po-btn {
+  padding: 10px 15px;
+  background: #111827;
+}
+
+.po-btn:hover,
+.po-mini-btn:hover {
+  transform: translateY(-1px);
+  filter: brightness(1.08);
+}
+
+.po-btn:disabled,
+.po-mini-btn:disabled {
+  opacity: 0.55;
   cursor: not-allowed;
+  transform: none;
 }
 
 .po-btn-primary {
-  background: var(--primary);
-  color: #fff;
-  border-color: rgba(255, 255, 255, 0.10);
-}
-
-.po-btn-primary:hover {
-  background: var(--primary-hover);
+  background: linear-gradient(135deg, #4f46e5, #2563eb);
 }
 
 .po-btn-outline {
-  background: var(--panel);
-  border-color: var(--border);
-  color: var(--text);
-}
-
-.po-btn-outline:hover {
-  filter: brightness(1.02);
+  background: #172554;
 }
 
 .po-btn-ghost {
-  background: transparent;
-  border-color: var(--border);
-  color: var(--text);
+  background: #020617;
 }
 
-.po-btn-ghost:hover {
-  background: var(--hover);
-}
-
-/* card */
 .po-card {
-  background: var(--panel);
-  border: 1px solid var(--border);
+  background: #0f1f3d;
+  border: 1px solid rgba(148, 163, 184, 0.22);
   border-radius: 16px;
-  box-shadow: var(--shadow-soft);
   overflow: hidden;
+  box-shadow: 0 18px 45px rgba(0, 0, 0, 0.25);
 }
 
 .po-card-head {
   padding: 14px 18px;
   display: flex;
   justify-content: space-between;
-  border-bottom: 1px solid var(--border);
+  align-items: center;
+  background: #102447;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.18);
 }
 
 .po-card-title {
@@ -105,133 +92,177 @@
 }
 
 .po-card-meta {
+  color: #93c5fd;
+  font-weight: 900;
   font-size: 12px;
-  color: var(--muted);
-  font-weight: 700;
 }
 
-/* table */
 .po-table-wrap {
   overflow: auto;
+  max-height: calc(100vh - 230px);
 }
 
 .po-table {
   width: 100%;
-  border-collapse: collapse;
-  min-width: 980px; /* keep your wide table behavior */
+  min-width: 1450px;
+  border-collapse: separate;
+  border-spacing: 0;
 }
 
 .po-table th {
-  background: var(--table-header);
-  color: white;
-  padding: 12px;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: #2563eb;
+  color: #fff;
+  padding: 12px 13px;
   text-align: left;
   white-space: nowrap;
+  font-size: 12px;
+  font-weight: 900;
 }
 
 .po-table td {
-  padding: 12px;
-  border-bottom: 1px solid var(--border);
-  color: var(--text);
-  background: transparent;
+  padding: 13px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.18);
+  color: #eef5ff;
   vertical-align: middle;
+  font-size: 13px;
+  font-weight: 750;
 }
 
 .po-table tbody tr:hover td {
-  background: var(--row-hover);
+  background: rgba(59, 130, 246, 0.08);
+}
+
+.po-table th:nth-last-child(2),
+.po-table td:nth-last-child(2) {
+  width: 170px;
+  min-width: 170px;
+}
+
+.po-table th:last-child,
+.po-table td:last-child {
+  width: 260px;
+  min-width: 260px;
 }
 
 .po-empty {
   text-align: center;
-  padding: 22px;
-  color: var(--muted);
-  font-weight: 700;
+  padding: 28px;
+  color: #94a3b8;
+  font-weight: 900;
 }
 
-/* text helpers */
 .mono {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
 }
 
 .td-strong {
-  font-weight: 800;
-}
-
-.num {
-  text-align: right;
+  font-weight: 900;
 }
 
 .po-dash {
-  color: var(--muted);
+  color: #64748b;
+  font-weight: 900;
 }
 
-/* actions */
-.po-row-actions {
-  display: flex;
-  gap: 8px;
-  justify-content: flex-start;
-}
-
-.po-mini-btn {
-  border: 1px solid var(--border);
-  padding: 7px 10px;
-  border-radius: 10px;
-  cursor: pointer;
-  font-weight: 800;
-  font-size: 12px;
-  background: var(--panel-2);
-  color: var(--text);
-  transition: 0.15s ease;
-}
-
-.po-mini-btn:hover {
-  background: var(--hover);
-}
-
-.po-approve {
-  border-color: rgba(16, 185, 129, 0.45);
-  background: rgba(16, 185, 129, 0.12);
-}
-
-.po-reject {
-  border-color: rgba(239, 68, 68, 0.45);
-  background: rgba(239, 68, 68, 0.12);
-}
-
-/* badges */
 .po-badge {
   display: inline-flex;
   align-items: center;
-  padding: 6px 10px;
+  justify-content: center;
+  min-width: 78px;
+  padding: 7px 11px;
   border-radius: 999px;
   font-size: 12px;
   font-weight: 900;
-  border: 1px solid var(--border);
 }
 
 .po-pending {
-  background: rgba(59, 130, 246, 0.12);
-  border-color: rgba(59, 130, 246, 0.35);
+  background: rgba(37, 99, 235, 0.18);
+  border: 1px solid rgba(96, 165, 250, 0.45);
   color: #60a5fa;
 }
 
 .po-approved {
-  background: rgba(16, 185, 129, 0.12);
-  border-color: rgba(16, 185, 129, 0.35);
+  background: rgba(16, 185, 129, 0.16);
+  border: 1px solid rgba(52, 211, 153, 0.45);
   color: #34d399;
 }
 
 .po-rejected {
-  background: rgba(239, 68, 68, 0.12);
-  border-color: rgba(239, 68, 68, 0.35);
+  background: rgba(239, 68, 68, 0.16);
+  border: 1px solid rgba(248, 113, 113, 0.45);
   color: #fca5a5;
 }
 
-/* modal */
+.po-file-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: nowrap;
+  align-items: center;
+}
+
+.po-action-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.po-mini-btn {
+  height: 34px;
+  min-width: 58px;
+  padding: 0 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  white-space: nowrap;
+  font-size: 12px;
+  background: #111827;
+}
+
+.po-view-btn {
+  background: #172554;
+}
+
+.po-download-btn {
+  min-width: 130px;
+  background: #1e3a8a;
+}
+
+.po-upload-btn {
+  background: #0f172a;
+  border-style: dashed;
+}
+
+.po-approve {
+  background: #10b981;
+  color: #052e1c;
+  border-color: #34d399;
+}
+
+.po-reject {
+  background: #ef4444;
+  color: #fff;
+  border-color: #f87171;
+}
+
+.po-file-name {
+  max-width: 230px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #cbd5e1;
+  font-size: 11px;
+  font-weight: 800;
+}
+
 .po-modal-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.55);
+  background: rgba(2, 6, 23, 0.72);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -242,50 +273,43 @@
 .po-modal {
   width: 100%;
   max-width: 920px;
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: 16px;
-  box-shadow: var(--shadow-soft);
+  background: #0f1f3d;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  border-radius: 18px;
   overflow: hidden;
 }
 
 .po-modal-head {
-  padding: 14px 18px;
+  padding: 16px 18px;
   display: flex;
   justify-content: space-between;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid rgba(148, 163, 184, 0.18);
 }
 
 .po-modal-title {
   margin: 0;
-  font-size: 18px;
+  font-size: 19px;
   font-weight: 900;
-  color: var(--text);
 }
 
 .po-modal-sub {
-  margin-top: 6px;
+  margin: 6px 0 0;
+  color: #94a3b8;
   font-size: 12px;
-  font-weight: 600;
-  color: var(--muted);
+  font-weight: 700;
 }
 
 .po-x {
-  width: 36px;
-  height: 36px;
+  width: 38px;
+  height: 38px;
   border-radius: 10px;
-  background: var(--panel-2);
-  border: 1px solid var(--border);
-  color: var(--text);
+  background: #111827;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  color: #fff;
   cursor: pointer;
   font-weight: 900;
 }
 
-.po-x:hover {
-  background: var(--hover);
-}
-
-/* form layout */
 .po-form {
   padding: 16px;
 }
@@ -308,25 +332,25 @@
 
 .po-field label {
   font-size: 12px;
-  font-weight: 800;
-  color: var(--text-2);
+  font-weight: 900;
+  color: #cbd5e1;
 }
 
 .po-field input,
 .po-field textarea,
 .po-field select {
-  padding: 10px;
-  border-radius: 10px;
-  border: 1px solid var(--border);
-  background: var(--panel-2);
-  color: var(--text);
+  padding: 11px;
+  border-radius: 11px;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  background: #071225;
+  color: #eef5ff;
   outline: none;
 }
 
 .po-field input:focus,
 .po-field textarea:focus,
 .po-field select:focus {
-  border-color: rgba(79, 70, 229, 0.55);
+  border-color: #60a5fa;
 }
 
 .po-modal-actions {
@@ -334,12 +358,167 @@
   justify-content: flex-end;
   gap: 10px;
   padding-top: 14px;
-  border-top: 1px solid var(--border);
   margin-top: 14px;
+  border-top: 1px solid rgba(148, 163, 184, 0.18);
 }
 
-/* dark tuning (same as TransferStaffOrder.css) */
-[data-theme="dark"] .po-card {
-  background: #0f1f3d;
-  border-color: rgba(255, 255, 255, 0.1);
+.po-search-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  margin-top: 6px;
+  max-height: 240px;
+  overflow-y: auto;
+  background: #071225;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  border-radius: 12px;
+  z-index: 9999;
 }
+
+.po-search-item {
+  width: 100%;
+  padding: 10px 12px;
+  cursor: pointer;
+  border: 0;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+  color: #e7edf7;
+  background: transparent;
+  text-align: left;
+  font-weight: 800;
+}
+
+.po-search-item:hover {
+  background: #172554;
+}
+
+.po-search-empty {
+  padding: 12px;
+  color: #94a3b8;
+  font-weight: 800;
+}
+
+.po-view-modal {
+  width: min(1100px, 95vw);
+  height: min(820px, 90vh);
+  background: #0f1f3d;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  border-radius: 18px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.po-view-body {
+  flex: 1;
+  background: #020617;
+  padding: 12px;
+  overflow: auto;
+}
+
+.po-view-body iframe {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: white;
+  border-radius: 12px;
+}
+
+.po-view-body img {
+  max-width: 100%;
+  max-height: 100%;
+  display: block;
+  margin: auto;
+  border-radius: 12px;
+}
+
+@media (max-width: 900px) {
+  .po-topbar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .po-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .po-field.full {
+    grid-column: span 1;
+  }
+}
+
+.po-nopreview {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  color: #e5e7eb;
+}
+
+.po-nopreview h3 {
+  margin: 0 0 8px;
+  font-size: 22px;
+}
+
+.po-nopreview p {
+  margin: 0;
+  color: #94a3b8;
+  font-weight: 800;
+}
+
+.po-record-modal {
+  width: min(1000px, 95vw);
+  max-height: 90vh;
+  background: #0f1f3d;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  border-radius: 18px;
+  overflow: auto;
+  padding-bottom: 16px;
+}
+
+.po-record-badges {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 18px;
+}
+
+.po-record-badges span {
+  background: rgba(79, 70, 229, 0.22);
+  border: 1px solid rgba(129, 140, 248, 0.45);
+  color: #e0e7ff;
+  padding: 5px 12px;
+  border-radius: 999px;
+  font-weight: 900;
+  font-size: 12px;
+}
+
+.po-record-table {
+  margin: 0 18px 18px;
+  background: #12213a;
+}
+
+.po-record-table div {
+  display: grid;
+  grid-template-columns: 38% 62%;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.16);
+  min-height: 42px;
+}
+
+.po-record-table strong,
+.po-record-table span {
+  padding: 12px;
+  color: #dbeafe;
+  font-size: 13px;
+}
+
+.po-record-table strong {
+  font-weight: 900;
+}
+
+.po-record-table span {
+  font-weight: 700;
+}
+
