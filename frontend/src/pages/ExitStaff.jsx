@@ -406,6 +406,7 @@ export default function ExitStaff() {
                 <th>BRANCH</th>
                 <th>DEPARTMENT</th>
                 <th>POSITION</th>
+                <th>EXIT TYPE</th>
                 <th>ACTION</th>
               </tr>
             </thead>
@@ -413,13 +414,13 @@ export default function ExitStaff() {
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={6} className="exit-empty">
+                  <td colSpan={7} className="exit-empty">
                     Loading exit staff...
                   </td>
                 </tr>
               ) : filteredRows.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="exit-empty">
+                  <td colSpan={7} className="exit-empty">
                     No exit staff found.
                   </td>
                 </tr>
@@ -438,6 +439,19 @@ export default function ExitStaff() {
 
                     <td>{r.position || "-"}</td>
 
+                    <td>
+                      <span
+                        className={`exit-type-badge ${
+                          norm(r.exit_type) === "awol"
+                            ? "awol"
+                            : norm(r.exit_type) === "terminated"
+                            ? "terminated"
+                            : "resigned"
+                        }`}
+                      >
+                        {r.exit_type || "-"}
+                      </span>
+                    </td>
                     <td>
                       <div className="exit-action-icons">
                         <button

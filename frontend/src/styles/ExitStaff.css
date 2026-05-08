@@ -668,3 +668,33 @@
     min-height: 420px;
   }
 }
+
+.exit-type-badge{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  min-width:90px;
+  padding:6px 12px;
+  border-radius:999px;
+  font-size:12px;
+  font-weight:900;
+  border:1px solid transparent;
+}
+
+.exit-type-badge.awol{
+  background:rgba(239,68,68,.12);
+  color:#f87171;
+  border-color:rgba(239,68,68,.35);
+}
+
+.exit-type-badge.terminated{
+  background:rgba(245,158,11,.12);
+  color:#fbbf24;
+  border-color:rgba(245,158,11,.35);
+}
+
+.exit-type-badge.resigned{
+  background:rgba(16,185,129,.12);
+  color:#34d399;
+  border-color:rgba(16,185,129,.35);
+}

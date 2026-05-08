@@ -1,47 +1,53 @@
-ALTER TABLE public.board_resolution_requests
-ADD COLUMN IF NOT EXISTS request_no VARCHAR(50) UNIQUE,
+BEGIN;
 
-ADD COLUMN IF NOT EXISTS title TEXT,
-ADD COLUMN IF NOT EXISTS resolution_type VARCHAR(150),
-ADD COLUMN IF NOT EXISTS department VARCHAR(150),
-ADD COLUMN IF NOT EXISTS details TEXT,
+CREATE TABLE IF NOT EXISTS public.board_resolution_requests (
+    id SERIAL PRIMARY KEY,
 
-ADD COLUMN IF NOT EXISTS status VARCHAR(100) DEFAULT 'Submitted',
+    request_no VARCHAR(50) UNIQUE,
 
-ADD COLUMN IF NOT EXISTS created_by INTEGER,
-ADD COLUMN IF NOT EXISTS created_by_role VARCHAR(100),
-ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW(),
+    title TEXT,
+    resolution_type VARCHAR(150),
+    department VARCHAR(150),
+    details TEXT,
 
-ADD COLUMN IF NOT EXISTS request_attachment_path TEXT,
-ADD COLUMN IF NOT EXISTS request_attachment_name TEXT,
-ADD COLUMN IF NOT EXISTS request_attachment_mime TEXT,
+    status VARCHAR(100) DEFAULT 'Submitted',
 
-ADD COLUMN IF NOT EXISTS final_attachment_path TEXT,
-ADD COLUMN IF NOT EXISTS final_attachment_name TEXT,
-ADD COLUMN IF NOT EXISTS final_attachment_mime TEXT,
+    created_by INTEGER,
+    created_by_role VARCHAR(100),
 
-ADD COLUMN IF NOT EXISTS avp_approved_by INTEGER,
-ADD COLUMN IF NOT EXISTS avp_approved_at TIMESTAMP,
+    created_at TIMESTAMP DEFAULT NOW(),
 
-ADD COLUMN IF NOT EXISTS vp_approved_by INTEGER,
-ADD COLUMN IF NOT EXISTS vp_approved_at TIMESTAMP,
+    request_attachment_path TEXT,
+    request_attachment_name TEXT,
+    request_attachment_mime TEXT,
 
-ADD COLUMN IF NOT EXISTS svp_approved_by INTEGER,
-ADD COLUMN IF NOT EXISTS svp_approved_at TIMESTAMP,
+    final_attachment_path TEXT,
+    final_attachment_name TEXT,
+    final_attachment_mime TEXT,
 
-ADD COLUMN IF NOT EXISTS president_approved_by INTEGER,
-ADD COLUMN IF NOT EXISTS president_approved_at TIMESTAMP,
+    avp_approved_by INTEGER,
+    avp_approved_at TIMESTAMP,
 
-ADD COLUMN IF NOT EXISTS final_uploaded_by INTEGER,
-ADD COLUMN IF NOT EXISTS final_uploaded_at TIMESTAMP,
+    vp_approved_by INTEGER,
+    vp_approved_at TIMESTAMP,
 
-ADD COLUMN IF NOT EXISTS rejected_by INTEGER,
-ADD COLUMN IF NOT EXISTS rejected_at TIMESTAMP,
-ADD COLUMN IF NOT EXISTS rejection_reason TEXT,
+    svp_approved_by INTEGER,
+    svp_approved_at TIMESTAMP,
 
-ADD COLUMN IF NOT EXISTS date_created DATE,
-ADD COLUMN IF NOT EXISTS to_text TEXT,
-ADD COLUMN IF NOT EXISTS thru_text TEXT;
+    president_approved_by INTEGER,
+    president_approved_at TIMESTAMP,
+
+    final_uploaded_by INTEGER,
+    final_uploaded_at TIMESTAMP,
+
+    rejected_by INTEGER,
+    rejected_at TIMESTAMP,
+    rejection_reason TEXT,
+
+    date_created DATE,
+    to_text TEXT,
+    thru_text TEXT
+);
 
 CREATE INDEX IF NOT EXISTS idx_board_resolution_created_by
 ON public.board_resolution_requests(created_by);
@@ -51,3 +57,5 @@ ON public.board_resolution_requests(status);
 
 CREATE INDEX IF NOT EXISTS idx_board_resolution_created_at
 ON public.board_resolution_requests(created_at DESC);
+
+COMMIT;

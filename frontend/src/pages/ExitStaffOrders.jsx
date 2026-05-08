@@ -35,9 +35,11 @@ const displayNameParts = (s) => {
   const ln = toStr(s?.last_name);
   const fn = toStr(s?.first_name);
   const mn = toStr(s?.middle_name);
+
   const built = `${ln}${ln && fn ? ", " : ""}${fn}${mn ? ` ${mn}` : ""}`
     .replace(/\s+/g, " ")
     .trim();
+
   return built || toStr(s?.fullname) || toStr(s?.employee_name) || "-";
 };
 
@@ -90,6 +92,10 @@ export default function ExitStaffOrders() {
   const [employeeSearch, setEmployeeSearch] = useState("");
   const [showEmployeeDropdown, setShowEmployeeDropdown] = useState(false);
 
+  const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
+
   const [err, setErr] = useState("");
 
   const emptyForm = useMemo(
@@ -116,25 +122,33 @@ export default function ExitStaffOrders() {
 
   const filteredStaff = useMemo(() => {
     const q = norm(employeeSearch);
+
     if (!q) return staff;
 
     return staff.filter((s) => {
       const name = norm(displayNameParts(s));
       const empNo = norm(s.employee_no);
       const id = String(s.id || "");
+
       return name.includes(q) || empNo.includes(q) || id.includes(q);
     });
   }, [staff, employeeSearch]);
 
   const branchMap = useMemo(() => {
     const m = new Map();
-    (branches || []).forEach((b) => m.set(String(b.id), b));
+
+    (branches || []).forEach((b) => {
+      m.set(String(b.id), b);
+    });
+
     return m;
   }, [branches]);
 
   const settlementBranchLabel = (id) => {
     if (!id) return "-";
+
     const b = branchMap.get(String(id));
+
     return b ? `${b.code || ""} - ${b.name || ""}`.trim() : String(id);
   };
 
@@ -150,7 +164,9 @@ export default function ExitStaffOrders() {
   const loadStaff = useCallback(async () => {
     try {
       setLoadingStaff(true);
+
       const res = await api.get("/staff");
+
       setStaff(Array.isArray(res.data) ? res.data : []);
     } catch {
       setStaff([]);
@@ -162,7 +178,9 @@ export default function ExitStaffOrders() {
   const loadBranches = useCallback(async () => {
     try {
       setLoadingBranches(true);
+
       const res = await api.get("/branches");
+
       setBranches(Array.isArray(res.data) ? res.data : []);
     } catch {
       setBranches([]);
@@ -175,7 +193,9 @@ export default function ExitStaffOrders() {
     try {
       setLoadingOrders(true);
       setErr("");
+
       const res = await api.get("/exit-staff-orders");
+
       setOrders(Array.isArray(res.data) ? res.data : []);
     } catch (e) {
       setOrders([]);
@@ -190,7 +210,11 @@ export default function ExitStaffOrders() {
       setLoadingBalances(true);
 
       const now = new Date();
-      const month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+
+      const month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(
+        2,
+        "0"
+      )}`;
 
       const res = await api.get("/schedule-balances/live", {
         params: { month },
@@ -203,9 +227,11 @@ export default function ExitStaffOrders() {
         if (r?.staff_id != null && String(r.staff_id).trim() !== "") {
           map[`staff:${String(r.staff_id)}`] = r;
         }
+
         if (r?.employee_no != null && String(r.employee_no).trim() !== "") {
           map[`emp:${String(r.employee_no)}`] = r;
         }
+
         if (r?.employee_id != null && String(r.employee_id).trim() !== "") {
           map[`empid:${String(r.employee_id)}`] = r;
         }
@@ -236,6 +262,7 @@ export default function ExitStaffOrders() {
     const onClickOutside = (e) => {
       const dropdown = document.querySelector(".employee-dropdown");
       const searchInput = document.querySelector(".employee-search-input");
+
       if (
         dropdown &&
         !dropdown.contains(e.target) &&
@@ -295,6 +322,7 @@ export default function ExitStaffOrders() {
 
     const cbu = toNum(bal.cbu ?? selectedStaff.cbu);
     const cashbond = toNum(bal.cashbond ?? selectedStaff.cashbond);
+
     const utility = toNum(
       bal.utility ??
         bal.utility_charge ??
@@ -305,26 +333,29 @@ export default function ExitStaffOrders() {
     const salaryAdvance = toNum(
       bal.salary_advance ?? selectedStaff.salary_advance
     );
+
     const specialAdvance = toNum(
       bal.special_advance ?? selectedStaff.special_advance
     );
-    const cashAdvance = toNum(
-      bal.cash_advance ?? selectedStaff.cash_advance
-    );
+
+    const cashAdvance = toNum(bal.cash_advance ?? selectedStaff.cash_advance);
+
     const motorcycleLoan = toNum(
       bal.motorcycle_loan ?? selectedStaff.motorcycle_loan
     );
-    const pagIbigLoan = toNum(
-      bal.pag_ibig_loan ?? selectedStaff.pag_ibig_loan
-    );
+
+    const pagIbigLoan = toNum(bal.pag_ibig_loan ?? selectedStaff.pag_ibig_loan);
+
     const otherReceivable = toNum(
       bal.other_receivable ?? selectedStaff.other_receivable
     );
+
     const staffAccountsPayable = toNum(
       bal.staff_accounts_payable ?? selectedStaff.staff_accounts_payable
     );
 
     const totalSavings = cbu + cashbond + utility;
+
     const totalBalances =
       salaryAdvance +
       specialAdvance +
@@ -353,6 +384,7 @@ export default function ExitStaffOrders() {
 
   const onSelectEmployee = (id) => {
     const s = staff.find((x) => String(x.id) === String(id));
+
     const prevBid = s?.branch_id != null ? String(s.branch_id) : "";
     const prevB = prevBid ? branchMap.get(prevBid) : null;
 
@@ -371,12 +403,14 @@ export default function ExitStaffOrders() {
 
   const createOrder = async (e) => {
     e.preventDefault();
+
     if (saving) return;
     if (!canCreate) return alert("Access denied.");
 
     setErr("");
 
     const staffId = Number(form.staff_id);
+
     if (!staffId) return setErr("Select employee.");
     if (!toStr(form.exit_type)) return setErr("Exit type is required.");
     if (!toStr(form.date_created)) return setErr("Date created is required.");
@@ -389,7 +423,9 @@ export default function ExitStaffOrders() {
       exit_type: toStr(form.exit_type),
       date_created: toDate10(form.date_created),
       effective_date: toDate10(form.effective_date),
-      settlement_date: form.settlement_date ? toDate10(form.settlement_date) : null,
+      settlement_date: form.settlement_date
+        ? toDate10(form.settlement_date)
+        : null,
       settlement_branch_id: form.settlement_branch_id
         ? Number(form.settlement_branch_id)
         : null,
@@ -397,10 +433,13 @@ export default function ExitStaffOrders() {
     };
 
     setSaving(true);
+
     try {
       await api.post("/exit-staff-orders", payload);
+
       closeModal();
       await loadOrders();
+
       alert("Exit staff order created (Pending).");
     } catch (e2) {
       setErr(
@@ -418,12 +457,16 @@ export default function ExitStaffOrders() {
     if (!o?.id) return;
 
     const ok = window.confirm(
-      `Approve Exit Staff Order ${o.order_no || o.id}?\n\nEmployee: ${o.employee_name}`
+      `Approve Exit Staff Order ${o.order_no || o.id}?\n\nEmployee: ${
+        o.employee_name
+      }`
     );
+
     if (!ok) return;
 
     setApprovingId(o.id);
     setErr("");
+
     try {
       await api.put(`/exit-staff-orders/${o.id}/approve`);
       await loadOrders();
@@ -439,12 +482,17 @@ export default function ExitStaffOrders() {
     if (!o?.id) return;
 
     const reason = prompt("Enter rejection reason:");
+
     if (!reason || !reason.trim()) return;
 
     setRejectingId(o.id);
     setErr("");
+
     try {
-      await api.put(`/exit-staff-orders/${o.id}/reject`, { reason: reason.trim() });
+      await api.put(`/exit-staff-orders/${o.id}/reject`, {
+        reason: reason.trim(),
+      });
+
       await loadOrders();
     } catch (e) {
       setErr(e?.response?.data?.message || "Failed to reject.");
@@ -456,17 +504,23 @@ export default function ExitStaffOrders() {
   const del = async (o) => {
     if (!canDelete) return alert("Access denied.");
     if (!o?.id) return;
+
     if (String(o.status || "").toLowerCase() === "approved") return;
 
     const ok = window.confirm(
-      `Delete this Exit Staff Order?\n\nOrder: ${o.order_no || o.id}\nEmployee: ${o.employee_name}\nStatus: ${o.status}`
+      `Delete this Exit Staff Order?\n\nOrder: ${o.order_no || o.id}\nEmployee: ${
+        o.employee_name
+      }\nStatus: ${o.status}`
     );
+
     if (!ok) return;
 
     setDeletingId(o.id);
     setErr("");
+
     try {
       await api.delete(`/exit-staff-orders/${o.id}`);
+
       setOrders((prev) => prev.filter((x) => x.id !== o.id));
     } catch (e) {
       setErr(e?.response?.data?.message || "Failed to delete.");
@@ -477,51 +531,134 @@ export default function ExitStaffOrders() {
 
   const badgeClass = (status) => {
     const s = String(status || "Pending").toLowerCase();
+
     if (s === "approved") return "exit-badge exit-approved";
     if (s === "rejected") return "exit-badge exit-rejected";
+
     return "exit-badge exit-pending";
   };
 
+  const filteredOrders = useMemo(() => {
+    const q = search.toLowerCase().trim();
+
+    if (!q) return orders;
+
+    return orders.filter((o) => {
+      return (
+        String(o.order_no || "").toLowerCase().includes(q) ||
+        String(o.employee_no || "").toLowerCase().includes(q) ||
+        String(o.employee_name || "").toLowerCase().includes(q) ||
+        String(o.branch_name || "").toLowerCase().includes(q) ||
+        String(o.branch_code || "").toLowerCase().includes(q) ||
+        String(o.exit_type || "").toLowerCase().includes(q) ||
+        String(o.status || "").toLowerCase().includes(q) ||
+        String(o.remarks || "").toLowerCase().includes(q)
+      );
+    });
+  }, [orders, search]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredOrders.length / pageSize));
+
+  const paginatedOrders = useMemo(() => {
+    const start = (page - 1) * pageSize;
+
+    return filteredOrders.slice(start, start + pageSize);
+  }, [filteredOrders, page, pageSize]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [search, pageSize]);
+
+  useEffect(() => {
+    if (page > totalPages) {
+      setPage(totalPages);
+    }
+  }, [page, totalPages]);
+
   const countText = useMemo(() => {
-    const n = Array.isArray(orders) ? orders.length : 0;
+    const n = Array.isArray(filteredOrders) ? filteredOrders.length : 0;
+
     return `${n} Record${n === 1 ? "" : "s"}`;
-  }, [orders]);
+  }, [filteredOrders]);
 
   return (
     <div className="exit-page">
       <div className="exit-topbar">
         <div>
           <h2 className="exit-title">Exit Staff</h2>
-          <p className="exit-subtitle">Manage staff resignations, AWOL, and terminations.</p>
+
+          <p className="exit-subtitle">
+            Manage staff resignations, AWOL, and terminations.
+          </p>
         </div>
 
         <div className="exit-actions">
-          <button className="exit-btn exit-btn-ghost" type="button" onClick={() => navigate(-1)}>
+          <button
+            className="exit-btn exit-btn-ghost"
+            type="button"
+            onClick={() => navigate(-1)}
+          >
             ← Back
           </button>
 
-          <button className="exit-btn exit-btn-outline" type="button" onClick={loadOrders} disabled={loadingOrders}>
+          <button
+            className="exit-btn exit-btn-outline"
+            type="button"
+            onClick={loadOrders}
+            disabled={loadingOrders}
+          >
             {loadingOrders ? "Refreshing..." : "Refresh"}
           </button>
 
-          <button className="exit-btn exit-btn-outline" type="button" onClick={loadBalances} disabled={loadingBalances}>
-            {loadingBalances ? "Refreshing balances..." : "Refresh Balances"}
-          </button>
-
           {canCreate && (
-            <button className="exit-btn exit-btn-primary" type="button" onClick={() => setShowCreate(true)}>
+            <button
+              className="exit-btn exit-btn-primary"
+              type="button"
+              onClick={() => setShowCreate(true)}
+            >
               + Create Exit Staff
             </button>
           )}
         </div>
       </div>
 
-      {err ? <div style={{ marginBottom: 12, color: "#ef4444", fontWeight: 900 }}>{err}</div> : null}
+      {err ? (
+        <div style={{ marginBottom: 12, color: "#ef4444", fontWeight: 900 }}>
+          {err}
+        </div>
+      ) : null}
 
       <div className="exit-card">
         <div className="exit-card-head">
           <div className="exit-card-title">Exit Staff Orders</div>
           <div className="exit-card-meta">{countText}</div>
+        </div>
+
+        <div className="exit-filters-toolbar">
+          <div className="exit-filters-left">
+            <input
+              type="text"
+              className="exit-search-input"
+              placeholder="Search order no, employee, branch, status..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+
+            <select
+              className="exit-page-size"
+              value={pageSize}
+              onChange={(e) => setPageSize(Number(e.target.value))}
+            >
+              <option value={25}>25</option>
+              <option value={50}>50</option>
+              <option value={75}>75</option>
+              <option value={100}>100</option>
+            </select>
+          </div>
+
+          <div className="exit-result-count">
+            {filteredOrders.length} result(s)
+          </div>
         </div>
 
         <div className="exit-table-wrap">
@@ -548,23 +685,31 @@ export default function ExitStaffOrders() {
                     Loading exit staff orders...
                   </td>
                 </tr>
-              ) : orders.length === 0 ? (
+              ) : filteredOrders.length === 0 ? (
                 <tr>
                   <td colSpan={10} className="exit-empty">
                     No exit staff orders found.
                   </td>
                 </tr>
               ) : (
-                orders.map((o) => {
-                  const pending = String(o.status || "").toLowerCase() === "pending";
-                  const approved = String(o.status || "").toLowerCase() === "approved";
+                paginatedOrders.map((o) => {
+                  const pending =
+                    String(o.status || "").toLowerCase() === "pending";
+
+                  const approved =
+                    String(o.status || "").toLowerCase() === "approved";
+
                   const canAct = canApprove && pending;
 
                   const settlementText =
-                    o.settlement_date || o.settlement_branch_name || o.settlement_branch_id
+                    o.settlement_date ||
+                    o.settlement_branch_name ||
+                    o.settlement_branch_id
                       ? `${toDate10(o.settlement_date) || "-"} • ${
                           o.settlement_branch_code || o.settlement_branch_name
-                            ? `${o.settlement_branch_code || ""} ${o.settlement_branch_name || ""}`.trim()
+                            ? `${o.settlement_branch_code || ""} ${
+                                o.settlement_branch_name || ""
+                              }`.trim()
                             : o.settlement_branch_id || "-"
                         }`
                       : "-";
@@ -573,14 +718,18 @@ export default function ExitStaffOrders() {
                     <tr key={o.id}>
                       <td className="exit-mono">{o.order_no || "-"}</td>
                       <td className="exit-mono">{o.employee_no}</td>
-                      <td className="exit-strong">{o.employee_name || displayNameParts(o)}</td>
+                      <td className="exit-strong">
+                        {o.employee_name || displayNameParts(o)}
+                      </td>
                       <td>{`${o.branch_code || "-"} - ${o.branch_name || "-"}`}</td>
                       <td>{o.exit_type || "-"}</td>
                       <td>{toDate10(o.date_created || o.created_at) || "-"}</td>
                       <td>{toDate10(o.effective_date) || "-"}</td>
                       <td title={settlementText}>{settlementText}</td>
                       <td>
-                        <span className={badgeClass(o.status)}>{o.status || "Pending"}</span>
+                        <span className={badgeClass(o.status)}>
+                          {o.status || "Pending"}
+                        </span>
                       </td>
                       <td>
                         <div className="po-row-actions">
@@ -605,27 +754,31 @@ export default function ExitStaffOrders() {
                               >
                                 {rejectingId === o.id ? "..." : <FaTimes />}
                               </button>
-                              </>
-                              ) : (
-                                <span className="exit-dash">-</span>
-                              )}
+                            </>
+                          ) : (
+                            <span className="exit-dash">-</span>
+                          )}
 
-                              {canDelete && (
-                                <button
-                                  className="po-mini-btn icon-only"
-                                  type="button"
-                                  onClick={() => del(o)}
-                                  disabled={approved || deletingId === o.id}
-                                  title={approved ? "Approved records cannot be deleted" : "Delete"}
-                                  style={{
-                                    marginLeft: 8,
-                                    opacity: approved || deletingId === o.id ? 0.5 : 1,
-                                    cursor: approved ? "not-allowed" : "pointer",
-                                  }}
-                                >
-                                  {deletingId === o.id ? "..." : <FaTrash />}
-                                </button>
-                              )}
+                          {canDelete && (
+                            <button
+                              className="po-mini-btn icon-only"
+                              type="button"
+                              onClick={() => del(o)}
+                              disabled={approved || deletingId === o.id}
+                              title={
+                                approved
+                                  ? "Approved records cannot be deleted"
+                                  : "Delete"
+                              }
+                              style={{
+                                marginLeft: 8,
+                                opacity: approved || deletingId === o.id ? 0.5 : 1,
+                                cursor: approved ? "not-allowed" : "pointer",
+                              }}
+                            >
+                              {deletingId === o.id ? "..." : <FaTrash />}
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -637,10 +790,40 @@ export default function ExitStaffOrders() {
         </div>
       </div>
 
+      <div className="exit-pager-card">
+        <div className="exit-pager">
+          <div className="exit-page-info">
+            Page {page} of {totalPages}
+          </div>
+
+          <div className="exit-pager-buttons">
+            <button
+              className="exit-page-btn"
+              type="button"
+              disabled={page <= 1}
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+            >
+              Previous
+            </button>
+
+            <button
+              className="exit-page-btn"
+              type="button"
+              disabled={page >= totalPages}
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+            >
+              Next
+            </button>
+          </div>
+        </div>
+      </div>
+
       {showCreate && canCreate && (
         <div
           className="exit-modal-overlay"
-          onMouseDown={(e) => e.target.classList.contains("exit-modal-overlay") && closeModal()}
+          onMouseDown={(e) =>
+            e.target.classList.contains("exit-modal-overlay") && closeModal()
+          }
         >
           <div
             className="exit-modal"
@@ -655,14 +838,21 @@ export default function ExitStaffOrders() {
             <div className="exit-modal-head">
               <div>
                 <h3 className="exit-modal-title">Create Exit Staff</h3>
-                <p className="exit-modal-sub">Order will be Pending until approved.</p>
+                <p className="exit-modal-sub">
+                  Order will be Pending until approved.
+                </p>
               </div>
+
               <button className="exit-x" type="button" onClick={closeModal}>
                 ✕
               </button>
             </div>
 
-            {err ? <div style={{ marginBottom: 10, color: "#ef4444", fontWeight: 900 }}>{err}</div> : null}
+            {err ? (
+              <div style={{ marginBottom: 10, color: "#ef4444", fontWeight: 900 }}>
+                {err}
+              </div>
+            ) : null}
 
             <form
               className="exit-form"
@@ -691,7 +881,9 @@ export default function ExitStaffOrders() {
                     <input
                       className="employee-search-input"
                       type="text"
-                      placeholder={loadingStaff ? "Loading staff..." : "Search employee..."}
+                      placeholder={
+                        loadingStaff ? "Loading staff..." : "Search employee..."
+                      }
                       value={employeeSearch}
                       onChange={(e) => {
                         setEmployeeSearch(e.target.value);
@@ -711,7 +903,9 @@ export default function ExitStaffOrders() {
                               className="employee-item"
                               onClick={() => {
                                 onSelectEmployee(s.id);
-                                setEmployeeSearch(`${displayNameParts(s)} (${s.employee_no || s.id})`);
+                                setEmployeeSearch(
+                                  `${displayNameParts(s)} (${s.employee_no || s.id})`
+                                );
                                 setShowEmployeeDropdown(false);
                               }}
                             >
@@ -730,17 +924,29 @@ export default function ExitStaffOrders() {
 
                   <div className="exit-field">
                     <label>Last Name</label>
-                    <input value={form.last_name} readOnly placeholder="Auto-filled" />
+                    <input
+                      value={form.last_name}
+                      readOnly
+                      placeholder="Auto-filled"
+                    />
                   </div>
 
                   <div className="exit-field">
                     <label>First Name</label>
-                    <input value={form.first_name} readOnly placeholder="Auto-filled" />
+                    <input
+                      value={form.first_name}
+                      readOnly
+                      placeholder="Auto-filled"
+                    />
                   </div>
 
                   <div className="exit-field">
                     <label>Middle Name</label>
-                    <input value={form.middle_name} readOnly placeholder="Auto-filled" />
+                    <input
+                      value={form.middle_name}
+                      readOnly
+                      placeholder="Auto-filled"
+                    />
                   </div>
 
                   <div className="exit-field">
@@ -748,7 +954,9 @@ export default function ExitStaffOrders() {
                     <input
                       value={
                         form.prev_branch_code || form.prev_branch_name
-                          ? `${form.prev_branch_code || "-"} - ${form.prev_branch_name || "-"}`
+                          ? `${form.prev_branch_code || "-"} - ${
+                              form.prev_branch_name || "-"
+                            }`
                           : loadingBranches
                           ? "Loading branches..."
                           : "Auto-filled"
@@ -762,7 +970,12 @@ export default function ExitStaffOrders() {
                     <label>Exit Type</label>
                     <select
                       value={form.exit_type}
-                      onChange={(e) => setForm((p) => ({ ...p, exit_type: e.target.value }))}
+                      onChange={(e) =>
+                        setForm((p) => ({
+                          ...p,
+                          exit_type: e.target.value,
+                        }))
+                      }
                       required
                     >
                       <option value="">Select Exit Type</option>
@@ -778,7 +991,12 @@ export default function ExitStaffOrders() {
                     <input
                       type="date"
                       value={form.date_created}
-                      onChange={(e) => setForm((p) => ({ ...p, date_created: e.target.value }))}
+                      onChange={(e) =>
+                        setForm((p) => ({
+                          ...p,
+                          date_created: e.target.value,
+                        }))
+                      }
                       required
                     />
                   </div>
@@ -788,7 +1006,12 @@ export default function ExitStaffOrders() {
                     <input
                       type="date"
                       value={form.effective_date}
-                      onChange={(e) => setForm((p) => ({ ...p, effective_date: e.target.value }))}
+                      onChange={(e) =>
+                        setForm((p) => ({
+                          ...p,
+                          effective_date: e.target.value,
+                        }))
+                      }
                       required
                     />
                   </div>
@@ -798,7 +1021,12 @@ export default function ExitStaffOrders() {
                     <input
                       type="date"
                       value={form.settlement_date}
-                      onChange={(e) => setForm((p) => ({ ...p, settlement_date: e.target.value }))}
+                      onChange={(e) =>
+                        setForm((p) => ({
+                          ...p,
+                          settlement_date: e.target.value,
+                        }))
+                      }
                     />
                   </div>
 
@@ -806,7 +1034,12 @@ export default function ExitStaffOrders() {
                     <label>Settlement Branch (optional)</label>
                     <select
                       value={form.settlement_branch_id}
-                      onChange={(e) => setForm((p) => ({ ...p, settlement_branch_id: e.target.value }))}
+                      onChange={(e) =>
+                        setForm((p) => ({
+                          ...p,
+                          settlement_branch_id: e.target.value,
+                        }))
+                      }
                     >
                       <option value="">Select Branch (optional)</option>
                       {branches.map((b) => (
@@ -817,7 +1050,8 @@ export default function ExitStaffOrders() {
                     </select>
 
                     <div style={{ marginTop: 6, fontSize: 12, opacity: 0.85 }}>
-                      Selected: <b>{settlementBranchLabel(form.settlement_branch_id)}</b>
+                      Selected:{" "}
+                      <b>{settlementBranchLabel(form.settlement_branch_id)}</b>
                     </div>
                   </div>
 
@@ -826,7 +1060,12 @@ export default function ExitStaffOrders() {
                     <textarea
                       rows={3}
                       value={form.remarks}
-                      onChange={(e) => setForm((p) => ({ ...p, remarks: e.target.value }))}
+                      onChange={(e) =>
+                        setForm((p) => ({
+                          ...p,
+                          remarks: e.target.value,
+                        }))
+                      }
                       placeholder="Optional remarks"
                     />
                   </div>
@@ -837,9 +1076,11 @@ export default function ExitStaffOrders() {
                         <div>
                           Preview: <b>{displayNameParts(selectedStaff)}</b>
                         </div>
+
                         <div style={{ marginTop: 4 }}>
                           Exit: <b>{form.exit_type || "—"}</b>
                         </div>
+
                         <div style={{ marginTop: 4 }}>
                           Effective: <b>{form.effective_date || "—"}</b>
                         </div>
@@ -877,7 +1118,13 @@ export default function ExitStaffOrders() {
                             rowGap: 8,
                           }}
                         >
-                          <div style={{ gridColumn: "1 / -1", fontWeight: 900, marginTop: 4 }}>
+                          <div
+                            style={{
+                              gridColumn: "1 / -1",
+                              fontWeight: 900,
+                              marginTop: 4,
+                            }}
+                          >
                             Personal Savings
                           </div>
 
@@ -959,10 +1206,20 @@ export default function ExitStaffOrders() {
               </div>
 
               <div className="exit-modal-actions">
-                <button className="exit-btn exit-btn-ghost" type="button" onClick={closeModal} disabled={saving}>
+                <button
+                  className="exit-btn exit-btn-ghost"
+                  type="button"
+                  onClick={closeModal}
+                  disabled={saving}
+                >
                   Cancel
                 </button>
-                <button className="exit-btn exit-btn-primary" type="submit" disabled={saving}>
+
+                <button
+                  className="exit-btn exit-btn-primary"
+                  type="submit"
+                  disabled={saving || loadingBalances}
+                >
                   {saving ? "Creating..." : "Create Order"}
                 </button>
               </div>

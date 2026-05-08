@@ -400,3 +400,111 @@
 [data-theme="light"] .reg-pending {
   color: #d97706 !important;
 }
+
+.po-toolbar{
+  padding:14px;
+  margin-bottom:14px;
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  gap:12px;
+  flex-wrap:wrap;
+}
+
+.po-toolbar-left{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  flex-wrap:wrap;
+}
+
+.po-search-input{
+  min-width:320px;
+  min-height:42px;
+  padding:10px 14px;
+  border-radius:14px;
+  border:1px solid rgba(148,163,184,.18);
+  background:rgba(15,23,42,.92);
+  color:#e5edf8;
+  font-weight:800;
+  outline:none;
+}
+
+.po-page-size{
+  width:110px;
+  min-height:42px;
+  padding:10px 12px;
+  border-radius:14px;
+  border:1px solid rgba(148,163,184,.18);
+  background:rgba(15,23,42,.92);
+  color:#e5edf8;
+  font-weight:900;
+  outline:none;
+}
+
+.po-result-pill{
+  padding:9px 13px;
+  border-radius:999px;
+  background:rgba(79,70,229,.16);
+  border:1px solid rgba(99,102,241,.25);
+  color:#c7d2fe;
+  font-size:12px;
+  font-weight:950;
+}
+
+.po-pager{
+  padding:14px;
+  margin-top:14px;
+}
+
+.po-pager-inner{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  gap:12px;
+  flex-wrap:wrap;
+}
+
+.po-page-info{
+  color:#cbd5e1;
+  font-size:13px;
+  font-weight:950;
+}
+
+.po-pager-buttons{
+  display:flex;
+  gap:10px;
+}
+
+.po-page-btn{
+  min-width:96px;
+  min-height:40px;
+  border-radius:14px;
+  border:1px solid rgba(148,163,184,.18);
+  background:rgba(15,23,42,.95);
+  color:#e5edf8;
+  font-weight:950;
+  cursor:pointer;
+  transition:.15s ease;
+}
+
+.po-page-btn:hover:not(:disabled){
+  transform:translateY(-1px);
+  background:rgba(37,99,235,.18);
+  border-color:rgba(96,165,250,.55);
+}
+
+.po-page-btn:disabled{
+  opacity:.45;
+  cursor:not-allowed;
+}
+
+[data-theme="light"] .po-search-input,
+[data-theme="light"] .po-page-size{
+  background:#ffffff;
+  color:#0f172a;
+}
+
+[data-theme="light"] .po-page-info{
+  color:#0f172a;
+}

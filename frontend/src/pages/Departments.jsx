@@ -771,8 +771,6 @@ export default function Departments() {
                   <table className="saas-table">
                     <thead>
                       <tr>
-                        <th style={{ width: 70 }}></th>
-                        <th style={{ width: 90 }}>ID</th>
                         <th style={{ width: 140 }}>Employee No</th>
                         <th>Name</th>
                         <th style={{ width: 200 }}>Position</th>
@@ -780,14 +778,13 @@ export default function Departments() {
                         <th style={{ width: 160 }}>Region</th>
                         <th style={{ width: 160 }}>Area</th>
                         <th style={{ width: 220 }}>Branch</th>
-                        <th style={{ width: 120 }}>Status</th>
                       </tr>
                     </thead>
 
                     <tbody>
                       {filteredDeptStaff.length === 0 ? (
                         <tr>
-                          <td colSpan={10}>
+                          <td colSpan={7}>
                             {!hasStaffFilter
                               ? "Please search or choose Division, Region, Area, or Branch to show staff."
                               : "No staff found for this filter."}
@@ -796,35 +793,6 @@ export default function Departments() {
                       ) : (
                         filteredDeptStaff.map((s) => (
                           <tr key={s.id}>
-                            <td>
-                              {avatarUrl(s) ? (
-                                <img
-                                  src={avatarUrl(s)}
-                                  alt="staff"
-                                  style={{
-                                    width: 38,
-                                    height: 38,
-                                    borderRadius: "50%",
-                                    objectFit: "cover",
-                                  }}
-                                />
-                              ) : (
-                                <div
-                                  style={{
-                                    width: 38,
-                                    height: 38,
-                                    borderRadius: "50%",
-                                    display: "grid",
-                                    placeItems: "center",
-                                    border: "1px solid rgba(255,255,255,0.15)",
-                                    fontWeight: 700,
-                                  }}
-                                >
-                                  {toStr(s.fullname).slice(0, 1).toUpperCase() || "?"}
-                                </div>
-                              )}
-                            </td>
-                            <td className="mono">{s.id}</td>
                             <td className="mono">{s.employee_no || "-"}</td>
                             <td className="strong">{s.fullname}</td>
                             <td>{s.position || "-"}</td>
@@ -832,7 +800,6 @@ export default function Departments() {
                             <td>{s._region || "-"}</td>
                             <td>{s._area || "-"}</td>
                             <td>{s._branchLabel || "-"}</td>
-                            <td>{s.status || "Active"}</td>
                           </tr>
                         ))
                       )}

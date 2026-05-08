@@ -393,3 +393,90 @@
     flex-direction: column;
   }
 }
+
+.reg-toolbar{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  gap:12px;
+  padding:16px;
+  border-bottom:1px solid rgba(255,255,255,.08);
+}
+
+.reg-toolbar-left{
+  display:flex;
+  align-items:center;
+  gap:10px;
+}
+
+.reg-search-main{
+  width:360px;
+  max-width:100%;
+  min-height:42px;
+  padding:10px 14px;
+  border-radius:12px;
+  border:1px solid rgba(255,255,255,.12);
+  background:#081224;
+  color:#fff;
+  font-weight:700;
+}
+
+.reg-page-size{
+  width:90px;
+  min-height:42px;
+  border-radius:12px;
+  border:1px solid rgba(255,255,255,.12);
+  background:#081224;
+  color:#fff;
+  font-weight:800;
+  padding:10px;
+}
+
+.reg-toolbar-count{
+  padding:8px 12px;
+  border-radius:999px;
+  background:rgba(59,130,246,.14);
+  border:1px solid rgba(96,165,250,.25);
+  color:#bfdbfe;
+  font-size:12px;
+  font-weight:900;
+}
+
+.reg-pager{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  padding:16px;
+  border-top:1px solid rgba(255,255,255,.08);
+}
+
+.reg-page-info{
+  font-size:13px;
+  font-weight:900;
+  color:#fff;
+}
+
+.reg-page-buttons{
+  display:flex;
+  gap:10px;
+}
+
+.reg-page-buttons button{
+  min-width:100px;
+  min-height:40px;
+  border:none;
+  border-radius:12px;
+  background:#13203a;
+  color:#fff;
+  font-weight:900;
+  cursor:pointer;
+}
+
+.reg-page-buttons button:hover:not(:disabled){
+  background:#1d4ed8;
+}
+
+.reg-page-buttons button:disabled{
+  opacity:.45;
+  cursor:not-allowed;
+}

@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useNavigate } from "react-router-dom";
 import api from "../api/axiosClient";
 import "../styles/ResignationRequests.css";
-import "../styles/Approval.css";
+import "../styles/ResignationRequests.css";
 
 const toStr = (v) => String(v ?? "").trim();
 const norm = (v) => toStr(v).toLowerCase();
@@ -39,7 +39,6 @@ export default function ResignationRequests() {
   const role = norm(user?.role);
 
   const isAdmin = ["admin", "it"].includes(role);
-  const isIt = role === "it";
   const isAreaManager = role === "area manager";
   const isRegionalManager = role === "regional manager";
   const isAssistantVicePresident = role === "assistant vice president";
@@ -66,6 +65,10 @@ export default function ResignationRequests() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+
+  const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
 
   const [showCreate, setShowCreate] = useState(false);
   const [employeeSearch, setEmployeeSearch] = useState("");
@@ -107,7 +110,6 @@ export default function ResignationRequests() {
       setStaffList(Array.isArray(staffRes.data) ? staffRes.data : []);
       setBranches(Array.isArray(branchRes.data) ? branchRes.data : []);
     } catch (err) {
-      console.error(err);
       setError(err?.response?.data?.message || "Failed to load resignation requests.");
     } finally {
       setLoading(false);
@@ -133,6 +135,7 @@ export default function ResignationRequests() {
     const ln = toStr(s?.last_name);
     const fn = toStr(s?.first_name);
     const mn = toStr(s?.middle_name);
+
     const full = `${ln}${ln && fn ? ", " : ""}${fn}${mn ? ` ${mn}` : ""}`
       .replace(/\s+/g, " ")
       .trim();
@@ -167,11 +170,7 @@ export default function ResignationRequests() {
           .join(" ")
           .toLowerCase();
 
-        return {
-          ...s,
-          _display: display,
-          _searchBlob: searchBlob,
-        };
+        return { ...s, _display: display, _searchBlob: searchBlob };
       });
   }, [staffList, buildName]);
 
@@ -180,6 +179,44 @@ export default function ResignationRequests() {
     if (!q) return searchableStaff.slice(0, 20);
     return searchableStaff.filter((s) => s._searchBlob.includes(q)).slice(0, 20);
   }, [searchableStaff, employeeSearch]);
+
+  const filteredRows = useMemo(() => {
+    const q = norm(search);
+    if (!q) return rows;
+
+    return rows.filter((r) =>
+      [
+        r.request_no,
+        r.employee_no,
+        r.employee_name,
+        r.branch_code,
+        r.branch_name,
+        r.resignation_date,
+        r.effective_date,
+        r.remarks,
+        r.status,
+      ]
+        .map(toStr)
+        .join(" ")
+        .toLowerCase()
+        .includes(q)
+    );
+  }, [rows, search]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredRows.length / pageSize));
+
+  const pagedRows = useMemo(() => {
+    const start = (page - 1) * pageSize;
+    return filteredRows.slice(start, start + pageSize);
+  }, [filteredRows, page, pageSize]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [search, pageSize]);
+
+  useEffect(() => {
+    if (page > totalPages) setPage(totalPages);
+  }, [page, totalPages]);
 
   const handleEmployeeSelect = (staffId) => {
     const s = staffList.find((x) => String(x.id) === String(staffId));
@@ -221,6 +258,7 @@ export default function ResignationRequests() {
       remarks: "",
       attachment: null,
     });
+
     setEmployeeSearch("");
     setShowEmployeeDropdown(false);
   };
@@ -238,15 +276,8 @@ export default function ResignationRequests() {
   const submitCreate = async (e) => {
     e.preventDefault();
 
-    if (!form.staff_id) {
-      alert("Please select employee.");
-      return;
-    }
-
-    if (!form.effective_date) {
-      alert("Please select effective date.");
-      return;
-    }
+    if (!form.staff_id) return alert("Please select employee.");
+    if (!form.effective_date) return alert("Please select effective date.");
 
     try {
       setSaving(true);
@@ -265,9 +296,7 @@ export default function ResignationRequests() {
       fd.append("effective_date", form.effective_date || "");
       fd.append("remarks", form.remarks || "");
 
-      if (form.attachment) {
-        fd.append("attachment", form.attachment);
-      }
+      if (form.attachment) fd.append("attachment", form.attachment);
 
       await api.post("/resignation-requests", fd, {
         headers: { "Content-Type": "multipart/form-data" },
@@ -277,7 +306,6 @@ export default function ResignationRequests() {
       closeCreate();
       await fetchAll();
     } catch (err) {
-      console.error(err);
       alert(err?.response?.data?.message || "Failed to create resignation request.");
     } finally {
       setSaving(false);
@@ -285,15 +313,13 @@ export default function ResignationRequests() {
   };
 
   const approveRequest = async (row) => {
-    const ok = window.confirm("Approve this resignation request?");
-    if (!ok) return;
+    if (!window.confirm("Approve this resignation request?")) return;
 
     try {
       setProcessingId(`approve-${row.id}`);
       await api.put(`/resignation-requests/${row.id}/approve`);
       await fetchAll();
     } catch (err) {
-      console.error(err);
       alert(err?.response?.data?.message || "Failed to approve request.");
     } finally {
       setProcessingId("");
@@ -302,21 +328,19 @@ export default function ResignationRequests() {
 
   const rejectRequest = async () => {
     if (!rejectingRow?.id) return;
-    if (!toStr(rejectionReason)) {
-      alert("Rejection reason required.");
-      return;
-    }
+    if (!toStr(rejectionReason)) return alert("Rejection reason required.");
 
     try {
       setProcessingId(`reject-${rejectingRow.id}`);
+
       await api.put(`/resignation-requests/${rejectingRow.id}/reject`, {
         reason: rejectionReason,
       });
+
       setRejectingRow(null);
       setRejectionReason("");
       await fetchAll();
     } catch (err) {
-      console.error(err);
       alert(err?.response?.data?.message || "Failed to reject request.");
     } finally {
       setProcessingId("");
@@ -324,15 +348,13 @@ export default function ResignationRequests() {
   };
 
   const deleteRequest = async (row) => {
-    const ok = window.confirm("Delete this resignation request?");
-    if (!ok) return;
+    if (!window.confirm("Delete this resignation request?")) return;
 
     try {
       setProcessingId(`delete-${row.id}`);
       await api.delete(`/resignation-requests/${row.id}`);
       await fetchAll();
     } catch (err) {
-      console.error(err);
       alert(err?.response?.data?.message || "Failed to delete request.");
     } finally {
       setProcessingId("");
@@ -342,29 +364,17 @@ export default function ResignationRequests() {
   const canApproveRow = (row) => {
     const status = toStr(row.status);
 
-    if (role === "branch manager" && status === "Pending Branch Manager") return true;
-    if (role === "area manager" && status === "Pending Area Manager") return true;
-    if (role === "regional manager" && status === "Pending Regional Manager") return true;
-    if (role === "assistant vice president" && status === "Pending Assistant Vice President") return true;
-    if (role === "vice president" && status === "Pending Vice President") return true;
-
-    if ((isAdmin || isHr || isAccounting) && status === "Pending Admin") return true;
-
-    return false;
-  };
-
-  const canRejectRow = (row) => {
-    const status = toStr(row.status);
-
     if (isBranchManager && status === STATUS_BRANCH) return true;
-    if (isAreaManager && status === "Pending Area Manager") return true;
-    if (isRegionalManager && status === "Pending Regional Manager") return true;
+    if (isAreaManager && status === STATUS_AREA) return true;
+    if (isRegionalManager && status === STATUS_RM) return true;
     if (isAssistantVicePresident && status === STATUS_AVP) return true;
     if (isVicePresident && status === STATUS_VP) return true;
-    if ((isAdmin || isHr || isAccounting) && status === "Pending Admin") return true;
+    if ((isAdmin || isHr || isAccounting) && status === STATUS_ADMIN) return true;
 
     return false;
   };
+
+  const canRejectRow = (row) => canApproveRow(row);
 
   const canDeleteRow = (row) => {
     const status = norm(row.status);
@@ -386,6 +396,7 @@ export default function ResignationRequests() {
 
   const actionLabel = (row) => {
     const status = toStr(row.status);
+
     if (status === STATUS_BRANCH) return "For Branch Manager";
     if (status === STATUS_AREA) return "For Area Manager";
     if (status === STATUS_RM) return "For RM";
@@ -394,6 +405,7 @@ export default function ResignationRequests() {
     if (status === STATUS_ADMIN) return "For Admin";
     if (status === STATUS_APPROVED) return "Approved";
     if (status === STATUS_REJECTED) return "Rejected";
+
     return "-";
   };
 
@@ -411,9 +423,11 @@ export default function ResignationRequests() {
           <button className="po-btn po-btn-outline" onClick={() => navigate("/transactions")} type="button">
             ← Back
           </button>
+
           <button className="po-btn po-btn-outline" onClick={fetchAll} type="button">
             Refresh
           </button>
+
           {canCreate && (
             <button className="po-btn po-btn-primary" onClick={openCreate} type="button">
               + Add
@@ -423,6 +437,32 @@ export default function ResignationRequests() {
       </div>
 
       {error ? <div style={{ color: "#ff7e8b", fontWeight: 800 }}>{error}</div> : null}
+
+      <div className="po-card po-toolbar">
+        <div className="po-toolbar-left">
+          <input
+            className="po-search-input"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search request no, employee, branch, status..."
+          />
+
+          <select
+            className="po-page-size"
+            value={pageSize}
+            onChange={(e) => setPageSize(Number(e.target.value))}
+          >
+            <option value={25}>25</option>
+            <option value={50}>50</option>
+            <option value={75}>75</option>
+            <option value={100}>100</option>
+          </select>
+
+          <span className="po-result-pill">
+            {filteredRows.length} result(s)
+          </span>
+        </div>
+      </div>
 
       <div className="po-card">
         <div className="po-table-wrap">
@@ -446,14 +486,18 @@ export default function ResignationRequests() {
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={11} className="po-empty">Loading...</td>
+                  <td colSpan={11} className="po-empty">
+                    Loading...
+                  </td>
                 </tr>
-              ) : rows.length === 0 ? (
+              ) : filteredRows.length === 0 ? (
                 <tr>
-                  <td colSpan={11} className="po-empty">No resignation requests found.</td>
+                  <td colSpan={11} className="po-empty">
+                    No resignation requests found.
+                  </td>
                 </tr>
               ) : (
-                rows.map((row) => (
+                pagedRows.map((row) => (
                   <tr key={row.id}>
                     <td className="mono">{row.request_no || row.id}</td>
                     <td className="mono">{row.employee_no || "-"}</td>
@@ -486,12 +530,14 @@ export default function ResignationRequests() {
                     </td>
                     <td title={row.remarks || ""}>{row.remarks || "-"}</td>
                     <td>
-                      <span className={badgeClass(row.status)}>{row.status || STATUS_RM}</span>
+                      <span className={badgeClass(row.status)}>
+                        {row.status || STATUS_RM}
+                      </span>
                     </td>
                     <td>{actionLabel(row)}</td>
                     <td>
                       <div className="po-row-actions">
-                        {canApproveRow(row) ? (
+                        {canApproveRow(row) && (
                           <button
                             className="po-mini-btn po-approve"
                             type="button"
@@ -500,9 +546,9 @@ export default function ResignationRequests() {
                           >
                             {processingId === `approve-${row.id}` ? "Approving..." : "Approve"}
                           </button>
-                        ) : null}
+                        )}
 
-                        {canRejectRow(row) ? (
+                        {canRejectRow(row) && (
                           <button
                             className="po-mini-btn po-reject"
                             type="button"
@@ -514,7 +560,7 @@ export default function ResignationRequests() {
                           >
                             Reject
                           </button>
-                        ) : null}
+                        )}
 
                         {canDeleteRow(row) ? (
                           <button
@@ -525,11 +571,9 @@ export default function ResignationRequests() {
                           >
                             Delete
                           </button>
-                        ) : (
-                          !canApproveRow(row) && !canRejectRow(row) ? (
-                            <span style={{ opacity: 0.7 }}>-</span>
-                          ) : null
-                        )}
+                        ) : !canApproveRow(row) && !canRejectRow(row) ? (
+                          <span style={{ opacity: 0.7 }}>-</span>
+                        ) : null}
                       </div>
                     </td>
                   </tr>
@@ -540,10 +584,40 @@ export default function ResignationRequests() {
         </div>
       </div>
 
+      <div className="po-card po-pager">
+        <div className="po-pager-inner">
+          <span className="po-page-info">
+            Page {page} of {totalPages}
+          </span>
+
+          <div className="po-pager-buttons">
+            <button
+              className="po-page-btn"
+              type="button"
+              disabled={page <= 1}
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+            >
+              Previous
+            </button>
+
+            <button
+              className="po-page-btn"
+              type="button"
+              disabled={page >= totalPages}
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+            >
+              Next
+            </button>
+          </div>
+        </div>
+      </div>
+
       {showCreate && (
         <div
           className="po-modal-overlay"
-          onMouseDown={(e) => e.target.classList.contains("po-modal-overlay") && closeCreate()}
+          onMouseDown={(e) =>
+            e.target.classList.contains("po-modal-overlay") && closeCreate()
+          }
         >
           <div className="po-modal" onMouseDown={(e) => e.stopPropagation()}>
             <div className="po-modal-head">
@@ -640,7 +714,9 @@ export default function ResignationRequests() {
                   <input
                     type="date"
                     value={form.resignation_date}
-                    onChange={(e) => setForm((prev) => ({ ...prev, resignation_date: e.target.value }))}
+                    onChange={(e) =>
+                      setForm((prev) => ({ ...prev, resignation_date: e.target.value }))
+                    }
                     required
                   />
                 </div>
@@ -650,7 +726,9 @@ export default function ResignationRequests() {
                   <input
                     type="date"
                     value={form.effective_date}
-                    onChange={(e) => setForm((prev) => ({ ...prev, effective_date: e.target.value }))}
+                    onChange={(e) =>
+                      setForm((prev) => ({ ...prev, effective_date: e.target.value }))
+                    }
                     required
                   />
                 </div>
@@ -672,7 +750,9 @@ export default function ResignationRequests() {
                   <label>Remarks</label>
                   <textarea
                     value={form.remarks}
-                    onChange={(e) => setForm((prev) => ({ ...prev, remarks: e.target.value }))}
+                    onChange={(e) =>
+                      setForm((prev) => ({ ...prev, remarks: e.target.value }))
+                    }
                     placeholder="Reason / remarks..."
                   />
                 </div>
@@ -682,6 +762,7 @@ export default function ResignationRequests() {
                 <button className="po-btn po-btn-outline" type="button" onClick={closeCreate}>
                   Cancel
                 </button>
+
                 <button className="po-btn po-btn-primary" type="submit" disabled={saving}>
                   {saving ? "Saving..." : "Create Request"}
                 </button>
@@ -694,7 +775,9 @@ export default function ResignationRequests() {
       {rejectingRow && (
         <div
           className="po-modal-overlay"
-          onMouseDown={(e) => e.target.classList.contains("po-modal-overlay") && setRejectingRow(null)}
+          onMouseDown={(e) =>
+            e.target.classList.contains("po-modal-overlay") && setRejectingRow(null)
+          }
         >
           <div className="po-modal po-modal-sm" onMouseDown={(e) => e.stopPropagation()}>
             <div className="po-modal-head">
@@ -718,6 +801,7 @@ export default function ResignationRequests() {
                 <button className="po-btn po-btn-outline" type="button" onClick={() => setRejectingRow(null)}>
                   Cancel
                 </button>
+
                 <button
                   className="po-btn po-btn-primary"
                   type="button"
