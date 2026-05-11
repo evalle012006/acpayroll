@@ -289,6 +289,7 @@ const Sidebar = ({ collapsed }) => {
           "it",
           "hr",
           "accounting",
+          "assistant vice president",
           "vice president",
           "senior vice president",
           "president",

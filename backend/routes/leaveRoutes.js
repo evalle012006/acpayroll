@@ -89,7 +89,11 @@ const isRequestViewer = (req) =>
   isPresident(req);
 
 const canUploadApprovedLeave = (req) =>
-  isAdmin(req) || isIT(req) || isHr(req) || isAccounting(req);
+  isAdmin(req) ||
+  isIT(req) ||
+  isHr(req) ||
+  isAccounting(req) ||
+  isSeniorVicePresident(req);
 
 async function getBranchIdFromCode(branchCode) {
   const code = toStr(branchCode);
@@ -219,11 +223,7 @@ const baseLeaveSelect = `
 `;
 
 const getInitialStatusByDepartment = (req, department) => {
-  /*
-    OPERATION:
-    Branch Manager -> Area Manager -> Regional Manager ->
-    Assistant Vice President -> Vice President -> Pending Admin
-  */
+
   if (isOperationDepartment(department)) {
     if (isBranchManager(req)) return "Pending Area Manager";
     if (isAreaManager(req)) return "Pending Regional Manager";
@@ -232,12 +232,6 @@ const getInitialStatusByDepartment = (req, department) => {
     if (isVicePresident(req)) return "Pending Admin";
     return "Pending Branch Manager";
   }
-
-  /*
-    BACK OFFICE / MAIN OFFICE:
-    IT Department -> Assistant Vice President
-    Others -> Senior Vice President
-  */
 
   const dept = norm(department);
 
@@ -715,9 +709,6 @@ router.post(
         });
       }
 
-      /*
-        DELETE OLD APPROVED FILES
-      */
       const oldFiles = await client.query(
         `
         SELECT file_path
@@ -857,6 +848,33 @@ router.put(
         let params = [id, req.user?.id ?? null];
 
         if (
+          action.toLowerCase() !== "reject" &&
+          isSeniorVicePresident(req)
+        ) {
+          await pool.query(
+            `
+            UPDATE public.leave_requests
+            SET
+              status = 'Approved',
+              admin_approved_by = $2,
+              admin_approved_at = NOW()
+            WHERE id = $1
+            `,
+            [id, req.user?.id ?? null]
+          );
+
+          const finalRow = await pool.query(
+            `
+            ${baseLeaveSelect}
+            WHERE lr.id = $1
+            `,
+            [id]
+          );
+
+          return res.json(finalRow.rows[0]);
+        }
+
+        if (
           currentStatus ===
           "Pending Branch Manager"
         ) {
@@ -904,10 +922,6 @@ router.put(
 
           const dept = norm(access.row.department);
 
-          /*
-            IT Department:
-            AVP is final approver
-          */
           if (
             dept === "it" ||
             dept === "it department"
@@ -922,10 +936,6 @@ router.put(
             `;
           }
 
-          /*
-            OPERATION:
-            Continue to Vice President
-          */
           else {
             sql = `
               UPDATE public.leave_requests

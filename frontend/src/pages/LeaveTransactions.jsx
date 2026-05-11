@@ -1,13 +1,5 @@
-import React, {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
-
+import React, { useCallback, useEffect, useMemo, useRef, useState, } from "react";
 import { useNavigate } from "react-router-dom";
-
 import "../styles/LeaveTransactions.css";
 import api from "../api/axiosClient";
 
@@ -90,10 +82,6 @@ export default function LeaveTransactions() {
     .trim()
     .toLowerCase();
 
-  /*
-    GLOBAL ROLE CHECKS
-  */
-
   const isAdmin = ["admin", "it"].includes(role);
   const isIT = role === "it";
   const isHr = role === "hr";
@@ -121,10 +109,6 @@ export default function LeaveTransactions() {
   const isPresident =
     role === "president";
 
-  /*
-    CREATE LEAVE ACCESS
-  */
-
   const canCreateLeave =
     isAdmin ||
     isHr ||
@@ -137,10 +121,6 @@ export default function LeaveTransactions() {
     isVicePresident ||
     isSeniorVicePresident ||
     isPresident;
-
-  /*
-    FILE ACCESS
-  */
 
   const canViewRequestFile =
     isAdmin ||
@@ -164,12 +144,6 @@ export default function LeaveTransactions() {
     isSeniorVicePresident ||
     isPresident;
 
-  /*
-    FINAL APPROVED FILE UPLOAD
-    ONLY:
-    ADMIN / IT / HR / ACCOUNTING
-  */
-
   const canUploadApprovedFile =
     isAdmin ||
     isIT ||
@@ -177,13 +151,8 @@ export default function LeaveTransactions() {
     isAccounting;
 
   const employeePickerRef = useRef(null);
-
-  const [staffList, setStaffList] =
-    useState([]);
-
-  const [branches, setBranches] =
-    useState([]);
-
+  const [staffList, setStaffList] = useState([]);
+  const [branches, setBranches] = useState([]);
   const [leaveRequests, setLeaveRequests] =
     useState([]);
 
@@ -198,21 +167,13 @@ export default function LeaveTransactions() {
     setUploadingApproved,
   ] = useState({});
 
-  const [
-    selectedLeaveType,
-    setSelectedLeaveType,
-  ] = useState("All");
+  const [selectedLeaveType, setSelectedLeaveType,] = useState("All");
 
   const [page, setPage] = useState(1);
-
-  const [pageSize, setPageSize] =
-    useState(25);
-
-  const [
-    showCreateLeave,
-    setShowCreateLeave,
-  ] = useState(false);
-
+  const [searchText, setSearchText] = useState("");
+  const [search, setSearch] = useState("");
+  const [pageSize, setPageSize] = useState(25);
+  const [showCreateLeave, setShowCreateLeave,] = useState(false);
   const [leaveForm, setLeaveForm] =
     useState({
       employee_id: "",
@@ -232,30 +193,15 @@ export default function LeaveTransactions() {
     leaveForm.leave_type ===
     "Indefinite Leave";
 
-  const [attachmentFile, setAttachmentFile] =
-    useState(null);
-
-  const [employeeSearch, setEmployeeSearch] =
-    useState("");
-
-  const [
-    showEmployeeDropdown,
-    setShowEmployeeDropdown,
-  ] = useState(false);
-
-  /*
-    LOGOUT
-  */
+  const [attachmentFile, setAttachmentFile] = useState(null);
+  const [employeeSearch, setEmployeeSearch] = useState("");
+  const [showEmployeeDropdown, setShowEmployeeDropdown,] = useState(false);
 
   const logout = useCallback(() => {
     localStorage.removeItem("token");
     localStorage.removeItem("user");
     window.location.href = "/login";
   }, []);
-
-  /*
-    FETCH STAFF
-  */
 
   const fetchStaff = useCallback(async () => {
     try {
@@ -274,10 +220,6 @@ export default function LeaveTransactions() {
       setStaffList([]);
     }
   }, [logout]);
-
-  /*
-    FETCH BRANCHES
-  */
 
   const fetchBranches = useCallback(
     async () => {
@@ -304,10 +246,6 @@ export default function LeaveTransactions() {
     [logout]
   );
 
-  /*
-    BRANCH MAP
-  */
-
   const branchMap = useMemo(() => {
     const m = new Map();
 
@@ -317,10 +255,6 @@ export default function LeaveTransactions() {
 
     return m;
   }, [branches]);
-
-  /*
-    FETCH LEAVE REQUESTS
-  */
 
   const fetchLeave = useCallback(async () => {
     try {
@@ -346,10 +280,6 @@ export default function LeaveTransactions() {
     }
   }, [logout]);
 
-  /*
-    REFRESH
-  */
-
   const handleRefresh = useCallback(async () => {
     await Promise.all([
       fetchStaff(),
@@ -361,10 +291,6 @@ export default function LeaveTransactions() {
     fetchBranches,
     fetchLeave,
   ]);
-
-  /*
-    INITIAL LOAD
-  */
 
   useEffect(() => {
     const token =
@@ -384,10 +310,6 @@ export default function LeaveTransactions() {
     fetchBranches,
     fetchLeave,
   ]);
-
-  /*
-    MODAL ESC
-  */
 
   useEffect(() => {
     if (!showCreateLeave) return;
@@ -416,10 +338,6 @@ export default function LeaveTransactions() {
     };
   }, [showCreateLeave]);
 
-  /*
-    CLICK OUTSIDE EMPLOYEE PICKER
-  */
-
   useEffect(() => {
     const onMouseDown = (e) => {
       if (
@@ -443,10 +361,6 @@ export default function LeaveTransactions() {
         onMouseDown
       );
   }, []);
-
-  /*
-    AUTO DAYS
-  */
 
   useEffect(() => {
     if (isIndefiniteLeave) {
@@ -653,7 +567,7 @@ export default function LeaveTransactions() {
     if (status === "Pending Senior Vice President") return isSeniorVicePresident || isPresident;
 
     if (status === "Pending Admin") {
-      return isAdmin || isIT || isHr || isAccounting || isTread;
+      return isAdmin || isIT || isHr || isAccounting || isTread || isSeniorVicePresident;
     }
 
     return false;
@@ -677,12 +591,31 @@ export default function LeaveTransactions() {
   };
 
   const filteredLeave = useMemo(() => {
-    return (leaveRequests || []).filter((x) =>
-      selectedLeaveType === "All"
-        ? true
-        : String(x.leave_type) === selectedLeaveType
-    );
-  }, [leaveRequests, selectedLeaveType]);
+    const q = String(search || "").trim().toLowerCase();
+
+    return (leaveRequests || []).filter((x) => {
+      const matchType =
+        selectedLeaveType === "All"
+          ? true
+          : String(x.leave_type) === selectedLeaveType;
+
+      const haystack = [
+        x.transaction_code,
+        x.staff_name,
+        x.employee_no,
+        x.leave_type,
+        x.status,
+        x.reason,
+        x.date_created,
+        x.start_date,
+        x.end_date,
+      ]
+        .map((v) => String(v ?? "").toLowerCase())
+        .join(" ");
+
+      return matchType && (!q || haystack.includes(q));
+    });
+  }, [leaveRequests, selectedLeaveType, search]);
 
   const totalPages = Math.max(1, Math.ceil(filteredLeave.length / pageSize));
 
@@ -693,7 +626,7 @@ export default function LeaveTransactions() {
 
   useEffect(() => {
     setPage(1);
-  }, [selectedLeaveType, pageSize]);
+  }, [selectedLeaveType, pageSize, search]);
 
   useEffect(() => {
     if (page > totalPages) setPage(totalPages);
@@ -915,7 +848,43 @@ export default function LeaveTransactions() {
           </button>
         ))}
       </div>
+      
+      <div className="leave-searchbar">
+        <input
+          className="leave-search-input"
+          value={searchText}
+          onChange={(e) => setSearchText(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              setSearch(searchText);
+            }
+          }}
+          placeholder="Search code, name, employee no, status..."
+        />
 
+        <button
+          className="btn-secondary"
+          type="button"
+          onClick={() => setSearch(searchText)}
+        >
+          Search
+        </button>
+
+        <button
+          className="btn-secondary"
+          type="button"
+          onClick={() => {
+            setSearchText("");
+            setSearch("");
+          }}
+        >
+          Clear
+        </button>
+
+        <span className="leave-search-count">
+          {filteredLeave.length} result(s)
+        </span>
+      </div>
       <div className="leave-pager">
         <div className="leave-pager-left">
           <span>Rows per page</span>

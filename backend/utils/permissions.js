@@ -229,8 +229,14 @@ const PERMISSIONS = {
   ========================================================= */
 
   staff_balance: {
-    view: FINANCE_HR_ROLES,
-    edit: FINANCE_HR_ROLES,
+    view: ALL_OPERATION_ROLES,
+
+    edit: [
+      "admin",
+      "it",
+      "hr",
+      "accounting",
+    ],
   },
 
   /* =========================================================

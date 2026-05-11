@@ -108,6 +108,9 @@ export default function TransferStaffOrder() {
   const [search, setSearch] = useState("");
   const [appliedSearch, setAppliedSearch] = useState("");
 
+  const [tablePage, setTablePage] = useState(1);
+  const [tablePageSize, setTablePageSize] = useState(25);
+
   const [branches, setBranches] = useState([]);
   const [staff, setStaff] = useState([]);
 
@@ -396,6 +399,54 @@ export default function TransferStaffOrder() {
       return haystack.includes(q);
     });
   }, [orders, appliedSearch]);
+
+  const totalPages = Math.max(
+    1,
+    Math.ceil(filteredOrders.length / tablePageSize)
+  );
+
+  const pagedOrders = useMemo(() => {
+    const start = (tablePage - 1) * tablePageSize;
+
+    return filteredOrders.slice(
+      start,
+      start + tablePageSize
+    );
+  }, [filteredOrders, tablePage, tablePageSize]);
+
+  useEffect(() => {
+    setTablePage(1);
+  }, [appliedSearch, tablePageSize]);
+
+  useEffect(() => {
+    if (tablePage > totalPages) {
+      setTablePage(totalPages);
+    }
+  }, [tablePage, totalPages]);
+
+  const getPageNumbers = () => {
+    const pages = [];
+    const maxButtons = 5;
+
+    let start = Math.max(1, tablePage - 2);
+    let end = Math.min(
+      totalPages,
+      start + maxButtons - 1
+    );
+
+    if (end - start < maxButtons - 1) {
+      start = Math.max(
+        1,
+        end - maxButtons + 1
+      );
+    }
+
+    for (let i = start; i <= end; i++) {
+      pages.push(i);
+    }
+
+    return pages;
+  };
 
   const filteredStaff = useMemo(() => {
     const q = toStr(employeeQuery).toLowerCase();
@@ -965,6 +1016,69 @@ export default function TransferStaffOrder() {
           <div className="order-card-meta">{filteredOrders.length} Records</div>
         </div>
 
+        <div className="leave-pager">
+          <div className="leave-pager-left">
+            <span>Rows per page</span>
+
+            <select
+              value={tablePageSize}
+              onChange={(e) =>
+                setTablePageSize(Number(e.target.value))
+              }
+            >
+              <option value={25}>25</option>
+              <option value={50}>50</option>
+              <option value={75}>75</option>
+              <option value={100}>100</option>
+            </select>
+          </div>
+
+          <div className="leave-pager-right">
+            <button
+              className="leave-page-btn"
+              type="button"
+              disabled={tablePage <= 1}
+              onClick={() =>
+                setTablePage((p) =>
+                  Math.max(1, p - 1)
+                )
+              }
+            >
+              ‹
+            </button>
+
+            {getPageNumbers().map((p) => (
+              <button
+                key={p}
+                className={`leave-page-number ${
+                  tablePage === p ? "active" : ""
+                }`}
+                type="button"
+                onClick={() => setTablePage(p)}
+              >
+                {p}
+              </button>
+            ))}
+
+            <button
+              className="leave-page-btn"
+              type="button"
+              disabled={tablePage >= totalPages}
+              onClick={() =>
+                setTablePage((p) =>
+                  Math.min(totalPages, p + 1)
+                )
+              }
+            >
+              ›
+            </button>
+
+            <span className="leave-page-summary">
+              Page {tablePage} of {totalPages}
+            </span>
+          </div>
+        </div>
+
         <div className="table-wrap">
           <table className="table">
             <thead>
@@ -999,7 +1113,7 @@ export default function TransferStaffOrder() {
                   </td>
                 </tr>
               ) : (
-                filteredOrders.map((o) => {
+                pagedOrders.map((o) => {
                   const isSelected = Number(selectedOrder?.id) === Number(o.id);
 
                   return (

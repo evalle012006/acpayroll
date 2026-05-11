@@ -48,9 +48,13 @@ const canDownloadLoanFiles = (req) =>
   isSeniorVicePresident(req) ||
   isPresident(req);
 
+const canFinalUploadLoanFile = (req) =>
+  canFinalApprove(req) || isIT(req);
+
 const getUserBranchCode = (req) => toStr(req.user?.branch_id);
 const getUserArea = (req) => toStr(req.user?.area);
 const getUserRegion = (req) => toStr(req.user?.region);
+const getUserDepartment = (req) => toStr(req.user?.department);
 
 const VALID_LOAN_PURPOSES = [
   "Emergency",
@@ -65,29 +69,83 @@ const VALID_LOAN_PURPOSES = [
   "Bill Payment",
 ];
 
+const BACK_OFFICE_DEPARTMENTS = [
+  "it",
+  "it department",
+  "audit",
+  "audit department",
+  "hr",
+  "hr department",
+  "human resources",
+  "human resources department",
+  "accounting",
+  "accounting department",
+  "tread",
+  "tread department",
+  "production & logistic",
+  "production & logistic department",
+  "production and logistic",
+  "production and logistic department",
+  "office of the president",
+  "main office",
+];
+
+const OPERATION_DEPARTMENTS = [
+  "operation",
+  "operations",
+  "operation department",
+  "operations department",
+  "payroll",
+  "payroll department",
+];
+
 const isValidLoanPurpose = (purpose) =>
   VALID_LOAN_PURPOSES.map(norm).includes(norm(purpose));
 
-const getInitialApprovalStage = (applicantRole) => {
+const isBackOfficeDepartment = (department) =>
+  BACK_OFFICE_DEPARTMENTS.includes(norm(department));
+
+const isOperationDepartment = (department) =>
+  OPERATION_DEPARTMENTS.includes(norm(department));
+
+const getInitialApprovalStage = (applicantRole, department) => {
+  if (isBackOfficeDepartment(department)) {
+    return "assistant vice president";
+  }
+
   const role = norm(applicantRole);
+
   if (role === "vice president") return "admin";
   if (role === "assistant vice president") return "vice president";
   if (role === "regional manager") return "assistant vice president";
   if (role === "area manager") return "regional manager";
+
   return "area manager";
 };
 
-const getApprovalChain = (applicantRole) => {
+const getApprovalChain = (applicantRole, department) => {
+  if (isBackOfficeDepartment(department)) {
+    return ["assistant vice president"];
+  }
+
   const role = norm(applicantRole);
 
   if (role === "vice president") return ["vice president"];
   if (role === "assistant vice president") return ["vice president"];
-  if (role === "regional manager") return ["assistant vice president", "vice president"];
+  if (role === "regional manager") {
+    return ["assistant vice president", "vice president"];
+  }
+
   if (role === "area manager") {
     return ["regional manager", "assistant vice president", "vice president"];
   }
 
-  return ["area manager", "regional manager", "assistant vice president", "vice president"];
+  return [
+    "area manager",
+    "regional manager",
+    "assistant vice president",
+    "vice president",
+  ];
 };
 
 async function getBranchIdFromCode(branchCode) {
@@ -220,6 +278,7 @@ const loanSelectFields = `
   s.area,
   s.region,
   s.division,
+  s.department,
   s.position,
   b.code AS branch_code,
   b.name AS branch_name
@@ -284,6 +343,17 @@ router.get(
           ORDER BY lr.id DESC
         `;
         params = [region];
+      } else if (isAssistantVicePresident(req)) {
+        query = `
+          SELECT ${loanSelectFields}
+          FROM public.loan_requests lr
+          LEFT JOIN public.staff s ON s.id = lr.staff_id
+          LEFT JOIN public.branches b ON b.id = s.branch_id
+          WHERE LOWER(TRIM(COALESCE(s.department, ''))) = LOWER(TRIM($1))
+             OR LOWER(TRIM(COALESCE(s.division, ''))) = LOWER(TRIM(COALESCE($2, '')))
+          ORDER BY lr.id DESC
+        `;
+        params = [getUserDepartment(req), req.user?.division || ""];
       } else {
         return res.status(403).json({ message: "Access denied" });
       }
@@ -308,7 +378,7 @@ router.get(
 
       const s = await pool.query(
         `
-        SELECT id, branch_id, area, region
+        SELECT id, branch_id, area, region, department
         FROM public.staff
         WHERE id = $1
         LIMIT 1
@@ -340,6 +410,13 @@ router.get(
           const region = getUserRegion(req);
 
           if (!region || norm(staffRow.region) !== norm(region)) {
+            return res.status(403).json({ message: "Access denied" });
+          }
+        } else if (isAssistantVicePresident(req)) {
+          if (
+            getUserDepartment(req) &&
+            norm(getUserDepartment(req)) !== norm(staffRow.department)
+          ) {
             return res.status(403).json({ message: "Access denied" });
           }
         } else {
@@ -394,14 +471,6 @@ router.post(
       const total = amount + (amount * interest) / 100;
       const per_month = term ? total / term : total;
 
-      const applicant_role = roleLower(req);
-      const approval_stage = getInitialApprovalStage(applicant_role);
-      const status = "Pending";
-
-      const attachment_path = req.file ? `/uploads/loans/${req.file.filename}` : null;
-      const attachment_name = req.file ? req.file.originalname : null;
-      const attachment_mime = req.file ? req.file.mimetype : null;
-
       if (!staff_id) return res.status(400).json({ message: "staff_id is required" });
       if (!loan_type) return res.status(400).json({ message: "loan_type is required" });
       if (!loan_purpose) return res.status(400).json({ message: "loan_purpose is required" });
@@ -417,7 +486,7 @@ router.post(
 
       const s = await client.query(
         `
-        SELECT id, employee_no, branch_id, area, region
+        SELECT id, employee_no, branch_id, area, region, department
         FROM public.staff
         WHERE id = $1::int
         `,
@@ -459,6 +528,14 @@ router.post(
           return res.status(403).json({ message: "Access denied" });
         }
       }
+
+      const applicant_role = roleLower(req);
+      const approval_stage = getInitialApprovalStage(applicant_role, staffRow.department);
+      const status = "Pending";
+
+      const attachment_path = req.file ? `/uploads/loans/${req.file.filename}` : null;
+      const attachment_name = req.file ? req.file.originalname : null;
+      const attachment_mime = req.file ? req.file.mimetype : null;
 
       const ins = await client.query(
         `
@@ -557,10 +634,6 @@ router.post(
   }
 );
 
-/* 
-  Downloads the LATEST loan file.
-  Every approver uploads a new signed file, replacing attachment_path.
-*/
 router.get(
   "/loan-requests/:id/download/:type",
   requireAuth,
@@ -629,12 +702,6 @@ router.get(
   }
 );
 
-/*
-  APPROVE / REJECT.
-  For approve, approver MUST upload a signed file.
-  Uploaded file replaces attachment_path, so next approver downloads the latest signed file.
-  Final approval also copies the latest file into approved_attachment_* for staff/account use.
-*/
 router.put(
   "/loan-requests/:id",
   requireAuth,
@@ -685,8 +752,19 @@ router.put(
         return res.status(400).json({ message: "Already finalized" });
       }
 
+      const staffInfo = await client.query(
+        `
+        SELECT department
+        FROM public.staff
+        WHERE id = $1
+        LIMIT 1
+        `,
+        [loan.staff_id]
+      );
+
+      const department = staffInfo.rows[0]?.department || "";
       const applicantRole = toStr(loan.applicant_role);
-      const chain = getApprovalChain(applicantRole);
+      const chain = getApprovalChain(applicantRole, department);
 
       let currentStage = norm(loan.approval_stage);
 
@@ -783,7 +861,9 @@ router.put(
         }
 
         await client.query("COMMIT");
-        return res.json({ message: "Fully Approved. Final file is now available to staff." });
+        return res.json({
+          message: "Fully Approved. Final file is now available to staff.",
+        });
       }
 
       await client.query(
@@ -818,7 +898,6 @@ router.put(
   }
 );
 
-/* Backward-compatible final file upload route */
 router.post(
   "/loan-requests/:id/approved-file",
   requireAuth,
@@ -832,6 +911,12 @@ router.post(
 
       if (!id) return res.status(400).json({ message: "Invalid id" });
       if (!req.file) return res.status(400).json({ message: "Attachment is required" });
+
+      if (!canFinalUploadLoanFile(req)) {
+        return res.status(403).json({
+          message: "Only HR, IT, Admin, and Accounting can upload final approved files",
+        });
+      }
 
       await client.query("BEGIN");
 

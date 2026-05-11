@@ -12,10 +12,15 @@ const {
 } = require("../services/spacesUpload");
 
 const {
+  isAdmin,
+  isIT,
   isBranchManager,
   isAreaManager,
   isRegionalManager,
   isAssistantVicePresident,
+  isVicePresident,
+  isSeniorVicePresident,
+  isPresident,
   canViewAll,
 } = require("../utils/roleAccess");
 
@@ -64,12 +69,30 @@ const buildFullname = ({ last_name, first_name, middle_name, fullname }) => {
   return toStr(fullname);
 };
 
-const isTopManagement = (req) => canViewAll(req);
+const isTopManagement = (req) => isFullStaffAccess(req);
 
 const getUserArea = (req) => toStr(req.user?.area);
 const getUserBranchCode = (req) => toStr(req.user?.branch_id);
 const getUserDivision = (req) => toStr(req.user?.division);
 const getUserRegion = (req) => toStr(req.user?.region);
+const getUserDepartment = (req) => toStr(req.user?.department);
+
+const isFullStaffAccess = (req) => {
+  const department = getUserDepartment(req).toLowerCase();
+
+  return (
+    isAdmin(req) ||
+    isIT(req) ||
+    department === "it department" ||
+    department === "hr department" ||
+    department === "accounting department" ||
+    department === "tread department" ||
+    isVicePresident(req) ||
+    isSeniorVicePresident(req) ||
+    isPresident(req) ||
+    canViewAll(req)
+  );
+};
 
 const toJsonbArray = (v) => {
   try {
@@ -162,7 +185,7 @@ async function canAccessStaffById(client, req, staffId) {
 
   const r = await client.query(
     `
-    SELECT id, branch_id, area, region, division
+    SELECT id, branch_id, area, region, division, department
     FROM public.staff
     WHERE id = $1
     LIMIT 1
@@ -191,8 +214,24 @@ async function canAccessStaffById(client, req, staffId) {
   }
 
   if (isAssistantVicePresident(req)) {
+    const department = getUserDepartment(req);
     const division = getUserDivision(req);
-    return !!division && toStr(row.division).toLowerCase() === division.toLowerCase();
+
+    if (
+      department &&
+      toStr(row.department).toLowerCase() === department.toLowerCase()
+    ) {
+      return true;
+    }
+
+    if (
+      division &&
+      toStr(row.division).toLowerCase() === division.toLowerCase()
+    ) {
+      return true;
+    }
+
+    return false;
   }
 
   return false;
@@ -543,8 +582,10 @@ router.get(
       }
 
       if (isAssistantVicePresident(req)) {
+        const department = getUserDepartment(req);
         const division = getUserDivision(req);
-        if (!division) return res.json([]);
+
+        if (!department && !division) return res.json([]);
 
         const r = await pool.query(
           `
@@ -554,10 +595,19 @@ router.get(
             b.code AS branch_code
           FROM public.staff s
           LEFT JOIN public.branches b ON b.id = s.branch_id
-          WHERE LOWER(TRIM(COALESCE(s.division, ''))) = LOWER(TRIM($1))
+          WHERE
+            (
+              $1 <> ''
+              AND LOWER(TRIM(COALESCE(s.department, ''))) = LOWER(TRIM($1))
+            )
+            OR
+            (
+              $2 <> ''
+              AND LOWER(TRIM(COALESCE(s.division, ''))) = LOWER(TRIM($2))
+            )
           ORDER BY s.id DESC
           `,
-          [division]
+          [department, division]
         );
 
         return res.json(r.rows);
