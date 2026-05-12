@@ -1,9 +1,12 @@
 const express = require("express");
 const router = express.Router();
 const pool = require("../db");
-const { requireAuth, requireRole } = require("../middlewares/authMiddleware");
+
+const { requireAuth } = require("../middlewares/authMiddleware");
+const { requirePermission } = require("../middlewares/permissionMiddleware");
 
 /* ================= HELPERS ================= */
+
 const toInt = (v) => {
   const n = Number(v);
   return Number.isFinite(n) ? Math.trunc(n) : null;
@@ -24,24 +27,19 @@ const normalizeDate = (v) => {
 /* =========================================================
    GET STAFF BONUS HISTORY
 ========================================================= */
+
 router.get(
   "/staff-bonus-history/staff/:staffId",
   requireAuth,
-  requireRole([
-    "admin",
-    "hr",
-    "accounting",
-    "branch manager",
-    "area manager",
-    "regional manager",
-    "assistant vice president",
-  ]),
+  requirePermission("staff_bonus_history", "view"),
   async (req, res) => {
     try {
       const staffId = toInt(req.params.staffId);
 
       if (!staffId) {
-        return res.status(400).json({ message: "Invalid staff id." });
+        return res.status(400).json({
+          message: "Invalid staff id.",
+        });
       }
 
       const result = await pool.query(
@@ -59,7 +57,10 @@ router.get(
           created_at
         FROM public.staff_bonus_history
         WHERE staff_id = $1
-        ORDER BY release_date DESC NULLS LAST, created_at DESC, id DESC
+        ORDER BY
+          release_date DESC NULLS LAST,
+          created_at DESC,
+          id DESC
         `,
         [staffId]
       );
@@ -67,6 +68,7 @@ router.get(
       return res.json(result.rows);
     } catch (err) {
       console.error("GET /staff-bonus-history ERROR:", err?.message);
+
       return res.status(500).json({
         message: err?.message || "Failed to load bonus history.",
       });
@@ -75,12 +77,13 @@ router.get(
 );
 
 /* =========================================================
-   UPDATE BONUS HISTORY (EDIT 13TH MONTH)
+   UPDATE BONUS HISTORY
 ========================================================= */
+
 router.put(
   "/staff-bonus-history/:id",
   requireAuth,
-  requireRole(["admin", "hr", "accounting"]),
+  requirePermission("staff_bonus_history", "edit"),
   async (req, res) => {
     try {
       const id = toInt(req.params.id);
@@ -89,11 +92,15 @@ router.put(
       const remarks = toStr(req.body?.remarks) || null;
 
       if (!id) {
-        return res.status(400).json({ message: "Invalid history id." });
+        return res.status(400).json({
+          message: "Invalid history id.",
+        });
       }
 
       if (amount < 0) {
-        return res.status(400).json({ message: "Amount cannot be negative." });
+        return res.status(400).json({
+          message: "Amount cannot be negative.",
+        });
       }
 
       const existing = await pool.query(
@@ -106,7 +113,9 @@ router.put(
       );
 
       if (existing.rowCount === 0) {
-        return res.status(404).json({ message: "Bonus history not found." });
+        return res.status(404).json({
+          message: "Bonus history not found.",
+        });
       }
 
       const updated = await pool.query(
@@ -125,6 +134,7 @@ router.put(
       return res.json(updated.rows[0]);
     } catch (err) {
       console.error("PUT /staff-bonus-history ERROR:", err?.message);
+
       return res.status(500).json({
         message: err?.message || "Failed to update bonus history.",
       });
@@ -133,12 +143,13 @@ router.put(
 );
 
 /* =========================================================
-   OPTIONAL: CREATE BONUS HISTORY (AUTO CREATE IF NONE)
+   CREATE BONUS HISTORY
 ========================================================= */
+
 router.post(
   "/staff-bonus-history",
   requireAuth,
-  requireRole(["admin", "hr", "accounting"]),
+  requirePermission("staff_bonus_history", "create"),
   async (req, res) => {
     try {
       const staff_id = toInt(req.body?.staff_id);
@@ -152,6 +163,28 @@ router.post(
       if (!staff_id || !bonus_month) {
         return res.status(400).json({
           message: "staff_id and bonus_month are required.",
+        });
+      }
+
+      if (amount < 0) {
+        return res.status(400).json({
+          message: "Amount cannot be negative.",
+        });
+      }
+
+      const staffCheck = await pool.query(
+        `
+        SELECT id, employee_no
+        FROM public.staff
+        WHERE id = $1
+        LIMIT 1
+        `,
+        [staff_id]
+      );
+
+      if (staffCheck.rowCount === 0) {
+        return res.status(404).json({
+          message: "Staff not found.",
         });
       }
 
@@ -175,12 +208,12 @@ router.post(
         `,
         [
           staff_id,
-          employee_no || null,
+          employee_no || staffCheck.rows[0].employee_no || null,
           bonus_type,
           bonus_month,
           amount,
           release_date,
-          remarks,
+          remarks || null,
           req.user?.id ?? null,
         ]
       );
@@ -188,6 +221,7 @@ router.post(
       return res.json(result.rows[0]);
     } catch (err) {
       console.error("POST /staff-bonus-history ERROR:", err?.message);
+
       return res.status(500).json({
         message: err?.message || "Failed to create bonus history.",
       });

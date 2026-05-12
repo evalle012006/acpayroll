@@ -1,7 +1,9 @@
 const express = require("express");
 const router = express.Router();
 const pool = require("../db");
-const { requireAuth, requireRole } = require("../middlewares/authMiddleware");
+
+const { requireAuth } = require("../middlewares/authMiddleware");
+const { requirePermission } = require("../middlewares/permissionMiddleware");
 
 const toInt = (v) => {
   const n = Number(v);
@@ -25,18 +27,21 @@ const toDateOrNull = (v) => {
 const roleLower = (req) => toStr(req.user?.role).toLowerCase();
 
 const isAdmin = (req) => roleLower(req) === "admin";
+const isIT = (req) => roleLower(req) === "it";
 const isHr = (req) => roleLower(req) === "hr";
 const isAccounting = (req) => roleLower(req) === "accounting";
 const isBranchManager = (req) => roleLower(req) === "branch manager";
 const isAreaManager = (req) => roleLower(req) === "area manager";
 const isRegionalManager = (req) => roleLower(req) === "regional manager";
-const isAssistantVicePresident = (req) => roleLower(req) === "assistant vice president";
+const isAssistantVicePresident = (req) =>
+  roleLower(req) === "assistant vice president";
 const isVicePresident = (req) => roleLower(req) === "vice president";
 const isSeniorVicePresident = (req) => roleLower(req) === "senior vice president";
 const isPresident = (req) => roleLower(req) === "president";
 
 const isTopManagement = (req) =>
   isAdmin(req) ||
+  isIT(req) ||
   isHr(req) ||
   isAccounting(req) ||
   isVicePresident(req) ||
@@ -120,27 +125,14 @@ async function ensureStaffInBranch(staffId, branchId) {
   return r.rowCount > 0;
 }
 
-/* =========================================================
-   GET OVERRIDES BY BRANCH
-========================================================= */
 router.get(
   "/branch/:branchId",
   requireAuth,
-  requireRole([
-    "admin",
-    "hr",
-    "accounting",
-    "branch manager",
-    "area manager",
-    "regional manager",
-    "assistant vice president",
-    "vice president",
-    "senior vice president",
-    "president",
-  ]),
+  requirePermission("transportation_override", "view"),
   async (req, res) => {
     try {
       const branchId = toInt(req.params.branchId);
+
       if (!branchId) {
         return res.status(400).json({ message: "Invalid branch id" });
       }
@@ -153,7 +145,7 @@ router.get(
       const result = await pool.query(
         `
         SELECT *
-        FROM transportation_overrides
+        FROM public.transportation_overrides
         WHERE branch_id = $1
         ORDER BY staff_id ASC
         `,
@@ -162,30 +154,22 @@ router.get(
 
       return res.json(result.rows);
     } catch (err) {
-      console.error("GET /api/transportation-overrides/branch/:branchId ERROR:", err.message);
-      return res.status(500).json({ message: "Failed to fetch overrides" });
+      console.error(
+        "GET /api/transportation-overrides/branch/:branchId ERROR:",
+        err.message
+      );
+
+      return res.status(500).json({
+        message: "Failed to fetch overrides",
+      });
     }
   }
 );
 
-/* =========================================================
-   CREATE OR UPDATE OVERRIDE
-========================================================= */
 router.post(
   "/",
   requireAuth,
-  requireRole([
-    "admin",
-    "hr",
-    "accounting",
-    "branch manager",
-    "area manager",
-    "regional manager",
-    "assistant vice president",
-    "vice president",
-    "senior vice president",
-    "president",
-  ]),
+  requirePermission("transportation_override", "create"),
   async (req, res) => {
     try {
       const branch_id = toInt(req.body?.branch_id);
@@ -208,12 +192,14 @@ router.post(
 
       const staffOk = await ensureStaffInBranch(staff_id, branch_id);
       if (!staffOk) {
-        return res.status(400).json({ message: "Staff does not belong to the selected branch" });
+        return res.status(400).json({
+          message: "Staff does not belong to the selected branch",
+        });
       }
 
       await pool.query(
         `
-        INSERT INTO transportation_overrides
+        INSERT INTO public.transportation_overrides
         (
           branch_id,
           staff_id,
@@ -257,29 +243,18 @@ router.post(
       return res.json({ message: "Override saved" });
     } catch (err) {
       console.error("POST /api/transportation-overrides ERROR:", err.message);
-      return res.status(500).json({ message: "Failed to save override" });
+
+      return res.status(500).json({
+        message: "Failed to save override",
+      });
     }
   }
 );
 
-/* =========================================================
-   DELETE OVERRIDE
-========================================================= */
 router.delete(
   "/branch/:branchId/staff/:staffId",
   requireAuth,
-  requireRole([
-    "admin",
-    "hr",
-    "accounting",
-    "branch manager",
-    "area manager",
-    "regional manager",
-    "assistant vice president",
-    "vice president",
-    "senior vice president",
-    "president",
-  ]),
+  requirePermission("transportation_override", "delete"),
   async (req, res) => {
     try {
       const branchId = toInt(req.params.branchId);
@@ -300,16 +275,23 @@ router.delete(
 
       await pool.query(
         `
-        DELETE FROM transportation_overrides
-        WHERE branch_id = $1 AND staff_id = $2
+        DELETE FROM public.transportation_overrides
+        WHERE branch_id = $1
+          AND staff_id = $2
         `,
         [branchId, staffId]
       );
 
       return res.json({ message: "Override removed" });
     } catch (err) {
-      console.error("DELETE /api/transportation-overrides/branch/:branchId/staff/:staffId ERROR:", err.message);
-      return res.status(500).json({ message: "Failed to remove override" });
+      console.error(
+        "DELETE /api/transportation-overrides/branch/:branchId/staff/:staffId ERROR:",
+        err.message
+      );
+
+      return res.status(500).json({
+        message: "Failed to remove override",
+      });
     }
   }
 );

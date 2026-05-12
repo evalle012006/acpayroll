@@ -4,7 +4,24 @@ const pool = require("../db");
 const path = require("path");
 const fs = require("fs");
 const multer = require("multer");
-const { requireAuth, requireRole } = require("../middlewares/authMiddleware");
+
+const { requireAuth } = require("../middlewares/authMiddleware");
+const { requirePermission } = require("../middlewares/permissionMiddleware");
+
+const {
+  isAdmin,
+  isIT,
+  isHr,
+  isAccounting,
+  isTread,
+  isBranchManager,
+  isAreaManager,
+  isRegionalManager,
+  isAssistantVicePresident,
+  isVicePresident,
+  isSeniorVicePresident,
+  isPresident,
+} = require("../utils/roleAccess");
 
 const toInt = (v) => {
   const n = Number(v);
@@ -23,21 +40,6 @@ const toDate = (v) => {
 
 const clean = (v) => String(v ?? "").trim();
 const toStr = (v) => String(v ?? "").trim();
-
-const roleLower = (req) => String(req.user?.role || "").trim().toLowerCase();
-const isAdmin = (req) => roleLower(req) === "admin";
-const isHr = (req) => roleLower(req) === "hr";
-const isAccounting = (req) => roleLower(req) === "accounting";
-const isTread = (req) => roleLower(req) === "tread";
-const isBranchManager = (req) => roleLower(req) === "branch manager";
-const isAreaManager = (req) => roleLower(req) === "area manager";
-const isRegionalManager = (req) => roleLower(req) === "regional manager";
-const isAssistantVicePresident = (req) =>
-  roleLower(req) === "assistant vice president";
-const isVicePresident = (req) => roleLower(req) === "vice president";
-const isSeniorVicePresident = (req) =>
-  roleLower(req) === "senior vice president";
-const isPresident = (req) => roleLower(req) === "president";
 
 const getUserBranchId = (req) => req.user?.branch_id ?? null;
 const getUserArea = (req) => toStr(req.user?.area);
@@ -119,6 +121,7 @@ const getCurrentStage = (row) => {
 const canAccessStaffRecord = (req, staff) => {
   if (
     isAdmin(req) ||
+    isIT(req) ||
     isHr(req) ||
     isAccounting(req) ||
     isTread(req) ||
@@ -141,23 +144,19 @@ const canAccessStaffRecord = (req, staff) => {
 
   if (isRegionalManager(req)) {
     const region = getUserRegion(req);
-    return (
-      !!region && toStr(staff.region).toLowerCase() === region.toLowerCase()
-    );
+    return !!region && toStr(staff.region).toLowerCase() === region.toLowerCase();
   }
 
   if (isAssistantVicePresident(req)) {
     const region = getUserRegion(req);
-    return (
-      !!region && toStr(staff.region).toLowerCase() === region.toLowerCase()
-    );
+    return !!region && toStr(staff.region).toLowerCase() === region.toLowerCase();
   }
 
   return false;
 };
 
 const canMutatePendingOrder = (req, row) => {
-  if (isAdmin(req) || isHr(req) || isAccounting(req)) return true;
+  if (isAdmin(req) || isIT(req) || isHr(req) || isAccounting(req)) return true;
 
   if (isBranchManager(req)) {
     const bid = toInt(getUserBranchId(req));
@@ -190,11 +189,12 @@ const canDownloadRequestFile = (req) =>
   isRegionalManager(req) ||
   isAssistantVicePresident(req) ||
   isAdmin(req) ||
+  isIT(req) ||
   isHr(req) ||
   isAccounting(req);
 
 const canDownloadApprovedFile = (req, row) => {
-  if (isAdmin(req) || isHr(req) || isAccounting(req)) return true;
+  if (isAdmin(req) || isIT(req) || isHr(req) || isAccounting(req)) return true;
   if (isRegionalManager(req)) return true;
   if (isAssistantVicePresident(req)) return true;
 
@@ -209,146 +209,148 @@ const canDownloadApprovedFile = (req, row) => {
 };
 
 const canUploadApprovedFile = (req) =>
-  isAdmin(req) || isHr(req) || isAccounting(req);
+  isAdmin(req) || isIT(req) || isHr(req) || isAccounting(req);
 
-router.get("/suspension-orders", requireAuth, async (req, res) => {
-  try {
-    if (
-      isAdmin(req) ||
-      isHr(req) ||
-      isAccounting(req) ||
-      isTread(req) ||
-      isVicePresident(req) ||
-      isSeniorVicePresident(req) ||
-      isPresident(req)
-    ) {
-      const r = await pool.query(`
+router.get(
+  "/suspension-orders",
+  requireAuth,
+  requirePermission("suspension_order", "view"),
+  async (req, res) => {
+    try {
+      if (
+        isAdmin(req) ||
+        isIT(req) ||
+        isHr(req) ||
+        isAccounting(req) ||
+        isTread(req) ||
+        isVicePresident(req) ||
+        isSeniorVicePresident(req) ||
+        isPresident(req)
+      ) {
+        const r = await pool.query(`
+          SELECT *
+          FROM public.suspension_orders
+          ORDER BY id DESC
+        `);
+
+        return res.json(r.rows);
+      }
+
+      if (isBranchManager(req)) {
+        const bid = toInt(getUserBranchId(req));
+        if (!bid) return res.json([]);
+
+        const r = await pool.query(
+          `
+          SELECT so.*
+          FROM public.suspension_orders so
+          LEFT JOIN public.staff s ON s.id = so.employee_id
+          WHERE s.branch_id = $1
+          ORDER BY so.id DESC
+          `,
+          [bid]
+        );
+
+        return res.json(r.rows);
+      }
+
+      if (isAreaManager(req)) {
+        const area = getUserArea(req);
+        if (!area) return res.json([]);
+
+        const r = await pool.query(
+          `
+          SELECT so.*
+          FROM public.suspension_orders so
+          LEFT JOIN public.staff s ON s.id = so.employee_id
+          WHERE LOWER(TRIM(COALESCE(s.area, ''))) = LOWER(TRIM($1))
+          ORDER BY so.id DESC
+          `,
+          [area]
+        );
+
+        return res.json(r.rows);
+      }
+
+      if (isRegionalManager(req) || isAssistantVicePresident(req)) {
+        const region = getUserRegion(req);
+        if (!region) return res.json([]);
+
+        const r = await pool.query(
+          `
+          SELECT so.*
+          FROM public.suspension_orders so
+          LEFT JOIN public.staff s ON s.id = so.employee_id
+          WHERE LOWER(TRIM(COALESCE(s.region, ''))) = LOWER(TRIM($1))
+          ORDER BY so.id DESC
+          `,
+          [region]
+        );
+
+        return res.json(r.rows);
+      }
+
+      return res.status(403).json({ message: "Access denied" });
+    } catch (e) {
+      console.error("GET /api/suspension-orders ERROR:", e);
+      return res.status(500).json({ message: e?.message || "Server error" });
+    }
+  }
+);
+
+router.get(
+  "/suspension-orders/staff/:id",
+  requireAuth,
+  requirePermission("suspension_order", "view"),
+  async (req, res) => {
+    try {
+      const employeeId = toInt(req.params.id);
+
+      if (!employeeId) {
+        return res.status(400).json({ message: "Invalid staff id" });
+      }
+
+      const s = await pool.query(
+        `
+        SELECT id, branch_id, region, area
+        FROM public.staff
+        WHERE id = $1
+        `,
+        [employeeId]
+      );
+
+      if (s.rowCount === 0) {
+        return res.status(404).json({ message: "Staff not found" });
+      }
+
+      const staff = s.rows[0];
+
+      if (!canAccessStaffRecord(req, staff)) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      const r = await pool.query(
+        `
         SELECT *
         FROM public.suspension_orders
+        WHERE employee_id = $1
         ORDER BY id DESC
-      `);
-
-      return res.json(r.rows);
-    }
-
-    if (isBranchManager(req)) {
-      const bid = toInt(getUserBranchId(req));
-      if (!bid) return res.json([]);
-
-      const r = await pool.query(
-        `
-        SELECT so.*
-        FROM public.suspension_orders so
-        LEFT JOIN public.staff s ON s.id = so.employee_id
-        WHERE s.branch_id = $1
-        ORDER BY so.id DESC
         `,
-        [bid]
+        [employeeId]
       );
 
       return res.json(r.rows);
+    } catch (e) {
+      console.error("GET /api/suspension-orders/staff/:id ERROR:", e.message);
+      return res.status(500).json({ message: "Server error" });
     }
-
-    if (isAreaManager(req)) {
-      const area = getUserArea(req);
-      if (!area) return res.json([]);
-
-      const r = await pool.query(
-        `
-        SELECT so.*
-        FROM public.suspension_orders so
-        LEFT JOIN public.staff s ON s.id = so.employee_id
-        WHERE LOWER(TRIM(COALESCE(s.area, ''))) = LOWER(TRIM($1))
-        ORDER BY so.id DESC
-        `,
-        [area]
-      );
-
-      return res.json(r.rows);
-    }
-
-    if (isRegionalManager(req) || isAssistantVicePresident(req)) {
-      const region = getUserRegion(req);
-      if (!region) return res.json([]);
-
-      const r = await pool.query(
-        `
-        SELECT so.*
-        FROM public.suspension_orders so
-        LEFT JOIN public.staff s ON s.id = so.employee_id
-        WHERE LOWER(TRIM(COALESCE(s.region, ''))) = LOWER(TRIM($1))
-        ORDER BY so.id DESC
-        `,
-        [region]
-      );
-
-      return res.json(r.rows);
-    }
-
-    return res.status(403).json({ message: "Access denied" });
-  } catch (e) {
-    console.error("GET /api/suspension-orders ERROR:", e);
-    return res.status(500).json({ message: e?.message || "Server error" });
   }
-});
-
-router.get("/suspension-orders/staff/:id", requireAuth, async (req, res) => {
-  try {
-    const employeeId = toInt(req.params.id);
-    if (!employeeId) {
-      return res.status(400).json({ message: "Invalid staff id" });
-    }
-
-    const s = await pool.query(
-      `
-      SELECT id, branch_id, region, area
-      FROM public.staff
-      WHERE id = $1
-      `,
-      [employeeId]
-    );
-
-    if (s.rowCount === 0) {
-      return res.status(404).json({ message: "Staff not found" });
-    }
-
-    const staff = s.rows[0];
-
-    if (!canAccessStaffRecord(req, staff)) {
-      return res.status(403).json({ message: "Access denied" });
-    }
-
-    const r = await pool.query(
-      `
-      SELECT *
-      FROM public.suspension_orders
-      WHERE employee_id = $1
-      ORDER BY id DESC
-      `,
-      [employeeId]
-    );
-
-    return res.json(r.rows);
-  } catch (e) {
-    console.error("GET /api/suspension-orders/staff/:id ERROR:", e.message);
-    return res.status(500).json({ message: "Server error" });
-  }
-});
+);
 
 router.post(
   "/suspension-orders",
   requireAuth,
-  requireRole([
-    "admin",
-    "hr",
-    "accounting",
-    "branch manager",
-    "area manager",
-    "assistant vice president",
-    "vice president",
-    "senior vice president",
-    "president",
-  ]),
+  requirePermission("suspension_order", "create"),
   upload.single("attachment"),
   async (req, res) => {
     const client = await pool.connect();
@@ -364,6 +366,7 @@ router.post(
       const start_date = toDate(
         req.body?.suspension_start ?? req.body?.start_date
       );
+
       const end_date = toDate(req.body?.suspension_end ?? req.body?.end_date);
 
       const days_of_suspension = toNum(req.body?.days_of_suspension);
@@ -419,7 +422,15 @@ router.post(
 
       const s = await client.query(
         `
-        SELECT id, fullname, first_name, last_name, middle_name, branch_id, region, area
+        SELECT
+          id,
+          fullname,
+          first_name,
+          last_name,
+          middle_name,
+          branch_id,
+          region,
+          area
         FROM public.staff
         WHERE id = $1
         `,
@@ -444,6 +455,7 @@ router.post(
       const seq = await client.query(
         `SELECT nextval('public.suspension_orders_id_seq') AS n`
       );
+
       const n = Number(seq.rows?.[0]?.n || 0);
       const order_no = `SUS-${String(n).padStart(6, "0")}`;
 
@@ -453,7 +465,7 @@ router.post(
       let avpStatus = "Pending";
       let adminStatus = "Pending";
 
-      if (isAdmin(req) || isHr(req) || isAccounting(req)) {
+      if (isAdmin(req) || isIT(req) || isHr(req) || isAccounting(req)) {
         initialStage = STAGE_ADMIN;
       } else if (
         isAssistantVicePresident(req) ||
@@ -576,17 +588,7 @@ router.post(
 router.put(
   "/suspension-orders/:id",
   requireAuth,
-  requireRole([
-    "admin",
-    "hr",
-    "accounting",
-    "branch manager",
-    "area manager",
-    "assistant vice president",
-    "vice president",
-    "senior vice president",
-    "president",
-  ]),
+  requirePermission("suspension_order", "edit"),
   upload.single("attachment"),
   async (req, res) => {
     const client = await pool.connect();
@@ -637,6 +639,7 @@ router.put(
       const start_date = toDate(
         req.body?.suspension_start ?? req.body?.start_date
       );
+
       const end_date = toDate(req.body?.suspension_end ?? req.body?.end_date);
 
       const days_of_suspension = toNum(req.body?.days_of_suspension);
@@ -686,7 +689,15 @@ router.put(
 
       const staffRes = await client.query(
         `
-        SELECT id, fullname, first_name, last_name, middle_name, branch_id, region, area
+        SELECT
+          id,
+          fullname,
+          first_name,
+          last_name,
+          middle_name,
+          branch_id,
+          region,
+          area
         FROM public.staff
         WHERE id = $1
         `,
@@ -797,7 +808,11 @@ router.put(
       return res.json(upd.rows[0]);
     } catch (e) {
       await client.query("ROLLBACK");
-      if (req.file) removeStoredFile(`/uploads/suspension/${req.file.filename}`);
+
+      if (req.file) {
+        removeStoredFile(`/uploads/suspension/${req.file.filename}`);
+      }
+
       console.error("PUT /api/suspension-orders/:id ERROR:", e.message);
       return res.status(500).json({ message: e?.message || "Server error" });
     } finally {
@@ -809,17 +824,7 @@ router.put(
 router.delete(
   "/suspension-orders/:id",
   requireAuth,
-  requireRole([
-    "admin",
-    "hr",
-    "accounting",
-    "branch manager",
-    "area manager",
-    "assistant vice president",
-    "vice president",
-    "senior vice president",
-    "president",
-  ]),
+  requirePermission("suspension_order", "delete"),
   async (req, res) => {
     const client = await pool.connect();
 
@@ -860,9 +865,11 @@ router.delete(
       await client.query(`DELETE FROM public.suspension_orders WHERE id = $1`, [
         id,
       ]);
+
       await client.query("COMMIT");
 
       if (existing.attachment_path) removeStoredFile(existing.attachment_path);
+
       if (existing.approved_attachment_path) {
         removeStoredFile(existing.approved_attachment_path);
       }
@@ -881,6 +888,7 @@ router.delete(
 router.get(
   "/suspension-orders/:id/download/:type",
   requireAuth,
+  requirePermission("suspension_order", "view"),
   async (req, res) => {
     try {
       const id = toInt(req.params.id);
@@ -915,6 +923,7 @@ router.get(
 
       const storedPath =
         type === "request" ? row.attachment_path : row.approved_attachment_path;
+
       const storedName =
         type === "request" ? row.attachment_name : row.approved_attachment_name;
 
@@ -934,6 +943,7 @@ router.get(
         "GET /api/suspension-orders/:id/download/:type ERROR:",
         e.message
       );
+
       return res.status(500).json({ message: "Server error" });
     }
   }
@@ -942,7 +952,7 @@ router.get(
 router.post(
   "/suspension-orders/:id/approved-file",
   requireAuth,
-  requireRole(["admin", "hr", "accounting"]),
+  requirePermission("suspension_order", "upload_approved"),
   upload.single("attachment"),
   async (req, res) => {
     try {
@@ -971,6 +981,7 @@ router.post(
 
       const row = existing.rows[0];
       const oldApprovedPath = row.approved_attachment_path || null;
+      const newPath = `/uploads/suspension/${req.file.filename}`;
 
       const result = await pool.query(
         `
@@ -984,16 +995,13 @@ router.post(
         `,
         [
           id,
-          `/uploads/suspension/${req.file.filename}`,
+          newPath,
           clean(req.file.originalname),
           clean(req.file.mimetype),
         ]
       );
 
-      if (
-        oldApprovedPath &&
-        oldApprovedPath !== `/uploads/suspension/${req.file.filename}`
-      ) {
+      if (oldApprovedPath && oldApprovedPath !== newPath) {
         removeStoredFile(oldApprovedPath);
       }
 
@@ -1003,215 +1011,232 @@ router.post(
         "POST /api/suspension-orders/:id/approved-file ERROR:",
         e.message
       );
+
       return res.status(500).json({ message: e?.message || "Server error" });
     }
   }
 );
 
-router.put("/suspension-orders/:id/approve", requireAuth, async (req, res) => {
-  try {
-    const id = toInt(req.params.id);
+router.put(
+  "/suspension-orders/:id/approve",
+  requireAuth,
+  requirePermission("suspension_order", "approve"),
+  async (req, res) => {
+    try {
+      const id = toInt(req.params.id);
 
-    if (!id) return res.status(400).json({ message: "Invalid id" });
+      if (!id) return res.status(400).json({ message: "Invalid id" });
 
-    const existingRes = await pool.query(
-      `SELECT * FROM public.suspension_orders WHERE id = $1`,
-      [id]
-    );
+      const existingRes = await pool.query(
+        `SELECT * FROM public.suspension_orders WHERE id = $1`,
+        [id]
+      );
 
-    if (existingRes.rowCount === 0) {
-      return res.status(404).json({
-        message: "Suspension order not found",
-      });
+      if (existingRes.rowCount === 0) {
+        return res.status(404).json({
+          message: "Suspension order not found",
+        });
+      }
+
+      const row = existingRes.rows[0];
+      const currentStage = getCurrentStage(row);
+      const approverId = toInt(req.user?.id);
+      const approverText = String(approverId || "");
+
+      let result;
+
+      if (isAreaManager(req)) {
+        if (currentStage !== STAGE_AREA) {
+          return res.status(400).json({
+            message: "This order is not pending Area Manager approval",
+          });
+        }
+
+        result = await pool.query(
+          `
+          UPDATE public.suspension_orders
+          SET
+            area_manager_status = 'Approved',
+            area_manager_approved_by = $2,
+            area_manager_approved_at = NOW(),
+            approval_stage = $3,
+            status = $4,
+            rejected_by = NULL,
+            rejected_at = NULL,
+            rejection_reason = NULL
+          WHERE id = $1
+          RETURNING *;
+          `,
+          [id, approverId, STAGE_RM, LABELS[STAGE_RM]]
+        );
+      } else if (isRegionalManager(req)) {
+        if (currentStage !== STAGE_RM) {
+          return res.status(400).json({
+            message: "This order is not pending Regional Manager approval",
+          });
+        }
+
+        result = await pool.query(
+          `
+          UPDATE public.suspension_orders
+          SET
+            regional_manager_status = 'Approved',
+            regional_manager_approved_by = $2,
+            regional_manager_approved_at = NOW(),
+            approval_stage = $3,
+            status = $4,
+            rejected_by = NULL,
+            rejected_at = NULL,
+            rejection_reason = NULL
+          WHERE id = $1
+          RETURNING *;
+          `,
+          [id, approverId, STAGE_AVP, LABELS[STAGE_AVP]]
+        );
+      } else if (isAssistantVicePresident(req)) {
+        if (currentStage !== STAGE_AVP) {
+          return res.status(400).json({
+            message:
+              "This order is not pending Assistant Vice President approval",
+          });
+        }
+
+        result = await pool.query(
+          `
+          UPDATE public.suspension_orders
+          SET
+            assistant_vice_president_status = 'Approved',
+            assistant_vice_president_approved_by = $2,
+            assistant_vice_president_approved_at = NOW(),
+            approval_stage = $3,
+            status = $4,
+            rejected_by = NULL,
+            rejected_at = NULL,
+            rejection_reason = NULL
+          WHERE id = $1
+          RETURNING *;
+          `,
+          [id, approverId, STAGE_ADMIN, LABELS[STAGE_ADMIN]]
+        );
+      } else if (isAdmin(req) || isIT(req) || isHr(req) || isAccounting(req)) {
+        if (currentStage !== STAGE_ADMIN) {
+          return res.status(400).json({
+            message: "This order is not pending Admin/HR/Accounting approval",
+          });
+        }
+
+        result = await pool.query(
+          `
+          UPDATE public.suspension_orders
+          SET
+            admin_status = 'Approved',
+            admin_approved_by = $2,
+            admin_approved_at = NOW(),
+            approved_by = $3,
+            approved_at = NOW(),
+            approval_stage = $4,
+            status = 'Approved',
+            rejected_by = NULL,
+            rejected_at = NULL,
+            rejection_reason = NULL
+          WHERE id = $1
+          RETURNING *;
+          `,
+          [id, approverId, approverText, STAGE_ADMIN]
+        );
+      } else {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      if (result.rowCount === 0) {
+        return res.status(400).json({
+          message: "Not found or invalid approval stage",
+        });
+      }
+
+      return res.json(result.rows[0]);
+    } catch (e) {
+      console.error("PUT /api/suspension-orders/:id/approve ERROR:", e.message);
+      return res.status(500).json({ message: "Server error" });
     }
-
-    const row = existingRes.rows[0];
-    const currentStage = getCurrentStage(row);
-    const approverId = toInt(req.user?.id);
-    const approverText = String(approverId || "");
-
-    let result;
-
-    if (isAreaManager(req)) {
-      if (currentStage !== STAGE_AREA) {
-        return res.status(400).json({
-          message: "This order is not pending Area Manager approval",
-        });
-      }
-
-      result = await pool.query(
-        `
-        UPDATE public.suspension_orders
-        SET
-          area_manager_status = 'Approved',
-          area_manager_approved_by = $2,
-          area_manager_approved_at = NOW(),
-          approval_stage = $3,
-          status = $4,
-          rejected_by = NULL,
-          rejected_at = NULL,
-          rejection_reason = NULL
-        WHERE id = $1
-        RETURNING *;
-        `,
-        [id, approverId, STAGE_RM, LABELS[STAGE_RM]]
-      );
-    } else if (isRegionalManager(req)) {
-      if (currentStage !== STAGE_RM) {
-        return res.status(400).json({
-          message: "This order is not pending Regional Manager approval",
-        });
-      }
-
-      result = await pool.query(
-        `
-        UPDATE public.suspension_orders
-        SET
-          regional_manager_status = 'Approved',
-          regional_manager_approved_by = $2,
-          regional_manager_approved_at = NOW(),
-          approval_stage = $3,
-          status = $4,
-          rejected_by = NULL,
-          rejected_at = NULL,
-          rejection_reason = NULL
-        WHERE id = $1
-        RETURNING *;
-        `,
-        [id, approverId, STAGE_AVP, LABELS[STAGE_AVP]]
-      );
-    } else if (isAssistantVicePresident(req)) {
-      if (currentStage !== STAGE_AVP) {
-        return res.status(400).json({
-          message: "This order is not pending Assistant Vice President approval",
-        });
-      }
-
-      result = await pool.query(
-        `
-        UPDATE public.suspension_orders
-        SET
-          assistant_vice_president_status = 'Approved',
-          assistant_vice_president_approved_by = $2,
-          assistant_vice_president_approved_at = NOW(),
-          approval_stage = $3,
-          status = $4,
-          rejected_by = NULL,
-          rejected_at = NULL,
-          rejection_reason = NULL
-        WHERE id = $1
-        RETURNING *;
-        `,
-        [id, approverId, STAGE_ADMIN, LABELS[STAGE_ADMIN]]
-      );
-    } else if (isAdmin(req) || isHr(req) || isAccounting(req)) {
-      if (currentStage !== STAGE_ADMIN) {
-        return res.status(400).json({
-          message: "This order is not pending Admin/HR/Accounting approval",
-        });
-      }
-
-      result = await pool.query(
-        `
-        UPDATE public.suspension_orders
-        SET
-          admin_status = 'Approved',
-          admin_approved_by = $2,
-          admin_approved_at = NOW(),
-          approved_by = $3,
-          approved_at = NOW(),
-          approval_stage = $4,
-          status = 'Approved',
-          rejected_by = NULL,
-          rejected_at = NULL,
-          rejection_reason = NULL
-        WHERE id = $1
-        RETURNING *;
-        `,
-        [id, approverId, approverText, STAGE_ADMIN]
-      );
-    } else {
-      return res.status(403).json({ message: "Access denied" });
-    }
-
-    if (result.rowCount === 0) {
-      return res.status(400).json({
-        message: "Not found or invalid approval stage",
-      });
-    }
-
-    return res.json(result.rows[0]);
-  } catch (e) {
-    console.error("PUT /api/suspension-orders/:id/approve ERROR:", e.message);
-    return res.status(500).json({ message: "Server error" });
   }
-});
+);
 
-router.put("/suspension-orders/:id/reject", requireAuth, async (req, res) => {
-  try {
-    const id = toInt(req.params.id);
+router.put(
+  "/suspension-orders/:id/reject",
+  requireAuth,
+  requirePermission("suspension_order", "reject"),
+  async (req, res) => {
+    try {
+      const id = toInt(req.params.id);
 
-    if (!id) return res.status(400).json({ message: "Invalid id" });
+      if (!id) return res.status(400).json({ message: "Invalid id" });
 
-    const reason = clean(req.body?.reason);
+      const reason = clean(req.body?.reason);
 
-    if (!reason) {
-      return res.status(400).json({
-        message: "Rejection reason is required",
-      });
+      if (!reason) {
+        return res.status(400).json({
+          message: "Rejection reason is required",
+        });
+      }
+
+      const existingRes = await pool.query(
+        `SELECT * FROM public.suspension_orders WHERE id = $1`,
+        [id]
+      );
+
+      if (existingRes.rowCount === 0) {
+        return res.status(404).json({
+          message: "Suspension order not found",
+        });
+      }
+
+      const row = existingRes.rows[0];
+      const currentStage = getCurrentStage(row);
+      const rejecterId = toInt(req.user?.id);
+
+      let allowed = false;
+
+      if (isAreaManager(req) && currentStage === STAGE_AREA) allowed = true;
+      if (isRegionalManager(req) && currentStage === STAGE_RM) allowed = true;
+
+      if (isAssistantVicePresident(req) && currentStage === STAGE_AVP) {
+        allowed = true;
+      }
+
+      if (
+        (isAdmin(req) || isIT(req) || isHr(req) || isAccounting(req)) &&
+        currentStage === STAGE_ADMIN
+      ) {
+        allowed = true;
+      }
+
+      if (!allowed) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      const r = await pool.query(
+        `
+        UPDATE public.suspension_orders
+        SET
+          status = 'Rejected',
+          rejected_by = $2,
+          rejected_at = NOW(),
+          rejection_reason = $3,
+          approved_by = NULL,
+          approved_at = NULL
+        WHERE id = $1
+        RETURNING *;
+        `,
+        [id, rejecterId, reason]
+      );
+
+      return res.json(r.rows[0]);
+    } catch (e) {
+      console.error("PUT /api/suspension-orders/:id/reject ERROR:", e.message);
+      return res.status(500).json({ message: "Server error" });
     }
-
-    const existingRes = await pool.query(
-      `SELECT * FROM public.suspension_orders WHERE id = $1`,
-      [id]
-    );
-
-    if (existingRes.rowCount === 0) {
-      return res.status(404).json({
-        message: "Suspension order not found",
-      });
-    }
-
-    const row = existingRes.rows[0];
-    const currentStage = getCurrentStage(row);
-    const rejecterId = toInt(req.user?.id);
-
-    let allowed = false;
-
-    if (isAreaManager(req) && currentStage === STAGE_AREA) allowed = true;
-    if (isRegionalManager(req) && currentStage === STAGE_RM) allowed = true;
-    if (isAssistantVicePresident(req) && currentStage === STAGE_AVP) {
-      allowed = true;
-    }
-    if ((isAdmin(req) || isHr(req) || isAccounting(req)) && currentStage === STAGE_ADMIN) {
-      allowed = true;
-    }
-
-    if (!allowed) {
-      return res.status(403).json({ message: "Access denied" });
-    }
-
-    const r = await pool.query(
-      `
-      UPDATE public.suspension_orders
-      SET
-        status = 'Rejected',
-        rejected_by = $2,
-        rejected_at = NOW(),
-        rejection_reason = $3,
-        approved_by = NULL,
-        approved_at = NULL
-      WHERE id = $1
-      RETURNING *;
-      `,
-      [id, rejecterId, reason]
-    );
-
-    return res.json(r.rows[0]);
-  } catch (e) {
-    console.error("PUT /api/suspension-orders/:id/reject ERROR:", e.message);
-    return res.status(500).json({ message: "Server error" });
   }
-});
+);
 
 module.exports = router;

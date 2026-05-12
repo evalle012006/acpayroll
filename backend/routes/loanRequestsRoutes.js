@@ -6,7 +6,7 @@ const path = require("path");
 const fs = require("fs");
 
 const { requireAuth } = require("../middlewares/authMiddleware");
-const { requirePermission } = require("../utils/permissions");
+const { requirePermission } = require("../middlewares/permissionMiddleware");
 
 const {
   getRole,
@@ -48,8 +48,7 @@ const canDownloadLoanFiles = (req) =>
   isSeniorVicePresident(req) ||
   isPresident(req);
 
-const canFinalUploadLoanFile = (req) =>
-  canFinalApprove(req) || isIT(req);
+const canFinalUploadLoanFile = (req) => canFinalApprove(req) || isIT(req);
 
 const getUserBranchCode = (req) => toStr(req.user?.branch_id);
 const getUserArea = (req) => toStr(req.user?.area);
@@ -132,6 +131,7 @@ const getApprovalChain = (applicantRole, department) => {
 
   if (role === "vice president") return ["vice president"];
   if (role === "assistant vice president") return ["vice president"];
+
   if (role === "regional manager") {
     return ["assistant vice president", "vice president"];
   }
@@ -374,7 +374,9 @@ router.get(
   async (req, res) => {
     try {
       const staffId = toInt(req.params.staffId);
-      if (!staffId) return res.status(400).json({ message: "Invalid staff id" });
+      if (!staffId) {
+        return res.status(400).json({ message: "Invalid staff id" });
+      }
 
       const s = await pool.query(
         `
@@ -530,12 +532,14 @@ router.post(
       }
 
       const applicant_role = roleLower(req);
-      const approval_stage = getInitialApprovalStage(applicant_role, staffRow.department);
-      const status = "Pending";
+      const approval_stage = getInitialApprovalStage(
+        applicant_role,
+        staffRow.department
+      );
 
-      const attachment_path = req.file ? `/uploads/loans/${req.file.filename}` : null;
-      const attachment_name = req.file ? req.file.originalname : null;
-      const attachment_mime = req.file ? req.file.mimetype : null;
+      const attachment_path = `/uploads/loans/${req.file.filename}`;
+      const attachment_name = req.file.originalname || null;
+      const attachment_mime = req.file.mimetype || null;
 
       const ins = await client.query(
         `
@@ -580,9 +584,9 @@ router.post(
             $8::numeric,
             $9::numeric,
             $10::numeric,
+            'Pending',
             $11::varchar,
             $12::varchar,
-            $13::varchar,
             'Pending',
             'Pending',
             'Pending',
@@ -590,9 +594,9 @@ router.post(
             'Pending',
             NULL,
             NULL,
+            $13::text,
             $14::text,
             $15::text,
-            $16::text,
             NULL,
             NULL,
             NULL
@@ -610,7 +614,6 @@ router.post(
           interest,
           total,
           per_month,
-          status,
           applicant_role,
           approval_stage,
           attachment_path,
@@ -772,7 +775,9 @@ router.put(
         currentStage = chain[0] || "admin";
       }
 
-      const canAct = currentStage === "admin" ? isFinalApprover(req) : role === currentStage;
+      const canAct =
+        currentStage === "admin" ? isFinalApprover(req) : role === currentStage;
+
       const highLevelOverride = isIT(req) || norm(role) === "admin";
 
       if (!canAct && !highLevelOverride) {
@@ -910,11 +915,14 @@ router.post(
       const id = toInt(req.params.id);
 
       if (!id) return res.status(400).json({ message: "Invalid id" });
-      if (!req.file) return res.status(400).json({ message: "Attachment is required" });
+      if (!req.file) {
+        return res.status(400).json({ message: "Attachment is required" });
+      }
 
       if (!canFinalUploadLoanFile(req)) {
         return res.status(403).json({
-          message: "Only HR, IT, Admin, and Accounting can upload final approved files",
+          message:
+            "Only HR, IT, Admin, and Accounting can upload final approved files",
         });
       }
 
@@ -970,6 +978,208 @@ router.post(
 
       console.error("POST /api/loan-requests/:id/approved-file ERROR:", e);
       return res.status(500).json({ message: e?.message || "Server error" });
+    } finally {
+      client.release();
+    }
+  }
+);
+
+/* =========================================================
+   VOID LOAN
+========================================================= */
+
+router.put(
+  "/loan-requests/:id/void",
+
+  requireAuth,
+
+  async (req, res, next) => {
+    if (!isIT(req) && !canViewAll(req)) {
+      return res.status(403).json({
+        message:
+          "Only Admin and IT can void loans",
+      });
+    }
+
+    next();
+  },
+  async (req, res) => {
+    const client =
+      await pool.connect();
+
+    try {
+      const id = toInt(
+        req.params.id
+      );
+
+      const reason =
+        toStr(
+          req.body?.reason
+        );
+
+      if (!id) {
+        return res.status(400).json({
+          message:
+            "Invalid loan id",
+        });
+      }
+
+      await client.query(
+        "BEGIN"
+      );
+
+      const cur =
+        await client.query(
+          `
+          SELECT
+            id,
+            status,
+            employee_no,
+            total,
+            amount,
+            loan_type
+
+          FROM public.loan_requests
+
+          WHERE id = $1
+
+          FOR UPDATE
+          `,
+          [id]
+        );
+
+      if (
+        cur.rowCount === 0
+      ) {
+        await client.query(
+          "ROLLBACK"
+        );
+
+        return res.status(404).json({
+          message:
+            "Loan not found",
+        });
+      }
+
+      const loan =
+        cur.rows[0];
+
+      if (
+        norm(
+          loan.status
+        ) !== "approved"
+      ) {
+        await client.query(
+          "ROLLBACK"
+        );
+
+        return res.status(400).json({
+          message:
+            "Only approved loans can be voided",
+        });
+      }
+
+      const balanceColumn =
+        loanTypeToBalanceColumn(
+          loan.loan_type
+        );
+
+      const total =
+        toNum(
+          loan.total
+        ) ||
+        toNum(
+          loan.amount
+        );
+
+      /*
+        REVERSE STAFF BALANCE
+      */
+
+      if (
+        loan.employee_no &&
+        balanceColumn
+      ) {
+        await ensureBalanceRow(
+          client,
+          loan.employee_no
+        );
+
+        await client.query(
+          `
+          UPDATE public.staff_balances
+
+          SET
+            ${balanceColumn} =
+              GREATEST(
+                COALESCE(${balanceColumn}, 0) - $1,
+                0
+              ),
+
+            updated_at =
+              NOW()
+
+          WHERE employee_no = $2
+          `,
+          [
+            total,
+            loan.employee_no,
+          ]
+        );
+      }
+
+      /*
+        VOID LOAN
+      */
+
+      await client.query(
+        `
+        UPDATE public.loan_requests
+
+        SET
+          status = 'Voided',
+
+          reason =
+            CASE
+              WHEN COALESCE(reason, '') = ''
+              THEN $2
+              ELSE reason || E'\n\n[VOID REASON]\n' || $2
+            END
+
+        WHERE id = $1
+        `,
+        [
+          id,
+          reason ||
+            "Loan voided",
+        ]
+      );
+
+      await client.query(
+        "COMMIT"
+      );
+
+      return res.json({
+        message:
+          "Loan successfully voided and removed from staff balances",
+      });
+    } catch (err) {
+      try {
+        await client.query(
+          "ROLLBACK"
+        );
+      } catch {}
+
+      console.error(
+        "VOID LOAN ERROR:",
+        err
+      );
+
+      return res.status(500).json({
+        message:
+          err.message ||
+          "Server error",
+      });
     } finally {
       client.release();
     }

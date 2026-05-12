@@ -4,7 +4,9 @@ const pool = require("../db");
 const path = require("path");
 const fs = require("fs");
 const multer = require("multer");
-const { requireAuth, requireRole } = require("../middlewares/authMiddleware");
+
+const { requireAuth } = require("../middlewares/authMiddleware");
+const { requirePermission } = require("../middlewares/permissionMiddleware");
 
 const toInt = (v) => {
   const n = Number(v);
@@ -23,6 +25,16 @@ const toDate = (v) => {
   return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : null;
 };
 
+const norm = (v) =>
+  String(v ?? "")
+    .trim()
+    .toLowerCase();
+
+const roleLower = (req) => norm(req.user?.role);
+
+const isAdmin = (req) =>
+  ["admin", "it"].includes(roleLower(req));
+
 const uploadRoot = path.join(process.cwd(), "uploads");
 const regUploadDir = path.join(uploadRoot, "regularization");
 
@@ -32,24 +44,30 @@ if (!fs.existsSync(regUploadDir)) {
 
 const storage = multer.diskStorage({
   destination: (_req, _file, cb) => cb(null, regUploadDir),
+
   filename: (_req, file, cb) => {
     const ext = path.extname(file.originalname || "");
+
     const base = path
       .basename(file.originalname || "file", ext)
       .replace(/[^a-zA-Z0-9-_]/g, "_");
+
     cb(null, `${Date.now()}-${base}${ext}`);
   },
 });
 
 const upload = multer({
   storage,
-  limits: { fileSize: 20 * 1024 * 1024 },
+  limits: {
+    fileSize: 20 * 1024 * 1024,
+  },
 });
 
 router.get(
   "/regularization-orders",
   requireAuth,
-  requireRole(["admin", "hr", "accounting", "vice president", "senior vice president", "president"]),
+  requirePermission("regularization_order", "view"),
+
   async (_req, res) => {
     try {
       const result = await pool.query(`
@@ -60,8 +78,16 @@ router.get(
 
       return res.json(result.rows);
     } catch (err) {
-      console.error("GET /api/regularization-orders ERROR:", err);
-      return res.status(500).json({ message: err?.message || "Failed to load regularization orders." });
+      console.error(
+        "GET /regularization-orders ERROR:",
+        err
+      );
+
+      return res.status(500).json({
+        message:
+          err?.message ||
+          "Failed to load regularization orders.",
+      });
     }
   }
 );
@@ -69,8 +95,9 @@ router.get(
 router.post(
   "/regularization-orders",
   requireAuth,
-  requireRole(["admin", "hr", "accounting", "vice president", "senior vice president", "president"]),
+  requirePermission("regularization_order", "create"),
   upload.single("attachment"),
+
   async (req, res) => {
     const client = await pool.connect();
 
@@ -78,40 +105,83 @@ router.post(
       await client.query("BEGIN");
 
       const employee_id = toInt(req.body?.employee_id);
+
       const employee_no = clean(req.body?.employee_no);
+
       const employee_name = clean(req.body?.employee_name);
+
       const branch_id = toInt(req.body?.branch_id);
+
       const branch_label = clean(req.body?.branch_label);
+
       const date_created =
-        toDate(req.body?.date_created) || new Date().toISOString().slice(0, 10);
-      const effective_date = toDate(req.body?.effective_date);
-      const previous_position = clean(req.body?.previous_position);
-      const present_position = clean(req.body?.present_position);
-      const previous_salary = toNum(req.body?.previous_salary);
-      const present_salary = toNum(req.body?.present_salary);
-      const previous_ecola = toNum(req.body?.previous_ecola);
-      const present_ecola = toNum(req.body?.present_ecola);
+        toDate(req.body?.date_created) ||
+        new Date().toISOString().slice(0, 10);
+
+      const effective_date = toDate(
+        req.body?.effective_date
+      );
+
+      const previous_position = clean(
+        req.body?.previous_position
+      );
+
+      const present_position = clean(
+        req.body?.present_position
+      );
+
+      const previous_salary = toNum(
+        req.body?.previous_salary
+      );
+
+      const present_salary = toNum(
+        req.body?.present_salary
+      );
+
+      const previous_ecola = toNum(
+        req.body?.previous_ecola
+      );
+
+      const present_ecola = toNum(
+        req.body?.present_ecola
+      );
+
       const remarks = clean(req.body?.remarks);
 
       const attachment_path = req.file
         ? `/uploads/regularization/${req.file.filename}`
         : null;
-      const attachment_name = req.file ? clean(req.file.originalname) : null;
-      const attachment_mime = req.file ? clean(req.file.mimetype) : null;
+
+      const attachment_name = req.file
+        ? clean(req.file.originalname)
+        : null;
+
+      const attachment_mime = req.file
+        ? clean(req.file.mimetype)
+        : null;
 
       if (!employee_id) {
         await client.query("ROLLBACK");
-        return res.status(400).json({ message: "Employee is required." });
+
+        return res.status(400).json({
+          message: "Employee is required.",
+        });
       }
 
       if (!effective_date) {
         await client.query("ROLLBACK");
-        return res.status(400).json({ message: "Effective date is required." });
+
+        return res.status(400).json({
+          message: "Effective date is required.",
+        });
       }
 
       if (!present_position) {
         await client.query("ROLLBACK");
-        return res.status(400).json({ message: "Present position is required." });
+
+        return res.status(400).json({
+          message: "Present position is required.",
+        });
       }
 
       const idRes = await client.query(`
@@ -119,48 +189,62 @@ router.post(
         FROM public.regularization_orders
       `);
 
-      const nextId = Number(idRes.rows?.[0]?.next_id || 0);
+      const nextId = Number(
+        idRes.rows?.[0]?.next_id || 0
+      );
 
       if (!nextId) {
         await client.query("ROLLBACK");
-        return res.status(500).json({ message: "Failed to generate regularization ID." });
+
+        return res.status(500).json({
+          message:
+            "Failed to generate regularization ID.",
+        });
       }
 
-      const order_no = `REG-${String(nextId).padStart(8, "0")}`;
+      const order_no = `REG-${String(nextId).padStart(
+        8,
+        "0"
+      )}`;
 
       const inserted = await client.query(
         `
         INSERT INTO public.regularization_orders
-          (
-            id,
-            order_no,
-            employee_id,
-            employee_no,
-            employee_name,
-            branch_id,
-            branch_label,
-            date_created,
-            effective_date,
-            previous_position,
-            present_position,
-            previous_salary,
-            present_salary,
-            previous_ecola,
-            present_ecola,
-            attachment_path,
-            attachment_name,
-            attachment_mime,
-            remarks,
-            status,
-            created_by,
-            created_at,
-            updated_at
-          )
+        (
+          id,
+          order_no,
+          employee_id,
+          employee_no,
+          employee_name,
+          branch_id,
+          branch_label,
+          date_created,
+          effective_date,
+          previous_position,
+          present_position,
+          previous_salary,
+          present_salary,
+          previous_ecola,
+          present_ecola,
+          attachment_path,
+          attachment_name,
+          attachment_mime,
+          remarks,
+          status,
+          created_by,
+          created_at,
+          updated_at
+        )
         VALUES
-          (
-            $1,$2,$3,$4,$5,$6,$7,$8::date,$9::date,$10,$11,$12,$13,$14,$15,
-            $16,$17,$18,$19,'Pending',$20,NOW(),NOW()
-          )
+        (
+          $1,$2,$3,$4,$5,$6,$7,$8::date,$9::date,
+          $10,$11,$12,$13,$14,$15,
+          $16,$17,$18,$19,
+          'Pending',
+          $20,
+          NOW(),
+          NOW()
+        )
         RETURNING *;
         `,
         [
@@ -188,12 +272,20 @@ router.post(
       );
 
       await client.query("COMMIT");
+
       return res.json(inserted.rows[0]);
     } catch (err) {
       await client.query("ROLLBACK");
-      console.error("POST /api/regularization-orders ERROR:", err);
+
+      console.error(
+        "POST /regularization-orders ERROR:",
+        err
+      );
+
       return res.status(500).json({
-        message: err?.message || "Failed to create regularization order.",
+        message:
+          err?.message ||
+          "Failed to create regularization order.",
       });
     } finally {
       client.release();
@@ -204,35 +296,69 @@ router.post(
 router.get(
   "/regularization-orders/:id/download",
   requireAuth,
-  requireRole(["admin", "hr", "accounting", "vice president", "senior vice president", "president"]),
+  requirePermission("regularization_order", "view"),
+
   async (req, res) => {
     try {
       const id = toInt(req.params.id);
-      if (!id) return res.status(400).json({ message: "Invalid id." });
+
+      if (!id) {
+        return res.status(400).json({
+          message: "Invalid id.",
+        });
+      }
 
       const result = await pool.query(
-        `SELECT * FROM public.regularization_orders WHERE id = $1`,
+        `
+        SELECT *
+        FROM public.regularization_orders
+        WHERE id = $1
+        `,
         [id]
       );
 
       if (result.rowCount === 0) {
-        return res.status(404).json({ message: "Regularization order not found." });
+        return res.status(404).json({
+          message:
+            "Regularization order not found.",
+        });
       }
 
       const row = result.rows[0];
+
       if (!row.attachment_path) {
-        return res.status(404).json({ message: "No attachment found." });
+        return res.status(404).json({
+          message: "No attachment found.",
+        });
       }
 
-      const filePath = path.join(process.cwd(), row.attachment_path.replace(/^\/+/, ""));
+      const filePath = path.join(
+        process.cwd(),
+        row.attachment_path.replace(/^\/+/, "")
+      );
+
       if (!fs.existsSync(filePath)) {
-        return res.status(404).json({ message: "Stored file not found." });
+        return res.status(404).json({
+          message: "Stored file not found.",
+        });
       }
 
-      return res.download(filePath, row.attachment_name || path.basename(filePath));
+      return res.download(
+        filePath,
+        row.attachment_name ||
+          path.basename(filePath)
+      );
     } catch (err) {
-      console.error("GET /api/regularization-orders/:id/download ERROR:", err);
-      return res.status(500).json({ message: err?.message || "Failed to download attachment." });
+      console.error(
+        "GET /regularization-orders/:id/download ERROR:",
+        err
+      );
+
+      return res.status(500).json({
+        message:
+          err?.message ||
+          "Failed to download attachment.",
+      });
     }
   }
 );
@@ -240,7 +366,8 @@ router.get(
 router.put(
   "/regularization-orders/:id/approve",
   requireAuth,
-  requireRole(["admin", "hr", "accounting"]),
+  requirePermission("regularization_order", "approve"),
+
   async (req, res) => {
     const client = await pool.connect();
 
@@ -248,9 +375,13 @@ router.put(
       await client.query("BEGIN");
 
       const id = toInt(req.params.id);
+
       if (!id) {
         await client.query("ROLLBACK");
-        return res.status(400).json({ message: "Invalid id." });
+
+        return res.status(400).json({
+          message: "Invalid id.",
+        });
       }
 
       const result = await client.query(
@@ -269,7 +400,11 @@ router.put(
 
       if (result.rowCount === 0) {
         await client.query("ROLLBACK");
-        return res.status(404).json({ message: "Regularization order not found." });
+
+        return res.status(404).json({
+          message:
+            "Regularization order not found.",
+        });
       }
 
       const row = result.rows[0];
@@ -294,11 +429,21 @@ router.put(
       );
 
       await client.query("COMMIT");
+
       return res.json(row);
     } catch (err) {
       await client.query("ROLLBACK");
-      console.error("PUT /api/regularization-orders/:id/approve ERROR:", err);
-      return res.status(500).json({ message: err?.message || "Failed to approve regularization order." });
+
+      console.error(
+        "PUT /regularization-orders/:id/approve ERROR:",
+        err
+      );
+
+      return res.status(500).json({
+        message:
+          err?.message ||
+          "Failed to approve regularization order.",
+      });
     } finally {
       client.release();
     }
@@ -308,14 +453,26 @@ router.put(
 router.put(
   "/regularization-orders/:id/reject",
   requireAuth,
-  requireRole(["admin", "hr", "accounting"]),
+  requirePermission("regularization_order", "reject"),
+
   async (req, res) => {
     try {
       const id = toInt(req.params.id);
+
       const reason = clean(req.body?.reason);
 
-      if (!id) return res.status(400).json({ message: "Invalid id." });
-      if (!reason) return res.status(400).json({ message: "Rejection reason is required." });
+      if (!id) {
+        return res.status(400).json({
+          message: "Invalid id.",
+        });
+      }
+
+      if (!reason) {
+        return res.status(400).json({
+          message:
+            "Rejection reason is required.",
+        });
+      }
 
       const result = await pool.query(
         `
@@ -329,17 +486,101 @@ router.put(
         WHERE id = $1
         RETURNING *;
         `,
-        [id, reason, req.user?.id ?? null]
+        [
+          id,
+          reason,
+          req.user?.id ?? null,
+        ]
       );
 
       if (result.rowCount === 0) {
-        return res.status(404).json({ message: "Regularization order not found." });
+        return res.status(404).json({
+          message:
+            "Regularization order not found.",
+        });
       }
 
       return res.json(result.rows[0]);
     } catch (err) {
-      console.error("PUT /api/regularization-orders/:id/reject ERROR:", err);
-      return res.status(500).json({ message: err?.message || "Failed to reject regularization order." });
+      console.error(
+        "PUT /regularization-orders/:id/reject ERROR:",
+        err
+      );
+
+      return res.status(500).json({
+        message:
+          err?.message ||
+          "Failed to reject regularization order.",
+      });
+    }
+  }
+);
+
+router.delete(
+  "/regularization-orders/:id",
+  requireAuth,
+  requirePermission("regularization_order", "delete"),
+
+  async (req, res) => {
+    try {
+      const id = toInt(req.params.id);
+
+      if (!id) {
+        return res.status(400).json({
+          message: "Invalid id.",
+        });
+      }
+
+      const result = await pool.query(
+        `
+        SELECT attachment_path
+        FROM public.regularization_orders
+        WHERE id = $1
+        `,
+        [id]
+      );
+
+      if (result.rowCount === 0) {
+        return res.status(404).json({
+          message:
+            "Regularization order not found.",
+        });
+      }
+
+      const row = result.rows[0];
+
+      await pool.query(
+        `
+        DELETE FROM public.regularization_orders
+        WHERE id = $1
+        `,
+        [id]
+      );
+
+      if (row?.attachment_path) {
+        const filePath = path.join(
+          process.cwd(),
+          row.attachment_path.replace(/^\/+/, "")
+        );
+
+        fs.unlink(filePath, () => {});
+      }
+
+      return res.json({
+        message:
+          "Regularization order deleted successfully.",
+      });
+    } catch (err) {
+      console.error(
+        "DELETE /regularization-orders/:id ERROR:",
+        err
+      );
+
+      return res.status(500).json({
+        message:
+          err?.message ||
+          "Failed to delete regularization order.",
+      });
     }
   }
 );

@@ -1,76 +1,19 @@
 const express = require("express");
 const router = express.Router();
 const pool = require("../db");
-const { requireAuth, requireRole } = require("../middlewares/authMiddleware");
-const { hasAnyRole } = require("../utils/roleAccess");
+
+const { requireAuth } = require("../middlewares/authMiddleware");
+const { requirePermission } = require("../middlewares/permissionMiddleware");
 
 const toNum = (v) => {
   const n = Number(v);
   return Number.isFinite(n) ? n : 0;
 };
 
-const canViewSbf = (req) =>
-  hasAnyRole(req, [
-    "admin",
-    "it",
-    "hr",
-    "accounting",
-    "branch manager",
-    "area manager",
-    "regional manager",
-    "assistant vice president",
-    "vice president",
-    "senior vice president",
-    "president",
-    "tread",
-  ]);
-
-const canCreateSbf = canViewSbf;
-
-const canApproveSbf = (req) =>
-  hasAnyRole(req, [
-    "admin",
-    "it",
-    "hr",
-    "accounting",
-    "assistant vice president",
-    "vice president",
-    "senior vice president",
-    "president",
-    "tread",
-  ]);
-
-const SBF_VIEW_ROLES = [
-  "admin",
-  "it",
-  "hr",
-  "accounting",
-  "branch manager",
-  "area manager",
-  "regional manager",
-  "assistant vice president",
-  "vice president",
-  "senior vice president",
-  "president",
-  "tread",
-];
-
-const SBF_APPROVER_ROLES = [
-  "admin",
-  "it",
-  "hr",
-  "accounting",
-  "assistant vice president",
-  "vice president",
-  "senior vice president",
-  "president",
-  "tread",
-];
-
 async function makeOrderNo() {
   const result = await pool.query(`
     SELECT 'SBF-' || LPAD((COALESCE(MAX(id), 0) + 1)::text, 6, '0') AS order_no
-    FROM sbf_orders
+    FROM public.sbf_orders
   `);
 
   return result.rows[0]?.order_no || "SBF-000001";
@@ -93,35 +36,32 @@ const selectSbfFields = `
   approved_at
 `;
 
-router.get("/sbf-orders", requireAuth, async (req, res) => {
-  try {
-    if (!canViewSbf(req)) {
-      return res.status(403).json({ message: "Access denied" });
+router.get(
+  "/sbf-orders",
+  requireAuth,
+  requirePermission("sbf_order", "view"),
+  async (_req, res) => {
+    try {
+      const result = await pool.query(`
+        SELECT ${selectSbfFields}
+        FROM public.sbf_orders
+        ORDER BY id DESC
+      `);
+
+      return res.json(result.rows);
+    } catch (err) {
+      console.error("GET SBF ORDERS ERROR:", err);
+      return res.status(500).json({ message: err.message });
     }
-
-    const result = await pool.query(`
-      SELECT ${selectSbfFields}
-      FROM sbf_orders
-      ORDER BY id DESC
-    `);
-
-    return res.json(result.rows);
-  } catch (err) {
-    console.error("GET SBF ORDERS ERROR:", err);
-    return res.status(500).json({ message: err.message });
   }
-});
+);
 
 router.post(
   "/sbf-orders",
   requireAuth,
-  requireRole(SBF_VIEW_ROLES),
+  requirePermission("sbf_order", "create"),
   async (req, res) => {
     try {
-      if (!canCreateSbf(req)) {
-        return res.status(403).json({ message: "Access denied" });
-      }
-
       const {
         employee_no,
         employee_name,
@@ -138,7 +78,7 @@ router.post(
 
       const result = await pool.query(
         `
-        INSERT INTO sbf_orders (
+        INSERT INTO public.sbf_orders (
           order_no,
           employee_no,
           employee_name,
@@ -180,14 +120,14 @@ router.post(
 router.put(
   "/sbf-orders/:id/approve",
   requireAuth,
-  requireRole(SBF_APPROVER_ROLES),
+  requirePermission("sbf_order", "approve"),
   async (req, res) => {
     try {
-      if (!canApproveSbf(req)) {
-        return res.status(403).json({ message: "Access denied" });
-      }
+      const id = Number(req.params.id);
 
-      const { id } = req.params;
+      if (!Number.isFinite(id)) {
+        return res.status(400).json({ message: "Invalid SBF order id" });
+      }
 
       const approvedBy = Number(
         req.user?.id ?? req.user?.user_id ?? req.user?.employee_id
@@ -201,7 +141,7 @@ router.put(
 
       const result = await pool.query(
         `
-        UPDATE sbf_orders
+        UPDATE public.sbf_orders
         SET
           status = 'Approved',
           approved_by = $2,
@@ -227,18 +167,18 @@ router.put(
 router.put(
   "/sbf-orders/:id/reject",
   requireAuth,
-  requireRole(SBF_APPROVER_ROLES),
+  requirePermission("sbf_order", "reject"),
   async (req, res) => {
     try {
-      if (!canApproveSbf(req)) {
-        return res.status(403).json({ message: "Access denied" });
-      }
+      const id = Number(req.params.id);
 
-      const { id } = req.params;
+      if (!Number.isFinite(id)) {
+        return res.status(400).json({ message: "Invalid SBF order id" });
+      }
 
       const result = await pool.query(
         `
-        UPDATE sbf_orders
+        UPDATE public.sbf_orders
         SET status = 'Rejected'
         WHERE id = $1
         RETURNING ${selectSbfFields}

@@ -1,330 +1,593 @@
 const express = require("express");
 const router = express.Router();
 const pool = require("../db");
-const { requireAuth } = require("../middlewares/authMiddleware");
-const { requirePermission } = require("../utils/permissions");
+
+const {
+  requireAuth,
+} = require("../middlewares/authMiddleware");
+
+const {
+  requirePermission,
+} = require("../middlewares/permissionMiddleware");
 
 const toNum = (v) => {
   const n = Number(v ?? 0);
-  return Number.isFinite(n) ? n : 0;
+  return Number.isFinite(n)
+    ? n
+    : 0;
 };
 
-const clean = (v) => String(v ?? "").trim();
+const clean = (v) =>
+  String(v ?? "").trim();
 
+const toInt = (v) => {
+  const n = Number(v);
+  return Number.isFinite(n)
+    ? Math.trunc(n)
+    : null;
+};
+
+/*
+  GET ALL COMP RATES
+*/
 router.get(
   "/comp-rates",
   requireAuth,
-  requirePermission("comp_rate", "view"),
+  requirePermission(
+    "comp_rate",
+    "view"
+  ),
   async (_req, res) => {
     try {
-      const r = await pool.query(`
-        SELECT
-          id,
-          position,
-          salary,
-          ecola,
+      const r =
+        await pool.query(`
+          SELECT
+            id,
+            position,
+            salary,
+            ecola,
 
-          sss_ee,
-          philhealth_ee,
-          pagibig_ee,
-          total_ee,
+            sss_ee,
+            philhealth_ee,
+            pagibig_ee,
+            total_ee,
 
-          sss_er,
-          philhealth_er,
-          pagibig_er,
-          total_er,
+            sss_er,
+            philhealth_er,
+            pagibig_er,
+            total_er,
 
-          tax,
+            tax,
 
-          cbu,
-          cashbond,
-          utility,
+            cbu,
+            cashbond,
+            utility,
 
-          updated_at,
-          created_at
-        FROM public.position_comp_rates
-        ORDER BY position ASC
-      `);
+            updated_at,
+            created_at
 
-      return res.json(r.rows);
+          FROM public.position_comp_rates
+          ORDER BY position ASC
+        `);
+
+      return res.json(
+        r.rows
+      );
     } catch (e) {
-      console.error("GET /api/comp-rates ERROR:", e.message);
-      return res.status(500).json({ message: "Server error" });
+      console.error(
+        "GET /api/comp-rates ERROR:",
+        e.message
+      );
+
+      return res.status(500).json({
+        message:
+          "Server error",
+      });
     }
   }
 );
 
+/*
+  CREATE
+*/
 router.post(
   "/comp-rates",
   requireAuth,
-  requirePermission("comp_rate", "create"),
+  requirePermission(
+    "comp_rate",
+    "create"
+  ),
   async (req, res) => {
     try {
-      const position = clean(req.body?.position);
-      const salary = toNum(req.body?.salary);
-      const ecola = toNum(req.body?.ecola);
-
-      const sss_ee = toNum(req.body?.sss_ee);
-      const philhealth_ee = toNum(req.body?.philhealth_ee);
-      const pagibig_ee = toNum(req.body?.pagibig_ee);
-      const total_ee = toNum(req.body?.total_ee);
-
-      const sss_er = toNum(req.body?.sss_er);
-      const philhealth_er = toNum(req.body?.philhealth_er);
-      const pagibig_er = toNum(req.body?.pagibig_er);
-      const total_er = toNum(req.body?.total_er);
-
-      const tax = toNum(req.body?.tax);
-
-      const cbu = toNum(req.body?.cbu);
-      const cashbond = toNum(req.body?.cashbond);
-      const utility = toNum(req.body?.utility);
-
-      if (!position) {
-        return res.status(400).json({ message: "position is required" });
-      }
-
-      const r = await pool.query(
-        `
-        INSERT INTO public.position_comp_rates
-        (
-          position,
-          salary,
-          ecola,
-
-          sss_ee,
-          philhealth_ee,
-          pagibig_ee,
-          total_ee,
-
-          sss_er,
-          philhealth_er,
-          pagibig_er,
-          total_er,
-
-          tax,
-
-          cbu,
-          cashbond,
-          utility
-        )
-        VALUES
-        (
-          $1,$2,$3,
-          $4,$5,$6,$7,
-          $8,$9,$10,$11,
-          $12,
-          $13,$14,$15
-        )
-        RETURNING
-          id,
-          position,
-          salary,
-          ecola,
-
-          sss_ee,
-          philhealth_ee,
-          pagibig_ee,
-          total_ee,
-
-          sss_er,
-          philhealth_er,
-          pagibig_er,
-          total_er,
-
-          tax,
-
-          cbu,
-          cashbond,
-          utility,
-
-          updated_at,
-          created_at
-        `,
-        [
-          position,
-          salary,
-          ecola,
-
-          sss_ee,
-          philhealth_ee,
-          pagibig_ee,
-          total_ee,
-
-          sss_er,
-          philhealth_er,
-          pagibig_er,
-          total_er,
-
-          tax,
-
-          cbu,
-          cashbond,
-          utility,
-        ]
+      const position = clean(
+        req.body?.position
       );
 
-      return res.json({ message: "Created", rate: r.rows[0] });
-    } catch (e) {
-      if (String(e.code) === "23505") {
-        return res.status(409).json({ message: "Position already exists" });
+      const salary = toNum(
+        req.body?.salary
+      );
+
+      const ecola = toNum(
+        req.body?.ecola
+      );
+
+      const sss_ee = toNum(
+        req.body?.sss_ee
+      );
+
+      const philhealth_ee =
+        toNum(
+          req.body
+            ?.philhealth_ee
+        );
+
+      const pagibig_ee =
+        toNum(
+          req.body
+            ?.pagibig_ee
+        );
+
+      const total_ee = toNum(
+        req.body?.total_ee
+      );
+
+      const sss_er = toNum(
+        req.body?.sss_er
+      );
+
+      const philhealth_er =
+        toNum(
+          req.body
+            ?.philhealth_er
+        );
+
+      const pagibig_er =
+        toNum(
+          req.body
+            ?.pagibig_er
+        );
+
+      const total_er = toNum(
+        req.body?.total_er
+      );
+
+      const tax = toNum(
+        req.body?.tax
+      );
+
+      const cbu = toNum(
+        req.body?.cbu
+      );
+
+      const cashbond = toNum(
+        req.body?.cashbond
+      );
+
+      const utility = toNum(
+        req.body?.utility
+      );
+
+      if (!position) {
+        return res.status(400).json({
+          message:
+            "position is required",
+        });
       }
 
-      console.error("POST /api/comp-rates ERROR:", e.message);
-      return res.status(500).json({ message: "Server error" });
+      const exists =
+        await pool.query(
+          `
+          SELECT id
+          FROM public.position_comp_rates
+          WHERE LOWER(TRIM(position)) =
+                LOWER(TRIM($1))
+          LIMIT 1
+          `,
+          [position]
+        );
+
+      if (
+        exists.rowCount > 0
+      ) {
+        return res.status(409).json({
+          message:
+            "Position already exists",
+        });
+      }
+
+      const r =
+        await pool.query(
+          `
+          INSERT INTO public.position_comp_rates
+          (
+            position,
+            salary,
+            ecola,
+
+            sss_ee,
+            philhealth_ee,
+            pagibig_ee,
+            total_ee,
+
+            sss_er,
+            philhealth_er,
+            pagibig_er,
+            total_er,
+
+            tax,
+
+            cbu,
+            cashbond,
+            utility,
+
+            created_at,
+            updated_at
+          )
+          VALUES
+          (
+            $1,$2,$3,
+            $4,$5,$6,$7,
+            $8,$9,$10,$11,
+            $12,
+            $13,$14,$15,
+            NOW(),
+            NOW()
+          )
+          RETURNING
+            id,
+            position,
+            salary,
+            ecola,
+
+            sss_ee,
+            philhealth_ee,
+            pagibig_ee,
+            total_ee,
+
+            sss_er,
+            philhealth_er,
+            pagibig_er,
+            total_er,
+
+            tax,
+
+            cbu,
+            cashbond,
+            utility,
+
+            updated_at,
+            created_at
+          `,
+          [
+            position,
+            salary,
+            ecola,
+
+            sss_ee,
+            philhealth_ee,
+            pagibig_ee,
+            total_ee,
+
+            sss_er,
+            philhealth_er,
+            pagibig_er,
+            total_er,
+
+            tax,
+
+            cbu,
+            cashbond,
+            utility,
+          ]
+        );
+
+      return res.json({
+        message:
+          "Created",
+        rate:
+          r.rows[0],
+      });
+    } catch (e) {
+      console.error(
+        "POST /api/comp-rates ERROR:",
+        e.message
+      );
+
+      return res.status(500).json({
+        message:
+          "Server error",
+      });
     }
   }
 );
 
+/*
+  UPDATE
+*/
 router.put(
   "/comp-rates/:id",
   requireAuth,
-  requirePermission("comp_rate", "edit"),
+  requirePermission(
+    "comp_rate",
+    "edit"
+  ),
   async (req, res) => {
     try {
-      const id = Number(req.params.id);
-      if (!Number.isFinite(id) || id <= 0) {
-        return res.status(400).json({ message: "Invalid id" });
-      }
-
-      const position = clean(req.body?.position);
-      const salary = toNum(req.body?.salary);
-      const ecola = toNum(req.body?.ecola);
-
-      const sss_ee = toNum(req.body?.sss_ee);
-      const philhealth_ee = toNum(req.body?.philhealth_ee);
-      const pagibig_ee = toNum(req.body?.pagibig_ee);
-      const total_ee = toNum(req.body?.total_ee);
-
-      const sss_er = toNum(req.body?.sss_er);
-      const philhealth_er = toNum(req.body?.philhealth_er);
-      const pagibig_er = toNum(req.body?.pagibig_er);
-      const total_er = toNum(req.body?.total_er);
-
-      const tax = toNum(req.body?.tax);
-
-      const cbu = toNum(req.body?.cbu);
-      const cashbond = toNum(req.body?.cashbond);
-      const utility = toNum(req.body?.utility);
-
-      if (!position) {
-        return res.status(400).json({ message: "position is required" });
-      }
-
-      const r = await pool.query(
-        `
-        UPDATE public.position_comp_rates
-        SET
-          position = $1,
-          salary = $2,
-          ecola = $3,
-
-          sss_ee = $4,
-          philhealth_ee = $5,
-          pagibig_ee = $6,
-          total_ee = $7,
-
-          sss_er = $8,
-          philhealth_er = $9,
-          pagibig_er = $10,
-          total_er = $11,
-
-          tax = $12,
-
-          cbu = $13,
-          cashbond = $14,
-          utility = $15,
-          updated_at = NOW()
-        WHERE id = $16
-        RETURNING
-          id,
-          position,
-          salary,
-          ecola,
-
-          sss_ee,
-          philhealth_ee,
-          pagibig_ee,
-          total_ee,
-
-          sss_er,
-          philhealth_er,
-          pagibig_er,
-          total_er,
-
-          tax,
-
-          cbu,
-          cashbond,
-          utility,
-
-          updated_at,
-          created_at
-        `,
-        [
-          position,
-          salary,
-          ecola,
-
-          sss_ee,
-          philhealth_ee,
-          pagibig_ee,
-          total_ee,
-
-          sss_er,
-          philhealth_er,
-          pagibig_er,
-          total_er,
-
-          tax,
-
-          cbu,
-          cashbond,
-          utility,
-          id,
-        ]
+      const id = toInt(
+        req.params.id
       );
 
-      if (r.rowCount === 0) {
-        return res.status(404).json({ message: "Not found" });
+      if (!id) {
+        return res.status(400).json({
+          message:
+            "Invalid id",
+        });
       }
 
-      return res.json({ message: "Updated", rate: r.rows[0] });
+      const position = clean(
+        req.body?.position
+      );
+
+      const salary = toNum(
+        req.body?.salary
+      );
+
+      const ecola = toNum(
+        req.body?.ecola
+      );
+
+      const sss_ee = toNum(
+        req.body?.sss_ee
+      );
+
+      const philhealth_ee =
+        toNum(
+          req.body
+            ?.philhealth_ee
+        );
+
+      const pagibig_ee =
+        toNum(
+          req.body
+            ?.pagibig_ee
+        );
+
+      const total_ee = toNum(
+        req.body?.total_ee
+      );
+
+      const sss_er = toNum(
+        req.body?.sss_er
+      );
+
+      const philhealth_er =
+        toNum(
+          req.body
+            ?.philhealth_er
+        );
+
+      const pagibig_er =
+        toNum(
+          req.body
+            ?.pagibig_er
+        );
+
+      const total_er = toNum(
+        req.body?.total_er
+      );
+
+      const tax = toNum(
+        req.body?.tax
+      );
+
+      const cbu = toNum(
+        req.body?.cbu
+      );
+
+      const cashbond = toNum(
+        req.body?.cashbond
+      );
+
+      const utility = toNum(
+        req.body?.utility
+      );
+
+      if (!position) {
+        return res.status(400).json({
+          message:
+            "position is required",
+        });
+      }
+
+      const exists =
+        await pool.query(
+          `
+          SELECT id
+          FROM public.position_comp_rates
+          WHERE LOWER(TRIM(position)) =
+                LOWER(TRIM($1))
+            AND id <> $2
+          LIMIT 1
+          `,
+          [
+            position,
+            id,
+          ]
+        );
+
+      if (
+        exists.rowCount > 0
+      ) {
+        return res.status(409).json({
+          message:
+            "Position already exists",
+        });
+      }
+
+      const r =
+        await pool.query(
+          `
+          UPDATE public.position_comp_rates
+          SET
+            position = $1,
+            salary = $2,
+            ecola = $3,
+
+            sss_ee = $4,
+            philhealth_ee = $5,
+            pagibig_ee = $6,
+            total_ee = $7,
+
+            sss_er = $8,
+            philhealth_er = $9,
+            pagibig_er = $10,
+            total_er = $11,
+
+            tax = $12,
+
+            cbu = $13,
+            cashbond = $14,
+            utility = $15,
+
+            updated_at = NOW()
+
+          WHERE id = $16
+
+          RETURNING
+            id,
+            position,
+            salary,
+            ecola,
+
+            sss_ee,
+            philhealth_ee,
+            pagibig_ee,
+            total_ee,
+
+            sss_er,
+            philhealth_er,
+            pagibig_er,
+            total_er,
+
+            tax,
+
+            cbu,
+            cashbond,
+            utility,
+
+            updated_at,
+            created_at
+          `,
+          [
+            position,
+            salary,
+            ecola,
+
+            sss_ee,
+            philhealth_ee,
+            pagibig_ee,
+            total_ee,
+
+            sss_er,
+            philhealth_er,
+            pagibig_er,
+            total_er,
+
+            tax,
+
+            cbu,
+            cashbond,
+            utility,
+
+            id,
+          ]
+        );
+
+      if (
+        r.rowCount === 0
+      ) {
+        return res.status(404).json({
+          message:
+            "Not found",
+        });
+      }
+
+      return res.json({
+        message:
+          "Updated",
+        rate:
+          r.rows[0],
+      });
     } catch (e) {
-      if (String(e.code) === "23505") {
-        return res.status(409).json({ message: "Position already exists" });
-      }
+      console.error(
+        "PUT /api/comp-rates/:id ERROR:",
+        e.message
+      );
 
-      console.error("PUT /api/comp-rates/:id ERROR:", e.message);
-      return res.status(500).json({ message: "Server error" });
+      return res.status(500).json({
+        message:
+          "Server error",
+      });
     }
   }
 );
 
+/*
+  DELETE
+*/
 router.delete(
   "/comp-rates/:id",
   requireAuth,
-  requirePermission("comp_rate", "delete"),
+  requirePermission(
+    "comp_rate",
+    "delete"
+  ),
   async (req, res) => {
     try {
-      const id = Number(req.params.id);
-      if (!Number.isFinite(id) || id <= 0) {
-        return res.status(400).json({ message: "Invalid id" });
-      }
-
-      const r = await pool.query(
-        `DELETE FROM public.position_comp_rates WHERE id = $1 RETURNING id`,
-        [id]
+      const id = toInt(
+        req.params.id
       );
 
-      if (r.rowCount === 0) {
-        return res.status(404).json({ message: "Not found" });
+      if (!id) {
+        return res.status(400).json({
+          message:
+            "Invalid id",
+        });
       }
 
-      return res.json({ message: "Deleted" });
+      const r =
+        await pool.query(
+          `
+          DELETE FROM public.position_comp_rates
+          WHERE id = $1
+          RETURNING id
+          `,
+          [id]
+        );
+
+      if (
+        r.rowCount === 0
+      ) {
+        return res.status(404).json({
+          message:
+            "Not found",
+        });
+      }
+
+      return res.json({
+        message:
+          "Deleted",
+      });
     } catch (e) {
-      console.error("DELETE /api/comp-rates/:id ERROR:", e.message);
-      return res.status(500).json({ message: "Server error" });
+      console.error(
+        "DELETE /api/comp-rates/:id ERROR:",
+        e.message
+      );
+
+      return res.status(500).json({
+        message:
+          "Server error",
+      });
     }
   }
 );

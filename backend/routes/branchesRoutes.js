@@ -3,7 +3,7 @@ const router = express.Router();
 const pool = require("../db");
 
 const { requireAuth } = require("../middlewares/authMiddleware");
-const { requirePermission } = require("../utils/permissions");
+const { requirePermission } = require("../middlewares/permissionMiddleware");
 
 const {
   isAdmin,
@@ -48,101 +48,97 @@ const getUserArea = (req) => toStr(req.user?.area);
 const getUserRegion = (req) => toStr(req.user?.region);
 const getUserDivision = (req) => toStr(req.user?.division);
 
-router.get("/branches", requireAuth, async (req, res) => {
-  try {
-    if (isTopManagement(req)) {
-      const r = await pool.query(`
-        SELECT id, code, name, area, region, division, address, latitude, longitude
-        FROM public.branches
-        ORDER BY id ASC
-      `);
+router.get(
+  "/branches",
+  requireAuth,
+  requirePermission("branch", "view"),
+  async (req, res) => {
+    try {
+      if (isTopManagement(req)) {
+        const r = await pool.query(`
+          SELECT id, code, name, area, region, division, address, latitude, longitude
+          FROM public.branches
+          ORDER BY id ASC
+        `);
 
-      return res.json(r.rows);
+        return res.json(r.rows);
+      }
+
+      if (isBranchManager(req)) {
+        const branchCode = getUserBranchCode(req);
+        if (!branchCode) return res.json([]);
+
+        const r = await pool.query(
+          `
+          SELECT id, code, name, area, region, division, address, latitude, longitude
+          FROM public.branches
+          WHERE LOWER(TRIM(code)) = LOWER(TRIM($1))
+          ORDER BY id ASC
+          `,
+          [branchCode]
+        );
+
+        return res.json(r.rows);
+      }
+
+      if (isAreaManager(req)) {
+        const area = getUserArea(req);
+        if (!area) return res.json([]);
+
+        const r = await pool.query(
+          `
+          SELECT id, code, name, area, region, division, address, latitude, longitude
+          FROM public.branches
+          WHERE LOWER(TRIM(COALESCE(area, ''))) = LOWER(TRIM($1))
+          ORDER BY id ASC
+          `,
+          [area]
+        );
+
+        return res.json(r.rows);
+      }
+
+      if (isRegionalManager(req)) {
+        const region = getUserRegion(req);
+        if (!region) return res.json([]);
+
+        const r = await pool.query(
+          `
+          SELECT id, code, name, area, region, division, address, latitude, longitude
+          FROM public.branches
+          WHERE LOWER(TRIM(COALESCE(region, ''))) = LOWER(TRIM($1))
+          ORDER BY id ASC
+          `,
+          [region]
+        );
+
+        return res.json(r.rows);
+      }
+
+      if (isAssistantVicePresident(req)) {
+        const division = getUserDivision(req);
+        if (!division) return res.json([]);
+
+        const r = await pool.query(
+          `
+          SELECT id, code, name, area, region, division, address, latitude, longitude
+          FROM public.branches
+          WHERE LOWER(TRIM(COALESCE(division, ''))) = LOWER(TRIM($1))
+          ORDER BY id ASC
+          `,
+          [division]
+        );
+
+        return res.json(r.rows);
+      }
+
+      return res.status(403).json({ message: "Access denied" });
+    } catch (e) {
+      console.error("GET /api/branches ERROR:", e.message);
+      return res.status(500).json({ message: "Server error" });
     }
-
-    if (isBranchManager(req)) {
-      const branchCode = getUserBranchCode(req);
-
-      if (!branchCode) return res.json([]);
-
-      const r = await pool.query(
-        `
-        SELECT id, code, name, area, region, division, address, latitude, longitude
-        FROM public.branches
-        WHERE LOWER(TRIM(code)) = LOWER(TRIM($1))
-        ORDER BY id ASC
-        `,
-        [branchCode]
-      );
-
-      return res.json(r.rows);
-    }
-
-    if (isAreaManager(req)) {
-      const area = getUserArea(req);
-
-      if (!area) return res.json([]);
-
-      const r = await pool.query(
-        `
-        SELECT id, code, name, area, region, division, address, latitude, longitude
-        FROM public.branches
-        WHERE LOWER(TRIM(COALESCE(area, ''))) = LOWER(TRIM($1))
-        ORDER BY id ASC
-        `,
-        [area]
-      );
-
-      return res.json(r.rows);
-    }
-
-    if (isRegionalManager(req)) {
-      const region = getUserRegion(req);
-
-      if (!region) return res.json([]);
-
-      const r = await pool.query(
-        `
-        SELECT id, code, name, area, region, division, address, latitude, longitude
-        FROM public.branches
-        WHERE LOWER(TRIM(COALESCE(region, ''))) = LOWER(TRIM($1))
-        ORDER BY id ASC
-        `,
-        [region]
-      );
-
-      return res.json(r.rows);
-    }
-
-    if (isAssistantVicePresident(req)) {
-      const division = getUserDivision(req);
-
-      if (!division) return res.json([]);
-
-      const r = await pool.query(
-        `
-        SELECT id, code, name, area, region, division, address, latitude, longitude
-        FROM public.branches
-        WHERE LOWER(TRIM(COALESCE(division, ''))) = LOWER(TRIM($1))
-        ORDER BY id ASC
-        `,
-        [division]
-      );
-
-      return res.json(r.rows);
-    }
-
-    return res.status(403).json({
-      message: "Access denied",
-    });
-  } catch (e) {
-    console.error("GET /api/branches ERROR:", e.message);
-
-    return res.status(500).json({
-      message: "Server error",
-    });
   }
-});
+);
 
 router.get(
   "/branches-all",
@@ -159,166 +155,101 @@ router.get(
       return res.json(r.rows);
     } catch (e) {
       console.error("GET /api/branches-all ERROR:", e.message);
-
-      return res.status(500).json({
-        message: "Server error",
-      });
+      return res.status(500).json({ message: "Server error" });
     }
   }
 );
 
-router.get("/branches/:id", requireAuth, async (req, res) => {
-  try {
-    const id = toInt(req.params.id);
+router.get(
+  "/branches/:id",
+  requireAuth,
+  requirePermission("branch", "view"),
+  async (req, res) => {
+    try {
+      const id = toInt(req.params.id);
 
-    if (!id) {
-      return res.status(400).json({
-        message: "Invalid branch id",
-      });
-    }
+      if (!id) {
+        return res.status(400).json({ message: "Invalid branch id" });
+      }
 
-    if (isTopManagement(req)) {
-      const r = await pool.query(
-        `
-        SELECT id, code, name, area, region, division, address, latitude, longitude
-        FROM public.branches
-        WHERE id = $1
-        `,
-        [id]
-      );
+      let r;
+
+      if (isTopManagement(req)) {
+        r = await pool.query(
+          `
+          SELECT id, code, name, area, region, division, address, latitude, longitude
+          FROM public.branches
+          WHERE id = $1
+          `,
+          [id]
+        );
+      } else if (isBranchManager(req)) {
+        const branchCode = getUserBranchCode(req);
+        if (!branchCode) return res.status(403).json({ message: "Access denied" });
+
+        r = await pool.query(
+          `
+          SELECT id, code, name, area, region, division, address, latitude, longitude
+          FROM public.branches
+          WHERE id = $1
+            AND LOWER(TRIM(code)) = LOWER(TRIM($2))
+          `,
+          [id, branchCode]
+        );
+      } else if (isAreaManager(req)) {
+        const area = getUserArea(req);
+        if (!area) return res.status(403).json({ message: "Access denied" });
+
+        r = await pool.query(
+          `
+          SELECT id, code, name, area, region, division, address, latitude, longitude
+          FROM public.branches
+          WHERE id = $1
+            AND LOWER(TRIM(COALESCE(area, ''))) = LOWER(TRIM($2))
+          `,
+          [id, area]
+        );
+      } else if (isRegionalManager(req)) {
+        const region = getUserRegion(req);
+        if (!region) return res.status(403).json({ message: "Access denied" });
+
+        r = await pool.query(
+          `
+          SELECT id, code, name, area, region, division, address, latitude, longitude
+          FROM public.branches
+          WHERE id = $1
+            AND LOWER(TRIM(COALESCE(region, ''))) = LOWER(TRIM($2))
+          `,
+          [id, region]
+        );
+      } else if (isAssistantVicePresident(req)) {
+        const division = getUserDivision(req);
+        if (!division) return res.status(403).json({ message: "Access denied" });
+
+        r = await pool.query(
+          `
+          SELECT id, code, name, area, region, division, address, latitude, longitude
+          FROM public.branches
+          WHERE id = $1
+            AND LOWER(TRIM(COALESCE(division, ''))) = LOWER(TRIM($2))
+          `,
+          [id, division]
+        );
+      } else {
+        return res.status(403).json({ message: "Access denied" });
+      }
 
       if (r.rowCount === 0) {
-        return res.status(404).json({
-          message: "Branch not found",
-        });
+        return res.status(404).json({ message: "Branch not found" });
       }
 
       return res.json(r.rows[0]);
+    } catch (e) {
+      console.error("GET /api/branches/:id ERROR:", e.message);
+      return res.status(500).json({ message: "Server error" });
     }
-
-    if (isBranchManager(req)) {
-      const branchCode = getUserBranchCode(req);
-
-      if (!branchCode) {
-        return res.status(403).json({
-          message: "Access denied",
-        });
-      }
-
-      const r = await pool.query(
-        `
-        SELECT id, code, name, area, region, division, address, latitude, longitude
-        FROM public.branches
-        WHERE id = $1
-          AND LOWER(TRIM(code)) = LOWER(TRIM($2))
-        `,
-        [id, branchCode]
-      );
-
-      if (r.rowCount === 0) {
-        return res.status(403).json({
-          message: "Access denied",
-        });
-      }
-
-      return res.json(r.rows[0]);
-    }
-
-    if (isAreaManager(req)) {
-      const area = getUserArea(req);
-
-      if (!area) {
-        return res.status(403).json({
-          message: "Access denied",
-        });
-      }
-
-      const r = await pool.query(
-        `
-        SELECT id, code, name, area, region, division, address, latitude, longitude
-        FROM public.branches
-        WHERE id = $1
-          AND LOWER(TRIM(COALESCE(area, ''))) = LOWER(TRIM($2))
-        `,
-        [id, area]
-      );
-
-      if (r.rowCount === 0) {
-        return res.status(403).json({
-          message: "Access denied",
-        });
-      }
-
-      return res.json(r.rows[0]);
-    }
-
-    if (isRegionalManager(req)) {
-      const region = getUserRegion(req);
-
-      if (!region) {
-        return res.status(403).json({
-          message: "Access denied",
-        });
-      }
-
-      const r = await pool.query(
-        `
-        SELECT id, code, name, area, region, division, address, latitude, longitude
-        FROM public.branches
-        WHERE id = $1
-          AND LOWER(TRIM(COALESCE(region, ''))) = LOWER(TRIM($2))
-        `,
-        [id, region]
-      );
-
-      if (r.rowCount === 0) {
-        return res.status(403).json({
-          message: "Access denied",
-        });
-      }
-
-      return res.json(r.rows[0]);
-    }
-
-    if (isAssistantVicePresident(req)) {
-      const division = getUserDivision(req);
-
-      if (!division) {
-        return res.status(403).json({
-          message: "Access denied",
-        });
-      }
-
-      const r = await pool.query(
-        `
-        SELECT id, code, name, area, region, division, address, latitude, longitude
-        FROM public.branches
-        WHERE id = $1
-          AND LOWER(TRIM(COALESCE(division, ''))) = LOWER(TRIM($2))
-        `,
-        [id, division]
-      );
-
-      if (r.rowCount === 0) {
-        return res.status(403).json({
-          message: "Access denied",
-        });
-      }
-
-      return res.json(r.rows[0]);
-    }
-
-    return res.status(403).json({
-      message: "Access denied",
-    });
-  } catch (e) {
-    console.error("GET /api/branches/:id ERROR:", e.message);
-
-    return res.status(500).json({
-      message: "Server error",
-    });
   }
-});
+);
 
 router.post(
   "/branches",
@@ -332,39 +263,14 @@ router.post(
       const region = toStr(req.body?.region);
       const division = toStr(req.body?.division);
       const address = toStr(req.body?.address) || null;
-
       const latitude = toNumOrNull(req.body?.latitude);
       const longitude = toNumOrNull(req.body?.longitude);
 
-      if (!code) {
-        return res.status(400).json({
-          message: "Branch code is required",
-        });
-      }
-
-      if (!name) {
-        return res.status(400).json({
-          message: "Branch name is required",
-        });
-      }
-
-      if (!area) {
-        return res.status(400).json({
-          message: "Area is required",
-        });
-      }
-
-      if (!region) {
-        return res.status(400).json({
-          message: "Region is required",
-        });
-      }
-
-      if (!division) {
-        return res.status(400).json({
-          message: "Division is required",
-        });
-      }
+      if (!code) return res.status(400).json({ message: "Branch code is required" });
+      if (!name) return res.status(400).json({ message: "Branch name is required" });
+      if (!area) return res.status(400).json({ message: "Area is required" });
+      if (!region) return res.status(400).json({ message: "Region is required" });
+      if (!division) return res.status(400).json({ message: "Division is required" });
 
       const dup = await pool.query(
         `
@@ -389,16 +295,7 @@ router.post(
           (code, name, area, region, division, address, latitude, longitude)
         VALUES
           ($1, $2, $3, $4, $5, $6, $7, $8)
-        RETURNING
-          id,
-          code,
-          name,
-          area,
-          region,
-          division,
-          address,
-          latitude,
-          longitude
+        RETURNING id, code, name, area, region, division, address, latitude, longitude
         `,
         [code, name, area, region, division, address, latitude, longitude]
       );
@@ -406,10 +303,7 @@ router.post(
       return res.json(ins.rows[0]);
     } catch (e) {
       console.error("POST /api/branches ERROR:", e.message);
-
-      return res.status(500).json({
-        message: "Server error",
-      });
+      return res.status(500).json({ message: "Server error" });
     }
   }
 );
@@ -422,11 +316,7 @@ router.put(
     try {
       const id = toInt(req.params.id);
 
-      if (!id) {
-        return res.status(400).json({
-          message: "Invalid branch id",
-        });
-      }
+      if (!id) return res.status(400).json({ message: "Invalid branch id" });
 
       const code = toStr(req.body?.code);
       const name = toStr(req.body?.name);
@@ -434,39 +324,14 @@ router.put(
       const region = toStr(req.body?.region);
       const division = toStr(req.body?.division);
       const address = toStr(req.body?.address) || null;
-
       const latitude = toNumOrNull(req.body?.latitude);
       const longitude = toNumOrNull(req.body?.longitude);
 
-      if (!code) {
-        return res.status(400).json({
-          message: "Branch code is required",
-        });
-      }
-
-      if (!name) {
-        return res.status(400).json({
-          message: "Branch name is required",
-        });
-      }
-
-      if (!area) {
-        return res.status(400).json({
-          message: "Area is required",
-        });
-      }
-
-      if (!region) {
-        return res.status(400).json({
-          message: "Region is required",
-        });
-      }
-
-      if (!division) {
-        return res.status(400).json({
-          message: "Division is required",
-        });
-      }
+      if (!code) return res.status(400).json({ message: "Branch code is required" });
+      if (!name) return res.status(400).json({ message: "Branch name is required" });
+      if (!area) return res.status(400).json({ message: "Area is required" });
+      if (!region) return res.status(400).json({ message: "Region is required" });
+      if (!division) return res.status(400).json({ message: "Division is required" });
 
       const dup = await pool.query(
         `
@@ -501,43 +366,19 @@ router.put(
           latitude = $7,
           longitude = $8
         WHERE id = $9
-        RETURNING
-          id,
-          code,
-          name,
-          area,
-          region,
-          division,
-          address,
-          latitude,
-          longitude
+        RETURNING id, code, name, area, region, division, address, latitude, longitude
         `,
-        [
-          code,
-          name,
-          area,
-          region,
-          division,
-          address,
-          latitude,
-          longitude,
-          id,
-        ]
+        [code, name, area, region, division, address, latitude, longitude, id]
       );
 
       if (upd.rowCount === 0) {
-        return res.status(404).json({
-          message: "Branch not found",
-        });
+        return res.status(404).json({ message: "Branch not found" });
       }
 
       return res.json(upd.rows[0]);
     } catch (e) {
       console.error("PUT /api/branches/:id ERROR:", e.message);
-
-      return res.status(500).json({
-        message: "Server error",
-      });
+      return res.status(500).json({ message: "Server error" });
     }
   }
 );
@@ -550,11 +391,7 @@ router.delete(
     try {
       const id = toInt(req.params.id);
 
-      if (!id) {
-        return res.status(400).json({
-          message: "Invalid branch id",
-        });
-      }
+      if (!id) return res.status(400).json({ message: "Invalid branch id" });
 
       const used = await pool.query(
         `
@@ -568,8 +405,7 @@ router.delete(
 
       if (used.rowCount > 0) {
         return res.status(400).json({
-          message:
-            "Cannot delete branch because it is already assigned to staff",
+          message: "Cannot delete branch because it is already assigned to staff",
         });
       }
 
@@ -583,9 +419,7 @@ router.delete(
       );
 
       if (del.rowCount === 0) {
-        return res.status(404).json({
-          message: "Branch not found",
-        });
+        return res.status(404).json({ message: "Branch not found" });
       }
 
       return res.json({
@@ -594,10 +428,7 @@ router.delete(
       });
     } catch (e) {
       console.error("DELETE /api/branches/:id ERROR:", e.message);
-
-      return res.status(500).json({
-        message: "Server error",
-      });
+      return res.status(500).json({ message: "Server error" });
     }
   }
 );

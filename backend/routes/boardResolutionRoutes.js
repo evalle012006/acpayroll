@@ -4,41 +4,15 @@ const pool = require("../db");
 const path = require("path");
 const fs = require("fs");
 const multer = require("multer");
+
 const { requireAuth } = require("../middlewares/authMiddleware");
+const { requirePermission } = require("../middlewares/permissionMiddleware");
 
 const toStr = (v) => String(v ?? "").trim();
 const norm = (v) => toStr(v).toLowerCase();
 
 const roleLower = (req) => norm(req.user?.role);
-
 const isAdmin = (req) => ["admin", "it"].includes(roleLower(req));
-const isIT = (req) => roleLower(req) === "it";
-const isHr = (req) => roleLower(req) === "hr";
-const isAccounting = (req) => roleLower(req) === "accounting";
-const isRegionalManager = (req) => roleLower(req) === "regional manager";
-const isAssistantVicePresident = (req) =>
-  roleLower(req) === "assistant vice president";
-const isVicePresident = (req) => roleLower(req) === "vice president";
-const isSeniorVicePresident = (req) => roleLower(req) === "senior vice president";
-const isPresident = (req) => roleLower(req) === "president";
-
-const canCreate = (req) =>
-  isRegionalManager(req) ||
-  isAssistantVicePresident(req) ||
-  isAdmin(req) ||
-  isIT(req);
-
-const canViewAll = (req) =>
-  isAdmin(req) ||
-  isIT(req) ||
-  isHr(req) ||
-  isAccounting(req) ||
-  isVicePresident(req) ||
-  isSeniorVicePresident(req) ||
-  isPresident(req);
-
-const canDeleteRow = (req, row) =>
-  String(row.created_by) === String(req.user?.id) || isAdmin(req);
 
 const uploadDir = path.join(process.cwd(), "uploads", "board-resolution");
 fs.mkdirSync(uploadDir, { recursive: true });
@@ -75,11 +49,9 @@ async function ensureTable() {
       created_by INTEGER,
       created_by_role VARCHAR(100),
       created_at TIMESTAMP DEFAULT NOW(),
-
       request_attachment_path TEXT,
       request_attachment_name TEXT,
       request_attachment_mime TEXT,
-
       rejected_by INTEGER,
       rejected_at TIMESTAMP,
       rejection_reason TEXT
@@ -117,57 +89,40 @@ async function generateRequestNo(client) {
   return `BR-${year}-${String(n).padStart(6, "0")}`;
 }
 
-router.get("/board-resolution-requests", requireAuth, async (req, res) => {
-  try {
-    await ensureTable();
+router.get(
+  "/board-resolution-requests",
+  requireAuth,
+  requirePermission("board_resolution", "view"),
+  async (req, res) => {
+    try {
+      await ensureTable();
 
-    if (canViewAll(req)) {
-      const r = await pool.query(`
-        SELECT *
-        FROM public.board_resolution_requests
-        ORDER BY created_at DESC, id DESC
-      `);
-
-      return res.json(r.rows);
-    }
-
-    if (isRegionalManager(req)) {
       const r = await pool.query(
         `
         SELECT *
         FROM public.board_resolution_requests
-        WHERE created_by = $1
         ORDER BY created_at DESC, id DESC
-        `,
-        [req.user?.id ?? null]
+        `
       );
 
       return res.json(r.rows);
+    } catch (e) {
+      console.error("GET /board-resolution-requests ERROR:", e);
+      return res.status(500).json({ message: e?.message || "Server error" });
     }
-
-    return res.status(403).json({ message: "Access denied" });
-  } catch (e) {
-    console.error("GET /board-resolution-requests ERROR:", e);
-    return res.status(500).json({ message: e?.message || "Server error" });
   }
-});
+);
 
 router.post(
   "/board-resolution-requests",
   requireAuth,
+  requirePermission("board_resolution", "create"),
   upload.single("attachment"),
   async (req, res) => {
     const client = await pool.connect();
 
     try {
       await ensureTable();
-
-      if (!canCreate(req)) {
-        return res.status(403).json({
-          message: "Only Regional Manager can create board resolution requests",
-        });
-      }
-
       await client.query("BEGIN");
 
       const date_created = toStr(req.body?.date_created) || null;
@@ -239,103 +194,161 @@ router.post(
   }
 );
 
-router.get("/board-resolution-requests/:id/download", requireAuth, async (req, res) => {
-  try {
-    await ensureTable();
+router.get(
+  "/board-resolution-requests/:id/download",
+  requireAuth,
+  requirePermission("board_resolution", "view"),
+  async (req, res) => {
+    try {
+      await ensureTable();
 
-    const id = Number(req.params.id);
+      const id = Number(req.params.id);
 
-    const r = await pool.query(
-      `
-      SELECT *
-      FROM public.board_resolution_requests
-      WHERE id = $1
-      LIMIT 1
-      `,
-      [id]
-    );
+      if (!Number.isFinite(id)) {
+        return res.status(400).json({ message: "Invalid request id" });
+      }
 
-    if (r.rowCount === 0) {
-      return res.status(404).json({ message: "Request not found" });
+      const r = await pool.query(
+        `
+        SELECT *
+        FROM public.board_resolution_requests
+        WHERE id = $1
+        LIMIT 1
+        `,
+        [id]
+      );
+
+      if (r.rowCount === 0) {
+        return res.status(404).json({ message: "Request not found" });
+      }
+
+      const row = r.rows[0];
+
+      if (!row.request_attachment_path) {
+        return res.status(404).json({ message: "File not found" });
+      }
+
+      const rel = String(row.request_attachment_path).replace(/^\/uploads\//, "");
+      const absPath = path.join(process.cwd(), "uploads", rel);
+
+      if (!fs.existsSync(absPath)) {
+        return res.status(404).json({ message: "Physical file missing" });
+      }
+
+      return res.download(
+        absPath,
+        row.request_attachment_name || path.basename(absPath)
+      );
+    } catch (e) {
+      console.error("DOWNLOAD board-resolution ERROR:", e);
+      return res.status(500).json({ message: e?.message || "Server error" });
     }
-
-    const row = r.rows[0];
-
-    const allowed =
-      canViewAll(req) ||
-      String(row.created_by) === String(req.user?.id);
-
-    if (!allowed) {
-      return res.status(403).json({ message: "Access denied" });
-    }
-
-    if (!row.request_attachment_path) {
-      return res.status(404).json({ message: "File not found" });
-    }
-
-    const rel = String(row.request_attachment_path).replace(/^\/uploads\//, "");
-    const absPath = path.join(process.cwd(), "uploads", rel);
-
-    if (!fs.existsSync(absPath)) {
-      return res.status(404).json({ message: "Physical file missing" });
-    }
-
-    return res.download(absPath, row.request_attachment_name || path.basename(absPath));
-  } catch (e) {
-    console.error("DOWNLOAD board-resolution ERROR:", e);
-    return res.status(500).json({ message: e?.message || "Server error" });
   }
-});
+);
 
-router.delete("/board-resolution-requests/:id", requireAuth, async (req, res) => {
-  try {
-    await ensureTable();
+router.put(
+  "/board-resolution-requests/:id/reject",
+  requireAuth,
+  requirePermission("board_resolution", "reject"),
+  async (req, res) => {
+    try {
+      await ensureTable();
 
-    const id = Number(req.params.id);
+      const id = Number(req.params.id);
+      const reason = toStr(req.body?.reason || req.body?.rejection_reason);
 
-    const cur = await pool.query(
-      `
-      SELECT *
-      FROM public.board_resolution_requests
-      WHERE id = $1
-      LIMIT 1
-      `,
-      [id]
-    );
+      if (!Number.isFinite(id)) {
+        return res.status(400).json({ message: "Invalid request id" });
+      }
 
-    if (cur.rowCount === 0) {
-      return res.status(404).json({ message: "Request not found" });
+      if (!reason) {
+        return res.status(400).json({ message: "Rejection reason is required" });
+      }
+
+      const r = await pool.query(
+        `
+        UPDATE public.board_resolution_requests
+        SET
+          status = 'Rejected',
+          rejected_by = $2,
+          rejected_at = NOW(),
+          rejection_reason = $3
+        WHERE id = $1
+        RETURNING *
+        `,
+        [id, req.user?.id ?? null, reason]
+      );
+
+      if (r.rowCount === 0) {
+        return res.status(404).json({ message: "Request not found" });
+      }
+
+      return res.json(r.rows[0]);
+    } catch (e) {
+      console.error("REJECT board-resolution ERROR:", e);
+      return res.status(500).json({ message: e?.message || "Server error" });
     }
-
-    const row = cur.rows[0];
-
-    if (!canDeleteRow(req, row)) {
-      return res.status(403).json({
-        message: "Only the creator or Admin/IT can delete this request",
-      });
-    }
-
-    if (row.request_attachment_path) {
-      try {
-        const rel = String(row.request_attachment_path).replace(/^\/uploads\//, "");
-        const absPath = path.join(process.cwd(), "uploads", rel);
-        if (fs.existsSync(absPath)) fs.unlinkSync(absPath);
-      } catch {}
-    }
-
-    await pool.query(
-      `
-      DELETE FROM public.board_resolution_requests
-      WHERE id = $1
-      `,
-      [id]
-    );
-
-    return res.json({ message: "Deleted" });
-  } catch (e) {
-    console.error("DELETE board-resolution ERROR:", e);
-    return res.status(500).json({ message: e?.message || "Server error" });
   }
-});
+);
+
+router.delete(
+  "/board-resolution-requests/:id",
+  requireAuth,
+  requirePermission("board_resolution", "delete"),
+  async (req, res) => {
+    try {
+      await ensureTable();
+
+      const id = Number(req.params.id);
+
+      if (!Number.isFinite(id)) {
+        return res.status(400).json({ message: "Invalid request id" });
+      }
+
+      const cur = await pool.query(
+        `
+        SELECT *
+        FROM public.board_resolution_requests
+        WHERE id = $1
+        LIMIT 1
+        `,
+        [id]
+      );
+
+      if (cur.rowCount === 0) {
+        return res.status(404).json({ message: "Request not found" });
+      }
+
+      const row = cur.rows[0];
+
+      if (!isAdmin(req) && String(row.created_by) !== String(req.user?.id)) {
+        return res.status(403).json({
+          message: "Only the creator or Admin/IT can delete this request",
+        });
+      }
+
+      if (row.request_attachment_path) {
+        try {
+          const rel = String(row.request_attachment_path).replace(/^\/uploads\//, "");
+          const absPath = path.join(process.cwd(), "uploads", rel);
+          if (fs.existsSync(absPath)) fs.unlinkSync(absPath);
+        } catch {}
+      }
+
+      await pool.query(
+        `
+        DELETE FROM public.board_resolution_requests
+        WHERE id = $1
+        `,
+        [id]
+      );
+
+      return res.json({ message: "Deleted" });
+    } catch (e) {
+      console.error("DELETE board-resolution ERROR:", e);
+      return res.status(500).json({ message: e?.message || "Server error" });
+    }
+  }
+);
 
 module.exports = router;

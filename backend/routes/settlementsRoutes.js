@@ -1,11 +1,12 @@
 const express = require("express");
 const router = express.Router();
 const pool = require("../db");
-const { requireAuth } = require("../middlewares/authMiddleware");
-const { requirePermission } = require("../utils/permissions");
 const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
+
+const { requireAuth } = require("../middlewares/authMiddleware");
+const { requirePermission } = require("../middlewares/permissionMiddleware");
 
 const {
   isAdmin,
@@ -225,9 +226,17 @@ router.post(
       const settlement_branch_id = toInt(req.body?.settlement_branch_id);
       const settlement_branch_code = toStr(req.body?.settlement_branch_code);
 
-      if (!staff_id) return res.status(400).json({ message: "staff_id is required" });
-      if (!employee_no) return res.status(400).json({ message: "employee_no is required" });
-      if (!employee_name) return res.status(400).json({ message: "employee_name is required" });
+      if (!staff_id) {
+        return res.status(400).json({ message: "staff_id is required" });
+      }
+
+      if (!employee_no) {
+        return res.status(400).json({ message: "employee_no is required" });
+      }
+
+      if (!employee_name) {
+        return res.status(400).json({ message: "employee_name is required" });
+      }
 
       if (!settlement_branch_id && !settlement_branch_code) {
         return res.status(400).json({ message: "Settlement branch is required" });
@@ -257,7 +266,9 @@ router.post(
 
       if (s.rowCount === 0) {
         await client.query("ROLLBACK");
-        return res.status(400).json({ message: "Invalid staff_id. Staff record not found." });
+        return res.status(400).json({
+          message: "Invalid staff_id. Staff record not found.",
+        });
       }
 
       const first_name = s.rows[0].first_name || null;
@@ -284,7 +295,10 @@ router.post(
       const total_benefits = toNum(req.body?.total_benefits);
       const net_settlement = toNum(req.body?.net_settlement);
 
-      const attachment_path = req.file ? `/uploads/settlements/${req.file.filename}` : null;
+      const attachment_path = req.file
+        ? `/uploads/settlements/${req.file.filename}`
+        : null;
+
       const attachment_name = req.file ? req.file.originalname : null;
       const attachment_mime = req.file ? req.file.mimetype : null;
 
@@ -385,7 +399,10 @@ router.get(
   async (req, res) => {
     try {
       const id = toInt(req.params.id);
-      if (!id) return res.status(400).json({ message: "Invalid id" });
+
+      if (!id) {
+        return res.status(400).json({ message: "Invalid id" });
+      }
 
       const r = await pool.query(
         `
@@ -464,7 +481,10 @@ router.delete(
   async (req, res) => {
     try {
       const id = toInt(req.params.id);
-      if (!id) return res.status(400).json({ message: "Invalid id" });
+
+      if (!id) {
+        return res.status(400).json({ message: "Invalid id" });
+      }
 
       const r = await pool.query(
         `
@@ -475,9 +495,14 @@ router.delete(
         [id]
       );
 
-      if (r.rowCount === 0) return res.status(404).json({ message: "Not found" });
+      if (r.rowCount === 0) {
+        return res.status(404).json({ message: "Not found" });
+      }
 
-      return res.json({ message: "Deleted", id: r.rows[0].id });
+      return res.json({
+        message: "Deleted",
+        id: r.rows[0].id,
+      });
     } catch (e) {
       console.error("DELETE /api/settlements/:id FULL ERROR:", e);
       return res.status(500).json({ message: e.message || "Server error" });

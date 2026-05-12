@@ -109,6 +109,12 @@ export default function LeaveTransactions() {
   const isPresident =
     role === "president";
 
+    const canBypassLeaveApproval =
+      isAdmin ||
+      isIT ||
+      isHr ||
+      isAccounting;
+
   const canCreateLeave =
     isAdmin ||
     isHr ||
@@ -559,6 +565,13 @@ export default function LeaveTransactions() {
   const canApproveThisRow = (item) => {
     const status = String(item.status || "").trim();
 
+    if (
+      canBypassLeaveApproval &&
+      status.includes("Pending")
+    ) {
+      return true;
+    }
+
     if (status === "Pending Branch Manager") return isBranchManager;
     if (status === "Pending Area Manager") return isAreaManager;
     if (status === "Pending Regional Manager") return isRegionalManager;
@@ -567,7 +580,7 @@ export default function LeaveTransactions() {
     if (status === "Pending Senior Vice President") return isSeniorVicePresident || isPresident;
 
     if (status === "Pending Admin") {
-      return isAdmin || isIT || isHr || isAccounting || isTread || isSeniorVicePresident;
+      return isAdmin || isIT || isHr || isAccounting;
     }
 
     return false;

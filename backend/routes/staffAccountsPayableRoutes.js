@@ -1,7 +1,9 @@
 const express = require("express");
 const router = express.Router();
 const pool = require("../db");
-const { requireAuth, requireRole } = require("../middlewares/authMiddleware");
+
+const { requireAuth } = require("../middlewares/authMiddleware");
+const { requirePermission } = require("../middlewares/permissionMiddleware");
 
 const toNum = (v) => {
   const n = Number(v ?? 0);
@@ -12,17 +14,6 @@ const toInt = (v) => {
   const n = Number(v);
   return Number.isFinite(n) ? Math.trunc(n) : null;
 };
-
-const roleLower = (req) => String(req.user?.role || "").trim().toLowerCase();
-
-const isAdmin = (req) => roleLower(req) === "admin";
-const isHr = (req) => roleLower(req) === "hr";
-const isAccounting = (req) => roleLower(req) === "accounting";
-const isPresident = (req) => roleLower(req) === "president";
-const isBranchManager = (req) => roleLower(req) === "branch manager";
-
-const canApproveSAP = (req) =>
-  isAdmin(req) || isPresident(req) || isHr(req) || isAccounting(req);
 
 async function staffIdFromEmployeeNo(client, employee_no) {
   const eno = String(employee_no || "").trim();
@@ -84,87 +75,98 @@ async function ensureBalanceRow(client, employeeNo) {
   );
 }
 
-router.get("/staff-accounts-payable", requireAuth, async (_req, res) => {
-  try {
-    const r = await pool.query(
-      `
-      SELECT
-        sap.id,
-        sap.employee_id,
-        sap.staff_name,
-        sap.description,
-        sap.amount,
-        sap.term,
-        sap.per_month,
-        sap.balance,
-        sap.payable_id,
-        sap.status,
-        sap.created_at,
-        sap.created_by,
-        sap.approved_by,
-        sap.approved_at,
-        sap.rejected_by,
-        sap.rejected_at,
-        sap.rejection_reason,
-        sap.last_name,
-        sap.first_name,
-        sap.middle_name,
-        sap.entry_date,
-        COALESCE(sap.employee_no, s.employee_no) AS employee_no
-      FROM public.staff_accounts_payable sap
-      LEFT JOIN public.staff s ON s.id = sap.employee_id
-      ORDER BY sap.id DESC
-      `
-    );
+router.get(
+  "/staff-accounts-payable",
+  requireAuth,
+  requirePermission("staff_accounts_payable", "view"),
+  async (_req, res) => {
+    try {
+      const r = await pool.query(
+        `
+        SELECT
+          sap.id,
+          sap.employee_id,
+          sap.staff_name,
+          sap.description,
+          sap.amount,
+          sap.term,
+          sap.per_month,
+          sap.balance,
+          sap.payable_id,
+          sap.status,
+          sap.created_at,
+          sap.created_by,
+          sap.approved_by,
+          sap.approved_at,
+          sap.rejected_by,
+          sap.rejected_at,
+          sap.rejection_reason,
+          sap.last_name,
+          sap.first_name,
+          sap.middle_name,
+          sap.entry_date,
+          COALESCE(sap.employee_no, s.employee_no) AS employee_no
+        FROM public.staff_accounts_payable sap
+        LEFT JOIN public.staff s ON s.id = sap.employee_id
+        ORDER BY sap.id DESC
+        `
+      );
 
-    return res.json(r.rows);
-  } catch (e) {
-    console.error("GET /api/staff-accounts-payable ERROR:", e.message);
-    return res.status(500).json({ message: e?.message || "Server error" });
+      return res.json(r.rows);
+    } catch (e) {
+      console.error("GET /api/staff-accounts-payable ERROR:", e.message);
+      return res.status(500).json({ message: e?.message || "Server error" });
+    }
   }
-});
+);
 
-router.get("/staff-accounts-payable/employee/:employeeNo", requireAuth, async (req, res) => {
-  const client = await pool.connect();
+router.get(
+  "/staff-accounts-payable/employee/:employeeNo",
+  requireAuth,
+  requirePermission("staff_accounts_payable", "view"),
+  async (req, res) => {
+    const client = await pool.connect();
 
-  try {
-    const employeeNo = String(req.params.employeeNo || "").trim();
-    if (!employeeNo) return res.status(400).json({ message: "Invalid employee_no" });
+    try {
+      const employeeNo = String(req.params.employeeNo || "").trim();
+      if (!employeeNo) {
+        return res.status(400).json({ message: "Invalid employee_no" });
+      }
 
-    const { staffId } = await staffIdFromEmployeeNo(client, employeeNo);
-    if (!staffId) return res.status(404).json({ message: "Staff not found" });
+      const { staffId } = await staffIdFromEmployeeNo(client, employeeNo);
+      if (!staffId) {
+        return res.status(404).json({ message: "Staff not found" });
+      }
 
-    const r = await client.query(
-      `
-      SELECT
-        sap.*,
-        $1::varchar AS employee_no
-      FROM public.staff_accounts_payable sap
-      WHERE sap.employee_id = $2::int
-      ORDER BY sap.id DESC
-      `,
-      [employeeNo, staffId]
-    );
+      const r = await client.query(
+        `
+        SELECT
+          sap.*,
+          $1::varchar AS employee_no
+        FROM public.staff_accounts_payable sap
+        WHERE sap.employee_id = $2::int
+        ORDER BY sap.id DESC
+        `,
+        [employeeNo, staffId]
+      );
 
-    return res.json(r.rows);
-  } catch (e) {
-    console.error("GET /api/staff-accounts-payable/employee/:employeeNo ERROR:", e.message);
-    return res.status(500).json({ message: e?.message || "Server error" });
-  } finally {
-    client.release();
+      return res.json(r.rows);
+    } catch (e) {
+      console.error(
+        "GET /api/staff-accounts-payable/employee/:employeeNo ERROR:",
+        e.message
+      );
+      return res.status(500).json({ message: e?.message || "Server error" });
+    } finally {
+      client.release();
+    }
   }
-});
+);
 
 router.post(
   "/staff-accounts-payable",
   requireAuth,
-  requireRole([
-    "admin",
-    "president",
-    "hr",
-    "accounting",
-    "branch manager",
-  ]),
+  requirePermission("staff_accounts_payable", "create"),
   async (req, res) => {
     const client = await pool.connect();
 
@@ -176,6 +178,7 @@ router.post(
       const amount = toNum(req.body?.amount);
       const term = Math.max(1, toInt(req.body?.term) || 1);
       const per_month = toNum(req.body?.per_month) || (term ? amount / term : 0);
+
       const balance =
         req.body?.balance === "" || req.body?.balance == null
           ? amount
@@ -190,6 +193,7 @@ router.post(
       await client.query("BEGIN");
 
       const { staffId, staff } = await staffIdFromEmployeeNo(client, employee_no);
+
       if (!staffId) {
         await client.query("ROLLBACK");
         return res.status(404).json({ message: "Staff not found" });
@@ -262,115 +266,127 @@ router.post(
   }
 );
 
-router.put("/staff-accounts-payable/:id", requireAuth, async (req, res) => {
-  const client = await pool.connect();
+router.put(
+  "/staff-accounts-payable/:id",
+  requireAuth,
+  requirePermission("staff_accounts_payable", "approve"),
+  async (req, res) => {
+    const client = await pool.connect();
 
-  try {
-    const id = toInt(req.params.id);
-    if (!id) return res.status(400).json({ message: "Invalid id" });
-
-    const status = String(req.body?.status || "").trim();
-    const reason = String(req.body?.reason || "").trim();
-
-    if (!status) return res.status(400).json({ message: "status is required" });
-
-    const sLower = status.toLowerCase();
-
-    if ((sLower === "approved" || sLower === "rejected") && !canApproveSAP(req)) {
-      return res.status(403).json({ message: "Access denied" });
-    }
-
-    if (sLower === "rejected" && !reason) {
-      return res.status(400).json({ message: "reason is required for rejection" });
-    }
-
-    await client.query("BEGIN");
-
-    const cur = await client.query(
-      `
-      SELECT
-        id,
-        employee_id,
-        status,
-        amount,
-        balance
-      FROM public.staff_accounts_payable
-      WHERE id = $1::bigint
-      FOR UPDATE
-      `,
-      [id]
-    );
-
-    if (cur.rowCount === 0) {
-      await client.query("ROLLBACK");
-      return res.status(404).json({ message: "SAP record not found" });
-    }
-
-    const prevStatus = String(cur.rows[0].status || "").trim();
-    const employeeNo = String(cur.rows[0].employee_no || "").trim();
-    const balToAdd = toNum(cur.rows[0].balance);
-    const amtFallback = toNum(cur.rows[0].amount);
-    const addValue = balToAdd > 0 ? balToAdd : amtFallback;
-    const userId = toInt(req.user?.id);
-
-    const upd = await client.query(
-      `
-      UPDATE public.staff_accounts_payable
-      SET
-        status = $1::varchar,
-        approved_by = CASE
-          WHEN $1::varchar = 'Approved' THEN $2::int
-          ELSE approved_by
-        END,
-        approved_at = CASE
-          WHEN $1::varchar = 'Approved' THEN NOW()
-          ELSE approved_at
-        END,
-        rejected_by = CASE
-          WHEN $1::varchar = 'Rejected' THEN $2::int
-          ELSE rejected_by
-        END,
-        rejected_at = CASE
-          WHEN $1::varchar = 'Rejected' THEN NOW()
-          ELSE rejected_at
-        END,
-        rejection_reason = CASE
-          WHEN $1::varchar = 'Rejected' THEN $3::text
-          ELSE rejection_reason
-        END
-      WHERE id = $4::bigint
-      RETURNING *;
-      `,
-      [status, userId, reason || null, id]
-    );
-
-    if (prevStatus !== "Approved" && status === "Approved" && employeeNo) {
-      await ensureBalanceRow(client, employeeNo);
-
-      await client.query(
-        `
-        UPDATE public.staff_balances
-        SET
-          staff_accounts_payable = COALESCE(staff_accounts_payable, 0) + $1::numeric,
-          updated_at = NOW()
-        WHERE employee_no = $2::varchar
-        `,
-        [addValue, employeeNo]
-      );
-    }
-
-    await client.query("COMMIT");
-    return res.json(upd.rows[0]);
-  } catch (e) {
     try {
-      await client.query("ROLLBACK");
-    } catch {}
+      const id = toInt(req.params.id);
+      if (!id) return res.status(400).json({ message: "Invalid id" });
 
-    console.error("PUT /api/staff-accounts-payable/:id ERROR:", e.message);
-    return res.status(500).json({ message: e?.message || "Server error" });
-  } finally {
-    client.release();
+      const status = String(req.body?.status || "").trim();
+      const reason = String(req.body?.reason || "").trim();
+
+      if (!status) return res.status(400).json({ message: "status is required" });
+
+      const sLower = status.toLowerCase();
+
+      if (!["approved", "rejected"].includes(sLower)) {
+        return res.status(400).json({
+          message: "status must be Approved or Rejected",
+        });
+      }
+
+      if (sLower === "rejected" && !reason) {
+        return res.status(400).json({
+          message: "reason is required for rejection",
+        });
+      }
+
+      await client.query("BEGIN");
+
+      const cur = await client.query(
+        `
+        SELECT
+          id,
+          employee_id,
+          employee_no,
+          status,
+          amount,
+          balance
+        FROM public.staff_accounts_payable
+        WHERE id = $1::bigint
+        FOR UPDATE
+        `,
+        [id]
+      );
+
+      if (cur.rowCount === 0) {
+        await client.query("ROLLBACK");
+        return res.status(404).json({ message: "SAP record not found" });
+      }
+
+      const prevStatus = String(cur.rows[0].status || "").trim();
+      const employeeNo = String(cur.rows[0].employee_no || "").trim();
+      const balToAdd = toNum(cur.rows[0].balance);
+      const amtFallback = toNum(cur.rows[0].amount);
+      const addValue = balToAdd > 0 ? balToAdd : amtFallback;
+      const userId = toInt(req.user?.id);
+
+      const finalStatus = sLower === "approved" ? "Approved" : "Rejected";
+
+      const upd = await client.query(
+        `
+        UPDATE public.staff_accounts_payable
+        SET
+          status = $1::varchar,
+          approved_by = CASE
+            WHEN $1::varchar = 'Approved' THEN $2::int
+            ELSE approved_by
+          END,
+          approved_at = CASE
+            WHEN $1::varchar = 'Approved' THEN NOW()
+            ELSE approved_at
+          END,
+          rejected_by = CASE
+            WHEN $1::varchar = 'Rejected' THEN $2::int
+            ELSE rejected_by
+          END,
+          rejected_at = CASE
+            WHEN $1::varchar = 'Rejected' THEN NOW()
+            ELSE rejected_at
+          END,
+          rejection_reason = CASE
+            WHEN $1::varchar = 'Rejected' THEN $3::text
+            ELSE rejection_reason
+          END
+        WHERE id = $4::bigint
+        RETURNING *;
+        `,
+        [finalStatus, userId, reason || null, id]
+      );
+
+      if (prevStatus !== "Approved" && finalStatus === "Approved" && employeeNo) {
+        await ensureBalanceRow(client, employeeNo);
+
+        await client.query(
+          `
+          UPDATE public.staff_balances
+          SET
+            staff_accounts_payable = COALESCE(staff_accounts_payable, 0) + $1::numeric,
+            updated_at = NOW()
+          WHERE employee_no = $2::varchar
+          `,
+          [addValue, employeeNo]
+        );
+      }
+
+      await client.query("COMMIT");
+      return res.json(upd.rows[0]);
+    } catch (e) {
+      try {
+        await client.query("ROLLBACK");
+      } catch {}
+
+      console.error("PUT /api/staff-accounts-payable/:id ERROR:", e.message);
+      return res.status(500).json({ message: e?.message || "Server error" });
+    } finally {
+      client.release();
+    }
   }
-});
+);
 
 module.exports = router;

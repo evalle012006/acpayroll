@@ -100,12 +100,23 @@ export default function PromotionOrder() {
 
     const stage = norm(o.approval_stage);
 
-    if (stage === "branch manager") return isBranchManager || isAdmin;
-    if (stage === "area manager") return isAreaManager || isAdmin;
-    if (stage === "regional manager") return isRegionalManager || isAdmin;
-    if (stage === "assistant vice president") return isAssistantVicePresident || isAdmin;
-    if (stage === "vice president") return isVicePresident || isAdmin;
-    if (stage === "senior vice president") return isSeniorVicePresident || isAdmin;
+    if (stage === "branch manager")
+      return isBranchManager || isAdmin || isIt;
+
+    if (stage === "area manager")
+      return isAreaManager || isAdmin || isIt;
+
+    if (stage === "regional manager")
+      return isRegionalManager || isAdmin || isIt;
+
+    if (stage === "assistant vice president")
+      return isAssistantVicePresident || isAdmin || isIt;
+
+    if (stage === "vice president")
+      return isVicePresident || isAdmin || isIt;
+
+    if (stage === "senior vice president")
+      return isSeniorVicePresident || isAdmin || isIt;
 
     return false;
   };
@@ -126,6 +137,10 @@ export default function PromotionOrder() {
   const [branches, setBranches] = useState([]);
   const [orders, setOrders] = useState([]);
   const [positionRates, setPositionRates] = useState([]);
+
+  const [orderSearch, setOrderSearch] = useState("");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
 
   const [loadingStaff, setLoadingStaff] = useState(false);
   const [loadingBranches, setLoadingBranches] = useState(false);
@@ -575,37 +590,130 @@ export default function PromotionOrder() {
     }
   };
 
-  const countText = useMemo(() => {
-    const n = Array.isArray(orders) ? orders.length : 0;
-    return `${n} Record${n === 1 ? "" : "s"}`;
-  }, [orders]);
-
-  const badgeClass = (status) => {
-    const s = norm(status);
-    if (s === "approved") return "po-badge po-approved";
-    if (s === "rejected") return "po-badge po-rejected";
-    return "po-badge po-pending";
-  };
-
   const resolvePrevBranchText = (o) => {
-    if (o.prev_branch_code || o.prev_branch_name) {
-      return `${o.prev_branch_code || ""} - ${o.prev_branch_name || ""}`.trim();
-    }
+  if (o.prev_branch_code || o.prev_branch_name) {
+    return `${o.prev_branch_code || ""} - ${o.prev_branch_name || ""}`.trim();
+  }
 
-    const b = o.prev_branch_id ? branchMap.get(Number(o.prev_branch_id)) : null;
-    return b ? `${b.code || ""} - ${b.name || ""}`.trim() : "-";
-  };
+  const b = o.prev_branch_id
+    ? branchMap.get(Number(o.prev_branch_id))
+    : null;
 
-  const resolvePresentBranchText = (o) => {
-    if (o.present_branch_code || o.present_branch_name) {
-      return `${o.present_branch_code || ""} - ${o.present_branch_name || ""}`.trim();
-    }
+  return b
+    ? `${b.code || ""} - ${b.name || ""}`.trim()
+    : "-";
+};
 
-    const b = o.present_branch_id ? branchMap.get(Number(o.present_branch_id)) : null;
-    return b ? `${b.code || ""} - ${b.name || ""}`.trim() : "-";
-  };
+const resolvePresentBranchText = (o) => {
+  if (o.present_branch_code || o.present_branch_name) {
+    return `${o.present_branch_code || ""} - ${o.present_branch_name || ""}`.trim();
+  }
 
-  const closeViewOrder = () => setViewOrder(null);
+  const b = o.present_branch_id
+    ? branchMap.get(Number(o.present_branch_id))
+    : null;
+
+  return b
+    ? `${b.code || ""} - ${b.name || ""}`.trim()
+    : "-";
+};
+
+const filteredOrders = useMemo(() => {
+  const q = norm(orderSearch);
+
+  if (!q) return orders;
+
+  return orders.filter((o) => {
+    const hay = [
+      o.order_no,
+      o.employee_name,
+      o.employee_no,
+      o.old_position,
+      o.new_position,
+      o.status,
+      o.approval_stage,
+      getDepartment(o),
+      resolvePrevBranchText(o),
+      resolvePresentBranchText(o),
+      fmtDate(o.effective_date),
+    ]
+      .map(norm)
+      .join(" ");
+
+    return hay.includes(q);
+  });
+}, [orders, orderSearch, branchMap]);
+
+const totalPages = Math.max(
+  1,
+  Math.ceil(filteredOrders.length / pageSize)
+);
+
+const paginatedOrders = useMemo(() => {
+  const safePage = Math.min(page, totalPages);
+
+  const start = (safePage - 1) * pageSize;
+
+  return filteredOrders.slice(
+    start,
+    start + pageSize
+  );
+}, [
+  filteredOrders,
+  page,
+  pageSize,
+  totalPages,
+]);
+
+useEffect(() => {
+  setPage(1);
+}, [orderSearch, pageSize]);
+
+useEffect(() => {
+  if (page > totalPages) {
+    setPage(totalPages);
+  }
+}, [page, totalPages]);
+
+const countText = useMemo(() => {
+  const total = Array.isArray(orders)
+    ? orders.length
+    : 0;
+
+  const filtered =
+    filteredOrders.length;
+
+  if (orderSearch.trim()) {
+    return `${filtered} of ${total} Record${
+      total === 1 ? "" : "s"
+    }`;
+  }
+
+  return `${total} Record${
+    total === 1 ? "" : "s"
+  }`;
+}, [
+  orders,
+  filteredOrders,
+  orderSearch,
+]);
+
+const badgeClass = (status) => {
+  const s = norm(status);
+
+  if (s === "approved") {
+    return "po-badge po-approved";
+  }
+
+  if (s === "rejected") {
+    return "po-badge po-rejected";
+  }
+
+  return "po-badge po-pending";
+};
+
+const closeViewOrder = () =>
+  setViewOrder(null);
 
   return (
     <div className="po-page">
@@ -637,6 +745,25 @@ export default function PromotionOrder() {
 
       <div className="po-card">
         <div className="po-card-head">
+          <div className="po-toolbar">
+            <input
+              className="po-search-input"
+              value={orderSearch}
+              onChange={(e) => setOrderSearch(e.target.value)}
+              placeholder="Search order no, employee, branch, position, status..."
+            />
+
+            <select
+              className="po-page-size"
+              value={pageSize}
+              onChange={(e) => setPageSize(Number(e.target.value))}
+            >
+              <option value={25}>25 rows</option>
+              <option value={50}>50 rows</option>
+              <option value={75}>75 rows</option>
+              <option value={100}>100 rows</option>
+            </select>
+          </div>
           <div className="po-card-title">Promotion Orders</div>
           <div className="po-card-meta">{countText}</div>
         </div>
@@ -666,14 +793,14 @@ export default function PromotionOrder() {
                     Loading promotion orders…
                   </td>
                 </tr>
-              ) : orders.length === 0 ? (
+              ) : filteredOrders.length === 0 ? (
                 <tr>
                   <td colSpan={11} className="po-empty">
                     No promotion orders found.
                   </td>
                 </tr>
               ) : (
-                orders.map((o) => {
+                paginatedOrders.map((o) => {
                   const isPending = norm(o.status) === "pending";
                   const canAct = canApproveStage(o);
                   const canUploadFinal = canFinalUpload(o);
@@ -821,6 +948,29 @@ export default function PromotionOrder() {
               )}
             </tbody>
           </table>
+        </div>
+        <div className="po-pager">
+          <button
+            className="po-mini-btn"
+            type="button"
+            disabled={page <= 1}
+            onClick={() => setPage((p) => Math.max(1, p - 1))}
+          >
+            Prev
+          </button>
+
+          <span className="po-page-info">
+            Page {page} of {totalPages}
+          </span>
+
+          <button
+            className="po-mini-btn"
+            type="button"
+            disabled={page >= totalPages}
+            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+          >
+            Next
+          </button>
         </div>
       </div>
 

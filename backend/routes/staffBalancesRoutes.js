@@ -1,8 +1,9 @@
 const express = require("express");
 const router = express.Router();
 const pool = require("../db");
+
 const { requireAuth } = require("../middlewares/authMiddleware");
-const { requirePermission } = require("../utils/permissions");
+const { requirePermission } = require("../middlewares/permissionMiddleware");
 
 const {
   isAdmin,

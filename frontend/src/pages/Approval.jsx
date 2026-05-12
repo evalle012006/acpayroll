@@ -25,6 +25,7 @@ export default function Approval() {
   const isAccounting = role === "accounting";
   const isTread = role === "tread";
 
+  const isBranchManager = role === "branch manager";
   const isAreaManager = role === "area manager";
   const isRegionalManager = role === "regional manager";
   const isAssistantVicePresident =
@@ -42,6 +43,7 @@ export default function Approval() {
     isHr ||
     isAccounting ||
     isTread ||
+    isBranchManager ||
     isAreaManager ||
     isRegionalManager ||
     isAssistantVicePresident ||

@@ -13,6 +13,7 @@ import { RxExit } from "react-icons/rx";
 import { LuFiles } from "react-icons/lu";
 import { BiPackage } from "react-icons/bi";
 import { PiHandCoinsBold } from "react-icons/pi";
+import { SiOpenaccess } from "react-icons/si";
 
 import amber from "../assets/amber.jpg";
 import api from "../api/axiosClient";
@@ -294,6 +295,12 @@ const Sidebar = ({ collapsed }) => {
           "senior vice president",
           "president",
         ],
+      },
+      {
+        to: "/permissions",
+        label: "Permissions",
+        icon: SiOpenaccess,
+        roles: ["admin", "it"],
       },
       {
         to: "/users",

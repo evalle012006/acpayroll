@@ -4,8 +4,9 @@ const pool = require("../db");
 const path = require("path");
 const fs = require("fs");
 const multer = require("multer");
+
 const { requireAuth } = require("../middlewares/authMiddleware");
-const { requirePermission } = require("../utils/permissions");
+const { requirePermission } = require("../middlewares/permissionMiddleware");
 
 const toInt = (v) => {
   const n = Number(v);
@@ -26,10 +27,10 @@ const isBranchManager = (req) => roleLower(req) === "branch manager";
 const isAreaManager = (req) => roleLower(req) === "area manager";
 const isRegionalManager = (req) => roleLower(req) === "regional manager";
 const isAssistantVicePresident = (req) =>
-  roleLower(req) === "assistant vice president";
+      roleLower(req) === "assistant vice president";
 const isVicePresident = (req) => roleLower(req) === "vice president";
 const isSeniorVicePresident = (req) =>
-  roleLower(req) === "senior vice president";
+      roleLower(req) === "senior vice president";
 const isPresident = (req) => roleLower(req) === "president";
 
 const getUserBranchCode = (req) => toStr(req.user?.branch_id);
@@ -72,7 +73,7 @@ const isBackOfficeDepartment = (department) =>
   BACK_OFFICE_DEPARTMENTS.includes(norm(department));
 
 const isFinalApprover = (req) =>
-  isAdmin(req) || isHr(req) || isAccounting(req) || isTread(req) || isIT(req);
+  isAdmin(req) || isIT(req) || isHr(req) || isAccounting(req);
 
 const isFullViewer = (req) =>
   isFinalApprover(req) ||
@@ -223,7 +224,6 @@ const baseLeaveSelect = `
 `;
 
 const getInitialStatusByDepartment = (req, department) => {
-
   if (isOperationDepartment(department)) {
     if (isBranchManager(req)) return "Pending Area Manager";
     if (isAreaManager(req)) return "Pending Regional Manager";
@@ -235,10 +235,7 @@ const getInitialStatusByDepartment = (req, department) => {
 
   const dept = norm(department);
 
-  if (
-    dept === "it" ||
-    dept === "it department"
-  ) {
+  if (dept === "it" || dept === "it department") {
     return "Pending Assistant Vice President";
   }
 
@@ -421,71 +418,73 @@ const canActOnLeave = async (req, leaveId) => {
   return { ok: false, code: 400, message: "Unsupported leave status" };
 };
 
-router.get("/leave-requests", requireAuth, async (req, res) => {
-  try {
-    if (
-      isFullViewer(req) ||
-      isRegionalManager(req) ||
-      isAssistantVicePresident(req)
-    ) {
-      const r = await pool.query(`
-        ${baseLeaveSelect}
-        ORDER BY lr.entry_date DESC NULLS LAST, lr.id DESC
-      `);
+router.get(
+  "/leave-requests",
+  requireAuth,
+  requirePermission("leave_request", "view"),
+  async (req, res) => {
+    try {
+      if (
+        isFullViewer(req) ||
+        isRegionalManager(req) ||
+        isAssistantVicePresident(req)
+      ) {
+        const r = await pool.query(`
+          ${baseLeaveSelect}
+          ORDER BY lr.entry_date DESC NULLS LAST, lr.id DESC
+        `);
 
-      return res.json(r.rows);
+        return res.json(r.rows);
+      }
+
+      if (isBranchManager(req)) {
+        const branchCode = getUserBranchCode(req);
+        if (!branchCode) return res.json([]);
+
+        const bid = await getBranchIdFromCode(branchCode);
+        if (!bid) return res.json([]);
+
+        const r = await pool.query(
+          `
+          ${baseLeaveSelect}
+          WHERE s.branch_id = $1
+          ORDER BY lr.entry_date DESC NULLS LAST, lr.id DESC
+          `,
+          [bid]
+        );
+
+        return res.json(r.rows);
+      }
+
+      if (isAreaManager(req)) {
+        const area = getUserArea(req);
+        if (!area) return res.json([]);
+
+        const r = await pool.query(
+          `
+          ${baseLeaveSelect}
+          WHERE LOWER(TRIM(COALESCE(s.area, ''))) =
+                LOWER(TRIM($1))
+          ORDER BY lr.entry_date DESC NULLS LAST, lr.id DESC
+          `,
+          [area]
+        );
+
+        return res.json(r.rows);
+      }
+
+      return res.status(403).json({
+        message: "Access denied",
+      });
+    } catch (e) {
+      console.error("GET /api/leave-requests ERROR:", e.message);
+
+      return res.status(500).json({
+        message: e?.message || "Server error",
+      });
     }
-
-    if (isBranchManager(req)) {
-      const branchCode = getUserBranchCode(req);
-      if (!branchCode) return res.json([]);
-
-      const bid = await getBranchIdFromCode(branchCode);
-      if (!bid) return res.json([]);
-
-      const r = await pool.query(
-        `
-        ${baseLeaveSelect}
-        WHERE s.branch_id = $1
-        ORDER BY lr.entry_date DESC NULLS LAST, lr.id DESC
-        `,
-        [bid]
-      );
-
-      return res.json(r.rows);
-    }
-
-    if (isAreaManager(req)) {
-      const area = getUserArea(req);
-      if (!area) return res.json([]);
-
-      const r = await pool.query(
-        `
-        ${baseLeaveSelect}
-        WHERE LOWER(TRIM(COALESCE(s.area, ''))) =
-              LOWER(TRIM($1))
-        ORDER BY lr.entry_date DESC NULLS LAST, lr.id DESC
-        `,
-        [area]
-      );
-
-      return res.json(r.rows);
-    }
-
-    return res.status(403).json({
-      message: "Access denied",
-    });
-  } catch (e) {
-    console.error(
-      "GET /api/leave-requests ERROR:",
-      e.message
-    );
-
-    return res.status(500).json({
-      message: e?.message || "Server error",
-    });
   }
-});
+);
 
 router.post(
   "/leave-requests",
@@ -540,19 +539,13 @@ router.post(
       }
 
       const staff = staffRes.rows[0];
-
       const staffName = buildStaffName(staff);
-
-      const isIndefiniteLeave =
-        leave_type === "Indefinite Leave";
+      const isIndefiniteLeave = leave_type === "Indefinite Leave";
 
       let total_no_of_days = 0;
 
       if (!isIndefiniteLeave) {
-        total_no_of_days = diffDaysInclusive(
-          start_date,
-          end_date
-        );
+        total_no_of_days = diffDaysInclusive(start_date, end_date);
       }
 
       const seqRes = await client.query(`
@@ -560,15 +553,8 @@ router.post(
       `);
 
       const leaveSeq = Number(seqRes.rows[0].n);
-
-      const transaction_code = `LV-${String(
-        leaveSeq
-      ).padStart(7, "0")}`;
-
-      const status = getInitialStatusByDepartment(
-        req,
-        staff.department
-      );
+      const transaction_code = `LV-${String(leaveSeq).padStart(7, "0")}`;
+      const status = getInitialStatusByDepartment(req, staff.department);
 
       const insertRes = await client.query(
         `
@@ -664,10 +650,7 @@ router.post(
     } catch (err) {
       await client.query("ROLLBACK");
 
-      console.error(
-        "CREATE LEAVE ERROR:",
-        err.message
-      );
+      console.error("CREATE LEAVE ERROR:", err.message);
 
       return res.status(500).json({
         message: err.message,
@@ -689,9 +672,7 @@ router.post(
     try {
       await client.query("BEGIN");
 
-      const leaveId = String(
-        req.params.id || ""
-      ).trim();
+      const leaveId = String(req.params.id || "").trim();
 
       if (!req.file) {
         await client.query("ROLLBACK");
@@ -721,25 +702,15 @@ router.post(
 
       for (const old of oldFiles.rows) {
         try {
-          const rel = String(
-            old.file_path || ""
-          ).replace(/^\/uploads\//, "");
+          const rel = String(old.file_path || "").replace(/^\/uploads\//, "");
 
-          const oldPath = path.join(
-            __dirname,
-            "..",
-            "uploads",
-            rel
-          );
+          const oldPath = path.join(__dirname, "..", "uploads", rel);
 
           if (fs.existsSync(oldPath)) {
             fs.unlinkSync(oldPath);
           }
         } catch (e) {
-          console.error(
-            "DELETE OLD FILE ERROR:",
-            e.message
-          );
+          console.error("DELETE OLD FILE ERROR:", e.message);
         }
       }
 
@@ -785,16 +756,12 @@ router.post(
       await client.query("COMMIT");
 
       return res.json({
-        message:
-          "Approved leave file uploaded",
+        message: "Approved leave file uploaded",
       });
     } catch (e) {
       await client.query("ROLLBACK");
 
-      console.error(
-        "UPLOAD APPROVED FILE ERROR:",
-        e.message
-      );
+      console.error("UPLOAD APPROVED FILE ERROR:", e.message);
 
       return res.status(500).json({
         message: e?.message || "Server error",
@@ -812,10 +779,7 @@ router.put(
   async (req, res) => {
     try {
       const id = String(req.params.id || "").trim();
-
-      const action = String(
-        req.body?.action || ""
-      ).trim();
+      const action = String(req.body?.action || "").trim();
 
       const access = await canActOnLeave(req, id);
 
@@ -825,9 +789,7 @@ router.put(
         });
       }
 
-      const currentStatus = toStr(
-        access.row.status
-      );
+      const currentStatus = toStr(access.row.status);
 
       if (action.toLowerCase() === "reject") {
         await pool.query(
@@ -838,19 +800,13 @@ router.put(
             rejection_reason = $2
           WHERE id = $1
           `,
-          [
-            id,
-            toStr(req.body?.rejection_reason),
-          ]
+          [id, toStr(req.body?.rejection_reason)]
         );
       } else {
         let sql = "";
         let params = [id, req.user?.id ?? null];
 
-        if (
-          action.toLowerCase() !== "reject" &&
-          isSeniorVicePresident(req)
-        ) {
+        if (action.toLowerCase() !== "reject" && isSeniorVicePresident(req)) {
           await pool.query(
             `
             UPDATE public.leave_requests
@@ -874,10 +830,7 @@ router.put(
           return res.json(finalRow.rows[0]);
         }
 
-        if (
-          currentStatus ===
-          "Pending Branch Manager"
-        ) {
+        if (currentStatus === "Pending Branch Manager") {
           sql = `
             UPDATE public.leave_requests
             SET
@@ -885,12 +838,7 @@ router.put(
             WHERE id = $1
           `;
           params = [id];
-        }
-
-        else if (
-          currentStatus ===
-          "Pending Area Manager"
-        ) {
+        } else if (currentStatus === "Pending Area Manager") {
           sql = `
             UPDATE public.leave_requests
             SET
@@ -899,12 +847,7 @@ router.put(
               area_approved_at = NOW()
             WHERE id = $1
           `;
-        }
-
-        else if (
-          currentStatus ===
-          "Pending Regional Manager"
-        ) {
+        } else if (currentStatus === "Pending Regional Manager") {
           sql = `
             UPDATE public.leave_requests
             SET
@@ -913,19 +856,10 @@ router.put(
               regional_approved_at = NOW()
             WHERE id = $1
           `;
-        }
-
-        else if (
-          currentStatus ===
-          "Pending Assistant Vice President"
-        ) {
-
+        } else if (currentStatus === "Pending Assistant Vice President") {
           const dept = norm(access.row.department);
 
-          if (
-            dept === "it" ||
-            dept === "it department"
-          ) {
+          if (dept === "it" || dept === "it department") {
             sql = `
               UPDATE public.leave_requests
               SET
@@ -934,9 +868,7 @@ router.put(
                 division_approved_at = NOW()
               WHERE id = $1
             `;
-          }
-
-          else {
+          } else {
             sql = `
               UPDATE public.leave_requests
               SET
@@ -946,12 +878,7 @@ router.put(
               WHERE id = $1
             `;
           }
-        }
-
-        else if (
-          currentStatus ===
-          "Pending Vice President"
-        ) {
+        } else if (currentStatus === "Pending Vice President") {
           sql = `
             UPDATE public.leave_requests
             SET
@@ -959,12 +886,7 @@ router.put(
             WHERE id = $1
           `;
           params = [id];
-        }
-
-        else if (
-          currentStatus ===
-          "Pending Senior Vice President"
-        ) {
+        } else if (currentStatus === "Pending Senior Vice President") {
           sql = `
             UPDATE public.leave_requests
             SET
@@ -972,12 +894,7 @@ router.put(
             WHERE id = $1
           `;
           params = [id];
-        }
-
-        else if (
-          currentStatus ===
-          "Pending Admin"
-        ) {
+        } else if (currentStatus === "Pending Admin") {
           sql = `
             UPDATE public.leave_requests
             SET
@@ -986,12 +903,9 @@ router.put(
               admin_approved_at = NOW()
             WHERE id = $1
           `;
-        }
-
-        else {
+        } else {
           return res.status(400).json({
-            message:
-              "Invalid current status for approval",
+            message: "Invalid current status for approval",
           });
         }
 
@@ -1008,10 +922,7 @@ router.put(
 
       return res.json(finalRow.rows[0]);
     } catch (e) {
-      console.error(
-        "PUT /api/leave-requests/:id ERROR:",
-        e.message
-      );
+      console.error("PUT /api/leave-requests/:id ERROR:", e.message);
 
       return res.status(500).json({
         message: e?.message || "Server error",
@@ -1021,15 +932,44 @@ router.put(
 );
 
 router.get(
+  "/leave-requests/staff/:staffId",
+  requireAuth,
+  requirePermission("leave_request", "view"),
+  async (req, res) => {
+    try {
+      const staffId = Number(req.params.staffId);
+
+      if (!Number.isFinite(staffId)) {
+        return res.status(400).json({ message: "Invalid staff id" });
+      }
+
+      const result = await pool.query(
+        `
+        SELECT *
+        FROM public.leave_requests
+        WHERE employee_id = $1
+        ORDER BY entry_date DESC NULLS LAST, id DESC
+        `,
+        [staffId]
+      );
+
+      return res.json(result.rows);
+    } catch (err) {
+      console.error("GET /leave-requests/staff/:staffId ERROR:", err.message);
+      return res.status(500).json({ message: "Server error" });
+    }
+  }
+);
+
+router.get(
   "/leave-requests/:id/download/:type",
   requireAuth,
+  requirePermission("leave_request", "view"),
   async (req, res) => {
     try {
       const leaveId = String(req.params.id || "").trim();
 
-      const type = String(req.params.type || "")
-        .trim()
-        .toLowerCase();
+      const type = String(req.params.type || "").trim().toLowerCase();
 
       if (!["request", "approved"].includes(type)) {
         return res.status(400).json({
@@ -1060,17 +1000,9 @@ router.get(
 
       const row = r.rows[0];
 
-      const rel = String(row.file_path || "").replace(
-        /^\/uploads\//,
-        ""
-      );
+      const rel = String(row.file_path || "").replace(/^\/uploads\//, "");
 
-      const absPath = path.join(
-        __dirname,
-        "..",
-        "uploads",
-        rel
-      );
+      const absPath = path.join(__dirname, "..", "uploads", rel);
 
       if (!fs.existsSync(absPath)) {
         return res.status(404).json({
@@ -1078,15 +1010,9 @@ router.get(
         });
       }
 
-      return res.download(
-        absPath,
-        row.file_name || undefined
-      );
+      return res.download(absPath, row.file_name || undefined);
     } catch (e) {
-      console.error(
-        "DOWNLOAD LEAVE FILE ERROR:",
-        e.message
-      );
+      console.error("DOWNLOAD LEAVE FILE ERROR:", e.message);
 
       return res.status(500).json({
         message: e?.message || "Server error",

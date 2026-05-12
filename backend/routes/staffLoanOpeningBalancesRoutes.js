@@ -3,7 +3,7 @@ const router = express.Router();
 const pool = require("../db");
 
 const { requireAuth } = require("../middlewares/authMiddleware");
-const { requirePermission } = require("../utils/permissions");
+const { requirePermission } = require("../middlewares/permissionMiddleware");
 
 const {
   isAdmin,
@@ -28,20 +28,28 @@ const toInt = (v) => {
 };
 
 const toNum = (v) => {
-  const s = String(v ?? "").trim();
-  if (!s) return 0;
-  const n = Number(s);
+  const n = Number(v ?? 0);
   return Number.isFinite(n) ? n : 0;
 };
 
 const toDateOrNull = (v) => {
   const s = String(v ?? "").trim();
   if (!s) return null;
+
   const d = s.slice(0, 10);
-  return /^\d{4}-\d{2}-\d{2}$/.test(d) ? d : null;
+
+  return /^\d{4}-\d{2}-\d{2}$/.test(d)
+    ? d
+    : null;
 };
 
-const isTopManagement = (req) =>
+/*
+|--------------------------------------------------------------------------
+| SUPER ACCESS
+|--------------------------------------------------------------------------
+*/
+
+const hasFullAccess = (req) =>
   isAdmin(req) ||
   isIT(req) ||
   isHr(req) ||
@@ -51,37 +59,51 @@ const isTopManagement = (req) =>
   isSeniorVicePresident(req) ||
   isPresident(req);
 
-const getUserArea = (req) => toStr(req.user?.area);
-const getUserBranchCode = (req) => toStr(req.user?.branch_id);
-const getUserDivision = (req) => toStr(req.user?.division);
-const getUserRegion = (req) => toStr(req.user?.region);
+/*
+|--------------------------------------------------------------------------
+| USER INFO
+|--------------------------------------------------------------------------
+*/
 
-async function getBranchIdFromCode(branchCode) {
-  const code = toStr(branchCode);
-  if (!code) return null;
+const getUserArea = (req) =>
+  toStr(req.user?.area).toLowerCase();
 
-  const r = await pool.query(
-    `
-    SELECT id
-    FROM public.branches
-    WHERE LOWER(TRIM(code)) = LOWER(TRIM($1))
-    LIMIT 1
-    `,
-    [code]
-  );
+const getUserRegion = (req) =>
+  toStr(req.user?.region).toLowerCase();
 
-  return r.rowCount ? r.rows[0].id : null;
-}
+const getUserDivision = (req) =>
+  toStr(req.user?.division).toLowerCase();
 
-async function canAccessStaffById(client, req, staffId) {
+const getUserBranchId = (req) =>
+  toInt(req.user?.branch_id);
+
+/*
+|--------------------------------------------------------------------------
+| STAFF ACCESS
+|--------------------------------------------------------------------------
+*/
+
+async function canAccessStaffById(
+  client,
+  req,
+  staffId
+) {
   const id = toInt(staffId);
+
   if (!id) return false;
 
-  if (isTopManagement(req)) return true;
+  if (hasFullAccess(req)) {
+    return true;
+  }
 
   const r = await client.query(
     `
-    SELECT id, branch_id, area, region, division
+    SELECT
+      id,
+      branch_id,
+      area,
+      region,
+      division
     FROM public.staff
     WHERE id = $1
     LIMIT 1
@@ -89,93 +111,171 @@ async function canAccessStaffById(client, req, staffId) {
     [id]
   );
 
-  if (r.rowCount === 0) return false;
+  if (r.rowCount === 0) {
+    return false;
+  }
 
-  const row = r.rows[0];
+  const s = r.rows[0];
 
   if (isBranchManager(req)) {
-    const bid = await getBranchIdFromCode(getUserBranchCode(req));
-    return !!bid && Number(row.branch_id) === Number(bid);
+    return (
+      Number(s.branch_id) ===
+      Number(getUserBranchId(req))
+    );
   }
 
   if (isAreaManager(req)) {
-    const area = getUserArea(req);
-    return !!area && toStr(row.area).toLowerCase() === area.toLowerCase();
+    return (
+      toStr(s.area).toLowerCase() ===
+      getUserArea(req)
+    );
   }
 
   if (isRegionalManager(req)) {
-    const region = getUserRegion(req);
-    return !!region && toStr(row.region).toLowerCase() === region.toLowerCase();
+    return (
+      toStr(s.region).toLowerCase() ===
+      getUserRegion(req)
+    );
   }
 
   if (isAssistantVicePresident(req)) {
-    const division = getUserDivision(req);
-    return !!division && toStr(row.division).toLowerCase() === division.toLowerCase();
+    return (
+      toStr(s.division).toLowerCase() ===
+      getUserDivision(req)
+    );
   }
 
   return false;
 }
 
+/*
+|--------------------------------------------------------------------------
+| NORMALIZE PAYLOAD
+|--------------------------------------------------------------------------
+*/
+
 function normalizePayload(body = {}) {
-  const original_amount = toNum(body.original_amount);
+  const original_amount = toNum(
+    body.original_amount
+  );
+
   const interest = toNum(body.interest);
 
-  const interest_amount = Number((original_amount * (interest / 100)).toFixed(2));
-  const total_amount = Number((original_amount + interest_amount).toFixed(2));
+  const interest_amount = Number(
+    (
+      original_amount *
+      (interest / 100)
+    ).toFixed(2)
+  );
 
-  const term_months = toInt(body.term_months) ?? 0;
-  const months_paid = toInt(body.months_paid) ?? 0;
+  const total_amount = Number(
+    (
+      original_amount +
+      interest_amount
+    ).toFixed(2)
+  );
+
+  const term_months =
+    toInt(body.term_months) ?? 0;
+
+  const months_paid =
+    toInt(body.months_paid) ?? 0;
 
   let per_month = toNum(body.per_month);
 
-  if ((!per_month || per_month <= 0) && total_amount > 0 && term_months > 0) {
-    per_month = Number((total_amount / term_months).toFixed(2));
+  if (
+    (!per_month || per_month <= 0) &&
+    total_amount > 0 &&
+    term_months > 0
+  ) {
+    per_month = Number(
+      (total_amount / term_months).toFixed(2)
+    );
   }
 
-  let remaining_balance = toNum(body.remaining_balance);
+  let remaining_balance = toNum(
+    body.remaining_balance
+  );
 
   if (total_amount > 0) {
     remaining_balance = Math.max(
       0,
-      Number((total_amount - per_month * months_paid).toFixed(2))
+      Number(
+        (
+          total_amount -
+          per_month * months_paid
+        ).toFixed(2)
+      )
     );
   }
 
   return {
     loan_type: toStr(body.loan_type),
+
     original_amount,
     interest,
     interest_amount,
     total_amount,
+
     term_months,
     months_paid,
     per_month,
     remaining_balance,
-    start_date: toDateOrNull(body.start_date),
-    effective_date: toDateOrNull(body.effective_date),
-    status: toStr(body.status) || "Active",
-    remarks: toStr(body.remarks) || null,
+
+    start_date: toDateOrNull(
+      body.start_date
+    ),
+
+    effective_date: toDateOrNull(
+      body.effective_date
+    ),
+
+    status:
+      toStr(body.status) || "Active",
+
+    remarks:
+      toStr(body.remarks) || null,
   };
 }
+
+/*
+|--------------------------------------------------------------------------
+| GET STAFF LOANS
+|--------------------------------------------------------------------------
+*/
 
 router.get(
   "/staff-loan-opening-balances/staff/:staffId",
   requireAuth,
-  requirePermission("staff_loan_opening_balance", "view"),
+  requirePermission(
+    "staff_loan_opening_balance",
+    "view"
+  ),
   async (req, res) => {
     const client = await pool.connect();
 
     try {
-      const staffId = toInt(req.params.staffId);
+      const staffId = toInt(
+        req.params.staffId
+      );
 
       if (!staffId) {
-        return res.status(400).json({ message: "Invalid staff id" });
+        return res.status(400).json({
+          message: "Invalid staff id",
+        });
       }
 
-      const allowed = await canAccessStaffById(client, req, staffId);
+      const allowed =
+        await canAccessStaffById(
+          client,
+          req,
+          staffId
+        );
 
       if (!allowed) {
-        return res.status(403).json({ message: "Access denied" });
+        return res.status(403).json({
+          message: "Access denied",
+        });
       }
 
       const r = await client.query(
@@ -190,67 +290,97 @@ router.get(
 
       return res.json(r.rows);
     } catch (e) {
-      console.error(
-        "GET /api/staff-loan-opening-balances/staff/:staffId ERROR:",
-        e.message
-      );
+      console.error(e);
 
-      return res.status(500).json({ message: "Server error" });
+      return res.status(500).json({
+        message: "Server error",
+      });
     } finally {
       client.release();
     }
   }
 );
 
+/*
+|--------------------------------------------------------------------------
+| CREATE
+|--------------------------------------------------------------------------
+*/
+
 router.post(
   "/staff-loan-opening-balances",
   requireAuth,
-  requirePermission("staff_loan_opening_balance", "create"),
+  requirePermission(
+    "staff_loan_opening_balance",
+    "create"
+  ),
   async (req, res) => {
     const client = await pool.connect();
 
     try {
       await client.query("BEGIN");
 
-      const staff_id = toInt(req.body?.staff_id);
+      const staff_id = toInt(
+        req.body?.staff_id
+      );
 
       if (!staff_id) {
         await client.query("ROLLBACK");
-        return res.status(400).json({ message: "staff_id is required" });
+
+        return res.status(400).json({
+          message: "staff_id is required",
+        });
       }
 
-      const allowed = await canAccessStaffById(client, req, staff_id);
+      const allowed =
+        await canAccessStaffById(
+          client,
+          req,
+          staff_id
+        );
 
       if (!allowed) {
         await client.query("ROLLBACK");
-        return res.status(403).json({ message: "Access denied" });
+
+        return res.status(403).json({
+          message: "Access denied",
+        });
       }
 
-      const staffRes = await client.query(
-        `
-        SELECT id, employee_no
-        FROM public.staff
-        WHERE id = $1
-        LIMIT 1
-        `,
-        [staff_id]
-      );
+      const staffRes =
+        await client.query(
+          `
+          SELECT employee_no
+          FROM public.staff
+          WHERE id = $1
+          LIMIT 1
+          `,
+          [staff_id]
+        );
 
       if (staffRes.rowCount === 0) {
         await client.query("ROLLBACK");
-        return res.status(404).json({ message: "Staff not found" });
+
+        return res.status(404).json({
+          message: "Staff not found",
+        });
       }
 
-      const payload = normalizePayload(req.body);
+      const payload =
+        normalizePayload(req.body);
 
       if (!payload.loan_type) {
         await client.query("ROLLBACK");
-        return res.status(400).json({ message: "loan_type is required" });
+
+        return res.status(400).json({
+          message: "loan_type is required",
+        });
       }
 
-      const ins = await client.query(
-        `
-        INSERT INTO public.staff_loan_opening_balances
+      const ins =
+        await client.query(
+          `
+          INSERT INTO public.staff_loan_opening_balances
           (
             staff_id,
             employee_no,
@@ -270,29 +400,43 @@ router.post(
             created_by,
             updated_by
           )
-        VALUES
-          ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12::date,$13::date,$14,$15,$16,$16)
-        RETURNING *
-        `,
-        [
-          staff_id,
-          toStr(staffRes.rows[0].employee_no) || null,
-          payload.loan_type,
-          payload.original_amount,
-          payload.interest,
-          payload.interest_amount,
-          payload.total_amount,
-          payload.term_months,
-          payload.months_paid,
-          payload.per_month,
-          payload.remaining_balance,
-          payload.start_date,
-          payload.effective_date,
-          payload.status,
-          payload.remarks,
-          req.user?.id ?? null,
-        ]
-      );
+          VALUES
+          (
+            $1,$2,$3,$4,$5,$6,$7,
+            $8,$9,$10,$11,
+            $12::date,
+            $13::date,
+            $14,$15,$16,$16
+          )
+          RETURNING *
+          `,
+          [
+            staff_id,
+            toStr(
+              staffRes.rows[0]
+                ?.employee_no
+            ) || null,
+
+            payload.loan_type,
+            payload.original_amount,
+            payload.interest,
+            payload.interest_amount,
+            payload.total_amount,
+
+            payload.term_months,
+            payload.months_paid,
+            payload.per_month,
+            payload.remaining_balance,
+
+            payload.start_date,
+            payload.effective_date,
+
+            payload.status,
+            payload.remarks,
+
+            req.user?.id ?? null,
+          ]
+        );
 
       await client.query("COMMIT");
 
@@ -300,10 +444,11 @@ router.post(
     } catch (e) {
       await client.query("ROLLBACK");
 
-      console.error("POST /api/staff-loan-opening-balances ERROR:", e.message);
+      console.error(e);
 
       return res.status(500).json({
-        message: e?.message || "Server error",
+        message:
+          e?.message || "Server error",
       });
     } finally {
       client.release();
@@ -311,10 +456,19 @@ router.post(
   }
 );
 
+/*
+|--------------------------------------------------------------------------
+| UPDATE
+|--------------------------------------------------------------------------
+*/
+
 router.put(
   "/staff-loan-opening-balances/:id",
   requireAuth,
-  requirePermission("staff_loan_opening_balance", "edit"),
+  requirePermission(
+    "staff_loan_opening_balance",
+    "edit"
+  ),
   async (req, res) => {
     const client = await pool.connect();
 
@@ -325,82 +479,95 @@ router.put(
 
       if (!id) {
         await client.query("ROLLBACK");
-        return res.status(400).json({ message: "Invalid id" });
+
+        return res.status(400).json({
+          message: "Invalid id",
+        });
       }
 
-      const existing = await client.query(
-        `
-        SELECT id, staff_id
-        FROM public.staff_loan_opening_balances
-        WHERE id = $1
-        LIMIT 1
-        `,
-        [id]
-      );
+      const existing =
+        await client.query(
+          `
+          SELECT staff_id
+          FROM public.staff_loan_opening_balances
+          WHERE id = $1
+          LIMIT 1
+          `,
+          [id]
+        );
 
       if (existing.rowCount === 0) {
         await client.query("ROLLBACK");
-        return res.status(404).json({ message: "Record not found" });
+
+        return res.status(404).json({
+          message: "Record not found",
+        });
       }
 
-      const allowed = await canAccessStaffById(
-        client,
-        req,
-        existing.rows[0].staff_id
-      );
+      const allowed =
+        await canAccessStaffById(
+          client,
+          req,
+          existing.rows[0].staff_id
+        );
 
       if (!allowed) {
         await client.query("ROLLBACK");
-        return res.status(403).json({ message: "Access denied" });
+
+        return res.status(403).json({
+          message: "Access denied",
+        });
       }
 
-      const payload = normalizePayload(req.body);
+      const payload =
+        normalizePayload(req.body);
 
-      if (!payload.loan_type) {
-        await client.query("ROLLBACK");
-        return res.status(400).json({ message: "loan_type is required" });
-      }
+      const upd =
+        await client.query(
+          `
+          UPDATE public.staff_loan_opening_balances
+          SET
+            loan_type = $2,
+            original_amount = $3,
+            interest = $4,
+            interest_amount = $5,
+            total_amount = $6,
+            term_months = $7,
+            months_paid = $8,
+            per_month = $9,
+            remaining_balance = $10,
+            start_date = $11::date,
+            effective_date = $12::date,
+            status = $13,
+            remarks = $14,
+            updated_by = $15,
+            updated_at = NOW()
+          WHERE id = $1
+          RETURNING *
+          `,
+          [
+            id,
 
-      const upd = await client.query(
-        `
-        UPDATE public.staff_loan_opening_balances
-        SET
-          loan_type = $2,
-          original_amount = $3,
-          interest = $4,
-          interest_amount = $5,
-          total_amount = $6,
-          term_months = $7,
-          months_paid = $8,
-          per_month = $9,
-          remaining_balance = $10,
-          start_date = $11::date,
-          effective_date = $12::date,
-          status = $13,
-          remarks = $14,
-          updated_by = $15,
-          updated_at = NOW()
-        WHERE id = $1
-        RETURNING *
-        `,
-        [
-          id,
-          payload.loan_type,
-          payload.original_amount,
-          payload.interest,
-          payload.interest_amount,
-          payload.total_amount,
-          payload.term_months,
-          payload.months_paid,
-          payload.per_month,
-          payload.remaining_balance,
-          payload.start_date,
-          payload.effective_date,
-          payload.status,
-          payload.remarks,
-          req.user?.id ?? null,
-        ]
-      );
+            payload.loan_type,
+            payload.original_amount,
+            payload.interest,
+            payload.interest_amount,
+            payload.total_amount,
+
+            payload.term_months,
+            payload.months_paid,
+            payload.per_month,
+            payload.remaining_balance,
+
+            payload.start_date,
+            payload.effective_date,
+
+            payload.status,
+            payload.remarks,
+
+            req.user?.id ?? null,
+          ]
+        );
 
       await client.query("COMMIT");
 
@@ -408,13 +575,11 @@ router.put(
     } catch (e) {
       await client.query("ROLLBACK");
 
-      console.error(
-        "PUT /api/staff-loan-opening-balances/:id ERROR:",
-        e.message
-      );
+      console.error(e);
 
       return res.status(500).json({
-        message: e?.message || "Server error",
+        message:
+          e?.message || "Server error",
       });
     } finally {
       client.release();
@@ -422,42 +587,80 @@ router.put(
   }
 );
 
+/*
+|--------------------------------------------------------------------------
+| DELETE
+|--------------------------------------------------------------------------
+*/
+
 router.delete(
   "/staff-loan-opening-balances/:id",
   requireAuth,
-  requirePermission("staff_loan_opening_balance", "delete"),
+  requirePermission(
+    "staff_loan_opening_balance",
+    "delete"
+  ),
   async (req, res) => {
+    const client = await pool.connect();
+
     try {
       const id = toInt(req.params.id);
 
       if (!id) {
-        return res.status(400).json({ message: "Invalid id" });
+        return res.status(400).json({
+          message: "Invalid id",
+        });
       }
 
-      const r = await pool.query(
+      const existing =
+        await client.query(
+          `
+          SELECT staff_id
+          FROM public.staff_loan_opening_balances
+          WHERE id = $1
+          LIMIT 1
+          `,
+          [id]
+        );
+
+      if (existing.rowCount === 0) {
+        return res.status(404).json({
+          message: "Record not found",
+        });
+      }
+
+      const allowed =
+        await canAccessStaffById(
+          client,
+          req,
+          existing.rows[0].staff_id
+        );
+
+      if (!allowed) {
+        return res.status(403).json({
+          message: "Access denied",
+        });
+      }
+
+      await client.query(
         `
         DELETE FROM public.staff_loan_opening_balances
         WHERE id = $1
-        RETURNING id
         `,
         [id]
       );
 
-      if (r.rowCount === 0) {
-        return res.status(404).json({ message: "Record not found" });
-      }
-
       return res.json({
-        message: "Deleted",
-        id: r.rows[0].id,
+        message: "Deleted successfully",
       });
     } catch (e) {
-      console.error(
-        "DELETE /api/staff-loan-opening-balances/:id ERROR:",
-        e.message
-      );
+      console.error(e);
 
-      return res.status(500).json({ message: "Server error" });
+      return res.status(500).json({
+        message: "Server error",
+      });
+    } finally {
+      client.release();
     }
   }
 );

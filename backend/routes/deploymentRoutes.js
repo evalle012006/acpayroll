@@ -1,7 +1,24 @@
 const express = require("express");
 const router = express.Router();
 const pool = require("../db");
-const { requireAuth, requireRole } = require("../middlewares/authMiddleware");
+
+const { requireAuth } = require("../middlewares/authMiddleware");
+const { requirePermission } = require("../middlewares/permissionMiddleware");
+
+const {
+  isAdmin,
+  isIT,
+  isHr,
+  isAccounting,
+  isTread,
+  isBranchManager,
+  isAreaManager,
+  isRegionalManager,
+  isAssistantVicePresident,
+  isVicePresident,
+  isSeniorVicePresident,
+  isPresident,
+} = require("../utils/roleAccess");
 
 const toInt = (v) => {
   const n = Number(v);
@@ -20,22 +37,6 @@ const toNum = (v) => {
   return Number.isFinite(n) ? n : 0;
 };
 
-const roleLower = (req) => String(req.user?.role || "").trim().toLowerCase();
-
-const isAdmin = (req) => roleLower(req) === "admin";
-const isHr = (req) => roleLower(req) === "hr";
-const isAccounting = (req) => roleLower(req) === "accounting";
-const isTread = (req) => roleLower(req) === "tread";
-const isBranchManager = (req) => roleLower(req) === "branch manager";
-const isAreaManager = (req) => roleLower(req) === "area manager";
-const isRegionalManager = (req) => roleLower(req) === "regional manager";
-const isAssistantVicePresident = (req) =>
-  roleLower(req) === "assistant vice president";
-const isVicePresident = (req) => roleLower(req) === "vice president";
-const isSeniorVicePresident = (req) =>
-  roleLower(req) === "senior vice president";
-const isPresident = (req) => roleLower(req) === "president";
-
 const isTopManagement = (req) =>
   isAssistantVicePresident(req) ||
   isVicePresident(req) ||
@@ -44,48 +45,11 @@ const isTopManagement = (req) =>
 
 const canViewAllDeployment = (req) =>
   isAdmin(req) ||
+  isIT(req) ||
   isHr(req) ||
   isAccounting(req) ||
   isTread(req) ||
   isTopManagement(req);
-
-const canCreateDeployment = (req) =>
-  isAdmin(req) ||
-  isHr(req) ||
-  isAccounting(req) ||
-  isBranchManager(req) ||
-  isAreaManager(req) ||
-  isRegionalManager(req) ||
-  isAssistantVicePresident(req) ||
-  isVicePresident(req) ||
-  isSeniorVicePresident(req) ||
-  isPresident(req);
-
-const canEditDeployment = (req) =>
-  isAdmin(req) ||
-  isHr(req) ||
-  isAccounting(req) ||
-  isBranchManager(req) ||
-  isAreaManager(req) ||
-  isRegionalManager(req) ||
-  isAssistantVicePresident(req) ||
-  isVicePresident(req) ||
-  isSeniorVicePresident(req) ||
-  isPresident(req);
-
-const canApproveDeployment = (req) =>
-  isAdmin(req) ||
-  isHr(req) ||
-  isAccounting(req) ||
-  isAssistantVicePresident(req) ||
-  isVicePresident(req) ||
-  isSeniorVicePresident(req) ||
-  isPresident(req);
-
-const canDeleteDeployment = (req) =>
-  isAdmin(req) ||
-  isHr(req) ||
-  isAccounting(req);
 
 const getUserRegion = (req) => toStr(req.user?.region);
 const getUserBranchCode = (req) => toStr(req.user?.branch_id);
@@ -227,207 +191,174 @@ async function syncStaffBalancesFromStaff(client, staffId) {
   );
 }
 
-/* =========================================================
-   GET ALL DEPLOYMENTS
-========================================================= */
-router.get("/deployments", requireAuth, async (req, res) => {
-  const client = await pool.connect();
+router.get(
+  "/deployments",
+  requireAuth,
+  requirePermission("deployment_order", "view"),
+  async (req, res) => {
+    const client = await pool.connect();
 
-  try {
-    if (canViewAllDeployment(req)) {
-      const r = await client.query(`
-        SELECT *
-        FROM public.deployment_orders
-        ORDER BY id DESC
-      `);
+    try {
+      if (canViewAllDeployment(req)) {
+        const r = await client.query(`
+          SELECT *
+          FROM public.deployment_orders
+          ORDER BY id DESC
+        `);
 
-      return res.json(r.rows);
-    }
-
-    if (isBranchManager(req)) {
-      const managerBranch = await getManagerBranch(client, req);
-      if (!managerBranch?.id) return res.json([]);
-
-      const r = await client.query(
-        `
-        SELECT *
-        FROM public.deployment_orders
-        WHERE branch_id = $1
-        ORDER BY id DESC
-        `,
-        [managerBranch.id]
-      );
-
-      return res.json(r.rows);
-    }
-
-    if (isAreaManager(req)) {
-      const userArea = getUserArea(req);
-      if (!userArea) return res.json([]);
-
-      const r = await client.query(
-        `
-        SELECT d.*
-        FROM public.deployment_orders d
-        JOIN public.staff s ON s.id = d.employee_id
-        WHERE LOWER(TRIM(COALESCE(s.area, ''))) = LOWER(TRIM($1))
-        ORDER BY d.id DESC
-        `,
-        [userArea]
-      );
-
-      return res.json(r.rows);
-    }
-
-    if (isRegionalManager(req)) {
-      const userRegion = getUserRegion(req);
-      if (!userRegion) return res.json([]);
-
-      const r = await client.query(
-        `
-        SELECT d.*
-        FROM public.deployment_orders d
-        JOIN public.staff s ON s.id = d.employee_id
-        WHERE LOWER(TRIM(COALESCE(s.region, ''))) = LOWER(TRIM($1))
-        ORDER BY d.id DESC
-        `,
-        [userRegion]
-      );
-
-      return res.json(r.rows);
-    }
-
-    return res.status(403).json({ message: "Access denied" });
-  } catch (e) {
-    console.error("GET /api/deployments ERROR:", e.message);
-    return res.status(500).json({ message: "Server error" });
-  } finally {
-    client.release();
-  }
-});
-
-/* =========================================================
-   GET ONE DEPLOYMENT
-========================================================= */
-router.get("/deployments/:id", requireAuth, async (req, res) => {
-  const client = await pool.connect();
-
-  try {
-    const id = toInt(req.params.id);
-    if (!id) return res.status(400).json({ message: "Invalid id" });
-
-    if (canViewAllDeployment(req)) {
-      const r = await client.query(
-        `
-        SELECT *
-        FROM public.deployment_orders
-        WHERE id = $1
-        `,
-        [id]
-      );
-
-      if (r.rowCount === 0) {
-        return res.status(404).json({ message: "Not found" });
+        return res.json(r.rows);
       }
 
-      return res.json(r.rows[0]);
-    }
+      if (isBranchManager(req)) {
+        const managerBranch = await getManagerBranch(client, req);
+        if (!managerBranch?.id) return res.json([]);
 
-    if (isBranchManager(req)) {
-      const managerBranch = await getManagerBranch(client, req);
-      if (!managerBranch?.id) {
+        const r = await client.query(
+          `
+          SELECT *
+          FROM public.deployment_orders
+          WHERE branch_id = $1
+          ORDER BY id DESC
+          `,
+          [managerBranch.id]
+        );
+
+        return res.json(r.rows);
+      }
+
+      if (isAreaManager(req)) {
+        const userArea = getUserArea(req);
+        if (!userArea) return res.json([]);
+
+        const r = await client.query(
+          `
+          SELECT d.*
+          FROM public.deployment_orders d
+          JOIN public.staff s ON s.id = d.employee_id
+          WHERE LOWER(TRIM(COALESCE(s.area, ''))) = LOWER(TRIM($1))
+          ORDER BY d.id DESC
+          `,
+          [userArea]
+        );
+
+        return res.json(r.rows);
+      }
+
+      if (isRegionalManager(req)) {
+        const userRegion = getUserRegion(req);
+        if (!userRegion) return res.json([]);
+
+        const r = await client.query(
+          `
+          SELECT d.*
+          FROM public.deployment_orders d
+          JOIN public.staff s ON s.id = d.employee_id
+          WHERE LOWER(TRIM(COALESCE(s.region, ''))) = LOWER(TRIM($1))
+          ORDER BY d.id DESC
+          `,
+          [userRegion]
+        );
+
+        return res.json(r.rows);
+      }
+
+      return res.status(403).json({ message: "Access denied" });
+    } catch (e) {
+      console.error("GET /api/deployments ERROR:", e.message);
+      return res.status(500).json({ message: "Server error" });
+    } finally {
+      client.release();
+    }
+  }
+);
+
+router.get(
+  "/deployments/:id",
+  requireAuth,
+  requirePermission("deployment_order", "view"),
+  async (req, res) => {
+    const client = await pool.connect();
+
+    try {
+      const id = toInt(req.params.id);
+      if (!id) return res.status(400).json({ message: "Invalid id" });
+
+      let r;
+
+      if (canViewAllDeployment(req)) {
+        r = await client.query(
+          `
+          SELECT *
+          FROM public.deployment_orders
+          WHERE id = $1
+          `,
+          [id]
+        );
+      } else if (isBranchManager(req)) {
+        const managerBranch = await getManagerBranch(client, req);
+        if (!managerBranch?.id) {
+          return res.status(403).json({ message: "Access denied" });
+        }
+
+        r = await client.query(
+          `
+          SELECT *
+          FROM public.deployment_orders
+          WHERE id = $1
+            AND branch_id = $2
+          `,
+          [id, managerBranch.id]
+        );
+      } else if (isAreaManager(req)) {
+        const userArea = getUserArea(req);
+        if (!userArea) return res.status(403).json({ message: "Access denied" });
+
+        r = await client.query(
+          `
+          SELECT d.*
+          FROM public.deployment_orders d
+          JOIN public.staff s ON s.id = d.employee_id
+          WHERE d.id = $1
+            AND LOWER(TRIM(COALESCE(s.area, ''))) = LOWER(TRIM($2))
+          `,
+          [id, userArea]
+        );
+      } else if (isRegionalManager(req)) {
+        const userRegion = getUserRegion(req);
+        if (!userRegion) return res.status(403).json({ message: "Access denied" });
+
+        r = await client.query(
+          `
+          SELECT d.*
+          FROM public.deployment_orders d
+          JOIN public.staff s ON s.id = d.employee_id
+          WHERE d.id = $1
+            AND LOWER(TRIM(COALESCE(s.region, ''))) = LOWER(TRIM($2))
+          `,
+          [id, userRegion]
+        );
+      } else {
         return res.status(403).json({ message: "Access denied" });
       }
 
-      const r = await client.query(
-        `
-        SELECT *
-        FROM public.deployment_orders
-        WHERE id = $1
-          AND branch_id = $2
-        `,
-        [id, managerBranch.id]
-      );
-
       if (r.rowCount === 0) {
         return res.status(404).json({ message: "Not found" });
       }
 
       return res.json(r.rows[0]);
+    } catch (e) {
+      console.error("GET /api/deployments/:id ERROR:", e.message);
+      return res.status(500).json({ message: "Server error" });
+    } finally {
+      client.release();
     }
-
-    if (isAreaManager(req)) {
-      const userArea = getUserArea(req);
-      if (!userArea) return res.status(403).json({ message: "Access denied" });
-
-      const r = await client.query(
-        `
-        SELECT d.*
-        FROM public.deployment_orders d
-        JOIN public.staff s ON s.id = d.employee_id
-        WHERE d.id = $1
-          AND LOWER(TRIM(COALESCE(s.area, ''))) = LOWER(TRIM($2))
-        `,
-        [id, userArea]
-      );
-
-      if (r.rowCount === 0) {
-        return res.status(404).json({ message: "Not found" });
-      }
-
-      return res.json(r.rows[0]);
-    }
-
-    if (isRegionalManager(req)) {
-      const userRegion = getUserRegion(req);
-      if (!userRegion) return res.status(403).json({ message: "Access denied" });
-
-      const r = await client.query(
-        `
-        SELECT d.*
-        FROM public.deployment_orders d
-        JOIN public.staff s ON s.id = d.employee_id
-        WHERE d.id = $1
-          AND LOWER(TRIM(COALESCE(s.region, ''))) = LOWER(TRIM($2))
-        `,
-        [id, userRegion]
-      );
-
-      if (r.rowCount === 0) {
-        return res.status(404).json({ message: "Not found" });
-      }
-
-      return res.json(r.rows[0]);
-    }
-
-    return res.status(403).json({ message: "Access denied" });
-  } catch (e) {
-    console.error("GET /api/deployments/:id ERROR:", e.message);
-    return res.status(500).json({ message: "Server error" });
-  } finally {
-    client.release();
   }
-});
+);
 
-/* =========================================================
-   GET DEPLOYMENTS BY STAFF
-========================================================= */
 router.get(
   "/deployment-orders/staff/:id",
   requireAuth,
-  requireRole([
-    "admin",
-    "hr",
-    "accounting",
-    "tread",
-    "branch manager",
-    "area manager",
-    "regional manager",
-    "assistant vice president",
-    "vice president",
-    "senior vice president",
-    "president",
-  ]),
+  requirePermission("deployment_order", "view"),
   async (req, res) => {
     const client = await pool.connect();
 
@@ -439,23 +370,17 @@ router.get(
 
       if (isBranchManager(req)) {
         const ok = await assertStaffInManagersBranch(req, client, employeeId);
-        if (!ok) {
-          return res.status(403).json({ message: "Access denied" });
-        }
+        if (!ok) return res.status(403).json({ message: "Access denied" });
       }
 
       if (isAreaManager(req)) {
         const ok = await assertStaffInManagersArea(req, client, employeeId);
-        if (!ok) {
-          return res.status(403).json({ message: "Access denied" });
-        }
+        if (!ok) return res.status(403).json({ message: "Access denied" });
       }
 
       if (isRegionalManager(req)) {
         const ok = await assertStaffInManagersRegion(req, client, employeeId);
-        if (!ok) {
-          return res.status(403).json({ message: "Access denied" });
-        }
+        if (!ok) return res.status(403).json({ message: "Access denied" });
       }
 
       const r = await client.query(
@@ -478,24 +403,10 @@ router.get(
   }
 );
 
-/* =========================================================
-   CREATE DEPLOYMENT
-========================================================= */
 router.post(
   "/deployments",
   requireAuth,
-  requireRole([
-    "admin",
-    "hr",
-    "accounting",
-    "branch manager",
-    "area manager",
-    "regional manager",
-    "assistant vice president",
-    "vice president",
-    "senior vice president",
-    "president",
-  ]),
+  requirePermission("deployment_order", "create"),
   async (req, res) => {
     const client = await pool.connect();
 
@@ -520,11 +431,6 @@ router.post(
       if (!deployment_date) {
         await client.query("ROLLBACK");
         return res.status(400).json({ message: "Deployment date is required" });
-      }
-
-      if (!canCreateDeployment(req)) {
-        await client.query("ROLLBACK");
-        return res.status(403).json({ message: "Access denied" });
       }
 
       if (isBranchManager(req)) {
@@ -623,24 +529,10 @@ router.post(
   }
 );
 
-/* =========================================================
-   UPDATE DEPLOYMENT
-========================================================= */
 router.put(
   "/deployments/:id",
   requireAuth,
-  requireRole([
-    "admin",
-    "hr",
-    "accounting",
-    "branch manager",
-    "area manager",
-    "regional manager",
-    "assistant vice president",
-    "vice president",
-    "senior vice president",
-    "president",
-  ]),
+  requirePermission("deployment_order", "edit"),
   async (req, res) => {
     const client = await pool.connect();
 
@@ -674,11 +566,6 @@ router.put(
         return res
           .status(400)
           .json({ message: "Approved deployments cannot be edited" });
-      }
-
-      if (!canEditDeployment(req)) {
-        await client.query("ROLLBACK");
-        return res.status(403).json({ message: "Access denied" });
       }
 
       if (isBranchManager(req)) {
@@ -760,21 +647,14 @@ router.put(
   }
 );
 
-/* =========================================================
-   DELETE DEPLOYMENT
-========================================================= */
 router.delete(
   "/deployments/:id",
   requireAuth,
-  requireRole(["admin", "hr", "accounting"]),
+  requirePermission("deployment_order", "delete"),
   async (req, res) => {
     try {
       const id = toInt(req.params.id);
       if (!id) return res.status(400).json({ message: "Invalid id" });
-
-      if (!canDeleteDeployment(req)) {
-        return res.status(403).json({ message: "Access denied" });
-      }
 
       const r = await pool.query(
         `
@@ -797,21 +677,10 @@ router.delete(
   }
 );
 
-/* =========================================================
-   APPROVE DEPLOYMENT
-========================================================= */
 router.put(
   "/deployments/:id/approve",
   requireAuth,
-  requireRole([
-    "admin",
-    "hr",
-    "accounting",
-    "assistant vice president",
-    "vice president",
-    "senior vice president",
-    "president",
-  ]),
+  requirePermission("deployment_order", "approve"),
   async (req, res) => {
     const client = await pool.connect();
 
@@ -822,11 +691,6 @@ router.put(
       if (!id) {
         await client.query("ROLLBACK");
         return res.status(400).json({ message: "Invalid id" });
-      }
-
-      if (!canApproveDeployment(req)) {
-        await client.query("ROLLBACK");
-        return res.status(403).json({ message: "Access denied" });
       }
 
       const r = await client.query(

@@ -1,8 +1,9 @@
 const express = require("express");
 const router = express.Router();
 const pool = require("../db");
+
 const { requireAuth } = require("../middlewares/authMiddleware");
-const { requirePermission } = require("../utils/permissions");
+const { requirePermission } = require("../middlewares/permissionMiddleware");
 
 const {
   isAdmin,
@@ -17,7 +18,6 @@ const {
   isPresident,
 } = require("../utils/roleAccess");
 
-/* ---------------- Helpers ---------------- */
 const toInt = (v) => {
   const n = Number(v);
   return Number.isFinite(n) ? Math.trunc(n) : null;
@@ -31,7 +31,6 @@ const toDate = (v) => {
 };
 
 const todayDate = () => new Date().toISOString().slice(0, 10);
-
 const clean = (v) => String(v ?? "").trim();
 const norm = (v) => clean(v).toLowerCase();
 
@@ -71,10 +70,6 @@ const buildEmployeeName = (row) => {
   return built || clean(row?.fullname) || clean(row?.employee_name);
 };
 
-/**
- * Makes staff inactive only when an approved exit is due.
- * It will NOT inactivate staff who were re-applied after the old exit date.
- */
 const applyDueExitStaff = async () => {
   await pool.query(`
     UPDATE public.staff s
@@ -97,9 +92,6 @@ const applyDueExitStaff = async () => {
   `);
 };
 
-/* =========================================================
-   EXIT STAFF inactive list
-========================================================= */
 router.get(
   "/exit-staff",
   requireAuth,
@@ -113,6 +105,7 @@ router.get(
       }
 
       const params = [];
+
       let sql = `
         SELECT
           s.id,
@@ -165,9 +158,6 @@ router.get(
   }
 );
 
-/* =========================================================
-   EXIT STAFF ORDERS
-========================================================= */
 router.get(
   "/exit-staff-orders",
   requireAuth,
@@ -235,7 +225,10 @@ router.post(
         return res.status(400).json({ message: "Staff is required" });
       }
 
-      if (!exit_type || !["AWOL", "Resigned", "Terminated", "Deceased"].includes(exit_type)) {
+      if (
+        !exit_type ||
+        !["AWOL", "Resigned", "Terminated", "Deceased"].includes(exit_type)
+      ) {
         await client.query("ROLLBACK");
         return res.status(400).json({
           message: "Exit type must be AWOL, Resigned, Terminated, or Deceased",
@@ -252,43 +245,41 @@ router.post(
         return res.status(400).json({ message: "Effective date required" });
       }
 
-      let s;
+      const staffQuery = staff_id
+        ? {
+            sql: `
+              SELECT
+                id,
+                employee_no,
+                fullname,
+                last_name,
+                first_name,
+                middle_name,
+                branch_id,
+                status
+              FROM public.staff
+              WHERE id = $1
+            `,
+            params: [staff_id],
+          }
+        : {
+            sql: `
+              SELECT
+                id,
+                employee_no,
+                fullname,
+                last_name,
+                first_name,
+                middle_name,
+                branch_id,
+                status
+              FROM public.staff
+              WHERE employee_no = $1
+            `,
+            params: [employee_no_input],
+          };
 
-      if (staff_id) {
-        s = await client.query(
-          `
-          SELECT
-            id,
-            employee_no,
-            fullname,
-            last_name,
-            first_name,
-            middle_name,
-            branch_id,
-            status
-          FROM public.staff
-          WHERE id = $1
-          `,
-          [staff_id]
-        );
-      } else {
-        s = await client.query(
-          `
-          SELECT
-            id,
-            employee_no,
-            fullname,
-            last_name,
-            first_name,
-            middle_name,
-            branch_id,
-            status
-          FROM public.staff
-          WHERE employee_no = $1
-          `,
-          [employee_no_input]
-        );
-      }
+      const s = await client.query(staffQuery.sql, staffQuery.params);
 
       if (s.rowCount === 0) {
         await client.query("ROLLBACK");
@@ -314,7 +305,11 @@ router.post(
 
       if (prev_branch_id) {
         const b = await client.query(
-          `SELECT code, name FROM public.branches WHERE id = $1`,
+          `
+          SELECT code, name
+          FROM public.branches
+          WHERE id = $1
+          `,
           [prev_branch_id]
         );
 
@@ -329,7 +324,11 @@ router.post(
 
       if (settlement_branch_id) {
         const sb = await client.query(
-          `SELECT code, name FROM public.branches WHERE id = $1`,
+          `
+          SELECT code, name
+          FROM public.branches
+          WHERE id = $1
+          `,
           [settlement_branch_id]
         );
 
@@ -473,7 +472,9 @@ router.put(
 
       if (String(existing.status || "").toLowerCase() !== "pending") {
         await client.query("ROLLBACK");
-        return res.status(400).json({ message: "Only pending orders can be approved" });
+        return res.status(400).json({
+          message: "Only pending orders can be approved",
+        });
       }
 
       const employeeNo = clean(existing.employee_no);

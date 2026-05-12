@@ -67,14 +67,46 @@ const fmtMoney = (v) =>
 
 const fmtDate = (d) => (d ? String(d).slice(0, 10) : "-");
 
+const BACK_OFFICE_DEPARTMENTS = [
+  "it",
+  "it department",
+  "audit",
+  "audit department",
+  "hr",
+  "hr department",
+  "human resources",
+  "human resources department",
+  "accounting",
+  "accounting department",
+  "tread",
+  "tread department",
+  "production & logistic",
+  "production & logistic department",
+  "production and logistic",
+  "production and logistic department",
+  "office of the president",
+  "main office",
+];
+
+const isBackOfficeDepartment = (department) =>
+  BACK_OFFICE_DEPARTMENTS.includes(norm(department));
+
 const getDynamicApprovalChain = (item) => {
+  const department = item?.department || item?.staff_department || "";
+
+  if (isBackOfficeDepartment(department)) {
+    return ["assistant vice president"];
+  }
+
   const applicantRole = norm(item?.applicant_role);
 
   if (applicantRole === "vice president") return ["vice president"];
   if (applicantRole === "assistant vice president") return ["vice president"];
+
   if (applicantRole === "regional manager") {
     return ["assistant vice president", "vice president"];
   }
+
   if (applicantRole === "area manager") {
     return ["regional manager", "assistant vice president", "vice president"];
   }
@@ -120,7 +152,10 @@ const isFinalApprover = (role) => FINAL_APPROVER_ROLES.includes(norm(role));
 
 const canUserActOnLoan = (item, role) => {
   const overall = norm(item?.status);
-  if (overall === "approved" || overall === "rejected") return false;
+
+  if (overall === "approved" || overall === "rejected" || overall === "voided") {
+    return false;
+  }
 
   const normalizedRole = norm(role);
 
@@ -191,6 +226,7 @@ export default function LoanApprovalTab() {
     isHr ||
     isAccounting ||
     isTread ||
+    isBranchManager ||
     isAreaManager ||
     isRegionalManager ||
     isAssistantVicePresident ||
@@ -210,6 +246,8 @@ export default function LoanApprovalTab() {
     isVicePresident ||
     isSeniorVicePresident ||
     isPresident;
+
+  const canVoidLoan = isAdmin || isIt;
 
   const [loanRequests, setLoanRequests] = useState([]);
   const [staffList, setStaffList] = useState([]);
@@ -324,6 +362,7 @@ export default function LoanApprovalTab() {
 
   useEffect(() => {
     const isOpen = showLoanModal || showCreateLoan || showLoanView;
+
     if (!isOpen) return;
 
     const onKeyDown = (e) => {
@@ -519,13 +558,20 @@ export default function LoanApprovalTab() {
   const totalPages = Math.max(1, Math.ceil(filteredLoan.length / pageSize));
 
   const pagedLoan = useMemo(() => {
-    const start = (page - 1) * pageSize;
+    const safePage = Math.min(page, totalPages);
+    const start = (safePage - 1) * pageSize;
     return filteredLoan.slice(start, start + pageSize);
-  }, [filteredLoan, page, pageSize]);
+  }, [filteredLoan, page, pageSize, totalPages]);
 
   useEffect(() => {
     setPage(1);
   }, [search, selectedLoanType, pageSize]);
+
+  useEffect(() => {
+    if (page > totalPages) {
+      setPage(totalPages);
+    }
+  }, [page, totalPages]);
 
   const handleSearch = () => {
     setSearch(searchInput);
@@ -545,10 +591,11 @@ export default function LoanApprovalTab() {
   }, [searchableStaff, loanEmployeeSearch]);
 
   const badgeClass = (status) => {
-    const s = String(status || "").trim().toLowerCase();
+    const s = norm(status);
 
     if (s === "approved") return "badge badge-approved";
     if (s === "rejected") return "badge badge-rejected";
+    if (s === "voided") return "badge badge-rejected";
 
     return "badge badge-pending";
   };
@@ -774,6 +821,66 @@ export default function LoanApprovalTab() {
     }
   };
 
+  const voidLoan = async (item) => {
+    if (!canVoidLoan) {
+      return alert("Only Admin and IT can void loans.");
+    }
+
+    const id = item?.id;
+
+    if (!id) {
+      return alert("Loan record has no valid id.");
+    }
+
+    if (norm(item?.status) !== "approved") {
+      return alert("Only approved loans can be voided.");
+    }
+
+    const reason = window.prompt("Enter void reason:");
+
+    if (reason === null) {
+      return;
+    }
+
+    const ok = window.confirm(
+      "Void this approved loan? This will remove/reverse it from staff balances."
+    );
+
+    if (!ok) return;
+
+    try {
+      setProcessingId(`loan-${id}-void`);
+
+      await api.put(`/loan-requests/${id}/void`, {
+        reason: reason || "Loan voided",
+      });
+
+      alert("Loan successfully voided.");
+
+      if (selectedLoan?.id === id) {
+        setViewApprovalFile(null);
+        setShowLoanView(false);
+        setSelectedLoan(null);
+      }
+
+      await fetchLoan();
+    } catch (err) {
+      console.error("Void loan error:", err?.response?.data || err.message);
+
+      if (err?.response?.status === 401) {
+        return logout();
+      }
+
+      if (err?.response?.status === 403) {
+        return alert("Access denied.");
+      }
+
+      alert(err?.response?.data?.message || "Failed to void loan.");
+    } finally {
+      setProcessingId("");
+    }
+  };
+
   const openLoanView = (loan) => {
     setSelectedLoan(loan);
     setViewApprovalFile(null);
@@ -845,7 +952,6 @@ export default function LoanApprovalTab() {
             <div className="modal-head">
               <div>
                 <h3 className="modal-title">Add Loan Request</h3>
-
                 <p className="modal-subtitle">
                   Upload the first loan file. Every approver will replace it with the newly signed file.
                 </p>
@@ -1311,6 +1417,19 @@ export default function LoanApprovalTab() {
                                     </button>
                                   </>
                                 )}
+
+                                {canVoidLoan && norm(item.status) === "approved" && (
+                                  <button
+                                    className="btn-danger"
+                                    onClick={() => voidLoan(item)}
+                                    type="button"
+                                    disabled={processingId === `loan-${item.id}-void`}
+                                  >
+                                    {processingId === `loan-${item.id}-void`
+                                      ? "Voiding..."
+                                      : "Void Loan"}
+                                  </button>
+                                )}
                               </div>
                             </td>
                           </tr>
@@ -1380,7 +1499,6 @@ export default function LoanApprovalTab() {
             <div className="modal-head">
               <div>
                 <h3 className="modal-title">Loan Application Details</h3>
-
                 <p className="modal-subtitle">
                   {selectedLoan.staff_name || staffDisplayName(selectedLoan.staff_id)}
                 </p>
@@ -1421,9 +1539,7 @@ export default function LoanApprovalTab() {
                   <input
                     value={
                       selectedLoan.branch_code || selectedLoan.branch_name
-                        ? `${selectedLoan.branch_code || ""} - ${
-                            selectedLoan.branch_name || ""
-                          }`
+                        ? `${selectedLoan.branch_code || ""} - ${selectedLoan.branch_name || ""}`
                         : selectedLoan.branch || "-"
                     }
                     readOnly
@@ -1512,6 +1628,7 @@ export default function LoanApprovalTab() {
                 </div>
 
                 {norm(selectedLoan.status) !== "approved" &&
+                  norm(selectedLoan.status) !== "voided" &&
                   canParticipateInLoanApproval &&
                   canUserActOnLoan(selectedLoan, role) && (
                     <div className="form-group full">
@@ -1548,6 +1665,7 @@ export default function LoanApprovalTab() {
 
               <div className="modal-buttons">
                 {norm(selectedLoan.status) !== "approved" &&
+                  norm(selectedLoan.status) !== "voided" &&
                   canParticipateInLoanApproval &&
                   canUserActOnLoan(selectedLoan, role) && (
                     <>
@@ -1574,6 +1692,19 @@ export default function LoanApprovalTab() {
                       </button>
                     </>
                   )}
+
+                {canVoidLoan && norm(selectedLoan.status) === "approved" && (
+                  <button
+                    className="btn-danger"
+                    type="button"
+                    disabled={processingId === `loan-${selectedLoan.id}-void`}
+                    onClick={() => voidLoan(selectedLoan)}
+                  >
+                    {processingId === `loan-${selectedLoan.id}-void`
+                      ? "Voiding..."
+                      : "Void Loan"}
+                  </button>
+                )}
 
                 <button className="btn-secondary" type="button" onClick={closeLoanView}>
                   Close

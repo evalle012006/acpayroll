@@ -2,7 +2,7 @@ const express = require("express");
 const router = express.Router();
 const pool = require("../db");
 const { requireAuth } = require("../middlewares/authMiddleware");
-const { requirePermission } = require("../utils/permissions");
+const { requirePermission, hasPermission } = require("../middlewares/permissionMiddleware");
 
 const {
   uploadToTemp,
@@ -63,13 +63,13 @@ const buildFullname = ({ last_name, first_name, middle_name, fullname }) => {
 
   if (ln || fn || mn) {
     const mid = mn ? ` ${mn}` : "";
-    return `${ln}${ln && fn ? ", " : ""}${fn}${mid}`.trim().replace(/\s+/g, " ");
+    return `${ln}${ln && fn ? ", " : ""}${fn}${mid}`
+      .trim()
+      .replace(/\s+/g, " ");
   }
 
   return toStr(fullname);
 };
-
-const isTopManagement = (req) => isFullStaffAccess(req);
 
 const getUserArea = (req) => toStr(req.user?.area);
 const getUserBranchCode = (req) => toStr(req.user?.branch_id);
@@ -77,8 +77,18 @@ const getUserDivision = (req) => toStr(req.user?.division);
 const getUserRegion = (req) => toStr(req.user?.region);
 const getUserDepartment = (req) => toStr(req.user?.department);
 
-const isFullStaffAccess = (req) => {
+const isFullStaffAccess = async (req) => {
   const department = getUserDepartment(req).toLowerCase();
+
+  const canViewAllStaff = await hasPermission(
+    req.user,
+    "staff",
+    "view_all"
+  );
+
+  if (canViewAllStaff) {
+    return true;
+  }
 
   return (
     isAdmin(req) ||
@@ -92,6 +102,10 @@ const isFullStaffAccess = (req) => {
     isPresident(req) ||
     canViewAll(req)
   );
+};
+
+const isTopManagement = async (req) => {
+  return await isFullStaffAccess(req);
 };
 
 const toJsonbArray = (v) => {
@@ -179,7 +193,7 @@ async function canAccessStaffById(client, req, staffId) {
   const id = toInt(staffId);
   if (!id) return false;
 
-  if (isTopManagement(req)) {
+  if (await isTopManagement(req)) {
     return true;
   }
 
@@ -485,10 +499,14 @@ async function insertStaffFromBody(client, body) {
   const newId = ins.rows[0].id;
   const finalEmployeeNo = requestedEmployeeNo || generateEmployeeNoFromId(newId);
 
-  await client.query(`UPDATE public.staff SET employee_no = $1 WHERE id = $2`, [
-    finalEmployeeNo,
-    newId,
-  ]);
+  await client.query(
+    `
+    UPDATE public.staff
+    SET employee_no = $1
+    WHERE id = $2
+    `,
+    [finalEmployeeNo, newId]
+  );
 
   return { id: newId, employee_no: finalEmployeeNo };
 }
@@ -496,10 +514,10 @@ async function insertStaffFromBody(client, body) {
 router.get(
   "/staff",
   requireAuth,
-  requirePermission("staff_information", "view"),
+  requirePermission("staff", "view"),
   async (req, res) => {
     try {
-      if (isTopManagement(req)) {
+      if (await isTopManagement(req)) {
         const r = await pool.query(`
           SELECT
             s.*,
@@ -624,7 +642,7 @@ router.get(
 router.post(
   "/staff",
   requireAuth,
-  requirePermission("staff_information", "create"),
+  requirePermission("staff", "create"),
   async (req, res) => {
     const client = await pool.connect();
 
@@ -642,6 +660,7 @@ router.post(
       });
     } catch (e) {
       await client.query("ROLLBACK");
+
       console.error("POST /api/staff ERROR:", e.message);
 
       return res.status(e.statusCode || 500).json({
@@ -656,7 +675,7 @@ router.post(
 router.get(
   "/pending-staff",
   requireAuth,
-  requirePermission("staff_information", "view"),
+  requirePermission("staff", "view"),
   async (_req, res) => {
     try {
       const r = await pool.query(`
@@ -685,7 +704,7 @@ router.get(
 router.post(
   "/pending-staff",
   requireAuth,
-  requirePermission("staff_information", "create"),
+  requirePermission("staff", "create"),
   async (req, res) => {
     try {
       const body = req.body || {};
@@ -714,7 +733,9 @@ router.post(
         );
 
         if (dupStaff.rowCount > 0) {
-          return res.status(409).json({ message: "Employee No already exists" });
+          return res.status(409).json({
+            message: "Employee No already exists",
+          });
         }
       }
 
@@ -743,7 +764,7 @@ router.post(
 router.put(
   "/pending-staff/:id/approve",
   requireAuth,
-  requirePermission("staff_information", "create"),
+  requirePermission("staff", "create"),
   async (req, res) => {
     const client = await pool.connect();
 
@@ -807,6 +828,7 @@ router.put(
       });
     } catch (e) {
       await client.query("ROLLBACK");
+
       console.error("PUT /api/pending-staff/:id/approve ERROR:", e.message);
 
       return res.status(e.statusCode || 500).json({
@@ -821,7 +843,7 @@ router.put(
 router.put(
   "/pending-staff/:id/reject",
   requireAuth,
-  requirePermission("staff_information", "create"),
+  requirePermission("staff", "create"),
   async (req, res) => {
     try {
       const id = toInt(req.params.id);
@@ -863,7 +885,7 @@ router.put(
 router.put(
   "/staff/:id",
   requireAuth,
-  requirePermission("staff_information", "edit"),
+  requirePermission("staff", "edit"),
   async (req, res) => {
     const client = await pool.connect();
 
@@ -920,7 +942,8 @@ router.put(
       }
 
       const employeeNo = toStr(body.employee_no) || null;
-      const finalEmployeeNo = employeeNo || toStr(existing.rows[0]?.employee_no) || null;
+      const finalEmployeeNo =
+        employeeNo || toStr(existing.rows[0]?.employee_no) || null;
 
       if (finalEmployeeNo) {
         const dup = await client.query(
@@ -1168,6 +1191,7 @@ router.put(
       return res.json({ message: "Staff updated" });
     } catch (e) {
       await client.query("ROLLBACK");
+
       console.error("PUT /api/staff/:id ERROR:", e);
 
       return res.status(500).json({
@@ -1183,13 +1207,20 @@ router.put(
 router.delete(
   "/staff/:id",
   requireAuth,
-  requirePermission("staff_information", "delete"),
+  requirePermission("staff", "delete"),
   async (req, res) => {
     try {
       const id = toInt(req.params.id);
       if (!id) return res.status(400).json({ message: "Invalid staff id" });
 
-      const r = await pool.query("DELETE FROM public.staff WHERE id=$1 RETURNING id", [id]);
+      const r = await pool.query(
+        `
+        DELETE FROM public.staff
+        WHERE id = $1
+        RETURNING id
+        `,
+        [id]
+      );
 
       if (r.rowCount === 0) {
         return res.status(404).json({ message: "Staff not found" });
@@ -1206,7 +1237,7 @@ router.delete(
 router.post(
   "/staff/:id/photo",
   requireAuth,
-  requirePermission("staff_information", "upload_photo"),
+  requirePermission("staff", "edit"),
   uploadToTemp,
   async (req, res) => {
     const client = await pool.connect();
@@ -1237,10 +1268,14 @@ router.post(
         req.file.originalname || "photo.jpg"
       );
 
-      await client.query(`UPDATE public.staff SET photo_url = $1 WHERE id = $2`, [
-        finalKey,
-        staffId,
-      ]);
+      await client.query(
+        `
+        UPDATE public.staff
+        SET photo_url = $1
+        WHERE id = $2
+        `,
+        [finalKey, staffId]
+      );
 
       return res.json({
         message: "Photo uploaded",
@@ -1295,9 +1330,14 @@ router.get("/staff/:id/photo-url", requireAuth, async (req, res) => {
       return res.status(403).json({ message: "Access denied" });
     }
 
-    const result = await client.query(`SELECT photo_url FROM public.staff WHERE id = $1`, [
-      staffId,
-    ]);
+    const result = await client.query(
+      `
+      SELECT photo_url
+      FROM public.staff
+      WHERE id = $1
+      `,
+      [staffId]
+    );
 
     const key = result.rows[0]?.photo_url;
 
@@ -1307,7 +1347,10 @@ router.get("/staff/:id/photo-url", requireAuth, async (req, res) => {
 
     const signedUrl = await getSignedDownloadUrl(key, 3600);
 
-    return res.json({ url: signedUrl, expiresIn: 3600 });
+    return res.json({
+      url: signedUrl,
+      expiresIn: 3600,
+    });
   } catch (e) {
     console.error("GET /staff/:id/photo-url ERROR:", e.message);
     return res.status(500).json({ message: "Server error" });

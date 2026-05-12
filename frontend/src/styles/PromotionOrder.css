@@ -522,3 +522,44 @@
   font-weight: 700;
 }
 
+.po-toolbar {
+  display: flex;
+  gap: 12px;
+  padding: 14px 16px;
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+}
+
+.po-search-input {
+  flex: 1;
+  min-width: 260px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(148,163,184,0.35);
+  background: var(--card-bg, rgba(15,23,42,0.6));
+  color: inherit;
+  outline: none;
+}
+
+.po-page-size {
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(148,163,184,0.35);
+  background: var(--card-bg, rgba(15,23,42,0.6));
+  color: inherit;
+}
+
+.po-pager {
+  display: flex;
+  gap: 12px;
+  padding: 14px 16px;
+  justify-content: flex-end;
+  align-items: center;
+}
+
+.po-page-info {
+  font-weight: 800;
+  opacity: 0.85;
+}

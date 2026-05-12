@@ -6,7 +6,7 @@ const fs = require("fs");
 const multer = require("multer");
 
 const { requireAuth } = require("../middlewares/authMiddleware");
-const { requirePermission } = require("../utils/permissions");
+const { requirePermission } = require("../middlewares/permissionMiddleware");
 
 const {
   isAdmin,

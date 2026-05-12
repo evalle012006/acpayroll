@@ -1,7 +1,9 @@
 const express = require("express");
 const router = express.Router();
 const pool = require("../db");
-const { requireAuth, requireRole } = require("../middlewares/authMiddleware");
+
+const { requireAuth } = require("../middlewares/authMiddleware");
+const { requirePermission } = require("../middlewares/permissionMiddleware");
 
 const toNum = (v) => {
   const n = Number(v ?? 0);
@@ -56,9 +58,6 @@ const resolveBranchScope = async (req) => {
 
   const requestedBranchId = await resolveRequestedBranchId(requestedRaw);
 
-  /* ===============================
-     BRANCH MANAGER
-  =============================== */
   if (role === "branch manager") {
     if (!userBranchRaw) {
       return {
@@ -83,9 +82,6 @@ const resolveBranchScope = async (req) => {
     return { branchId: userBranchId };
   }
 
-  /* ===============================
-     AREA MANAGER
-  =============================== */
   if (role === "area manager") {
     if (!userAreaRaw) {
       return {
@@ -114,9 +110,6 @@ const resolveBranchScope = async (req) => {
   return { branchId: requestedBranchId };
 };
 
-/* =========================================================
-   LIVE QUERY BUILDER
-========================================================= */
 const buildLiveSql = (whereSql = "") => `
   WITH cutoff AS (
     SELECT
@@ -369,117 +362,125 @@ const buildLiveSql = (whereSql = "") => `
   ORDER BY COALESCE(sb.fullname, s.fullname) ASC
 `;
 
-/* =========================================================
-   GET SNAPSHOT
-========================================================= */
-router.get("/", requireAuth, async (req, res) => {
-  try {
-    const snapshotMonth = monthToDate(req.query.month);
+router.get(
+  "/",
+  requireAuth,
+  requirePermission("schedule_balance", "view"),
+  async (req, res) => {
+    try {
+      const snapshotMonth = monthToDate(req.query.month);
 
-    if (!snapshotMonth) {
-      return res.status(400).json({ message: "month is required in YYYY-MM format" });
+      if (!snapshotMonth) {
+        return res.status(400).json({
+          message: "month is required in YYYY-MM format",
+        });
+      }
+
+      const scope = await resolveBranchScope(req);
+
+      if (scope.error) {
+        return res.status(scope.error.status).json({
+          message: scope.error.message,
+        });
+      }
+
+      const params = [snapshotMonth];
+
+      let sql = `
+        SELECT
+          sbs.id,
+          sbs.snapshot_month,
+          sbs.staff_id,
+          sbs.employee_no,
+          sbs.fullname,
+          sbs.position,
+          sbs.branch_id,
+          sbs.last_name,
+          sbs.first_name,
+          sbs.middle_name,
+          sbs.cbu,
+          sbs.cashbond,
+          sbs.utility,
+          sbs.salary_loan,
+          sbs.salary_advance,
+          sbs.motorcycle_loan,
+          sbs.special_advance,
+          sbs.cash_advance,
+          sbs.other_receivable,
+          sbs.staff_accounts_payable,
+          sbs.created_at,
+          sbs.updated_at
+        FROM public.schedule_balance_snapshots sbs
+        WHERE sbs.snapshot_month = $1::date
+      `;
+
+      if (scope.branchIds) {
+        params.push(scope.branchIds);
+        sql += ` AND sbs.branch_id = ANY($2::int[])`;
+      } else if (scope.branchId) {
+        params.push(scope.branchId);
+        sql += ` AND sbs.branch_id = $2::int`;
+      }
+
+      sql += ` ORDER BY sbs.fullname ASC`;
+
+      const result = await pool.query(sql, params);
+      return res.json(result.rows);
+    } catch (e) {
+      console.error("GET /api/schedule-balances ERROR:", e);
+      return res.status(500).json({ message: e.message || "Server error" });
     }
-
-    const scope = await resolveBranchScope(req);
-    if (scope.error) {
-      return res.status(scope.error.status).json({ message: scope.error.message });
-    }
-
-    const branchId = scope.branchId;
-
-    const params = [snapshotMonth];
-    let sql = `
-      SELECT
-        sbs.id,
-        sbs.snapshot_month,
-        sbs.staff_id,
-        sbs.employee_no,
-        sbs.fullname,
-        sbs.position,
-        sbs.branch_id,
-        sbs.last_name,
-        sbs.first_name,
-        sbs.middle_name,
-        sbs.cbu,
-        sbs.cashbond,
-        sbs.utility,
-        sbs.salary_loan,
-        sbs.salary_advance,
-        sbs.motorcycle_loan,
-        sbs.special_advance,
-        sbs.cash_advance,
-        sbs.other_receivable,
-        sbs.staff_accounts_payable,
-        sbs.created_at,
-        sbs.updated_at
-      FROM public.schedule_balance_snapshots sbs
-      WHERE sbs.snapshot_month = $1::date
-    `;
-
-    if (scope.branchIds) {
-      params.push(scope.branchIds);
-      sql += ` AND sbs.branch_id = ANY($2::int[])`;
-    } else if (branchId) {
-      params.push(branchId);
-      sql += ` AND sbs.branch_id = $2::int`;
-    }
-
-    sql += ` ORDER BY sbs.fullname ASC`;
-
-    const result = await pool.query(sql, params);
-    return res.json(result.rows);
-  } catch (e) {
-    console.error("GET /api/schedule-balances ERROR:", e);
-    return res.status(500).json({ message: e.message || "Server error" });
   }
-});
+);
 
-/* =========================================================
-   GET LIVE
-========================================================= */
-router.get("/live", requireAuth, async (req, res) => {
-  try {
-    const snapshotMonth = monthToDate(req.query.month);
+router.get(
+  "/live",
+  requireAuth,
+  requirePermission("schedule_balance", "view"),
+  async (req, res) => {
+    try {
+      const snapshotMonth = monthToDate(req.query.month);
 
-    if (!snapshotMonth) {
-      return res.status(400).json({ message: "month is required in YYYY-MM format" });
+      if (!snapshotMonth) {
+        return res.status(400).json({
+          message: "month is required in YYYY-MM format",
+        });
+      }
+
+      const scope = await resolveBranchScope(req);
+
+      if (scope.error) {
+        return res.status(scope.error.status).json({
+          message: scope.error.message,
+        });
+      }
+
+      const params = [snapshotMonth];
+      let whereSql = "";
+
+      if (scope.branchIds) {
+        params.push(scope.branchIds);
+        whereSql = ` WHERE s.branch_id = ANY($2::int[]) `;
+      } else if (scope.branchId) {
+        params.push(scope.branchId);
+        whereSql = ` WHERE s.branch_id = $2::int `;
+      }
+
+      const sql = buildLiveSql(whereSql);
+
+      const result = await pool.query(sql, params);
+      return res.json(result.rows);
+    } catch (e) {
+      console.error("GET /api/schedule-balances/live ERROR:", e);
+      return res.status(500).json({ message: e.message || "Server error" });
     }
-
-    const scope = await resolveBranchScope(req);
-    if (scope.error) {
-      return res.status(scope.error.status).json({ message: scope.error.message });
-    }
-
-    const branchId = scope.branchId;
-
-    const params = [snapshotMonth];
-    let whereSql = "";
-
-    if (scope.branchIds) {
-      params.push(scope.branchIds);
-      whereSql = ` WHERE s.branch_id = ANY($2::int[]) `;
-    } else if (branchId) {
-      params.push(branchId);
-      whereSql = ` WHERE s.branch_id = $2::int `;
-    }
-
-    const sql = buildLiveSql(whereSql);
-
-    const result = await pool.query(sql, params);
-    return res.json(result.rows);
-  } catch (e) {
-    console.error("GET /api/schedule-balances/live ERROR:", e);
-    return res.status(500).json({ message: e.message || "Server error" });
   }
-});
+);
 
-/* =========================================================
-   SAVE SNAPSHOT FROM CURRENT
-========================================================= */
 router.post(
   "/schedule-balances/deduct",
   requireAuth,
-  requireRole(["admin", "accounting"]),
+  requirePermission("schedule_balance", "edit"),
   async (req, res) => {
     try {
       const { staff_id, month } = req.body;
@@ -490,7 +491,7 @@ router.post(
 
       const result = await pool.query(
         `
-        UPDATE schedule_balance_snapshots
+        UPDATE public.schedule_balance_snapshots
         SET
           salary_advance = GREATEST(0, salary_advance - (salary_advance / 12)),
           motorcycle_loan = GREATEST(0, motorcycle_loan - (motorcycle_loan / 12)),
@@ -499,16 +500,16 @@ router.post(
           staff_accounts_payable = GREATEST(0, staff_accounts_payable - (staff_accounts_payable / 12)),
           updated_at = NOW()
         WHERE staff_id = $1
-        AND snapshot_month = $2
+          AND snapshot_month = $2
         RETURNING *;
         `,
         [staff_id, month]
       );
 
-      res.json(result.rows[0] || {});
+      return res.json(result.rows[0] || {});
     } catch (err) {
-      console.error(err);
-      res.status(500).json({ message: "Deduction failed" });
+      console.error("POST /schedule-balances/deduct ERROR:", err);
+      return res.status(500).json({ message: "Deduction failed" });
     }
   }
 );
@@ -516,12 +517,14 @@ router.post(
 router.post(
   "/snapshot/from-current",
   requireAuth,
-  requireRole(["admin"]),
+  requirePermission("schedule_balance", "create"),
   async (req, res) => {
     const snapshotMonth = monthToDate(req.body?.month);
 
     if (!snapshotMonth) {
-      return res.status(400).json({ message: "month is required in YYYY-MM format" });
+      return res.status(400).json({
+        message: "month is required in YYYY-MM format",
+      });
     }
 
     const client = await pool.connect();
@@ -631,6 +634,7 @@ router.post(
       }
 
       await client.query("COMMIT");
+
       return res.json({
         message: "Snapshot saved from month-end live balances",
         month: snapshotMonth,
@@ -640,8 +644,15 @@ router.post(
       try {
         await client.query("ROLLBACK");
       } catch {}
-      console.error("POST /api/schedule-balances/snapshot/from-current ERROR:", e);
-      return res.status(500).json({ message: e.message || "Server error" });
+
+      console.error(
+        "POST /api/schedule-balances/snapshot/from-current ERROR:",
+        e
+      );
+
+      return res.status(500).json({
+        message: e.message || "Server error",
+      });
     } finally {
       client.release();
     }
