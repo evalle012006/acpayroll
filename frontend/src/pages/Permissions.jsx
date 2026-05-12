@@ -42,7 +42,7 @@ const modules = [
   "staff_balance",
   "staff_bonus_history",
   "staff_loan_opening_balance",
-  "schedule_balances",
+  "schedule_balance",
 
   "loan_request",
   "cbu_withdrawal",
