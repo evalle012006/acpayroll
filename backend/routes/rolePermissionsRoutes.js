@@ -75,7 +75,7 @@ router.put(
       );
 
       return res.json(r.rows[0]);
-    } catch (e) {
+    } catch (e) { 
       console.error("PUT /role-permissions ERROR:", e);
       return res.status(500).json({
         message: e?.message || "Server error",

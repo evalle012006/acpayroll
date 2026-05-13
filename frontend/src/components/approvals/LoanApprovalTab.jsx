@@ -240,6 +240,7 @@ export default function LoanApprovalTab() {
     isHr ||
     isAccounting ||
     isTread ||
+    isBranchManager ||
     isAreaManager ||
     isRegionalManager ||
     isAssistantVicePresident ||
@@ -476,7 +477,17 @@ export default function LoanApprovalTab() {
       if (!staff) return false;
 
       if (isBranchManager) {
-        return String(staff.branch_id || "") === String(user?.branch_id || "");
+        const userBranch = norm(user?.branch_id);
+
+        const staffBranchValues = [
+          staff.branch_id,
+          staff.branch_code,
+          staff.code,
+          staff.branch_name,
+          staff.branch,
+        ].map(norm);
+
+        return staffBranchValues.includes(userBranch);
       }
 
       if (isAreaManager) {
