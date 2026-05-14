@@ -76,6 +76,10 @@ export default function Soa() {
 
   const [attachmentFile, setAttachmentFile] = useState(null);
 
+  const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
+
   const [form, setForm] = useState({
     staff_id: "",
     prev_branch: "",
@@ -147,9 +151,51 @@ export default function Soa() {
         });
 
     return list.sort((a, b) =>
-      `${a.code || ""} ${a.name || ""}`.localeCompare(`${b.code || ""} ${b.name || ""}`)
+      `${a.code || ""} ${a.name || ""}`.localeCompare(
+        `${b.code || ""} ${b.name || ""}`
+      )
     );
   }, [branchSearch, branches]);
+
+  const filteredSettlements = useMemo(() => {
+    const q = search.trim().toLowerCase();
+
+    if (!q) return settlements;
+
+    return settlements.filter((r) =>
+      [
+        r.id,
+        r.employee_no,
+        r.employee_name,
+        r.prev_branch,
+        r.settlement_branch_code,
+        r.settlement_branch_name,
+        r.total_benefits,
+        r.liabilities,
+        r.net_settlement,
+        r.description,
+        r.created_at,
+      ]
+        .map((x) => toStr(x).toLowerCase())
+        .join(" ")
+        .includes(q)
+    );
+  }, [settlements, search]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredSettlements.length / pageSize));
+
+  const pagedSettlements = useMemo(() => {
+    const start = (page - 1) * pageSize;
+    return filteredSettlements.slice(start, start + pageSize);
+  }, [filteredSettlements, page, pageSize]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [search, pageSize]);
+
+  useEffect(() => {
+    if (page > totalPages) setPage(totalPages);
+  }, [page, totalPages]);
 
   const loadStaff = useCallback(async () => {
     try {
@@ -473,6 +519,40 @@ export default function Soa() {
         </div>
       </div>
 
+      <div className="soa-toolbar" style={{ marginBottom: 14 }}>
+        <div
+          style={{
+            display: "flex",
+            gap: 12,
+            flexWrap: "wrap",
+            alignItems: "center",
+          }}
+        >
+          <input
+            className="soa-search"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search employee, branch, description..."
+            style={{ maxWidth: 420 }}
+          />
+
+          <select
+            className="soa-page-size"
+            value={pageSize}
+            onChange={(e) => setPageSize(Number(e.target.value))}
+            style={{ maxWidth: 140 }}
+          >
+            <option value={25}>25 rows</option>
+            <option value={50}>50 rows</option>
+            <option value={75}>75 rows</option>
+            <option value={100}>100 rows</option>
+          </select>
+
+          <span className="soa-count-pill">Results: {filteredSettlements.length}</span>
+          <span className="soa-count-pill">Showing: {pagedSettlements.length}</span>
+        </div>
+      </div>
+
       <div className="table-card">
         <div className="table-wrap">
           <table className="table">
@@ -499,14 +579,14 @@ export default function Soa() {
                     Loading…
                   </td>
                 </tr>
-              ) : settlements.length === 0 ? (
+              ) : filteredSettlements.length === 0 ? (
                 <tr>
                   <td colSpan={11} className="empty-state">
                     No settlement records found.
                   </td>
                 </tr>
               ) : (
-                settlements.map((r) => (
+                pagedSettlements.map((r) => (
                   <tr key={r.id}>
                     <td>{r.id}</td>
 
@@ -521,7 +601,9 @@ export default function Soa() {
 
                     <td>
                       {r.settlement_branch_code || r.settlement_branch_name
-                        ? `${r.settlement_branch_code || ""} - ${r.settlement_branch_name || ""}`
+                        ? `${r.settlement_branch_code || ""} - ${
+                            r.settlement_branch_name || ""
+                          }`
                         : "-"}
                     </td>
 
@@ -578,6 +660,38 @@ export default function Soa() {
               )}
             </tbody>
           </table>
+        </div>
+      </div>
+
+      <div className="soa-pager" style={{ marginTop: 14 }}>
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            gap: 12,
+            flexWrap: "wrap",
+          }}
+        >
+          <button
+            className="soa-page-btn"
+            type="button"
+            disabled={page <= 1}
+            onClick={() => setPage((p) => Math.max(1, p - 1))}
+          >
+            Previous
+          </button>
+
+          <strong className="soa-page-info">Page {page} of {totalPages}</strong>
+
+          <button
+            className="soa-page-btn"
+            type="button"
+            disabled={page >= totalPages}
+            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+          >
+            Next
+          </button>
         </div>
       </div>
 
@@ -768,7 +882,13 @@ export default function Soa() {
 
                 <div className="form-group">
                   <label>CBU</label>
-                  <input type="number" step="0.01" name="cbu" value={form.cbu} onChange={onChange} />
+                  <input
+                    type="number"
+                    step="0.01"
+                    name="cbu"
+                    value={form.cbu}
+                    onChange={onChange}
+                  />
                 </div>
 
                 <div className="form-group">

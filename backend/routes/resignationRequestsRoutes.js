@@ -36,6 +36,8 @@ const isRegionalManager = (req) => roleLower(req) === "regional manager";
 const isAssistantVicePresident = (req) =>
   roleLower(req) === "assistant vice president";
 const isVicePresident = (req) => roleLower(req) === "vice president";
+const isSeniorVicePresident = (req) =>
+  roleLower(req) === "senior vice president";
 
 const isFinalApprover = (req) =>
   isAdmin(req) || isIT(req) || isHr(req) || isAccounting(req);
@@ -58,6 +60,7 @@ const STATUS_AREA = "Pending Area Manager";
 const STATUS_RM = "Pending Regional Manager";
 const STATUS_AVP = "Pending Assistant Vice President";
 const STATUS_VP = "Pending Vice President";
+const STATUS_SVP = "Pending Senior Vice President";
 const STATUS_ADMIN = "Pending Admin";
 const STATUS_APPROVED = "Approved";
 const STATUS_REJECTED = "Rejected";
@@ -82,11 +85,17 @@ const upload = multer({
   limits: { fileSize: 50 * 1024 * 1024 },
 });
 
+const isAuditDepartment = (staff) => norm(staff?.department) === "audit department";
+
 const determineInitialStatus = (req, staff) => {
   const staffPosition = norm(staff?.position)
     .replace(/[_-]/g, " ")
     .replace(/\s+/g, " ")
     .trim();
+
+  if (isAuditDepartment(staff)) {
+    return STATUS_SVP;
+  }
 
   if (
     isAreaManager(req) &&
@@ -131,7 +140,8 @@ router.get(
         isHr(req) ||
         isAccounting(req) ||
         isTread(req) ||
-        isVicePresident(req)
+        isVicePresident(req) ||
+        isSeniorVicePresident(req)
       ) {
         // full access
       } else if (isBranchManager(req)) {
@@ -246,7 +256,8 @@ router.post(
           status,
           area,
           region,
-          position
+          position,
+          department
         FROM public.staff
         WHERE id = $1
         FOR UPDATE
@@ -306,7 +317,7 @@ router.post(
         SELECT 1
         FROM public.resignation_requests
         WHERE employee_no = $1
-          AND status IN ($2, $3, $4, $5, $6, $7)
+          AND status IN ($2, $3, $4, $5, $6, $7, $8)
         LIMIT 1
         `,
         [
@@ -316,6 +327,7 @@ router.post(
           STATUS_RM,
           STATUS_AVP,
           STATUS_VP,
+          STATUS_SVP,
           STATUS_ADMIN,
         ]
       );
@@ -425,6 +437,7 @@ router.put(
   "/resignation-requests/:id/approve",
   requireAuth,
   requirePermission("resignation_request", "approve"),
+  upload.single("attachment"),
   async (req, res) => {
     const client = await pool.connect();
 
@@ -545,11 +558,30 @@ router.put(
         nextStatus = STATUS_ADMIN;
         approverField = "vp_approved_by";
         approverAtField = "vp_approved_at";
+      } else if (isSeniorVicePresident(req)) {
+        if (currentStatus !== STATUS_SVP) {
+          await client.query("ROLLBACK");
+          return res.status(400).json({
+            message:
+              "This request is not pending Senior Vice President approval",
+          });
+        }
+
+        nextStatus = STATUS_ADMIN;
+        approverField = "svp_approved_by";
+        approverAtField = "svp_approved_at";
       } else if (isFinalApprover(req)) {
         if (currentStatus !== STATUS_ADMIN) {
           await client.query("ROLLBACK");
           return res.status(400).json({
             message: "This request is not pending Admin approval",
+          });
+        }
+
+        if (!req.file) {
+          await client.query("ROLLBACK");
+          return res.status(400).json({
+            message: "Final approved file is required before approval",
           });
         }
 
@@ -586,6 +618,8 @@ router.put(
           });
         }
 
+        const approvedAttachmentPath = `/uploads/resignation-requests/${req.file.filename}`;
+
         const updateRequest = await client.query(
           `
           UPDATE public.resignation_requests
@@ -595,11 +629,22 @@ router.put(
             approved_at = NOW(),
             rejected_by = NULL,
             rejected_at = NULL,
-            rejection_reason = NULL
+            rejection_reason = NULL,
+            attachment_path = $4,
+            approved_attachment_path = $4,
+            approved_attachment_name = $5,
+            approved_attachment_mime = $6
           WHERE id = $1
           RETURNING *;
           `,
-          [id, STATUS_APPROVED, req.user?.id ?? null]
+          [
+            id,
+            STATUS_APPROVED,
+            req.user?.id ?? null,
+            approvedAttachmentPath,
+            req.file.originalname || null,
+            req.file.mimetype || null,
+          ]
         );
 
         await client.query(
@@ -761,6 +806,13 @@ router.put(
         if (currentStatus !== STATUS_VP) {
           return res.status(400).json({
             message: "This request is not pending Vice President approval",
+          });
+        }
+      } else if (isSeniorVicePresident(req)) {
+        if (currentStatus !== STATUS_SVP) {
+          return res.status(400).json({
+            message:
+              "This request is not pending Senior Vice President approval",
           });
         }
       } else if (isFinalApprover(req)) {

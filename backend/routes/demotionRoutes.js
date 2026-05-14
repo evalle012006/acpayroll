@@ -1,6 +1,9 @@
 const express = require("express");
 const router = express.Router();
 const pool = require("../db");
+const multer = require("multer");
+const path = require("path");
+const fs = require("fs");
 
 const { requireAuth } = require("../middlewares/authMiddleware");
 const { requirePermission } = require("../middlewares/permissionMiddleware");
@@ -33,6 +36,26 @@ const toDateOrNull = (v) => {
 };
 
 const toStr = (v) => String(v ?? "").trim();
+const norm = (v) => toStr(v).toLowerCase();
+
+const uploadDir = path.join(__dirname, "../uploads/demotions");
+
+if (!fs.existsSync(uploadDir)) {
+  fs.mkdirSync(uploadDir, { recursive: true });
+}
+
+const storage = multer.diskStorage({
+  destination: (_req, _file, cb) => cb(null, uploadDir),
+  filename: (_req, file, cb) => {
+    const unique = Date.now() + "-" + Math.round(Math.random() * 1e9);
+    cb(null, unique + path.extname(file.originalname || ""));
+  },
+});
+
+const upload = multer({
+  storage,
+  limits: { fileSize: 50 * 1024 * 1024 },
+});
 
 const isTopManagement = (req) =>
   isAdmin(req) ||
@@ -44,9 +67,76 @@ const isTopManagement = (req) =>
   isSeniorVicePresident(req) ||
   isPresident(req);
 
+const isFinalUploader = (req) =>
+  isAdmin(req) || isIT(req) || isHr(req) || isAccounting(req);
+
 const getUserArea = (req) => toStr(req.user?.area);
 const getUserRegion = (req) => toStr(req.user?.region);
 const getUserDivision = (req) => toStr(req.user?.division);
+
+const getUserRole = (req) => norm(req.user?.role);
+
+const BACK_OFFICE_DEPARTMENTS = [
+  "it",
+  "it department",
+  "hr",
+  "hr department",
+  "human resources",
+  "human resources department",
+  "accounting",
+  "accounting department",
+  "audit",
+  "audit department",
+  "production & logistic",
+  "production & logistic department",
+  "production and logistic",
+  "production and logistic department",
+  "office of the president",
+  "tread",
+  "tread department",
+  "treadt department",
+];
+
+const OPERATION_DEPARTMENTS = [
+  "operation",
+  "operations",
+  "operation department",
+  "operations department",
+];
+
+const isBackOfficeDepartment = (department) =>
+  BACK_OFFICE_DEPARTMENTS.includes(norm(department));
+
+const isOperationDepartment = (department) =>
+  OPERATION_DEPARTMENTS.includes(norm(department));
+
+const getInitialStage = (department) => {
+  if (isOperationDepartment(department)) return "area manager";
+  if (isBackOfficeDepartment(department)) return "admin";
+  return "admin";
+};
+
+const getApprovalChain = (department) => {
+  if (isOperationDepartment(department)) {
+    return [
+      "area manager",
+      "regional manager",
+      "assistant vice president",
+      "vice president",
+      "admin",
+    ];
+  }
+
+  return ["admin"];
+};
+
+const statusColumnMap = {
+  "area manager": "area_manager_status",
+  "regional manager": "regional_manager_status",
+  "assistant vice president": "assistant_vice_president_status",
+  "vice president": "vice_president_status",
+  admin: "admin_status",
+};
 
 async function getUserBranchIdResolved(req) {
   const raw = String(req.user?.branch_id || "").trim();
@@ -113,73 +203,164 @@ async function generateOrderNo(client, prefix) {
   ).padStart(4, "0")}`;
 }
 
+function userCanActStage(req, stage) {
+  const s = norm(stage);
+
+  if (isAdmin(req) || isIT(req)) return true;
+
+  if (s === "area manager") return isAreaManager(req);
+  if (s === "regional manager") return isRegionalManager(req);
+  if (s === "assistant vice president") return isAssistantVicePresident(req);
+  if (s === "vice president") return isVicePresident(req);
+  if (s === "admin") return isAdmin(req) || isIT(req) || isHr(req) || isAccounting(req);
+
+  return false;
+}
+
+async function getStaffScope(client, staffId) {
+  const r = await client.query(
+    `
+    SELECT
+      id,
+      employee_no,
+      fullname,
+      first_name,
+      last_name,
+      middle_name,
+      "position",
+      branch_id,
+      area,
+      region,
+      division,
+      department
+    FROM public.staff
+    WHERE id = $1
+    LIMIT 1
+    `,
+    [staffId]
+  );
+
+  return r.rows[0] || null;
+}
+
+async function canAccessStaff(client, req, staffRow) {
+  if (!staffRow) return false;
+
+  if (
+    isAdmin(req) ||
+    isIT(req) ||
+    isHr(req) ||
+    isAccounting(req) ||
+    isTread(req) ||
+    isVicePresident(req) ||
+    isSeniorVicePresident(req) ||
+    isPresident(req)
+  ) {
+    return true;
+  }
+
+  if (isBranchManager(req)) {
+    const bid = await getUserBranchIdResolved(req);
+    return bid && Number(staffRow.branch_id) === Number(bid);
+  }
+
+  if (isAreaManager(req)) {
+    return norm(staffRow.area) === norm(getUserArea(req));
+  }
+
+  if (isRegionalManager(req)) {
+    return norm(staffRow.region) === norm(getUserRegion(req));
+  }
+
+  if (isAssistantVicePresident(req)) {
+    return norm(staffRow.division) === norm(getUserDivision(req));
+  }
+
+  return false;
+}
+
+function buildEmployeeName(row) {
+  const ln = toStr(row?.last_name);
+  const fn = toStr(row?.first_name);
+  const mn = toStr(row?.middle_name);
+
+  const built = `${ln}${ln && fn ? ", " : ""}${fn}${mn ? ` ${mn}` : ""}`
+    .replace(/\s+/g, " ")
+    .trim();
+
+  return built || toStr(row?.fullname);
+}
+
+const demotionSelect = `
+  dmo.*,
+  s.employee_no,
+  s.department,
+  s.area,
+  s.region,
+  s.division,
+  s.branch_id AS staff_branch_id,
+  b.code AS staff_branch_code,
+  b.name AS staff_branch_name
+`;
+
+/*
+|--------------------------------------------------------------------------
+| GET STAFF DEMOTION ORDERS
+|--------------------------------------------------------------------------
+*/
+
 router.get(
   "/demotion-orders/staff/:id",
   requireAuth,
   requirePermission("demotion_order", "view"),
   async (req, res) => {
+    const client = await pool.connect();
+
     try {
       const employeeId = toInt(req.params.id);
-      if (!employeeId) return res.status(400).json({ message: "Invalid staff id" });
+      if (!employeeId) {
+        return res.status(400).json({ message: "Invalid staff id" });
+      }
 
-      const s = await pool.query(
+      const staffRow = await getStaffScope(client, employeeId);
+
+      if (!staffRow) {
+        return res.status(404).json({ message: "Staff not found" });
+      }
+
+      const allowed = await canAccessStaff(client, req, staffRow);
+
+      if (!allowed) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      const r = await client.query(
         `
-        SELECT id, branch_id, area, region, division
-        FROM public.staff
-        WHERE id = $1
-        `,
-        [employeeId]
-      );
-
-      if (s.rowCount === 0) return res.status(404).json({ message: "Staff not found" });
-
-      const staffRow = s.rows[0];
-
-      if (isBranchManager(req)) {
-        const myBid = await getUserBranchIdResolved(req);
-        if (!myBid || Number(staffRow.branch_id) !== Number(myBid)) {
-          return res.status(403).json({ message: "Access denied" });
-        }
-      }
-
-      if (isAreaManager(req)) {
-        const myArea = getUserArea(req);
-        if (!myArea || toStr(staffRow.area).toLowerCase() !== myArea.toLowerCase()) {
-          return res.status(403).json({ message: "Access denied" });
-        }
-      }
-
-      if (isRegionalManager(req)) {
-        const myRegion = getUserRegion(req);
-        if (!myRegion || toStr(staffRow.region).toLowerCase() !== myRegion.toLowerCase()) {
-          return res.status(403).json({ message: "Access denied" });
-        }
-      }
-
-      if (isAssistantVicePresident(req)) {
-        const myDivision = getUserDivision(req);
-        if (!myDivision || toStr(staffRow.division).toLowerCase() !== myDivision.toLowerCase()) {
-          return res.status(403).json({ message: "Access denied" });
-        }
-      }
-
-      const r = await pool.query(
-        `
-        SELECT *
-        FROM public.demotion_orders
-        WHERE employee_id = $1
-        ORDER BY created_at DESC
+        SELECT ${demotionSelect}
+        FROM public.demotion_orders dmo
+        JOIN public.staff s ON s.id = dmo.employee_id
+        LEFT JOIN public.branches b ON b.id = s.branch_id
+        WHERE dmo.employee_id = $1
+        ORDER BY dmo.created_at DESC
         `,
         [employeeId]
       );
 
       return res.json(r.rows);
     } catch (e) {
-      console.error("GET /api/demotion-orders/staff/:id ERROR:", e.message);
-      return res.status(500).json({ message: "Server error" });
+      console.error("GET /api/demotion-orders/staff/:id ERROR:", e);
+      return res.status(500).json({ message: e?.message || "Server error" });
+    } finally {
+      client.release();
     }
   }
 );
+
+/*
+|--------------------------------------------------------------------------
+| GET ALL DEMOTION ORDERS
+|--------------------------------------------------------------------------
+*/
 
 router.get(
   "/demotion-orders",
@@ -187,11 +368,13 @@ router.get(
   requirePermission("demotion_order", "view"),
   async (req, res) => {
     try {
-      if (isTopManagement(req)) {
+      if (isTopManagement(req) || isAssistantVicePresident(req)) {
         const r = await pool.query(`
-          SELECT *
-          FROM public.demotion_orders
-          ORDER BY created_at DESC
+          SELECT ${demotionSelect}
+          FROM public.demotion_orders dmo
+          JOIN public.staff s ON s.id = dmo.employee_id
+          LEFT JOIN public.branches b ON b.id = s.branch_id
+          ORDER BY dmo.created_at DESC
         `);
 
         return res.json(r.rows);
@@ -203,9 +386,10 @@ router.get(
 
         const r = await pool.query(
           `
-          SELECT dmo.*
+          SELECT ${demotionSelect}
           FROM public.demotion_orders dmo
           JOIN public.staff s ON s.id = dmo.employee_id
+          LEFT JOIN public.branches b ON b.id = s.branch_id
           WHERE s.branch_id = $1
           ORDER BY dmo.created_at DESC
           `,
@@ -221,9 +405,10 @@ router.get(
 
         const r = await pool.query(
           `
-          SELECT dmo.*
+          SELECT ${demotionSelect}
           FROM public.demotion_orders dmo
           JOIN public.staff s ON s.id = dmo.employee_id
+          LEFT JOIN public.branches b ON b.id = s.branch_id
           WHERE LOWER(TRIM(COALESCE(s.area, ''))) = LOWER(TRIM($1))
           ORDER BY dmo.created_at DESC
           `,
@@ -239,9 +424,10 @@ router.get(
 
         const r = await pool.query(
           `
-          SELECT dmo.*
+          SELECT ${demotionSelect}
           FROM public.demotion_orders dmo
           JOIN public.staff s ON s.id = dmo.employee_id
+          LEFT JOIN public.branches b ON b.id = s.branch_id
           WHERE LOWER(TRIM(COALESCE(s.region, ''))) = LOWER(TRIM($1))
           ORDER BY dmo.created_at DESC
           `,
@@ -251,36 +437,25 @@ router.get(
         return res.json(r.rows);
       }
 
-      if (isAssistantVicePresident(req)) {
-        const division = getUserDivision(req);
-        if (!division) return res.json([]);
-
-        const r = await pool.query(
-          `
-          SELECT dmo.*
-          FROM public.demotion_orders dmo
-          JOIN public.staff s ON s.id = dmo.employee_id
-          WHERE LOWER(TRIM(COALESCE(s.division, ''))) = LOWER(TRIM($1))
-          ORDER BY dmo.created_at DESC
-          `,
-          [division]
-        );
-
-        return res.json(r.rows);
-      }
-
       return res.status(403).json({ message: "Access denied" });
     } catch (e) {
-      console.error("GET /api/demotion-orders ERROR:", e.message);
-      return res.status(500).json({ message: "Server error" });
+      console.error("GET /api/demotion-orders ERROR:", e);
+      return res.status(500).json({ message: e?.message || "Server error" });
     }
   }
 );
+
+/*
+|--------------------------------------------------------------------------
+| CREATE DEMOTION ORDER
+|--------------------------------------------------------------------------
+*/
 
 router.post(
   "/demotion-orders",
   requireAuth,
   requirePermission("demotion_order", "create"),
+  upload.single("attachment"),
   async (req, res) => {
     const client = await pool.connect();
 
@@ -314,62 +489,23 @@ router.post(
         return res.status(400).json({ message: "Destination branch required" });
       }
 
-      const s = await client.query(
-        `
-        SELECT
-          id,
-          first_name,
-          last_name,
-          middle_name,
-          fullname,
-          "position",
-          branch_id,
-          area,
-          region,
-          division
-        FROM public.staff
-        WHERE id = $1
-        `,
-        [employee_id]
-      );
+      if (!req.file) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({ message: "Demotion request file is required" });
+      }
 
-      if (s.rowCount === 0) {
+      const staffRow = await getStaffScope(client, employee_id);
+
+      if (!staffRow) {
         await client.query("ROLLBACK");
         return res.status(404).json({ message: "Staff not found" });
       }
 
-      const staffRow = s.rows[0];
+      const allowed = await canAccessStaff(client, req, staffRow);
 
-      if (isBranchManager(req)) {
-        const bid = await getUserBranchIdResolved(req);
-        if (!bid || Number(staffRow.branch_id) !== Number(bid)) {
-          await client.query("ROLLBACK");
-          return res.status(403).json({ message: "Access denied" });
-        }
-      }
-
-      if (isAreaManager(req)) {
-        const area = getUserArea(req);
-        if (!area || toStr(staffRow.area).toLowerCase() !== area.toLowerCase()) {
-          await client.query("ROLLBACK");
-          return res.status(403).json({ message: "Access denied" });
-        }
-      }
-
-      if (isRegionalManager(req)) {
-        const region = getUserRegion(req);
-        if (!region || toStr(staffRow.region).toLowerCase() !== region.toLowerCase()) {
-          await client.query("ROLLBACK");
-          return res.status(403).json({ message: "Access denied" });
-        }
-      }
-
-      if (isAssistantVicePresident(req)) {
-        const division = getUserDivision(req);
-        if (!division || toStr(staffRow.division).toLowerCase() !== division.toLowerCase()) {
-          await client.query("ROLLBACK");
-          return res.status(403).json({ message: "Access denied" });
-        }
+      if (!allowed) {
+        await client.query("ROLLBACK");
+        return res.status(403).json({ message: "Access denied" });
       }
 
       const prevBranchId = staffRow.branch_id ? Number(staffRow.branch_id) : null;
@@ -399,15 +535,14 @@ router.post(
         return res.status(400).json({ message: "Destination branch not found" });
       }
 
-      const employee_name =
-        toStr(staffRow.fullname) ||
-        `${toStr(staffRow.last_name)}, ${toStr(staffRow.first_name)} ${toStr(
-          staffRow.middle_name
-        )}`
-          .replace(/\s+/g, " ")
-          .trim();
-
+      const employee_name = buildEmployeeName(staffRow);
       const orderNo = await generateOrderNo(client, "DMO");
+      const department = toStr(staffRow.department);
+      const initialStage = getInitialStage(department);
+
+      const attachment_path = `/uploads/demotions/${req.file.filename}`;
+      const attachment_name = req.file.originalname || null;
+      const attachment_mime = req.file.mimetype || null;
 
       const ins = await client.query(
         `
@@ -427,6 +562,18 @@ router.post(
             effective_date,
             details,
             status,
+            approval_stage,
+            area_manager_status,
+            regional_manager_status,
+            assistant_vice_president_status,
+            vice_president_status,
+            admin_status,
+            attachment_path,
+            attachment_name,
+            attachment_mime,
+            approved_attachment_path,
+            approved_attachment_name,
+            approved_attachment_mime,
             created_by
           )
         VALUES
@@ -434,7 +581,17 @@ router.post(
             $1,$2,$3,$4,$5,
             $6,$7,$8,
             $9,$10,$11,
-            $12::date,$13,'Pending',$14
+            $12::date,$13,
+            'Pending',
+            $14,
+            'Pending',
+            'Pending',
+            'Pending',
+            'Pending',
+            'Pending',
+            $15,$16,$17,
+            NULL,NULL,NULL,
+            $18
           )
         RETURNING *
         `,
@@ -452,63 +609,415 @@ router.post(
           toStr(toBr.rows[0].name),
           effective_date,
           details || null,
+          initialStage,
+          attachment_path,
+          attachment_name,
+          attachment_mime,
           req.user?.id ?? null,
         ]
       );
 
       await client.query("COMMIT");
-
       return res.json(ins.rows[0]);
     } catch (e) {
       await client.query("ROLLBACK");
-      console.error("POST /api/demotion-orders ERROR:", e.message);
-      return res.status(500).json({ message: "Server error" });
+      console.error("POST /api/demotion-orders ERROR:", e);
+      return res.status(500).json({ message: e?.message || "Server error" });
     } finally {
       client.release();
     }
   }
 );
 
-router.put(
-  "/demotion-orders/:id/approve",
+/*
+|--------------------------------------------------------------------------
+| DOWNLOAD DEMOTION FILE
+|--------------------------------------------------------------------------
+*/
+
+router.get(
+  "/demotion-orders/:id/download/:type",
   requireAuth,
-  requirePermission("demotion_order", "approve"),
+  requirePermission("demotion_order", "view"),
   async (req, res) => {
     const client = await pool.connect();
 
     try {
-      await client.query("BEGIN");
-
       const id = toInt(req.params.id);
+      const type = norm(req.params.type);
 
-      if (!id) {
-        await client.query("ROLLBACK");
-        return res.status(400).json({ message: "Invalid id" });
+      if (!id) return res.status(400).json({ message: "Invalid id" });
+
+      if (!["request", "approved", "latest"].includes(type)) {
+        return res.status(400).json({ message: "Invalid attachment type" });
       }
 
       const r = await client.query(
         `
-        UPDATE public.demotion_orders
-        SET
-          status='Approved',
-          approved_by=$2,
-          approved_at=COALESCE(approved_at, NOW()),
-          rejected_by=NULL,
-          rejected_at=NULL,
-          rejection_reason=NULL
-        WHERE id=$1
-          AND status='Pending'
-        RETURNING *
+        SELECT
+          dmo.*,
+          s.branch_id,
+          s.area,
+          s.region,
+          s.division
+        FROM public.demotion_orders dmo
+        JOIN public.staff s ON s.id = dmo.employee_id
+        WHERE dmo.id = $1
+        LIMIT 1
         `,
-        [id, req.user?.id ?? null]
+        [id]
       );
 
       if (r.rowCount === 0) {
-        await client.query("ROLLBACK");
-        return res.status(400).json({ message: "Order not found or not Pending" });
+        return res.status(404).json({ message: "Demotion order not found" });
       }
 
-      const order = r.rows[0];
+      const row = r.rows[0];
+
+      const allowed = await canAccessStaff(client, req, row);
+
+      if (!allowed) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      let targetPath = row.attachment_path;
+      let targetName = row.attachment_name;
+
+      if (type === "approved") {
+        targetPath = row.approved_attachment_path || row.attachment_path;
+        targetName = row.approved_attachment_name || row.attachment_name;
+      }
+
+      if (type === "latest") {
+        targetPath = row.approved_attachment_path || row.attachment_path;
+        targetName = row.approved_attachment_name || row.attachment_name;
+      }
+
+      if (!targetPath) {
+        return res.status(404).json({ message: "No demotion file found" });
+      }
+
+      const rel = String(targetPath).replace(/^\/uploads\//, "");
+      const filePath = path.join(__dirname, "..", "uploads", rel);
+
+      if (!fs.existsSync(filePath)) {
+        return res.status(404).json({ message: "Demotion file not found" });
+      }
+
+      return res.download(filePath, targetName || path.basename(filePath));
+    } catch (e) {
+      console.error("GET /api/demotion-orders/:id/download/:type ERROR:", e);
+      return res.status(500).json({ message: e?.message || "Server error" });
+    } finally {
+      client.release();
+    }
+  }
+);
+
+/*
+|--------------------------------------------------------------------------
+| APPROVE / REJECT CHAIN
+|--------------------------------------------------------------------------
+*/
+
+router.put(
+  "/demotion-orders/:id",
+  requireAuth,
+  requirePermission("demotion_order", "approve"),
+  upload.single("attachment"),
+  async (req, res) => {
+    const client = await pool.connect();
+
+    try {
+      const id = toInt(req.params.id);
+      const action = norm(req.body?.action);
+
+      if (!id) return res.status(400).json({ message: "Invalid id" });
+      if (!["approve", "reject"].includes(action)) {
+        return res.status(400).json({ message: "Invalid action" });
+      }
+
+      const reason = toStr(req.body?.reason);
+
+      if (action === "reject" && !reason) {
+        return res.status(400).json({ message: "Rejection reason is required" });
+      }
+
+      if (action === "approve" && !req.file) {
+        return res.status(400).json({
+          message:
+            "Please upload the signed/approved demotion file before approving. This file will replace the previous file for the next approver.",
+        });
+      }
+
+      await client.query("BEGIN");
+
+      const cur = await client.query(
+        `
+        SELECT
+          dmo.*,
+          s.branch_id,
+          s.area,
+          s.region,
+          s.division,
+          s.department
+        FROM public.demotion_orders dmo
+        JOIN public.staff s ON s.id = dmo.employee_id
+        WHERE dmo.id = $1
+        FOR UPDATE
+        `,
+        [id]
+      );
+
+      if (cur.rowCount === 0) {
+        await client.query("ROLLBACK");
+        return res.status(404).json({ message: "Demotion order not found" });
+      }
+
+      const order = cur.rows[0];
+
+      if (norm(order.status) === "approved" || norm(order.status) === "rejected") {
+        await client.query("ROLLBACK");
+        return res.status(400).json({ message: "Already finalized" });
+      }
+
+      const department = toStr(order.department);
+      const chain = getApprovalChain(department);
+
+      let currentStage = norm(order.approval_stage);
+
+      if (!chain.includes(currentStage)) {
+        currentStage = chain[0] || "admin";
+      }
+
+      if (!userCanActStage(req, currentStage)) {
+        await client.query("ROLLBACK");
+        return res.status(403).json({ message: "Not your approval stage" });
+      }
+
+      const column = statusColumnMap[currentStage];
+
+      if (!column) {
+        await client.query("ROLLBACK");
+        return res.status(403).json({ message: "Invalid approval stage" });
+      }
+
+      if (action === "reject") {
+        await client.query(
+          `
+          UPDATE public.demotion_orders
+          SET
+            status = 'Rejected',
+            ${column} = 'Rejected',
+            rejected_by = $2,
+            rejected_at = NOW(),
+            rejection_reason = $3
+          WHERE id = $1
+          `,
+          [id, req.user?.id ?? null, reason]
+        );
+
+        await client.query("COMMIT");
+        return res.json({ message: "Rejected successfully" });
+      }
+
+      const latestPath = `/uploads/demotions/${req.file.filename}`;
+      const latestName = req.file.originalname || null;
+      const latestMime = req.file.mimetype || null;
+
+      const currentIndex = chain.indexOf(currentStage);
+      const nextStage = chain[currentIndex + 1];
+
+      if (!nextStage) {
+        await client.query(
+          `
+          UPDATE public.demotion_orders
+          SET
+            ${column} = 'Approved',
+            status = 'Approved',
+            approved_by = $2,
+            approved_at = NOW(),
+
+            attachment_path = $3,
+            attachment_name = $4,
+            attachment_mime = $5,
+
+            approved_attachment_path = $3,
+            approved_attachment_name = $4,
+            approved_attachment_mime = $5
+          WHERE id = $1
+          `,
+          [id, req.user?.id ?? null, latestPath, latestName, latestMime]
+        );
+
+        const toBranchId = toInt(order.to_branch_id);
+
+        if (!toBranchId) {
+          await client.query("ROLLBACK");
+          return res.status(400).json({ message: "Destination branch missing in order" });
+        }
+
+        await client.query(
+          `
+          UPDATE public.staff
+          SET
+            "position" = $1,
+            branch_id = $2
+          WHERE id = $3
+          `,
+          [toStr(order.new_position), toBranchId, Number(order.employee_id)]
+        );
+
+        await client.query(
+          `
+          UPDATE public.staff_balances
+          SET
+            fullname = $1,
+            "position" = $2,
+            updated_at = NOW()
+          WHERE employee_no = (
+            SELECT employee_no
+            FROM public.staff
+            WHERE id = $3
+            LIMIT 1
+          )
+          `,
+          [toStr(order.employee_name), toStr(order.new_position), Number(order.employee_id)]
+        );
+
+        await client.query("COMMIT");
+        return res.json({
+          message: "Demotion fully approved. Latest approved file is available.",
+        });
+      }
+
+      const waitingAdmin = nextStage === "admin";
+
+      await client.query(
+        `
+        UPDATE public.demotion_orders
+        SET
+          ${column} = 'Approved',
+          approval_stage = $2,
+          status = $3,
+
+          attachment_path = $4,
+          attachment_name = $5,
+          attachment_mime = $6
+        WHERE id = $1
+        `,
+        [
+          id,
+          nextStage,
+          waitingAdmin ? "Wait for Admin Order" : "Pending",
+          latestPath,
+          latestName,
+          latestMime,
+        ]
+      );
+
+      await client.query("COMMIT");
+
+      return res.json({
+        message: waitingAdmin
+          ? "Vice President approved. Waiting for Admin/IT/HR/Accounting final upload."
+          : `Approved and moved to ${nextStage}.`,
+      });
+    } catch (e) {
+      try {
+        await client.query("ROLLBACK");
+      } catch {}
+
+      console.error("PUT /api/demotion-orders/:id ERROR:", e);
+      return res.status(500).json({ message: e?.message || "Server error" });
+    } finally {
+      client.release();
+    }
+  }
+);
+
+/*
+|--------------------------------------------------------------------------
+| FINAL APPROVED FILE UPLOAD
+|--------------------------------------------------------------------------
+*/
+
+router.post(
+  "/demotion-orders/:id/approved-file",
+  requireAuth,
+  requirePermission("demotion_order", "upload_approved"),
+  upload.single("attachment"),
+  async (req, res) => {
+    const client = await pool.connect();
+
+    try {
+      const id = toInt(req.params.id);
+
+      if (!id) return res.status(400).json({ message: "Invalid id" });
+
+      if (!req.file) {
+        return res.status(400).json({ message: "Attachment is required" });
+      }
+
+      if (!isFinalUploader(req)) {
+        return res.status(403).json({
+          message: "Only Admin, IT, HR, and Accounting can upload approved files",
+        });
+      }
+
+      await client.query("BEGIN");
+
+      const cur = await client.query(
+        `
+        SELECT *
+        FROM public.demotion_orders
+        WHERE id = $1
+        FOR UPDATE
+        `,
+        [id]
+      );
+
+      if (cur.rowCount === 0) {
+        await client.query("ROLLBACK");
+        return res.status(404).json({ message: "Demotion order not found" });
+      }
+
+      const order = cur.rows[0];
+
+      if (!["admin", "wait for admin order"].includes(norm(order.approval_stage)) &&
+          norm(order.status) !== "wait for admin order") {
+        await client.query("ROLLBACK");
+        return res.status(400).json({
+          message: "Final file can only be uploaded after VP approval or direct admin stage.",
+        });
+      }
+
+      const finalPath = `/uploads/demotions/${req.file.filename}`;
+      const finalName = req.file.originalname || null;
+      const finalMime = req.file.mimetype || null;
+
+      await client.query(
+        `
+        UPDATE public.demotion_orders
+        SET
+          status = 'Approved',
+          admin_status = 'Approved',
+          approval_stage = 'approved',
+          approved_by = $2,
+          approved_at = NOW(),
+
+          attachment_path = $3,
+          attachment_name = $4,
+          attachment_mime = $5,
+
+          approved_attachment_path = $3,
+          approved_attachment_name = $4,
+          approved_attachment_mime = $5
+        WHERE id = $1
+        `,
+        [id, req.user?.id ?? null, finalPath, finalName, finalMime]
+      );
+
       const toBranchId = toInt(order.to_branch_id);
 
       if (!toBranchId) {
@@ -546,56 +1055,18 @@ router.put(
 
       await client.query("COMMIT");
 
-      return res.json(order);
+      return res.json({
+        message: "Final approved file uploaded. Demotion approved successfully.",
+      });
     } catch (e) {
-      await client.query("ROLLBACK");
-      console.error("PUT /api/demotion-orders/:id/approve ERROR:", e.message);
-      return res.status(500).json({ message: "Server error" });
+      try {
+        await client.query("ROLLBACK");
+      } catch {}
+
+      console.error("POST /api/demotion-orders/:id/approved-file ERROR:", e);
+      return res.status(500).json({ message: e?.message || "Server error" });
     } finally {
       client.release();
-    }
-  }
-);
-
-router.put(
-  "/demotion-orders/:id/reject",
-  requireAuth,
-  requirePermission("demotion_order", "reject"),
-  async (req, res) => {
-    try {
-      const id = toInt(req.params.id);
-      if (!id) return res.status(400).json({ message: "Invalid id" });
-
-      const reason = toStr(req.body?.reason);
-      if (!reason) {
-        return res.status(400).json({ message: "Rejection reason is required" });
-      }
-
-      const r = await pool.query(
-        `
-        UPDATE public.demotion_orders
-        SET
-          status='Rejected',
-          rejected_by=$2,
-          rejected_at=COALESCE(rejected_at, NOW()),
-          rejection_reason=$3,
-          approved_by=NULL,
-          approved_at=NULL
-        WHERE id=$1
-          AND status='Pending'
-        RETURNING *
-        `,
-        [id, req.user?.id ?? null, reason]
-      );
-
-      if (r.rowCount === 0) {
-        return res.status(400).json({ message: "Order not found or not Pending" });
-      }
-
-      return res.json(r.rows[0]);
-    } catch (e) {
-      console.error("PUT /api/demotion-orders/:id/reject ERROR:", e.message);
-      return res.status(500).json({ message: "Server error" });
     }
   }
 );

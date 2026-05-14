@@ -5,237 +5,249 @@ const { requireAuth } = require("../middlewares/authMiddleware");
 
 const toStr = (v) => String(v ?? "").trim();
 const norm = (v) => toStr(v).toLowerCase();
+
 const toInt = (v) => {
   const n = Number(v);
   return Number.isFinite(n) ? Math.trunc(n) : null;
 };
 
-const roleLower = (req) => norm(req.user?.role);
+const getRole = (req) => norm(req.user?.role);
+
 const isAdminLike = (req) => {
-  const r = roleLower(req);
-  return r === "admin" || r === "hr" || r === "accounting";
+  const role = getRole(req);
+  return ["admin", "it", "hr", "accounting"].includes(role);
 };
 
-const getUserBranchId = (req) => toInt(req.user?.branch_id);
+const getUserBranchId = (req) => toStr(req.user?.branch_id);
+const getUserId = (req) => toInt(req.user?.id);
+
+const buildVisibilityWhere = (req, startIndex = 1) => {
+  const role = getRole(req);
+  const userId = getUserId(req);
+  const branchId = getUserBranchId(req);
+
+  if (isAdminLike(req)) {
+    return {
+      where: `
+        AND (
+          LOWER(TRIM(COALESCE(scope, 'all'))) IN ('all', 'admins', 'admin', 'branch-or-admin')
+          OR target_branch_id IS NULL
+          OR LOWER(TRIM(COALESCE(role, ''))) = LOWER(TRIM($${startIndex}))
+          OR user_id = $${startIndex + 1}
+        )
+      `,
+      params: [role, userId],
+    };
+  }
+
+  if (role === "branch manager") {
+    return {
+      where: `
+        AND (
+          LOWER(TRIM(COALESCE(scope, 'all'))) = 'all'
+          OR user_id = $${startIndex}
+          OR LOWER(TRIM(COALESCE(role, ''))) = LOWER(TRIM($${startIndex + 1}))
+          OR (
+            LOWER(TRIM(COALESCE(scope, ''))) IN ('branch', 'branch-or-admin')
+            AND LOWER(TRIM(COALESCE(target_branch_id, ''))) = LOWER(TRIM($${startIndex + 2}))
+          )
+        )
+      `,
+      params: [userId, role, branchId],
+    };
+  }
+
+  return {
+    where: `
+      AND (
+        LOWER(TRIM(COALESCE(scope, 'all'))) = 'all'
+        OR user_id = $${startIndex}
+        OR LOWER(TRIM(COALESCE(role, ''))) = LOWER(TRIM($${startIndex + 1}))
+      )
+    `,
+    params: [userId, role],
+  };
+};
+
+/*
+|--------------------------------------------------------------------------
+| GET NOTIFICATIONS
+|--------------------------------------------------------------------------
+*/
 
 router.get("/notifications", requireAuth, async (req, res) => {
   try {
-    const limit = Math.min(toInt(req.query.limit) || 20, 100);
-    const role = roleLower(req);
-    const userBranchId = getUserBranchId(req);
+    const limit = Math.min(Math.max(Number(req.query.limit || 20), 1), 50);
 
-    let query = `
-      SELECT *
+    const visibility = buildVisibilityWhere(req, 1);
+    const params = [...visibility.params, limit];
+    const limitIndex = params.length;
+
+    const result = await pool.query(
+      `
+      SELECT
+        id,
+        user_id,
+        role,
+        department,
+        scope,
+        title,
+        message,
+        link,
+        target_branch_id,
+        target_branch_code,
+        target_branch_name,
+        is_read,
+        created_at
       FROM public.notifications
       WHERE 1=1
-    `;
-    const params = [];
+      ${visibility.where}
+      ORDER BY created_at DESC, id DESC
+      LIMIT $${limitIndex}
+      `,
+      params
+    );
 
-    if (isAdminLike(req)) {
-      query += `
-        AND (
-          scope IN ('all', 'admins', 'branch-or-admin')
-          OR target_branch_id IS NULL
-        )
-      `;
-    } else if (role === "branch manager") {
-      if (!userBranchId) return res.json([]);
-      params.push(userBranchId);
-      query += `
-        AND (
-          scope = 'all'
-          OR (scope IN ('branch', 'branch-or-admin') AND target_branch_id = $1)
-        )
-      `;
-    } else {
-      query += ` AND scope = 'all' `;
-    }
-
-    params.push(limit);
-    query += ` ORDER BY created_at DESC LIMIT $${params.length}`;
-
-    const result = await pool.query(query, params);
     return res.json(result.rows);
   } catch (err) {
-    console.error("GET /api/notifications ERROR:", err.message);
-    return res.status(500).json({ message: "Failed to load notifications." });
+    console.error("GET /notifications ERROR:", err.message);
+    return res.status(500).json({
+      message: err.message || "Failed to load notifications.",
+    });
   }
 });
+
+/*
+|--------------------------------------------------------------------------
+| UNREAD COUNT
+|--------------------------------------------------------------------------
+*/
 
 router.get("/notifications/unread-count", requireAuth, async (req, res) => {
   try {
-    const role = roleLower(req);
-    const userBranchId = getUserBranchId(req);
+    const visibility = buildVisibilityWhere(req, 1);
 
-    let query = `
+    const result = await pool.query(
+      `
       SELECT COUNT(*)::int AS unread_count
       FROM public.notifications
       WHERE is_read = FALSE
-    `;
-    const params = [];
+      ${visibility.where}
+      `,
+      visibility.params
+    );
 
-    if (isAdminLike(req)) {
-      query += `
-        AND (
-          scope IN ('all', 'admins', 'branch-or-admin')
-          OR target_branch_id IS NULL
-        )
-      `;
-    } else if (role === "branch manager") {
-      if (!userBranchId) return res.json({ unread_count: 0 });
-      params.push(userBranchId);
-      query += `
-        AND (
-          scope = 'all'
-          OR (scope IN ('branch', 'branch-or-admin') AND target_branch_id = $1)
-        )
-      `;
-    } else {
-      query += ` AND scope = 'all' `;
-    }
-
-    const result = await pool.query(query, params);
     return res.json(result.rows[0] || { unread_count: 0 });
   } catch (err) {
-    console.error("GET /api/notifications/unread-count ERROR:", err.message);
-    return res.status(500).json({ message: "Failed to load unread count." });
+    console.error("GET /notifications/unread-count ERROR:", err.message);
+    return res.status(500).json({
+      message: "Failed to load unread count.",
+    });
   }
 });
+
+/*
+|--------------------------------------------------------------------------
+| MARK ONE READ
+|--------------------------------------------------------------------------
+*/
 
 router.put("/notifications/:id/read", requireAuth, async (req, res) => {
   try {
     const id = toInt(req.params.id);
+
     if (!id) {
-      return res.status(400).json({ message: "Invalid notification id." });
+      return res.status(400).json({
+        message: "Invalid notification id.",
+      });
     }
 
-    const role = roleLower(req);
-    const userBranchId = getUserBranchId(req);
+    const visibility = buildVisibilityWhere(req, 2);
 
-    let query = `
+    const result = await pool.query(
+      `
       UPDATE public.notifications
       SET is_read = TRUE
       WHERE id = $1
-    `;
-    const params = [id];
-
-    if (isAdminLike(req)) {
-      query += `
-        AND (
-          scope IN ('all', 'admins', 'branch-or-admin')
-          OR target_branch_id IS NULL
-        )
-      `;
-    } else if (role === "branch manager") {
-      if (!userBranchId) {
-        return res.status(403).json({ message: "Access denied." });
-      }
-      params.push(userBranchId);
-      query += `
-        AND (
-          scope = 'all'
-          OR (scope IN ('branch', 'branch-or-admin') AND target_branch_id = $2)
-        )
-      `;
-    } else {
-      query += ` AND scope = 'all' `;
-    }
-
-    query += ` RETURNING *`;
-
-    const result = await pool.query(query, params);
+      ${visibility.where}
+      RETURNING *
+      `,
+      [id, ...visibility.params]
+    );
 
     if (result.rowCount === 0) {
-      return res.status(404).json({ message: "Notification not found." });
+      return res.status(404).json({
+        message: "Notification not found.",
+      });
     }
 
     return res.json(result.rows[0]);
   } catch (err) {
-    console.error("PUT /api/notifications/:id/read ERROR:", err.message);
-    return res.status(500).json({ message: "Failed to update notification." });
+    console.error("PUT /notifications/:id/read ERROR:", err.message);
+    return res.status(500).json({
+      message: "Failed to update notification.",
+    });
   }
 });
+
+/*
+|--------------------------------------------------------------------------
+| MARK ALL READ
+|--------------------------------------------------------------------------
+*/
 
 router.put("/notifications/read-all", requireAuth, async (req, res) => {
   try {
-    const role = roleLower(req);
-    const userBranchId = getUserBranchId(req);
+    const visibility = buildVisibilityWhere(req, 1);
 
-    let query = `
+    const result = await pool.query(
+      `
       UPDATE public.notifications
       SET is_read = TRUE
       WHERE is_read = FALSE
-    `;
-    const params = [];
+      ${visibility.where}
+      `,
+      visibility.params
+    );
 
-    if (isAdminLike(req)) {
-      query += `
-        AND (
-          scope IN ('all', 'admins', 'branch-or-admin')
-          OR target_branch_id IS NULL
-        )
-      `;
-    } else if (role === "branch manager") {
-      if (!userBranchId) {
-        return res.json({ updated: 0 });
-      }
-      params.push(userBranchId);
-      query += `
-        AND (
-          scope = 'all'
-          OR (scope IN ('branch', 'branch-or-admin') AND target_branch_id = $1)
-        )
-      `;
-    } else {
-      query += ` AND scope = 'all' `;
-    }
-
-    const result = await pool.query(query, params);
-    return res.json({ updated: result.rowCount || 0 });
+    return res.json({
+      updated: result.rowCount || 0,
+    });
   } catch (err) {
-    console.error("PUT /api/notifications/read-all ERROR:", err.message);
-    return res.status(500).json({ message: "Failed to mark notifications as read." });
+    console.error("PUT /notifications/read-all ERROR:", err.message);
+    return res.status(500).json({
+      message: "Failed to mark notifications as read.",
+    });
   }
 });
 
+/*
+|--------------------------------------------------------------------------
+| CLEAR VISIBLE NOTIFICATIONS
+|--------------------------------------------------------------------------
+*/
+
 router.delete("/notifications/clear-all", requireAuth, async (req, res) => {
   try {
-    const role = roleLower(req);
-    const userBranchId = getUserBranchId(req);
+    const visibility = buildVisibilityWhere(req, 1);
 
-    let query = `
+    const result = await pool.query(
+      `
       DELETE FROM public.notifications
       WHERE 1=1
-    `;
-    const params = [];
+      ${visibility.where}
+      `,
+      visibility.params
+    );
 
-    if (isAdminLike(req)) {
-      query += `
-        AND (
-          scope IN ('all', 'admins', 'branch-or-admin')
-          OR target_branch_id IS NULL
-        )
-      `;
-    } else if (role === "branch manager") {
-      if (!userBranchId) {
-        return res.json({ deleted: 0 });
-      }
-      params.push(userBranchId);
-      query += `
-        AND (
-          scope = 'all'
-          OR (scope IN ('branch', 'branch-or-admin') AND target_branch_id = $1)
-        )
-      `;
-    } else {
-      query += ` AND scope = 'all' `;
-    }
-
-    const result = await pool.query(query, params);
-    return res.json({ deleted: result.rowCount || 0 });
+    return res.json({
+      deleted: result.rowCount || 0,
+    });
   } catch (err) {
-    console.error("DELETE /api/notifications/clear-all ERROR:", err.message);
-    return res.status(500).json({ message: "Failed to clear notifications." });
+    console.error("DELETE /notifications/clear-all ERROR:", err.message);
+    return res.status(500).json({
+      message: "Failed to clear notifications.",
+    });
   }
 });
 

@@ -97,6 +97,7 @@ const isFullStaffAccess = async (req) => {
     department === "hr department" ||
     department === "accounting department" ||
     department === "tread department" ||
+    department === "audit department" ||
     isVicePresident(req) ||
     isSeniorVicePresident(req) ||
     isPresident(req) ||

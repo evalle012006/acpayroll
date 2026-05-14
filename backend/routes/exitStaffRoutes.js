@@ -85,9 +85,9 @@ const applyDueExitStaff = async () => {
         FROM public.status_history sh
         WHERE sh.employee_no = eso.employee_no
           AND LOWER(TRIM(COALESCE(sh.status, ''))) = 'active'
-          AND LOWER(TRIM(COALESCE(sh.reason, ''))) = 're-apply'
+          AND LOWER(TRIM(COALESCE(sh.reason, ''))) IN ('re-apply', 'reapply')
           AND sh.effective_date IS NOT NULL
-          AND sh.effective_date > eso.effective_date
+          AND sh.effective_date >= eso.effective_date
       )
   `);
 };
@@ -341,8 +341,7 @@ router.post(
         settlement_branch_name = clean(sb.rows[0].name);
       }
 
-      const employee_name =
-        clean(req.body?.employee_name) || buildEmployeeName(staff);
+      const employee_name = clean(req.body?.employee_name) || buildEmployeeName(staff);
 
       const seq = await client.query(
         `SELECT nextval('public.exit_staff_orders_id_seq') AS n`
@@ -470,7 +469,7 @@ router.put(
 
       const existing = orderRes.rows[0];
 
-      if (String(existing.status || "").toLowerCase() !== "pending") {
+      if (norm(existing.status) !== "pending") {
         await client.query("ROLLBACK");
         return res.status(400).json({
           message: "Only pending orders can be approved",
@@ -703,17 +702,17 @@ router.put(
 
       const branch = branchRes.rows[0];
       const staff = staffRes.rows[0];
+      const employeeNo = clean(staff.employee_no);
 
       await client.query(
         `
         UPDATE public.exit_staff_orders
         SET
-          status = 'Approved',
           remarks = TRIM(COALESCE(remarks, '') || E'\\nRe-applied on ' || $2::text)
         WHERE employee_no = $1
           AND LOWER(TRIM(COALESCE(status, ''))) = 'approved'
         `,
-        [clean(staff.employee_no), start_date]
+        [employeeNo, start_date]
       );
 
       const updated = await client.query(
@@ -765,7 +764,7 @@ router.put(
             ($1, $2::date, 'Active', 'Re-Apply', $3)
           ON CONFLICT DO NOTHING
           `,
-          [clean(staff.employee_no), start_date, remarks || null]
+          [employeeNo, start_date, remarks || null]
         );
       } catch (historyErr) {
         console.warn("status_history reapply insert skipped:", historyErr.message);
@@ -810,7 +809,7 @@ router.delete(
         return res.status(404).json({ message: "Order not found" });
       }
 
-      if (String(check.rows[0].status || "").toLowerCase() === "approved") {
+      if (norm(check.rows[0].status) === "approved") {
         return res.status(400).json({ message: "Approved orders cannot be deleted" });
       }
 

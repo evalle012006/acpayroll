@@ -1,0 +1,9 @@
+BEGIN;
+
+ALTER TABLE public.area_configurations
+ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW();
+
+ALTER TABLE public.area_configurations
+ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT NOW();
+
+COMMIT;

@@ -2,7 +2,6 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useNavigate } from "react-router-dom";
 import api from "../api/axiosClient";
 import "../styles/ResignationRequests.css";
-import "../styles/ResignationRequests.css";
 
 const toStr = (v) => String(v ?? "").trim();
 const norm = (v) => toStr(v).toLowerCase();
@@ -27,6 +26,7 @@ const STATUS_AREA = "Pending Area Manager";
 const STATUS_RM = "Pending Regional Manager";
 const STATUS_AVP = "Pending Assistant Vice President";
 const STATUS_VP = "Pending Vice President";
+const STATUS_SVP = "Pending Senior Vice President";
 const STATUS_ADMIN = "Pending Admin";
 const STATUS_APPROVED = "Approved";
 const STATUS_REJECTED = "Rejected";
@@ -46,6 +46,7 @@ export default function ResignationRequests() {
   const isAccounting = role === "accounting";
   const isTread = role === "tread";
   const isVicePresident = role === "vice president";
+  const isSeniorVicePresident = role === "senior vice president";
   const isBranchManager = role === "branch manager";
 
   const canCreate =
@@ -57,7 +58,8 @@ export default function ResignationRequests() {
     isAreaManager ||
     isRegionalManager ||
     isAssistantVicePresident ||
-    isVicePresident;
+    isVicePresident ||
+    isSeniorVicePresident;
 
   const [rows, setRows] = useState([]);
   const [staffList, setStaffList] = useState([]);
@@ -71,6 +73,8 @@ export default function ResignationRequests() {
   const [pageSize, setPageSize] = useState(25);
 
   const [showCreate, setShowCreate] = useState(false);
+  const [viewRow, setViewRow] = useState(null);
+
   const [employeeSearch, setEmployeeSearch] = useState("");
   const [showEmployeeDropdown, setShowEmployeeDropdown] = useState(false);
   const employeeBoxRef = useRef(null);
@@ -78,6 +82,8 @@ export default function ResignationRequests() {
   const [rejectingRow, setRejectingRow] = useState(null);
   const [rejectionReason, setRejectionReason] = useState("");
   const [processingId, setProcessingId] = useState("");
+
+  const [finalFiles, setFinalFiles] = useState({});
 
   const [form, setForm] = useState({
     staff_id: "",
@@ -127,8 +133,21 @@ export default function ResignationRequests() {
       }
     };
 
+    const onKeyDown = (e) => {
+      if (e.key === "Escape") {
+        setViewRow(null);
+        setRejectingRow(null);
+        setShowEmployeeDropdown(false);
+      }
+    };
+
     document.addEventListener("mousedown", onMouseDown);
-    return () => document.removeEventListener("mousedown", onMouseDown);
+    document.addEventListener("keydown", onKeyDown);
+
+    return () => {
+      document.removeEventListener("mousedown", onMouseDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
   }, []);
 
   const buildName = useCallback((s) => {
@@ -164,6 +183,7 @@ export default function ResignationRequests() {
           s.position,
           s.area,
           s.region,
+          s.department,
           display,
         ]
           .map((x) => toStr(x))
@@ -313,11 +333,34 @@ export default function ResignationRequests() {
   };
 
   const approveRequest = async (row) => {
+    const isFinalStage = toStr(row.status) === STATUS_ADMIN;
+
+    if (isFinalStage && !finalFiles[row.id]) {
+      return alert("Please upload the final approved file first.");
+    }
+
     if (!window.confirm("Approve this resignation request?")) return;
 
     try {
       setProcessingId(`approve-${row.id}`);
-      await api.put(`/resignation-requests/${row.id}/approve`);
+
+      if (isFinalStage) {
+        const fd = new FormData();
+        fd.append("attachment", finalFiles[row.id]);
+
+        await api.put(`/resignation-requests/${row.id}/approve`, fd, {
+          headers: { "Content-Type": "multipart/form-data" },
+        });
+      } else {
+        await api.put(`/resignation-requests/${row.id}/approve`);
+      }
+
+      setFinalFiles((prev) => {
+        const copy = { ...prev };
+        delete copy[row.id];
+        return copy;
+      });
+
       await fetchAll();
     } catch (err) {
       alert(err?.response?.data?.message || "Failed to approve request.");
@@ -369,6 +412,7 @@ export default function ResignationRequests() {
     if (isRegionalManager && status === STATUS_RM) return true;
     if (isAssistantVicePresident && status === STATUS_AVP) return true;
     if (isVicePresident && status === STATUS_VP) return true;
+    if (isSeniorVicePresident && status === STATUS_SVP) return true;
     if ((isAdmin || isHr || isAccounting) && status === STATUS_ADMIN) return true;
 
     return false;
@@ -402,9 +446,20 @@ export default function ResignationRequests() {
     if (status === STATUS_RM) return "For RM";
     if (status === STATUS_AVP) return "For AVP";
     if (status === STATUS_VP) return "For VP";
+    if (status === STATUS_SVP) return "For SVP";
     if (status === STATUS_ADMIN) return "For Admin";
     if (status === STATUS_APPROVED) return "Approved";
     if (status === STATUS_REJECTED) return "Rejected";
+
+    return "-";
+  };
+
+  const branchLabel = (row) => {
+    if (row.branch_code || row.branch_name) {
+      return `${row.branch_code || ""}${
+        row.branch_code && row.branch_name ? " - " : ""
+      }${row.branch_name || ""}`;
+    }
 
     return "-";
   };
@@ -415,12 +470,17 @@ export default function ResignationRequests() {
         <div>
           <h2 className="po-title">Resignation</h2>
           <p className="po-subtitle">
-            Branch Manager → Area Manager → Regional Manager → Assistant Vice President → Admin/HR/Accounting
+            Branch Manager → Area Manager → Regional Manager → Assistant Vice President → Vice President → Admin/HR/Accounting.
+            Audit Department → Senior Vice President → Admin/HR/Accounting.
           </p>
         </div>
 
         <div className="po-topbar-actions">
-          <button className="po-btn po-btn-outline" onClick={() => navigate("/transactions")} type="button">
+          <button
+            className="po-btn po-btn-outline"
+            onClick={() => navigate("/transactions")}
+            type="button"
+          >
             ← Back
           </button>
 
@@ -444,7 +504,7 @@ export default function ResignationRequests() {
             className="po-search-input"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search request no, employee, branch, status..."
+            placeholder="Search request no, employee, branch, status, remarks..."
           />
 
           <select
@@ -458,9 +518,7 @@ export default function ResignationRequests() {
             <option value={100}>100</option>
           </select>
 
-          <span className="po-result-pill">
-            {filteredRows.length} result(s)
-          </span>
+          <span className="po-result-pill">{filteredRows.length} result(s)</span>
         </div>
       </div>
 
@@ -476,7 +534,6 @@ export default function ResignationRequests() {
                 <th>Resignation Date</th>
                 <th>Effective Date</th>
                 <th>Attachment</th>
-                <th>Remarks</th>
                 <th>Status</th>
                 <th>Stage</th>
                 <th>Actions</th>
@@ -486,98 +543,134 @@ export default function ResignationRequests() {
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={11} className="po-empty">
+                  <td colSpan={10} className="po-empty">
                     Loading...
                   </td>
                 </tr>
               ) : filteredRows.length === 0 ? (
                 <tr>
-                  <td colSpan={11} className="po-empty">
+                  <td colSpan={10} className="po-empty">
                     No resignation requests found.
                   </td>
                 </tr>
               ) : (
-                pagedRows.map((row) => (
-                  <tr key={row.id}>
-                    <td className="mono">{row.request_no || row.id}</td>
-                    <td className="mono">{row.employee_no || "-"}</td>
-                    <td className="td-strong">{row.employee_name || "-"}</td>
-                    <td>
-                      {row.branch_code || row.branch_name
-                        ? `${row.branch_code || ""}${row.branch_code && row.branch_name ? " - " : ""}${row.branch_name || ""}`
-                        : "-"}
-                    </td>
-                    <td>{fmtDate(row.resignation_date)}</td>
-                    <td>{fmtDate(row.effective_date)}</td>
-                    <td>
-                      {row.attachment_path ? (
-                        <a
-                          href={attachmentUrl(row)}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="po-mini-btn"
-                          style={{
-                            textDecoration: "none",
-                            display: "inline-flex",
-                            alignItems: "center",
-                          }}
-                        >
-                          View File
-                        </a>
-                      ) : (
-                        "-"
-                      )}
-                    </td>
-                    <td title={row.remarks || ""}>{row.remarks || "-"}</td>
-                    <td>
-                      <span className={badgeClass(row.status)}>
-                        {row.status || STATUS_RM}
-                      </span>
-                    </td>
-                    <td>{actionLabel(row)}</td>
-                    <td>
-                      <div className="po-row-actions">
-                        {canApproveRow(row) && (
-                          <button
-                            className="po-mini-btn po-approve"
-                            type="button"
-                            onClick={() => approveRequest(row)}
-                            disabled={processingId === `approve-${row.id}`}
-                          >
-                            {processingId === `approve-${row.id}` ? "Approving..." : "Approve"}
-                          </button>
-                        )}
+                pagedRows.map((row) => {
+                  const isFinalStage = toStr(row.status) === STATUS_ADMIN;
+                  const canApprove = canApproveRow(row);
 
-                        {canRejectRow(row) && (
-                          <button
-                            className="po-mini-btn po-reject"
-                            type="button"
-                            onClick={() => {
-                              setRejectingRow(row);
-                              setRejectionReason("");
+                  return (
+                    <tr key={row.id}>
+                      <td className="mono">{row.request_no || row.id}</td>
+                      <td className="mono">{row.employee_no || "-"}</td>
+                      <td className="td-strong">{row.employee_name || "-"}</td>
+                      <td>{branchLabel(row)}</td>
+                      <td>{fmtDate(row.resignation_date)}</td>
+                      <td>{fmtDate(row.effective_date)}</td>
+
+                      <td>
+                        {row.attachment_path ? (
+                          <a
+                            href={attachmentUrl(row)}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="po-mini-btn"
+                            style={{
+                              textDecoration: "none",
+                              display: "inline-flex",
+                              alignItems: "center",
                             }}
-                            disabled={processingId === `reject-${row.id}`}
                           >
-                            Reject
-                          </button>
+                            View File
+                          </a>
+                        ) : (
+                          "-"
                         )}
+                      </td>
 
-                        {canDeleteRow(row) ? (
+                      <td>
+                        <span className={badgeClass(row.status)}>
+                          {row.status || STATUS_RM}
+                        </span>
+                      </td>
+
+                      <td>{actionLabel(row)}</td>
+
+                      <td>
+                        <div className="po-row-actions">
                           <button
                             className="po-mini-btn"
                             type="button"
-                            onClick={() => deleteRequest(row)}
-                            disabled={processingId === `delete-${row.id}`}
+                            onClick={() => setViewRow(row)}
                           >
-                            Delete
+                            View
                           </button>
-                        ) : !canApproveRow(row) && !canRejectRow(row) ? (
-                          <span style={{ opacity: 0.7 }}>-</span>
-                        ) : null}
-                      </div>
-                    </td>
-                  </tr>
-                ))
+
+                          {canApprove && isFinalStage ? (
+                            <label className="po-mini-btn" style={{ cursor: "pointer" }}>
+                              {finalFiles[row.id]?.name ? "Change File" : "Final File"}
+                              <input
+                                type="file"
+                                style={{ display: "none" }}
+                                onChange={(e) =>
+                                  setFinalFiles((prev) => ({
+                                    ...prev,
+                                    [row.id]: e.target.files?.[0] || null,
+                                  }))
+                                }
+                              />
+                            </label>
+                          ) : null}
+
+                          {finalFiles[row.id]?.name ? (
+                            <span style={{ fontSize: 11, maxWidth: 120 }}>
+                              {finalFiles[row.id].name}
+                            </span>
+                          ) : null}
+
+                          {canApprove && (
+                            <button
+                              className="po-mini-btn po-approve"
+                              type="button"
+                              onClick={() => approveRequest(row)}
+                              disabled={processingId === `approve-${row.id}`}
+                            >
+                              {processingId === `approve-${row.id}`
+                                ? "Approving..."
+                                : isFinalStage
+                                ? "Upload + Approve"
+                                : "Approve"}
+                            </button>
+                          )}
+
+                          {canRejectRow(row) && (
+                            <button
+                              className="po-mini-btn po-reject"
+                              type="button"
+                              onClick={() => {
+                                setRejectingRow(row);
+                                setRejectionReason("");
+                              }}
+                              disabled={processingId === `reject-${row.id}`}
+                            >
+                              Reject
+                            </button>
+                          )}
+
+                          {canDeleteRow(row) ? (
+                            <button
+                              className="po-mini-btn"
+                              type="button"
+                              onClick={() => deleteRequest(row)}
+                              disabled={processingId === `delete-${row.id}`}
+                            >
+                              Delete
+                            </button>
+                          ) : null}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>
@@ -629,7 +722,11 @@ export default function ResignationRequests() {
 
             <form className="po-form" onSubmit={submitCreate}>
               <div className="po-grid">
-                <div className="po-field full" ref={employeeBoxRef} style={{ position: "relative" }}>
+                <div
+                  className="po-field full"
+                  ref={employeeBoxRef}
+                  style={{ position: "relative" }}
+                >
                   <label>Employee</label>
                   <input
                     type="text"
@@ -701,7 +798,9 @@ export default function ResignationRequests() {
                   <input
                     value={
                       form.branch_code || form.branch_name
-                        ? `${form.branch_code || ""}${form.branch_code && form.branch_name ? " - " : ""}${form.branch_name || ""}`
+                        ? `${form.branch_code || ""}${
+                            form.branch_code && form.branch_name ? " - " : ""
+                          }${form.branch_name || ""}`
                         : ""
                     }
                     readOnly
@@ -772,6 +871,105 @@ export default function ResignationRequests() {
         </div>
       )}
 
+      {viewRow && (
+        <div
+          className="po-modal-overlay"
+          onMouseDown={(e) =>
+            e.target.classList.contains("po-modal-overlay") && setViewRow(null)
+          }
+        >
+          <div className="po-modal" onMouseDown={(e) => e.stopPropagation()}>
+            <div className="po-modal-head">
+              <div>
+                <h3 className="po-modal-title">Resignation Details</h3>
+                <div className="po-modal-sub">
+                  {viewRow.request_no || viewRow.id} — {viewRow.employee_name || "-"}
+                </div>
+              </div>
+
+              <button className="po-x" type="button" onClick={() => setViewRow(null)}>
+                ✕
+              </button>
+            </div>
+
+            <div className="po-form">
+              <div className="po-grid">
+                <div className="po-field">
+                  <label>Employee No</label>
+                  <input value={viewRow.employee_no || "-"} readOnly />
+                </div>
+
+                <div className="po-field">
+                  <label>Branch</label>
+                  <input value={branchLabel(viewRow)} readOnly />
+                </div>
+
+                <div className="po-field">
+                  <label>Resignation Date</label>
+                  <input value={fmtDate(viewRow.resignation_date)} readOnly />
+                </div>
+
+                <div className="po-field">
+                  <label>Effective Date</label>
+                  <input value={fmtDate(viewRow.effective_date)} readOnly />
+                </div>
+
+                <div className="po-field">
+                  <label>Status</label>
+                  <input value={viewRow.status || "-"} readOnly />
+                </div>
+
+                <div className="po-field">
+                  <label>Stage</label>
+                  <input value={actionLabel(viewRow)} readOnly />
+                </div>
+
+                <div className="po-field full">
+                  <label>Remarks</label>
+                  <textarea value={viewRow.remarks || "No remarks"} readOnly />
+                </div>
+
+                {viewRow.rejection_reason ? (
+                  <div className="po-field full">
+                    <label>Rejection Reason</label>
+                    <textarea value={viewRow.rejection_reason} readOnly />
+                  </div>
+                ) : null}
+
+                {viewRow.attachment_path ? (
+                  <div className="po-field full">
+                    <label>Attachment</label>
+                    <a
+                      href={attachmentUrl(viewRow)}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="po-mini-btn"
+                      style={{
+                        textDecoration: "none",
+                        display: "inline-flex",
+                        width: "fit-content",
+                      }}
+                    >
+                      View File
+                    </a>
+                  </div>
+                ) : null}
+              </div>
+
+              <div className="po-modal-actions">
+                <button
+                  className="po-btn po-btn-outline"
+                  type="button"
+                  onClick={() => setViewRow(null)}
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {rejectingRow && (
         <div
           className="po-modal-overlay"
@@ -798,7 +996,11 @@ export default function ResignationRequests() {
               </div>
 
               <div className="po-modal-actions">
-                <button className="po-btn po-btn-outline" type="button" onClick={() => setRejectingRow(null)}>
+                <button
+                  className="po-btn po-btn-outline"
+                  type="button"
+                  onClick={() => setRejectingRow(null)}
+                >
                   Cancel
                 </button>
 

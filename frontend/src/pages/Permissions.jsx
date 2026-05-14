@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import api from "../api/axiosClient";
+import "../styles/Permissions.css";
 
 const roles = [
   "admin",
@@ -90,114 +91,115 @@ const formatLabel = (value) =>
     .toUpperCase();
 
 export default function Permissions() {
-  const [rows, setRows] = useState([]);
-  const [selectedRole, setSelectedRole] = useState("admin");
-  const [selectedDepartment, setSelectedDepartment] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [savingKey, setSavingKey] = useState("");
+    const [rows, setRows] = useState([]);
+    const [selectedRole, setSelectedRole] = useState("admin");
+    const [selectedDepartment, setSelectedDepartment] = useState("");
+    const [loading, setLoading] = useState(false);
+    const [savingKey, setSavingKey] = useState("");
 
-  const keyOf = (role, department, moduleName, actionName) =>
-    `${role}__${department || ""}__${moduleName}__${actionName}`;
+    const keyOf = (role, department, moduleName, actionName) =>
+      `${role}__${department || ""}__${moduleName}__${actionName}`;
 
-  const permissionMap = useMemo(() => {
-    const map = {};
+    const permissionMap = useMemo(() => {
+      const map = {};
 
-    rows.forEach((r) => {
-      map[
-        keyOf(
-          r.role,
-          r.department || "",
-          r.module_name,
-          r.action_name
-        )
-      ] = Boolean(r.allowed);
-    });
+      rows.forEach((r) => {
+        map[
+          keyOf(
+            r.role,
+            r.department || "",
+            r.module_name,
+            r.action_name
+          )
+        ] = Boolean(r.allowed);
+      });
 
-    return map;
-  }, [rows]);
+      return map;
+    }, [rows]);
 
-  const loadPermissions = async () => {
-    try {
-      setLoading(true);
-      const res = await api.get("/role-permissions");
-      setRows(Array.isArray(res.data) ? res.data : []);
-    } catch (err) {
-      alert(err?.response?.data?.message || "Failed to load permissions.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    loadPermissions();
-  }, []);
-
-  const togglePermission = async (moduleName, actionName, checked) => {
-    const payload = {
-      role: selectedRole,
-      department: selectedDepartment || null,
-      module_name: moduleName,
-      action_name: actionName,
-      allowed: checked,
+    const loadPermissions = async () => {
+      try {
+        setLoading(true);
+        const res = await api.get("/role-permissions");
+        setRows(Array.isArray(res.data) ? res.data : []);
+      } catch (err) {
+        alert(err?.response?.data?.message || "Failed to load permissions.");
+      } finally {
+        setLoading(false);
+      }
     };
 
-    const key = keyOf(
-      selectedRole,
-      selectedDepartment,
-      moduleName,
-      actionName
-    );
+    useEffect(() => {
+      loadPermissions();
+    }, []);
 
-    setSavingKey(key);
+    const togglePermission = async (moduleName, actionName, checked) => {
+      const payload = {
+        role: selectedRole,
+        department: selectedDepartment || null,
+        module_name: moduleName,
+        action_name: actionName,
+        allowed: checked,
+      };
 
-    setRows((prev) => {
-      const exists = prev.some(
-        (r) =>
-          keyOf(
-            r.role,
-            r.department || "",
-            r.module_name,
-            r.action_name
-          ) === key
+      const key = keyOf(
+        selectedRole,
+        selectedDepartment,
+        moduleName,
+        actionName
       );
 
-      if (exists) {
-        return prev.map((r) =>
-          keyOf(
-            r.role,
-            r.department || "",
-            r.module_name,
-            r.action_name
-          ) === key
-            ? {
-                ...r,
-                allowed: checked,
-                department: selectedDepartment || null,
-              }
-            : r
+      setSavingKey(key);
+
+      setRows((prev) => {
+        const exists = prev.some(
+          (r) =>
+            keyOf(
+              r.role,
+              r.department || "",
+              r.module_name,
+              r.action_name
+            ) === key
         );
+
+        if (exists) {
+          return prev.map((r) =>
+            keyOf(
+              r.role,
+              r.department || "",
+              r.module_name,
+              r.action_name
+            ) === key
+              ? {
+                  ...r,
+                  allowed: checked,
+                  department: selectedDepartment || null,
+                }
+              : r
+          );
+        }
+
+        return [...prev, payload];
+      });
+
+      try {
+        await api.put("/role-permissions", payload);
+      } catch (err) {
+        alert(err?.response?.data?.message || "Failed to save permission.");
+        loadPermissions();
+      } finally {
+        setSavingKey("");
       }
+    };
 
-      return [...prev, payload];
-    });
-
-    try {
-      await api.put("/role-permissions", payload);
-    } catch (err) {
-      alert(err?.response?.data?.message || "Failed to save permission.");
-      loadPermissions();
-    } finally {
-      setSavingKey("");
-    }
-  };
-
-  return (
-    <div className="approval-page">
-      <div className="approval-page-header">
+    return (
+    <div className="approval-page permissions-page">
+      <div className="permissions-top">
         <div>
           <h2 className="approval-title">Role Permissions</h2>
+
           <p className="approval-subtitle">
-            Manage role and department-based access for system modules.
+            Manage role and department-based access.
           </p>
         </div>
 
@@ -212,24 +214,9 @@ export default function Permissions() {
       </div>
 
       <div className="table-card" style={{ padding: 20 }}>
-        <div
-          style={{
-            display: "flex",
-            gap: 14,
-            flexWrap: "wrap",
-            marginBottom: 18,
-          }}
-        >
-          <div style={{ minWidth: 280 }}>
-            <label
-              style={{
-                display: "block",
-                fontWeight: 900,
-                marginBottom: 8,
-              }}
-            >
-              Select Role
-            </label>
+        <div className="permissions-filters">
+          <div>
+            <label className="form-label">Select Role</label>
 
             <select
               className="input"
@@ -244,16 +231,8 @@ export default function Permissions() {
             </select>
           </div>
 
-          <div style={{ minWidth: 320 }}>
-            <label
-              style={{
-                display: "block",
-                fontWeight: 900,
-                marginBottom: 8,
-              }}
-            >
-              Select Department
-            </label>
+          <div>
+            <label className="form-label">Select Department</label>
 
             <select
               className="input"
@@ -271,65 +250,62 @@ export default function Permissions() {
 
         <div
           style={{
-            marginBottom: 14,
-            padding: 12,
-            borderRadius: 12,
-            background: "rgba(59,130,246,.12)",
-            border: "1px solid rgba(96,165,250,.25)",
-            fontWeight: 800,
+            marginTop: 18,
+            marginBottom: 18,
+            fontWeight: 900,
           }}
         >
-          Editing permissions for: {selectedRole.toUpperCase()}
-          {selectedDepartment ? ` / ${selectedDepartment}` : " / Role Default"}
+          Editing:
+          {" "}
+          {selectedRole.toUpperCase()}
+          {selectedDepartment
+            ? ` / ${selectedDepartment}`
+            : " / ROLE DEFAULT"}
         </div>
 
-        <div className="table-wrap">
-          <table className="table">
-            <thead>
-              <tr>
-                <th>Module</th>
-                {actions.map((a) => (
-                  <th key={a}>{formatLabel(a)}</th>
-                ))}
-              </tr>
-            </thead>
+        <div className="permissions-grid">
+          {modules.map((moduleName) => (
+            <div className="permission-card" key={moduleName}>
+              <div className="permission-title">
+                {formatLabel(moduleName)}
+              </div>
 
-            <tbody>
-              {modules.map((moduleName) => (
-                <tr key={moduleName}>
-                  <td className="td-strong">{formatLabel(moduleName)}</td>
+              <div className="permission-actions">
+                {actions.map((actionName) => {
+                  const key = keyOf(
+                    selectedRole,
+                    selectedDepartment,
+                    moduleName,
+                    actionName
+                  );
 
-                  {actions.map((actionName) => {
-                    const key = keyOf(
-                      selectedRole,
-                      selectedDepartment,
-                      moduleName,
-                      actionName
-                    );
+                  const checked = permissionMap[key] || false;
 
-                    const checked = permissionMap[key] || false;
+                  return (
+                    <label
+                      className="permission-check"
+                      key={actionName}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        disabled={savingKey === key}
+                        onChange={(e) =>
+                          togglePermission(
+                            moduleName,
+                            actionName,
+                            e.target.checked
+                          )
+                        }
+                      />
 
-                    return (
-                      <td key={actionName}>
-                        <input
-                          type="checkbox"
-                          checked={checked}
-                          disabled={savingKey === key}
-                          onChange={(e) =>
-                            togglePermission(
-                              moduleName,
-                              actionName,
-                              e.target.checked
-                            )
-                          }
-                        />
-                      </td>
-                    );
-                  })}
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                      {formatLabel(actionName)}
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
         </div>
       </div>
     </div>

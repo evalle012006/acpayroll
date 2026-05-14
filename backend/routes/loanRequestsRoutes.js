@@ -208,6 +208,75 @@ async function ensureBalanceRow(client, employeeNo) {
   );
 }
 
+async function createLoanApprovedNotification(client, loanId) {
+  const r = await client.query(
+    `
+    SELECT
+      lr.id,
+      lr.employee_no,
+      lr.loan_type,
+      lr.total,
+      lr.amount,
+      COALESCE(s.fullname, '') AS staff_name,
+      s.branch_id,
+      b.code AS branch_code,
+      b.name AS branch_name
+    FROM public.loan_requests lr
+    LEFT JOIN public.staff s ON s.id = lr.staff_id
+    LEFT JOIN public.branches b ON b.id = s.branch_id
+    WHERE lr.id = $1
+    LIMIT 1
+    `,
+    [loanId]
+  );
+
+  if (r.rowCount === 0) return;
+
+  const loan = r.rows[0];
+
+  await client.query(
+    `
+    INSERT INTO public.notifications
+    (
+      user_id,
+      role,
+      department,
+      scope,
+      title,
+      message,
+      link,
+      target_branch_id,
+      target_branch_code,
+      target_branch_name,
+      is_read,
+      created_at
+    )
+    VALUES
+    (
+      NULL,
+      NULL,
+      NULL,
+      'branch-or-admin',
+      $1,
+      $2,
+      '/approval',
+      $3,
+      $4,
+      $5,
+      FALSE,
+      NOW()
+    )
+    `,
+    [
+      "Loan Approved",
+      `${loan.staff_name || "Employee"}'s ${loan.loan_type || "loan"} has been fully approved.`,
+      loan.branch_id ? String(loan.branch_id) : null,
+      loan.branch_code || null,
+      loan.branch_name || null,
+    ]
+  );
+}
+
 function loanTypeToBalanceColumn(loanType) {
   const lt = norm(loanType);
 
@@ -864,6 +933,8 @@ router.put(
             [total, employeeNo]
           );
         }
+
+        await createLoanApprovedNotification(client, id);
 
         await client.query("COMMIT");
         return res.json({

@@ -508,3 +508,47 @@
 [data-theme="light"] .po-page-info{
   color:#0f172a;
 }
+
+.view-btn {
+  border: none;
+  background: #3b82f6;
+  color: white;
+  padding: 7px 14px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.view-btn:hover {
+  opacity: 0.9;
+}
+
+.view-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+}
+
+.view-grid label {
+  font-size: 12px;
+  opacity: 0.7;
+}
+
+.view-grid p {
+  margin-top: 5px;
+  font-weight: 600;
+}
+
+.full-width {
+  grid-column: span 2;
+}
+
+.remarks-box {
+  margin-top: 8px;
+  min-height: 100px;
+  padding: 14px;
+  border-radius: 10px;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.08);
+  white-space: pre-wrap;
+}

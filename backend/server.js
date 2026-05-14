@@ -91,7 +91,7 @@ app.use("/api", areaConfigurationsRoutes);
 app.use("/api", consolidationRoutes);
 app.use("/api", staffLoanOpeningBalancesRoutes);
 app.use("/api", staffBonusHistoryRoutes);
-app.use("/api", notificationRoutes);
+app.use("/api", require("./routes/notificationRoutes"));
 app.use("/api", regularizationOrdersRoutes);
 app.use("/api", resignationRequestsRoutes);
 app.use("/api/reimbursement-requests", reimbursementRequestsRoutes);

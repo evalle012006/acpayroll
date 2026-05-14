@@ -4,9 +4,10 @@ import { useNavigate } from "react-router-dom";
 import api from "../api/axiosClient";
 import "../styles/SuspensionOrder.css";
 
-
 const clean = (v) => String(v ?? "").trim();
+const norm = (v) => clean(v).toLowerCase();
 const toDate10 = (v) => (v ? String(v).slice(0, 10) : "");
+
 const toNum = (v) => {
   const n = Number(v ?? 0);
   return Number.isFinite(n) ? n : 0;
@@ -22,9 +23,11 @@ const displayNameParts = (s) => {
   const ln = clean(s?.last_name);
   const fn = clean(s?.first_name);
   const mn = clean(s?.middle_name);
+
   const built = `${ln}${ln && fn ? ", " : ""}${fn}${mn ? ` ${mn}` : ""}`
     .replace(/\s+/g, " ")
     .trim();
+
   return built || clean(s?.fullname) || "-";
 };
 
@@ -40,8 +43,10 @@ export default function SuspensionOrder() {
     }
   }, []);
 
-  const role = String(user?.role || "").trim().toLowerCase();
+  const role = norm(user?.role);
+
   const isAdmin = role === "admin";
+  const isIt = role === "it";
   const isHr = role === "hr";
   const isAccounting = role === "accounting";
   const isTread = role === "tread";
@@ -50,28 +55,40 @@ export default function SuspensionOrder() {
   const isRegionalManager = role === "regional manager";
   const isAssistantVicePresident = role === "assistant vice president";
 
+  /*
+  |--------------------------------------------------------------------------
+  | PERMISSIONS
+  |--------------------------------------------------------------------------
+  | Branch Manager:
+  | - View only
+  | - Only own branch
+  | - Can download approved file only when status is Approved
+  */
+
   const canCreate =
     isAdmin ||
+    isIt ||
     isHr ||
     isAccounting ||
-    isBranchManager ||
     isAreaManager ||
     isAssistantVicePresident;
 
   const canEditDelete =
     isAdmin ||
+    isIt ||
     isHr ||
     isAccounting ||
-    isBranchManager ||
     isAreaManager ||
     isAssistantVicePresident;
 
   const canApproveStage = (order) => {
-    const stage = String(order?.approval_stage || "").toLowerCase();
+    const stage = norm(order?.approval_stage);
+
     if (isAreaManager && stage === "area manager") return true;
     if (isRegionalManager && stage === "regional manager") return true;
     if (isAssistantVicePresident && stage === "assistant vice president") return true;
-    if ((isAdmin || isHr || isAccounting) && stage === "admin") return true;
+    if ((isAdmin || isIt || isHr || isAccounting) && stage === "admin") return true;
+
     return false;
   };
 
@@ -81,28 +98,36 @@ export default function SuspensionOrder() {
     isRegionalManager ||
     isAssistantVicePresident ||
     isAdmin ||
+    isIt ||
     isHr ||
     isAccounting;
 
-  const canUploadApprovedFile = isAdmin || isHr || isAccounting;
+  const canUploadApprovedFile = isAdmin || isIt || isHr || isAccounting;
 
   const canDownloadApprovedFile = (order) => {
-    if (isAdmin || isHr || isAccounting) return true;
+    const approved = norm(order?.status) === "approved";
+
+    if (isAdmin || isIt || isHr || isAccounting) return true;
     if (isRegionalManager || isAssistantVicePresident) return true;
-    if (isAreaManager && String(order?.status || "").toLowerCase() === "approved") return true;
+    if (isAreaManager && approved) return true;
+    if (isBranchManager && approved) return true;
+
     return false;
   };
 
   const stageLabel = (o) => {
-    const status = String(o?.status || "").trim();
+    const status = clean(o?.status);
+
     if (status === "Approved") return "Approved";
     if (status === "Rejected") return "Rejected";
 
-    const stage = String(o?.approval_stage || "").toLowerCase();
+    const stage = norm(o?.approval_stage);
+
     if (stage === "area manager") return "Pending Area Manager";
     if (stage === "regional manager") return "Pending Regional Manager";
     if (stage === "assistant vice president") return "Pending Assistant Vice President";
     if (stage === "admin") return "Pending Admin/HR/Accounting";
+
     return status || "Pending";
   };
 
@@ -150,33 +175,120 @@ export default function SuspensionOrder() {
   const [form, setForm] = useState(emptyForm);
   const [attachFile, setAttachFile] = useState(null);
 
+  const branchMatchesUser = (staffRow) => {
+    const userBranch = norm(user?.branch_id);
+
+    if (!userBranch || !staffRow) return false;
+
+    const branchValues = [
+      staffRow.branch_id,
+      staffRow.branch_code,
+      staffRow.code,
+      staffRow.branch_name,
+      staffRow.branch,
+    ].map(norm);
+
+    return branchValues.includes(userBranch);
+  };
+
+  const getStaffForOrder = (order) => {
+    return staff.find(
+      (s) =>
+        String(s.id) === String(order.employee_id) ||
+        String(s.employee_no) === String(order.employee_no)
+    );
+  };
+
+  const visibleOrders = useMemo(() => {
+    if (
+      isAdmin ||
+      isIt ||
+      isHr ||
+      isAccounting ||
+      isTread ||
+      isRegionalManager ||
+      isAssistantVicePresident
+    ) {
+      return orders;
+    }
+
+    if (isBranchManager) {
+      return orders.filter((order) => {
+        const staffRow = getStaffForOrder(order);
+        return branchMatchesUser(staffRow);
+      });
+    }
+
+    if (isAreaManager) {
+      const userArea = norm(user?.area);
+
+      return orders.filter((order) => {
+        const staffRow = getStaffForOrder(order);
+        return norm(staffRow?.area || order?.area) === userArea;
+      });
+    }
+
+    return [];
+  }, [
+    orders,
+    staff,
+    user,
+    isAdmin,
+    isIt,
+    isHr,
+    isAccounting,
+    isTread,
+    isBranchManager,
+    isAreaManager,
+    isRegionalManager,
+    isAssistantVicePresident,
+  ]);
+
   const filteredStaff = useMemo(() => {
-    const q = employeeSearch.toLowerCase();
+    let scopedStaff = staff;
 
-    if (!q) return staff.slice(0, 20);
+    if (isBranchManager) {
+      scopedStaff = staff.filter((s) => branchMatchesUser(s));
+    }
 
-    return staff.filter((s) => {
-      const haystack = [
-        s.id,
-        s.employee_no,
-        s.fullname,
-        s.first_name,
-        s.middle_name,
-        s.last_name,
-        displayNameParts(s),
-        s.position,
-      ]
-        .map((x) => clean(x).toLowerCase())
-        .join(" ");
+    if (isAreaManager) {
+      scopedStaff = staff.filter((s) => norm(s.area) === norm(user?.area));
+    }
 
-      return haystack.includes(q);
-    });
-  }, [employeeSearch, staff]);
+    const q = norm(employeeSearch);
+
+    if (!q) return scopedStaff.slice(0, 20);
+
+    return scopedStaff
+      .filter((s) => {
+        const haystack = [
+          s.id,
+          s.employee_no,
+          s.fullname,
+          s.first_name,
+          s.middle_name,
+          s.last_name,
+          displayNameParts(s),
+          s.position,
+          s.branch_id,
+          s.branch,
+          s.branch_name,
+          s.area,
+        ]
+          .map((x) => norm(x))
+          .join(" ");
+
+        return haystack.includes(q);
+      })
+      .slice(0, 20);
+  }, [employeeSearch, staff, user, isBranchManager, isAreaManager]);
 
   const badgeClass = (status) => {
-    const s = String(status || "Pending").toLowerCase();
+    const s = norm(status || "Pending");
+
     if (s === "approved") return "po-badge po-approved";
     if (s === "rejected") return "po-badge po-rejected";
+
     return "po-badge po-pending";
   };
 
@@ -226,6 +338,7 @@ export default function SuspensionOrder() {
   const loadData = async () => {
     setLoading(true);
     setErr("");
+
     try {
       const [oRes, sRes] = await Promise.all([
         api.get("/suspension-orders"),
@@ -270,6 +383,8 @@ export default function SuspensionOrder() {
   }, [showModal]);
 
   const openCreate = () => {
+    if (!canCreate) return;
+
     setErr("");
     setEditingOrder(null);
     setForm(emptyForm);
@@ -280,6 +395,8 @@ export default function SuspensionOrder() {
   };
 
   const openEdit = (order) => {
+    if (!canEditDelete) return;
+
     setErr("");
     setEditingOrder(order);
     setForm(hydrateFormFromOrder(order));
@@ -319,11 +436,13 @@ export default function SuspensionOrder() {
         `${emp.id} — ${displayNameParts(emp)}${emp.employee_no ? ` (${emp.employee_no})` : ""}`
       );
     }
+
     setShowEmployeeDropdown(false);
   };
 
   const submitCreateOrUpdate = async (e) => {
     e.preventDefault();
+
     if (!canCreate || saving) return;
 
     setErr("");
@@ -335,12 +454,14 @@ export default function SuspensionOrder() {
     if (!clean(form.reason)) return setErr("Reason required.");
 
     const days = toNum(form.days_of_suspension);
+
     if (days <= 0) return setErr("Days of suspension must be greater than 0.");
 
     setSaving(true);
 
     try {
       const formData = new FormData();
+
       formData.append("employee_id", Number(form.employee_id));
       formData.append("employee_name", clean(form.employee_name));
       formData.append("suspension_type", clean(form.suspension_type));
@@ -399,6 +520,7 @@ export default function SuspensionOrder() {
 
   const openReject = (o) => {
     if (!canRejectStage(o)) return;
+
     setRejecting(o);
     setRejectReason("");
   };
@@ -411,25 +533,29 @@ export default function SuspensionOrder() {
 
   const submitReject = async (e) => {
     e.preventDefault();
+
     if (!rejecting) return;
     if (!clean(rejectReason)) return setErr("Rejection reason required.");
 
     setRejectSaving(true);
+
     try {
       await api.put(`/suspension-orders/${rejecting.id}/reject`, {
         reason: rejectReason,
       });
+
       closeReject();
       await loadData();
-    } catch (e) {
-      setErr(e?.response?.data?.message || "Failed to reject.");
+    } catch (e2) {
+      setErr(e2?.response?.data?.message || "Failed to reject.");
     } finally {
       setRejectSaving(false);
     }
   };
 
   const deleteOrder = async (o) => {
-    const approved = String(o.status || "").toLowerCase() === "approved";
+    const approved = norm(o.status) === "approved";
+
     if (!canEditDelete || approved) return;
     if (!window.confirm("Delete this suspension order?")) return;
 
@@ -449,11 +575,14 @@ export default function SuspensionOrder() {
 
       const url = window.URL.createObjectURL(new Blob([res.data]));
       const a = document.createElement("a");
+
       a.href = url;
       a.download = fallbackName || `suspension-${orderId}-${type}`;
+
       document.body.appendChild(a);
       a.click();
       a.remove();
+
       window.URL.revokeObjectURL(url);
     } catch (e) {
       alert(e?.response?.data?.message || "Failed to download file.");
@@ -508,6 +637,13 @@ export default function SuspensionOrder() {
         </div>
       </div>
 
+      {isBranchManager && (
+        <div className="po-card" style={{ marginBottom: 14, padding: 14 }}>
+          <strong>Branch Manager View:</strong> Showing suspension orders only for your branch.
+          Approved files are downloadable only after the order is approved.
+        </div>
+      )}
+
       {err && <div style={{ color: "#ef4444", fontWeight: 900 }}>{err}</div>}
 
       <div className="po-card">
@@ -532,15 +668,19 @@ export default function SuspensionOrder() {
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={11} className="po-empty">Loading...</td>
+                  <td colSpan={11} className="po-empty">
+                    Loading...
+                  </td>
                 </tr>
-              ) : orders.length === 0 ? (
+              ) : visibleOrders.length === 0 ? (
                 <tr>
-                  <td colSpan={11} className="po-empty">No suspension orders found.</td>
+                  <td colSpan={11} className="po-empty">
+                    No suspension orders found.
+                  </td>
                 </tr>
               ) : (
-                orders.map((o) => {
-                  const approved = String(o.status || "").toLowerCase() === "approved";
+                visibleOrders.map((o) => {
+                  const approved = norm(o.status) === "approved";
 
                   return (
                     <tr key={o.id}>
@@ -551,10 +691,13 @@ export default function SuspensionOrder() {
                       <td>{o.days_of_suspension ?? "-"}</td>
                       <td>{money(o.total_deduction)}</td>
                       <td>{o.reason}</td>
+
                       <td>
                         <span className={badgeClass(o.status)}>{o.status || "Pending"}</span>
                       </td>
+
                       <td>{stageLabel(o)}</td>
+
                       <td>
                         <div className="po-row-actions" style={{ flexWrap: "wrap" }}>
                           {o.attachment_path && canDownloadRequestFile ? (
@@ -574,7 +717,11 @@ export default function SuspensionOrder() {
                               className="po-mini-btn"
                               type="button"
                               onClick={() =>
-                                downloadFile(o.id, "approved", o.approved_attachment_name || "")
+                                downloadFile(
+                                  o.id,
+                                  "approved",
+                                  o.approved_attachment_name || ""
+                                )
                               }
                             >
                               Download Approved
@@ -593,8 +740,15 @@ export default function SuspensionOrder() {
                               />
                             </label>
                           ) : null}
+
+                          {!o.attachment_path &&
+                          !o.approved_attachment_path &&
+                          !canUploadApprovedFile ? (
+                            <span style={{ opacity: 0.7 }}>-</span>
+                          ) : null}
                         </div>
                       </td>
+
                       <td>
                         <div className="po-row-actions">
                           {canEditDelete && (
@@ -642,7 +796,7 @@ export default function SuspensionOrder() {
                               </button>
                             </>
                           ) : !canEditDelete ? (
-                            <span style={{ opacity: 0.7 }}>-</span>
+                            <span style={{ opacity: 0.7 }}>View only</span>
                           ) : null}
                         </div>
                       </td>
@@ -667,7 +821,10 @@ export default function SuspensionOrder() {
               <h3 className="po-modal-title">
                 {editingOrder ? "Edit Suspension" : "Create Suspension"}
               </h3>
-              <button className="po-x" onClick={closeModal} type="button">✕</button>
+
+              <button className="po-x" onClick={closeModal} type="button">
+                ✕
+              </button>
             </div>
 
             <form className="po-form" onSubmit={submitCreateOrUpdate}>
@@ -682,6 +839,7 @@ export default function SuspensionOrder() {
                     onChange={(e) => {
                       setEmployeeSearch(e.target.value);
                       setShowEmployeeDropdown(true);
+
                       setForm((p) =>
                         computeTotals({
                           ...p,
@@ -734,7 +892,8 @@ export default function SuspensionOrder() {
                               cursor: "pointer",
                             }}
                           >
-                            {s.id} — {displayNameParts(s)} {s.employee_no ? `(${s.employee_no})` : ""}
+                            {s.id} — {displayNameParts(s)}{" "}
+                            {s.employee_no ? `(${s.employee_no})` : ""}
                           </button>
                         ))
                       )}
@@ -907,8 +1066,15 @@ export default function SuspensionOrder() {
                 <button className="po-btn po-btn-outline" type="button" onClick={closeModal}>
                   Cancel
                 </button>
+
                 <button className="po-btn po-btn-primary" type="submit" disabled={saving}>
-                  {saving ? (editingOrder ? "Updating..." : "Saving...") : editingOrder ? "Update" : "Create"}
+                  {saving
+                    ? editingOrder
+                      ? "Updating..."
+                      : "Saving..."
+                    : editingOrder
+                    ? "Update"
+                    : "Create"}
                 </button>
               </div>
             </form>
@@ -926,7 +1092,10 @@ export default function SuspensionOrder() {
           <div className="po-modal po-modal-sm" onMouseDown={(e) => e.stopPropagation()}>
             <div className="po-modal-head">
               <h3 className="po-modal-title">Reject Suspension</h3>
-              <button className="po-x" onClick={closeReject} type="button">✕</button>
+
+              <button className="po-x" onClick={closeReject} type="button">
+                ✕
+              </button>
             </div>
 
             <form className="po-form" onSubmit={submitReject}>
@@ -945,6 +1114,7 @@ export default function SuspensionOrder() {
                 <button className="po-btn po-btn-outline" type="button" onClick={closeReject}>
                   Cancel
                 </button>
+
                 <button className="po-btn po-reject" type="submit" disabled={rejectSaving}>
                   {rejectSaving ? "Rejecting..." : "Reject"}
                 </button>
