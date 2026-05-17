@@ -62,6 +62,7 @@ const modules = [
   "regularization_order",
   "staff_accounts_payable",
   "board_resolution",
+  "staff_report",
 
   "area_configuration",
   "consolidation",

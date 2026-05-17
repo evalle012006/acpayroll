@@ -55,16 +55,6 @@ export default function SuspensionOrder() {
   const isRegionalManager = role === "regional manager";
   const isAssistantVicePresident = role === "assistant vice president";
 
-  /*
-  |--------------------------------------------------------------------------
-  | PERMISSIONS
-  |--------------------------------------------------------------------------
-  | Branch Manager:
-  | - View only
-  | - Only own branch
-  | - Can download approved file only when status is Approved
-  */
-
   const canCreate =
     isAdmin ||
     isIt ||
@@ -139,8 +129,13 @@ export default function SuspensionOrder() {
   const [err, setErr] = useState("");
   const [uploadingApproved, setUploadingApproved] = useState({});
 
+  const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
+
   const [showModal, setShowModal] = useState(false);
   const [editingOrder, setEditingOrder] = useState(null);
+  const [viewOrder, setViewOrder] = useState(null);
 
   const [rejecting, setRejecting] = useState(null);
   const [rejectReason, setRejectReason] = useState("");
@@ -243,6 +238,51 @@ export default function SuspensionOrder() {
     isRegionalManager,
     isAssistantVicePresident,
   ]);
+
+  const filteredOrders = useMemo(() => {
+    const q = norm(search);
+
+    if (!q) return visibleOrders;
+
+    return visibleOrders.filter((o) => {
+      const haystack = [
+        o.id,
+        o.employee_id,
+        o.employee_no,
+        o.employee_name,
+        o.suspension_type,
+        o.start_date,
+        o.suspension_start,
+        o.end_date,
+        o.suspension_end,
+        o.days_of_suspension,
+        o.total_deduction,
+        o.reason,
+        o.status,
+        o.approval_stage,
+        stageLabel(o),
+      ]
+        .map((x) => norm(x))
+        .join(" ");
+
+      return haystack.includes(q);
+    });
+  }, [visibleOrders, search]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredOrders.length / pageSize));
+
+  const pagedOrders = useMemo(() => {
+    const start = (page - 1) * pageSize;
+    return filteredOrders.slice(start, start + pageSize);
+  }, [filteredOrders, page, pageSize]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [search, pageSize]);
+
+  useEffect(() => {
+    if (page > totalPages) setPage(totalPages);
+  }, [page, totalPages]);
 
   const filteredStaff = useMemo(() => {
     let scopedStaff = staff;
@@ -359,7 +399,9 @@ export default function SuspensionOrder() {
   }, []);
 
   useEffect(() => {
-    if (!showModal) return;
+    const modalOpen = showModal || viewOrder || rejecting;
+
+    if (!modalOpen) return;
 
     const onMouseDown = (e) => {
       if (employeeBoxRef.current && !employeeBoxRef.current.contains(e.target)) {
@@ -370,6 +412,8 @@ export default function SuspensionOrder() {
     const onKeyDown = (e) => {
       if (e.key === "Escape") {
         setShowEmployeeDropdown(false);
+        setViewOrder(null);
+        closeReject();
       }
     };
 
@@ -380,7 +424,7 @@ export default function SuspensionOrder() {
       document.removeEventListener("mousedown", onMouseDown);
       document.removeEventListener("keydown", onKeyDown);
     };
-  }, [showModal]);
+  }, [showModal, viewOrder, rejecting]);
 
   const openCreate = () => {
     if (!canCreate) return;
@@ -646,6 +690,31 @@ export default function SuspensionOrder() {
 
       {err && <div style={{ color: "#ef4444", fontWeight: 900 }}>{err}</div>}
 
+      <div className="po-card po-toolbar">
+        <div className="po-toolbar-left">
+          <input
+            className="po-search-input"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search employee, type, status, stage..."
+          />
+
+          <select
+            className="po-page-size"
+            value={pageSize}
+            onChange={(e) => setPageSize(Number(e.target.value))}
+          >
+            <option value={25}>25 rows</option>
+            <option value={50}>50 rows</option>
+            <option value={75}>75 rows</option>
+            <option value={100}>100 rows</option>
+          </select>
+
+          <span className="po-result-pill">Results: {filteredOrders.length}</span>
+          <span className="po-result-pill">Showing: {pagedOrders.length}</span>
+        </div>
+      </div>
+
       <div className="po-card">
         <div className="po-table-wrap">
           <table className="po-table">
@@ -657,7 +726,6 @@ export default function SuspensionOrder() {
                 <th>End</th>
                 <th>Days</th>
                 <th>Total Deduction</th>
-                <th>Reason</th>
                 <th>Status</th>
                 <th>Stage</th>
                 <th>Files</th>
@@ -668,18 +736,18 @@ export default function SuspensionOrder() {
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={11} className="po-empty">
+                  <td colSpan={10} className="po-empty">
                     Loading...
                   </td>
                 </tr>
-              ) : visibleOrders.length === 0 ? (
+              ) : filteredOrders.length === 0 ? (
                 <tr>
-                  <td colSpan={11} className="po-empty">
+                  <td colSpan={10} className="po-empty">
                     No suspension orders found.
                   </td>
                 </tr>
               ) : (
-                visibleOrders.map((o) => {
+                pagedOrders.map((o) => {
                   const approved = norm(o.status) === "approved";
 
                   return (
@@ -690,7 +758,6 @@ export default function SuspensionOrder() {
                       <td>{toDate10(o.end_date || o.suspension_end)}</td>
                       <td>{o.days_of_suspension ?? "-"}</td>
                       <td>{money(o.total_deduction)}</td>
-                      <td>{o.reason}</td>
 
                       <td>
                         <span className={badgeClass(o.status)}>{o.status || "Pending"}</span>
@@ -699,7 +766,7 @@ export default function SuspensionOrder() {
                       <td>{stageLabel(o)}</td>
 
                       <td>
-                        <div className="po-row-actions" style={{ flexWrap: "wrap" }}>
+                        <div className="po-file-actions">
                           {o.attachment_path && canDownloadRequestFile ? (
                             <button
                               className="po-mini-btn"
@@ -750,7 +817,15 @@ export default function SuspensionOrder() {
                       </td>
 
                       <td>
-                        <div className="po-row-actions">
+                        <div className="po-action-buttons">
+                          <button
+                            className="po-mini-btn po-view-btn"
+                            type="button"
+                            onClick={() => setViewOrder(o)}
+                          >
+                            View
+                          </button>
+
                           {canEditDelete && (
                             <>
                               <button
@@ -806,6 +881,32 @@ export default function SuspensionOrder() {
               )}
             </tbody>
           </table>
+        </div>
+      </div>
+
+      <div className="po-card po-pager">
+        <div className="po-pager-inner">
+          <button
+            className="po-page-btn"
+            type="button"
+            disabled={page <= 1}
+            onClick={() => setPage((p) => Math.max(1, p - 1))}
+          >
+            Previous
+          </button>
+
+          <span className="po-page-info">
+            Page {page} of {totalPages}
+          </span>
+
+          <button
+            className="po-page-btn"
+            type="button"
+            disabled={page >= totalPages}
+            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+          >
+            Next
+          </button>
         </div>
       </div>
 
@@ -1078,6 +1179,96 @@ export default function SuspensionOrder() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {viewOrder && (
+        <div
+          className="po-modal-overlay"
+          onMouseDown={(e) =>
+            e.target.classList.contains("po-modal-overlay") && setViewOrder(null)
+          }
+        >
+          <div className="po-modal" onMouseDown={(e) => e.stopPropagation()}>
+            <div className="po-modal-head">
+              <div>
+                <h3 className="po-modal-title">Suspension Details</h3>
+                <div className="po-modal-sub">
+                  {viewOrder.employee_name || "-"} • {stageLabel(viewOrder)}
+                </div>
+              </div>
+
+              <button className="po-x" type="button" onClick={() => setViewOrder(null)}>
+                ✕
+              </button>
+            </div>
+
+            <div className="po-form">
+              <div className="po-grid">
+                <div className="po-field">
+                  <label>Employee</label>
+                  <input value={viewOrder.employee_name || "-"} readOnly />
+                </div>
+
+                <div className="po-field">
+                  <label>Type</label>
+                  <input value={viewOrder.suspension_type || "-"} readOnly />
+                </div>
+
+                <div className="po-field">
+                  <label>Start Date</label>
+                  <input value={toDate10(viewOrder.start_date || viewOrder.suspension_start) || "-"} readOnly />
+                </div>
+
+                <div className="po-field">
+                  <label>End Date</label>
+                  <input value={toDate10(viewOrder.end_date || viewOrder.suspension_end) || "-"} readOnly />
+                </div>
+
+                <div className="po-field">
+                  <label>Days</label>
+                  <input value={viewOrder.days_of_suspension ?? "-"} readOnly />
+                </div>
+
+                <div className="po-field">
+                  <label>Total Deduction</label>
+                  <input value={money(viewOrder.total_deduction)} readOnly />
+                </div>
+
+                <div className="po-field">
+                  <label>Status</label>
+                  <input value={viewOrder.status || "Pending"} readOnly />
+                </div>
+
+                <div className="po-field">
+                  <label>Stage</label>
+                  <input value={stageLabel(viewOrder)} readOnly />
+                </div>
+
+                <div className="po-field full">
+                  <label>Reason</label>
+                  <textarea value={viewOrder.reason || "-"} readOnly />
+                </div>
+
+                {viewOrder.rejection_reason ? (
+                  <div className="po-field full">
+                    <label>Rejection Reason</label>
+                    <textarea value={viewOrder.rejection_reason} readOnly />
+                  </div>
+                ) : null}
+              </div>
+
+              <div className="po-modal-actions">
+                <button
+                  className="po-btn po-btn-outline"
+                  type="button"
+                  onClick={() => setViewOrder(null)}
+                >
+                  Close
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

@@ -1,0 +1,10 @@
+BEGIN;
+
+ALTER TABLE public.promotion_orders
+ADD COLUMN IF NOT EXISTS hr_status VARCHAR(50) DEFAULT 'Pending',
+ADD COLUMN IF NOT EXISTS tread_approved_by INTEGER,
+ADD COLUMN IF NOT EXISTS tread_approved_at TIMESTAMP,
+ADD COLUMN IF NOT EXISTS hr_approved_by INTEGER,
+ADD COLUMN IF NOT EXISTS hr_approved_at TIMESTAMP;
+
+COMMIT;

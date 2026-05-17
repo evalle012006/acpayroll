@@ -990,7 +990,7 @@ export default function LeaveTransactions() {
                 <th>End</th>
                 <th>Days</th>
                 <th>Status</th>
-                <th style={{ width: 460 }}>
+                <th style={{ width: 150 }}>
                   Action
                 </th>
               </tr>

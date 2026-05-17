@@ -42,6 +42,7 @@ const reimbursementRequestsRoutes = require("./routes/reimbursementRequestsRoute
 const cbuWithdrawRoutes = require("./routes/cbuWithdrawRoutes");
 const boardResolutionRoutes = require("./routes/boardResolutionRoutes");
 const rolePermissionsRoutes = require("./routes/rolePermissionsRoutes");
+const awolReportsRoutes = require("./routes/awolReportsRoutes");
 
 const app = express();
 
@@ -98,6 +99,7 @@ app.use("/api/reimbursement-requests", reimbursementRequestsRoutes);
 app.use("/api", cbuWithdrawRoutes);
 app.use("/api", boardResolutionRoutes);
 app.use("/api", rolePermissionsRoutes);
+app.use("/api", awolReportsRoutes);
 
 app.get("/test", (_req, res) => {
   res.send("Backend is working!");

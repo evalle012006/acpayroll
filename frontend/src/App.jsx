@@ -46,6 +46,7 @@ import ResignationRequests from "./pages/ResignationRequests";
 import StaffAccountsPayable from "./pages/StaffAccountsPayable";
 import BoardResolutionRequests from "./pages/BoardResolutionRequests";
 import Permissions from "./pages/Permissions";
+import StaffReport from "./pages/StaffReport";
 
 const readUser = () => {
   try {
@@ -173,9 +174,10 @@ function AppShell() {
       <Route path="/system-update/details-compensation" element={<ProtectedRoute allowedRoles={["admin", "it", "accounting", "hr","vice president", "senior vice president", "president"]}><ProtectedLayout><DetailsCompensation /></ProtectedLayout></ProtectedRoute>}/>
       <Route path="/opening-loan-balances" element={ <ProtectedRoute allowedRoles={["admin", "it", "hr", "accounting", "branch manager", "area manager", "regional manager", "assistant vice president", "vice president", "president", "tread"]}><ProtectedLayout><OpeningLoanBalances /></ProtectedLayout></ProtectedRoute>}/>
       <Route path="/transactions/resignation" element={ <ProtectedRoute allowedRoles={["admin", "it", "hr", "accounting", "branch manager", "area manager", "regional manager", "assistant vice president", "senior vice president", "vice president", "president", "tread"]}><ProtectedLayout><ResignationRequests /></ProtectedLayout></ProtectedRoute>}/>
-      <Route path="/transactions/staff-accounts-payable" element={<ProtectedRoute allowedRoles={["admin", "it", "accounting", "hr", "branch manager", "area manager", "regional manager", "assistant vice president", "vice president", "senior vice president", "president", "tread"]}><ProtectedLayout><StaffAccountsPayable /></ProtectedLayout></ProtectedRoute>} />
+      <Route path="/transactions/staff-accounts-payable" element={<ProtectedRoute allowedRoles={["admin", "it", "vice president", "accounting", "hr", "branch manager", "area manager", "regional manager", "assistant vice president", "vice president", "senior vice president", "president", "tread"]}><ProtectedLayout><StaffAccountsPayable /></ProtectedLayout></ProtectedRoute>} />
       <Route path="/transactions/board-resolution" element={ <ProtectedRoute allowedRoles={["admin", "it", "hr", "accounting", "tread", "regional manager", "assistant vice president", "vice president", "senior vice president", "president", ]}><ProtectedLayout><BoardResolutionRequests /></ProtectedLayout></ProtectedRoute>}/>
       <Route path="/permissions" element={ <ProtectedRoute allowedRoles={["admin", "it", "hr", "accounting", "tread", "regional manager", "assistant vice president", "vice president", "senior vice president", "president", ]}><ProtectedLayout><Permissions /></ProtectedLayout></ProtectedRoute>}/>
+      <Route path="/transactions/staff-report" element={ <ProtectedRoute allowedRoles={[ "admin", "it", "hr", "accounting", "branch manager", "area manager", "regional manager", "assistant vice president", "vice president", "senior vice president", "president", "tread",]}><ProtectedLayout><StaffReport /></ProtectedLayout></ProtectedRoute>}/>
       <Route path="*" element={<Navigate to={homeRedirect()} replace />} />
     </Routes>
   );

@@ -489,3 +489,55 @@
   background: #ffffff;
   color: #0f172a;
 }
+
+.table th:last-child,
+.table td:last-child {
+  width: 150px;
+  min-width: 150px;
+  text-align: center;
+}
+
+.row-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 130px;
+  margin: 0 auto;
+}
+
+.row-actions .btn-secondary,
+.row-actions .btn-success,
+.row-actions .btn-danger,
+.row-actions label.btn-secondary {
+  width: 120px;
+  height: 34px;
+  padding: 0 10px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 900;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.row-actions .btn-secondary {
+  background: #0f172a;
+  color: #ffffff;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+}
+
+.row-actions label.btn-secondary {
+  border-style: dashed;
+}
+
+.row-actions .btn-success {
+  background: #10b981;
+  color: #ffffff;
+}
+
+.row-actions .btn-danger {
+  background: #ef4444;
+  color: #ffffff;
+}

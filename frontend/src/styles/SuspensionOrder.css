@@ -120,7 +120,7 @@
   width: 100%;
   border-collapse: separate;
   border-spacing: 0;
-  min-width: 1180px;
+  min-width: 1450px;
 }
 
 .po-table th {
@@ -131,14 +131,6 @@
   white-space: nowrap;
   font-size: 13px;
   font-weight: 800;
-}
-
-.po-table thead th:first-child {
-  border-top-left-radius: 0;
-}
-
-.po-table thead th:last-child {
-  border-top-right-radius: 0;
 }
 
 .po-table td {
@@ -158,6 +150,12 @@
   border-bottom: none;
 }
 
+.po-table th:last-child,
+.po-table td:last-child {
+  width: 310px;
+  min-width: 310px;
+}
+
 .po-empty {
   text-align: center;
   padding: 22px;
@@ -166,7 +164,15 @@
 }
 
 .mono {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-family:
+    ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    Monaco,
+    Consolas,
+    "Liberation Mono",
+    "Courier New",
+    monospace;
 }
 
 .td-strong {
@@ -181,12 +187,26 @@
   color: var(--muted);
 }
 
-.po-row-actions {
+.po-file-actions {
   display: flex;
-  gap: 8px;
-  justify-content: flex-start;
+  flex-direction: column;
+  gap: 6px;
+  align-items: flex-start;
+}
+
+.po-file-actions .po-mini-btn {
+  width: 120px;
+  min-width: 120px;
+  padding: 7px 8px;
+  font-size: 11px;
+}
+
+.po-action-buttons {
+  display: flex;
+  gap: 6px;
   align-items: center;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  white-space: nowrap;
 }
 
 .po-mini-btn {
@@ -199,7 +219,6 @@
   background: var(--panel-2);
   color: var(--text);
   transition: 0.15s ease;
-  min-width: 64px;
   text-align: center;
 }
 
@@ -212,6 +231,10 @@
   opacity: 0.45;
   cursor: not-allowed;
   transform: none;
+}
+
+.po-view-btn {
+  min-width: 56px;
 }
 
 .po-approve {
@@ -369,18 +392,6 @@
   box-sizing: border-box;
 }
 
-.po-field input::placeholder,
-.po-field textarea::placeholder {
-  color: var(--muted);
-}
-
-.po-field input:focus,
-.po-field textarea:focus,
-.po-field select:focus {
-  border-color: rgba(79, 70, 229, 0.55);
-  box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.12);
-}
-
 .po-field textarea {
   min-height: 96px;
   resize: vertical;
@@ -393,6 +404,22 @@
   padding-top: 14px;
   border-top: 1px solid var(--border);
   margin-top: 14px;
+}
+
+.po-icon-btn {
+  width: 34px;
+  height: 34px;
+  min-width: 34px;
+  padding: 0;
+  border-radius: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 34px;
+}
+
+.po-icon-btn svg {
+  font-size: 14px;
 }
 
 [data-theme="dark"] .po-card {
@@ -437,7 +464,6 @@
   }
 
   .po-mini-btn {
-    min-width: 58px;
     padding: 7px 10px;
   }
 
@@ -448,18 +474,4 @@
   .po-form {
     padding: 14px;
   }
-}
-
-.po-icon-btn {
-  width: 36px;
-  height: 36px;
-  min-width: 36px;
-  padding: 0;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.po-icon-btn svg {
-  font-size: 14px;
 }

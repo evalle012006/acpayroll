@@ -25,18 +25,30 @@ const fmtMoney = (v) =>
 
 const fmtDate = (d) => (d ? String(d).slice(0, 10) : "-");
 
+const isOperationDepartment = (department) =>
+  ["operation", "operations", "operation department", "operations department"].includes(
+    norm(department)
+  );
+
+const isHrDepartment = (role, department) =>
+  role === "hr" ||
+  department === "hr" ||
+  department === "hr department" ||
+  department === "human resources" ||
+  department === "human resources department";
+
 export default function SAPApprovalTab() {
   const user = useMemo(() => readUser(), []);
   const role = norm(user?.role);
+  const department = norm(user?.department);
 
-  const isAdmin = role === "admin";
-  const isPresident = role === "president";
-  const isHr = role === "hr";
-  const isAccounting = role === "accounting";
+  const isAdmin = role === "admin" || role === "it";
+  const isOperationVP = role === "vice president" && isOperationDepartment(department);
+  const isHr = isHrDepartment(role, department);
 
-  const canViewSAP = isAdmin || isPresident || isHr || isAccounting;
-  const canCreateSAP = isAdmin || isPresident || isHr || isAccounting;
-  const canApproveSAP = isAdmin || isPresident || isHr || isAccounting;
+  const canViewSAP = isAdmin || isOperationVP || isHr;
+  const canCreateSAP = isAdmin || isOperationVP || isHr;
+  const canApproveSAP = isAdmin || isHr;
 
   const [sapRows, setSapRows] = useState([]);
   const [staffList, setStaffList] = useState([]);
@@ -58,6 +70,9 @@ export default function SAPApprovalTab() {
   const [showSapEmployeeDropdown, setShowSapEmployeeDropdown] = useState(false);
   const sapEmployeeBoxRef = useRef(null);
 
+  const [sapAttachment, setSapAttachment] = useState(null);
+  const [sapApprovedFiles, setSapApprovedFiles] = useState({});
+
   const [sapForm, setSapForm] = useState({
     employee_id: "",
     employee_no: "",
@@ -65,6 +80,7 @@ export default function SAPApprovalTab() {
     description: "",
     amount: "",
     term: "",
+    per_month: "",
     balance: "",
   });
 
@@ -144,9 +160,9 @@ export default function SAPApprovalTab() {
 
     const built =
       s.fullname ||
-      `${s.last_name || ""}${s.last_name && s.first_name ? ", " : ""}${s.first_name || ""}${
-        s.middle_name ? ` ${s.middle_name}` : ""
-      }`
+      `${s.last_name || ""}${s.last_name && s.first_name ? ", " : ""}${
+        s.first_name || ""
+      }${s.middle_name ? ` ${s.middle_name}` : ""}`
         .replace(/\s+/g, " ")
         .trim();
 
@@ -176,6 +192,8 @@ export default function SAPApprovalTab() {
         s.middle_name,
         display,
         s.position,
+        s.branch_id,
+        s.branch_name,
       ]
         .map((x) => toStr(x))
         .join(" ")
@@ -236,9 +254,7 @@ export default function SAPApprovalTab() {
     setPage(1);
   }, [search, pageSize]);
 
-  const handleSearch = () => {
-    setSearch(searchInput);
-  };
+  const handleSearch = () => setSearch(searchInput);
 
   const handleClearSearch = () => {
     setSearchInput("");
@@ -251,12 +267,6 @@ export default function SAPApprovalTab() {
     if (s === "Rejected") return "badge badge-rejected";
     return "badge badge-pending";
   };
-
-  const sapPreview = useMemo(() => {
-    const amount = toNum(sapForm.amount);
-    const term = Math.max(1, toNum(sapForm.term));
-    return { per_month: term ? amount / term : 0 };
-  }, [sapForm.amount, sapForm.term]);
 
   const handleSapEmployeeSelect = (employeeId) => {
     const emp = staffList.find((s) => String(s.id) === String(employeeId));
@@ -283,8 +293,10 @@ export default function SAPApprovalTab() {
       description: "",
       amount: "",
       term: "",
+      per_month: "",
       balance: "",
     });
+    setSapAttachment(null);
     setSapEmployeeSearch("");
     setShowSapEmployeeDropdown(false);
   };
@@ -294,24 +306,34 @@ export default function SAPApprovalTab() {
 
     const amount = toNum(sapForm.amount);
     const term = Math.max(1, toNum(sapForm.term));
-    const per_month = term ? amount / term : 0;
+    const per_month = toNum(sapForm.per_month);
     const balance =
-      sapForm.balance === "" || sapForm.balance == null ? amount : toNum(sapForm.balance);
+      sapForm.balance === "" || sapForm.balance == null
+        ? amount
+        : toNum(sapForm.balance);
 
     try {
       setCreatingSap(true);
 
-      await api.post("/staff-accounts-payable", {
-        employee_no: sapForm.employee_no,
-        staff_name: sapForm.staff_name,
-        description: sapForm.description,
-        amount,
-        term,
-        per_month,
-        balance,
+      const fd = new FormData();
+      fd.append("employee_id", sapForm.employee_id || "");
+      fd.append("employee_no", sapForm.employee_no);
+      fd.append("staff_name", sapForm.staff_name);
+      fd.append("description", sapForm.description);
+      fd.append("amount", amount);
+      fd.append("term", term);
+      fd.append("per_month", per_month);
+      fd.append("balance", balance);
+
+      if (sapAttachment) {
+        fd.append("attachment", sapAttachment);
+      }
+
+      await api.post("/staff-accounts-payable", fd, {
+        headers: { "Content-Type": "multipart/form-data" },
       });
 
-      alert("Staff Accounts Payable added successfully.");
+      alert("SAP request submitted successfully.");
       resetSapForm();
       setShowCreateSAP(false);
       await fetchSap();
@@ -323,33 +345,103 @@ export default function SAPApprovalTab() {
     }
   };
 
-  const updateSapStatus = async (id, status, reason = "") => {
-    if (!id) {
-      alert("SAP record has no valid id.");
+  const approveSap = async (row) => {
+    const file = sapApprovedFiles[row.id];
+
+    if (!file) {
+      alert("HR must upload the latest approved file before approving.");
       return;
     }
 
-    const ok = window.confirm(
-      `Are you sure you want to ${String(status).toLowerCase()} this SAP record?`
-    );
+    const ok = window.confirm("Approve this SAP record and upload latest approved file?");
     if (!ok) return;
 
     try {
-      setProcessingId(`sap-${id}-${status}`);
-      await api.put(`/staff-accounts-payable/${id}`, { status, reason });
-      alert(`SAP ${status.toLowerCase()} successfully.`);
+      setProcessingId(`sap-${row.id}-Approved`);
+
+      const fd = new FormData();
+      fd.append("status", "Approved");
+      fd.append("attachment", file);
+
+      await api.put(`/staff-accounts-payable/${row.id}`, fd, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+
+      setSapApprovedFiles((prev) => {
+        const copy = { ...prev };
+        delete copy[row.id];
+        return copy;
+      });
+
+      alert("SAP approved successfully.");
       await fetchSap();
     } catch (err) {
       if (err?.response?.status === 401) return logout();
       if (err?.response?.status === 403) return alert("Access denied.");
-      alert(err?.response?.data?.message || "Failed to update SAP.");
+      alert(err?.response?.data?.message || "Failed to approve SAP.");
     } finally {
       setProcessingId("");
     }
   };
 
+  const rejectSap = async (row) => {
+    const reason = window.prompt("Reason for rejection?");
+    if (!reason || !String(reason).trim()) {
+      alert("Rejection reason is required.");
+      return;
+    }
+
+    const ok = window.confirm("Reject this SAP record?");
+    if (!ok) return;
+
+    try {
+      setProcessingId(`sap-${row.id}-Rejected`);
+
+      await api.put(`/staff-accounts-payable/${row.id}`, {
+        status: "Rejected",
+        reason: String(reason).trim(),
+      });
+
+      alert("SAP rejected successfully.");
+      await fetchSap();
+    } catch (err) {
+      if (err?.response?.status === 401) return logout();
+      if (err?.response?.status === 403) return alert("Access denied.");
+      alert(err?.response?.data?.message || "Failed to reject SAP.");
+    } finally {
+      setProcessingId("");
+    }
+  };
+
+  const downloadSapFile = async (row, type = "request") => {
+    try {
+      const res = await api.get(`/staff-accounts-payable/${row.id}/download/${type}`, {
+        responseType: "blob",
+      });
+
+      const blob = new Blob([res.data]);
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+
+      const fallback =
+        type === "approved"
+          ? row.approved_attachment_name || `sap-approved-${row.id}`
+          : row.attachment_name || `sap-request-${row.id}`;
+
+      a.href = url;
+      a.download = fallback;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      alert(err?.response?.data?.message || "Failed to download file.");
+    }
+  };
+
   const sapPendingCount = useMemo(
-    () => sapRows.filter((x) => x.status === "Pending").length,
+    () => sapRows.filter((x) => norm(x.status) === "pending").length,
     [sapRows]
   );
 
@@ -357,27 +449,31 @@ export default function SAPApprovalTab() {
 
   return (
     <>
-    <div className="reg-card-head">
-      <div className="reg-topbar-actions">
-        <button type="button" className="reg-btn reg-btn-outline" onClick={fetchSap}>
-          Refresh
-        </button>
-
-        {canCreateSAP && (
-          <button
-            type="button"
-            className="reg-btn reg-btn-primary"
-            onClick={() => setShowCreateSAP(true)}
-          >
-            + Add
+      <div className="reg-card-head">
+        <div className="reg-topbar-actions">
+          <button type="button" className="reg-btn reg-btn-outline" onClick={fetchSap}>
+            Refresh
           </button>
-        )}
+
+          {canCreateSAP && (
+            <button
+              type="button"
+              className="reg-btn reg-btn-primary"
+              onClick={() => setShowCreateSAP(true)}
+            >
+              + Add SAP Request
+            </button>
+          )}
+        </div>
       </div>
-    </div>
+
       <div className="reg-card">
         <div className="reg-card-head">
           <div>
             <div className="reg-card-title">Staff Accounts Payable List</div>
+            <div className="reg-subtitle">
+              HR/VP Operations can create SAP. HR uploads the latest approved file.
+            </div>
             <div className="reg-subtitle">
               Pending: <b>{sapPendingCount}</b> • Results: <b>{filteredRows.length}</b>
             </div>
@@ -419,6 +515,7 @@ export default function SAPApprovalTab() {
                 <th>Per Month</th>
                 <th>Balance</th>
                 <th>Status</th>
+                <th>Files</th>
                 <th>Dates</th>
                 <th>Actions</th>
               </tr>
@@ -427,13 +524,13 @@ export default function SAPApprovalTab() {
             <tbody>
               {loadingSap ? (
                 <tr>
-                  <td colSpan={9} className="reg-empty">
+                  <td colSpan={10} className="reg-empty">
                     Loading...
                   </td>
                 </tr>
               ) : filteredRows.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="reg-empty">
+                  <td colSpan={10} className="reg-empty">
                     No Staff Accounts Payable records found.
                   </td>
                 </tr>
@@ -441,23 +538,54 @@ export default function SAPApprovalTab() {
                 pagedRows.map((x) => (
                   <tr key={x.id ?? `${x.employee_id}-${x.description}`}>
                     <td>{x.employee_no || "-"}</td>
+
                     <td>
                       <strong>{x.staff_name || staffDisplayName(x.employee_id)}</strong>
                       <div style={{ fontSize: 12, opacity: 0.75 }}>
                         Employee ID: {x.employee_id || "-"}
                       </div>
                     </td>
+
                     <td>₱ {fmtMoney(x.amount)}</td>
                     <td>{x.term || "-"}</td>
                     <td>₱ {fmtMoney(x.per_month)}</td>
                     <td>₱ {fmtMoney(x.balance)}</td>
+
                     <td>
                       <span className={badgeClass(x.status)}>{x.status || "Pending"}</span>
                     </td>
+
+                    <td>
+                      <div className="reg-row-actions">
+                        {x.attachment_path ? (
+                          <button
+                            className="reg-mini-btn"
+                            type="button"
+                            onClick={() => downloadSapFile(x, "request")}
+                          >
+                            Request File
+                          </button>
+                        ) : null}
+
+                        {x.approved_attachment_path ? (
+                          <button
+                            className="reg-mini-btn"
+                            type="button"
+                            onClick={() => downloadSapFile(x, "approved")}
+                          >
+                            Approved File
+                          </button>
+                        ) : null}
+
+                        {!x.attachment_path && !x.approved_attachment_path ? "-" : null}
+                      </div>
+                    </td>
+
                     <td style={{ fontSize: 12 }}>
                       <div>Approved: {fmtDate(x.approved_at)}</div>
                       <div>Rejected: {fmtDate(x.rejected_at)}</div>
                     </td>
+
                     <td>
                       <div className="reg-row-actions">
                         <button
@@ -468,29 +596,36 @@ export default function SAPApprovalTab() {
                           View
                         </button>
 
-                        {x.status === "Pending" && canApproveSAP ? (
+                        {norm(x.status) === "pending" && canApproveSAP ? (
                           <>
+                            <label className="reg-mini-btn" style={{ cursor: "pointer" }}>
+                              {sapApprovedFiles[x.id]?.name ? "Change File" : "Upload File"}
+                              <input
+                                type="file"
+                                hidden
+                                onChange={(e) =>
+                                  setSapApprovedFiles((prev) => ({
+                                    ...prev,
+                                    [x.id]: e.target.files?.[0] || null,
+                                  }))
+                                }
+                              />
+                            </label>
+
                             <button
                               className="reg-mini-btn reg-approve"
-                              onClick={() => updateSapStatus(x.id, "Approved")}
+                              onClick={() => approveSap(x)}
                               type="button"
                               disabled={processingId === `sap-${x.id}-Approved`}
                             >
                               {processingId === `sap-${x.id}-Approved`
                                 ? "Approving..."
-                                : "Approve"}
+                                : "Upload + Approve"}
                             </button>
 
                             <button
                               className="reg-mini-btn reg-reject"
-                              onClick={() => {
-                                const reason = window.prompt("Reason for rejection?");
-                                if (!reason || !String(reason).trim()) {
-                                  alert("Rejection reason is required.");
-                                  return;
-                                }
-                                updateSapStatus(x.id, "Rejected", String(reason).trim());
-                              }}
+                              onClick={() => rejectSap(x)}
                               type="button"
                               disabled={processingId === `sap-${x.id}-Rejected`}
                             >
@@ -556,7 +691,9 @@ export default function SAPApprovalTab() {
             <div className="reg-modal-head">
               <div>
                 <h3 className="reg-modal-title">Add Staff Accounts Payable</h3>
-                <p className="reg-subtitle">Creates a payable record for the employee</p>
+                <p className="reg-subtitle">
+                  HR/VP Operations can create SAP. Upload file here if available.
+                </p>
               </div>
 
               <button className="reg-x" type="button" onClick={() => setShowCreateSAP(false)}>
@@ -671,7 +808,25 @@ export default function SAPApprovalTab() {
 
                 <div className="reg-field">
                   <label>Per Month</label>
-                  <input value={`₱ ${sapPreview.per_month.toFixed(2)}`} readOnly />
+                  <input
+                    type="number"
+                    value={sapForm.per_month}
+                    onChange={(e) =>
+                      setSapForm((p) => ({
+                        ...p,
+                        per_month: e.target.value,
+                      }))
+                    }
+                    placeholder="Enter monthly deduction"
+                  />
+                </div>
+
+                <div className="reg-field full">
+                  <label>Attachment</label>
+                  <input
+                    type="file"
+                    onChange={(e) => setSapAttachment(e.target.files?.[0] || null)}
+                  />
                 </div>
               </div>
 
@@ -780,6 +935,35 @@ export default function SAPApprovalTab() {
                 <div className="reg-field full">
                   <label>Description</label>
                   <textarea value={viewSap.description || "-"} readOnly />
+                </div>
+
+                <div className="reg-field full">
+                  <label>Files</label>
+                  <div className="reg-row-actions">
+                    {viewSap.attachment_path ? (
+                      <button
+                        className="reg-mini-btn"
+                        type="button"
+                        onClick={() => downloadSapFile(viewSap, "request")}
+                      >
+                        Download Request File
+                      </button>
+                    ) : null}
+
+                    {viewSap.approved_attachment_path ? (
+                      <button
+                        className="reg-mini-btn"
+                        type="button"
+                        onClick={() => downloadSapFile(viewSap, "approved")}
+                      >
+                        Download Approved File
+                      </button>
+                    ) : null}
+
+                    {!viewSap.attachment_path && !viewSap.approved_attachment_path ? (
+                      <span>-</span>
+                    ) : null}
+                  </div>
                 </div>
 
                 {viewSap.rejection_reason ? (

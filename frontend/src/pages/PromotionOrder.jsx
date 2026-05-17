@@ -26,22 +26,15 @@ const readUser = () => {
 
 const fmtDate = (d) => (d ? String(d).slice(0, 10) : "-");
 
-const OPERATION_DEPTS = ["operation", "operations", "payroll", "operation department"];
-const BACK_OFFICE_DEPTS = [
-  "it",
-  "it department",
-  "accounting",
-  "accounting department",
-  "hr",
-  "hr department",
-  "human resources",
-  "tread",
-  "tread department",
-  "office of the president",
+const OPERATION_DEPTS = [
+  "operation",
+  "operations",
+  "payroll",
+  "operation department",
+  "operations department",
 ];
 
-const isOperationDept = (dept) => OPERATION_DEPTS.includes(norm(dept));
-const isBackOfficeDept = (dept) => BACK_OFFICE_DEPTS.includes(norm(dept));
+const isOperationDepartment = (dept) => OPERATION_DEPTS.includes(norm(dept));
 
 const STAGE_LABELS = {
   "branch manager": "Branch Manager",
@@ -50,7 +43,10 @@ const STAGE_LABELS = {
   "assistant vice president": "Assistant Vice President",
   "vice president": "Vice President",
   "senior vice president": "Senior Vice President",
-  "final upload": "Final File Upload",
+  tread: "TREAD Department",
+  hr: "HR Department",
+  approved: "Approved",
+  rejected: "Rejected",
 };
 
 const getDepartment = (o) =>
@@ -60,20 +56,137 @@ const getDepartment = (o) =>
   o?.employee_department ||
   "";
 
+const normalizePosition = (position) =>
+  norm(position)
+    .replace(/[_-]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+const getOperationStartStage = (oldPosition) => {
+  const pos = normalizePosition(oldPosition);
+
+  if (pos.includes("branch manager")) return "area manager";
+  if (pos.includes("area manager")) return "regional manager";
+  if (pos.includes("regional manager")) return "assistant vice president";
+  if (pos.includes("assistant vice president")) return "vice president";
+  if (pos.includes("vice president")) return "tread";
+
+  return "branch manager";
+};
+
+const getOperationChain = (oldPosition) => {
+  const full = [
+    "branch manager",
+    "area manager",
+    "regional manager",
+    "assistant vice president",
+    "vice president",
+    "tread",
+    "hr",
+  ];
+
+  const start = getOperationStartStage(oldPosition);
+  const idx = full.indexOf(start);
+
+  return idx >= 0 ? full.slice(idx) : full;
+};
+
+const getApprovalChain = (department, oldPosition) => {
+  const dept = norm(department);
+
+  if (isOperationDepartment(dept)) {
+    return getOperationChain(oldPosition);
+  }
+
+  if (dept === "it" || dept === "it department") {
+    return ["assistant vice president", "hr"];
+  }
+
+  if (
+    dept === "tread" ||
+    dept === "tread department" ||
+    dept === "treadt department"
+  ) {
+    return ["assistant vice president", "hr"];
+  }
+
+  if (
+    dept === "hr" ||
+    dept === "hr department" ||
+    dept === "human resources" ||
+    dept === "human resources department" ||
+    dept === "accounting" ||
+    dept === "accounting department"
+  ) {
+    return ["senior vice president"];
+  }
+
+  if (dept === "audit" || dept === "audit department") {
+    return ["senior vice president", "hr"];
+  }
+
+  if (
+    dept === "office of the president" ||
+    dept === "production & logistic" ||
+    dept === "production & logistic department" ||
+    dept === "production and logistic" ||
+    dept === "production and logistic department"
+  ) {
+    return ["hr"];
+  }
+
+  return ["hr"];
+};
+
 const getCurrentStageLabel = (o) => {
+  const status = norm(o?.status);
+  if (status === "approved") return "Approved";
+  if (status === "rejected") return "Rejected";
+
   const stage = norm(o?.approval_stage);
   return STAGE_LABELS[stage] || "-";
 };
+
+const stageStatus = (o, stage) => {
+  const map = {
+    "branch manager": o?.branch_manager_status,
+    "area manager": o?.area_manager_status,
+    "regional manager": o?.regional_manager_status,
+    "assistant vice president": o?.assistant_vice_president_status,
+    "vice president": o?.vice_president_status,
+    "senior vice president": o?.senior_vice_president_status,
+    tread: o?.tread_status,
+    hr: o?.hr_status,
+  };
+
+  return toStr(map[stage] || "Pending");
+};
+
+const renderRecommendationFlow = (o) =>
+  getApprovalChain(getDepartment(o), o?.old_position)
+    .map((s) => `${STAGE_LABELS[s] || s}: ${stageStatus(o, s)}`)
+    .join(" → ");
 
 export default function PromotionOrder() {
   const navigate = useNavigate();
   const user = useMemo(() => readUser(), []);
   const role = norm(user?.role);
+  const department = norm(user?.department);
 
   const isAdmin = role === "admin";
   const isIt = role === "it";
-  const isHr = role === "hr";
+  const isHr =
+    role === "hr" ||
+    department === "hr" ||
+    department === "hr department" ||
+    department === "human resources" ||
+    department === "human resources department";
   const isAccounting = role === "accounting";
+  const isTread =
+    role === "tread" ||
+    department === "tread" ||
+    department === "tread department" ||
+    department === "treadt department";
   const isBranchManager = role === "branch manager";
   const isAreaManager = role === "area manager";
   const isRegionalManager = role === "regional manager";
@@ -98,39 +211,20 @@ export default function PromotionOrder() {
   const canApproveStage = (o) => {
     if (!o || norm(o.status) !== "pending") return false;
 
+    if (isAdmin || isIt) return true;
+
     const stage = norm(o.approval_stage);
 
-    if (stage === "branch manager")
-      return isBranchManager || isAdmin || isIt;
-
-    if (stage === "area manager")
-      return isAreaManager || isAdmin || isIt;
-
-    if (stage === "regional manager")
-      return isRegionalManager || isAdmin || isIt;
-
-    if (stage === "assistant vice president")
-      return isAssistantVicePresident || isAdmin || isIt;
-
-    if (stage === "vice president")
-      return isVicePresident || isAdmin || isIt;
-
-    if (stage === "senior vice president")
-      return isSeniorVicePresident || isAdmin || isIt;
+    if (stage === "branch manager") return isBranchManager;
+    if (stage === "area manager") return isAreaManager;
+    if (stage === "regional manager") return isRegionalManager;
+    if (stage === "assistant vice president") return isAssistantVicePresident;
+    if (stage === "vice president") return isVicePresident;
+    if (stage === "senior vice president") return isSeniorVicePresident;
+    if (stage === "tread") return isTread;
+    if (stage === "hr") return isHr;
 
     return false;
-  };
-
-  const canFinalUpload = (o) => {
-    if (!o || norm(o.status) !== "pending") return false;
-    if (norm(o.approval_stage) !== "final upload") return false;
-
-    const dept = getDepartment(o);
-
-    if (isOperationDept(dept)) return isAdmin || isHr || isAccounting || isIt;
-    if (isBackOfficeDept(dept)) return isAdmin || isHr || isAccounting;
-
-    return isAdmin || isHr || isAccounting;
   };
 
   const [staff, setStaff] = useState([]);
@@ -383,13 +477,12 @@ export default function PromotionOrder() {
 
     const prevBranchId = s?.branch_id ? Number(s.branch_id) : null;
     const prevBranch = prevBranchId ? branchMap.get(prevBranchId) : null;
-    const idStr = String(s.id);
 
     setSelectedEmployee(s);
 
     setForm((p) => ({
       ...p,
-      employee_id: idStr,
+      employee_id: String(s.id),
       employee_name: s?.fullname || "",
       department: s?.department || s?.department_name || "",
       old_position: s?.position || "",
@@ -410,11 +503,10 @@ export default function PromotionOrder() {
     setEmployeeSearch(label);
     setEmployeeQuery(label);
 
-    const presentBranchLabel = prevBranch
-      ? `${prevBranch.code || ""} - ${prevBranch.name || ""}`.trim()
-      : "";
+    setBranchSearch(
+      prevBranch ? `${prevBranch.code || ""} - ${prevBranch.name || ""}`.trim() : ""
+    );
 
-    setBranchSearch(presentBranchLabel);
     setShowEmployeeResults(false);
   };
 
@@ -482,11 +574,11 @@ export default function PromotionOrder() {
         headers: { "Content-Type": "multipart/form-data" },
       });
 
-      alert("Promotion order created.");
+      alert("Promotion recommendation created.");
       closeModal();
       await loadOrders();
     } catch (err) {
-      alert(err?.response?.data?.message || err.message || "Failed to create promotion order.");
+      alert(err?.response?.data?.message || err.message || "Failed to create promotion recommendation.");
     } finally {
       setSaving(false);
     }
@@ -516,9 +608,14 @@ export default function PromotionOrder() {
 
   const approve = async (order) => {
     const file = approvalFiles[order.id];
+    const stage = norm(order.approval_stage);
 
     if (!file) {
-      alert("Please upload the signed/approved promotion file before approving.");
+      alert(
+        stage === "hr"
+          ? "HR must upload the final approved promotion file before approving."
+          : "Please upload the signed/approved promotion file before approving."
+      );
       return;
     }
 
@@ -546,38 +643,6 @@ export default function PromotionOrder() {
     }
   };
 
-  const finalUpload = async (order) => {
-    const file = approvalFiles[order.id];
-
-    if (!file) {
-      alert("Please upload the final approved promotion file.");
-      return;
-    }
-
-    try {
-      setUploadingId(String(order.id));
-
-      const formData = new FormData();
-      formData.append("attachment", file);
-
-      await api.put(`/promotion-orders/${order.id}/final-upload`, formData, {
-        headers: { "Content-Type": "multipart/form-data" },
-      });
-
-      setApprovalFiles((prev) => {
-        const copy = { ...prev };
-        delete copy[order.id];
-        return copy;
-      });
-
-      await loadOrders();
-    } catch (err) {
-      alert(err?.response?.data?.message || "Failed to upload final file.");
-    } finally {
-      setUploadingId("");
-    }
-  };
-
   const reject = async (id) => {
     const reason = prompt("Enter rejection reason:");
     if (!reason || !reason.trim()) return;
@@ -591,138 +656,104 @@ export default function PromotionOrder() {
   };
 
   const resolvePrevBranchText = (o) => {
-  if (o.prev_branch_code || o.prev_branch_name) {
-    return `${o.prev_branch_code || ""} - ${o.prev_branch_name || ""}`.trim();
-  }
+    if (o.prev_branch_code || o.prev_branch_name) {
+      return `${o.prev_branch_code || ""} - ${o.prev_branch_name || ""}`.trim();
+    }
 
-  const b = o.prev_branch_id
-    ? branchMap.get(Number(o.prev_branch_id))
-    : null;
+    const b = o.prev_branch_id ? branchMap.get(Number(o.prev_branch_id)) : null;
+    return b ? `${b.code || ""} - ${b.name || ""}`.trim() : "-";
+  };
 
-  return b
-    ? `${b.code || ""} - ${b.name || ""}`.trim()
-    : "-";
-};
+  const resolvePresentBranchText = (o) => {
+    if (o.present_branch_code || o.present_branch_name) {
+      return `${o.present_branch_code || ""} - ${o.present_branch_name || ""}`.trim();
+    }
 
-const resolvePresentBranchText = (o) => {
-  if (o.present_branch_code || o.present_branch_name) {
-    return `${o.present_branch_code || ""} - ${o.present_branch_name || ""}`.trim();
-  }
+    const b = o.present_branch_id ? branchMap.get(Number(o.present_branch_id)) : null;
+    return b ? `${b.code || ""} - ${b.name || ""}`.trim() : "-";
+  };
 
-  const b = o.present_branch_id
-    ? branchMap.get(Number(o.present_branch_id))
-    : null;
+  const filteredOrders = useMemo(() => {
+    const q = norm(orderSearch);
 
-  return b
-    ? `${b.code || ""} - ${b.name || ""}`.trim()
-    : "-";
-};
+    if (!q) return orders;
 
-const filteredOrders = useMemo(() => {
-  const q = norm(orderSearch);
+    return orders.filter((o) => {
+      const hay = [
+        o.order_no,
+        o.employee_name,
+        o.employee_no,
+        o.old_position,
+        o.new_position,
+        o.status,
+        o.approval_stage,
+        getDepartment(o),
+        resolvePrevBranchText(o),
+        resolvePresentBranchText(o),
+        fmtDate(o.effective_date),
+      ]
+        .map(norm)
+        .join(" ");
 
-  if (!q) return orders;
+      return hay.includes(q);
+    });
+  }, [orders, orderSearch, branchMap]);
 
-  return orders.filter((o) => {
-    const hay = [
-      o.order_no,
-      o.employee_name,
-      o.employee_no,
-      o.old_position,
-      o.new_position,
-      o.status,
-      o.approval_stage,
-      getDepartment(o),
-      resolvePrevBranchText(o),
-      resolvePresentBranchText(o),
-      fmtDate(o.effective_date),
-    ]
-      .map(norm)
-      .join(" ");
+  const totalPages = Math.max(1, Math.ceil(filteredOrders.length / pageSize));
 
-    return hay.includes(q);
-  });
-}, [orders, orderSearch, branchMap]);
+  const paginatedOrders = useMemo(() => {
+    const safePage = Math.min(page, totalPages);
+    const start = (safePage - 1) * pageSize;
+    return filteredOrders.slice(start, start + pageSize);
+  }, [filteredOrders, page, pageSize, totalPages]);
 
-const totalPages = Math.max(
-  1,
-  Math.ceil(filteredOrders.length / pageSize)
-);
+  useEffect(() => {
+    setPage(1);
+  }, [orderSearch, pageSize]);
 
-const paginatedOrders = useMemo(() => {
-  const safePage = Math.min(page, totalPages);
+  useEffect(() => {
+    if (page > totalPages) setPage(totalPages);
+  }, [page, totalPages]);
 
-  const start = (safePage - 1) * pageSize;
+  const countText = useMemo(() => {
+    const total = Array.isArray(orders) ? orders.length : 0;
+    const filtered = filteredOrders.length;
 
-  return filteredOrders.slice(
-    start,
-    start + pageSize
-  );
-}, [
-  filteredOrders,
-  page,
-  pageSize,
-  totalPages,
-]);
+    if (orderSearch.trim()) {
+      return `${filtered} of ${total} Record${total === 1 ? "" : "s"}`;
+    }
 
-useEffect(() => {
-  setPage(1);
-}, [orderSearch, pageSize]);
+    return `${total} Record${total === 1 ? "" : "s"}`;
+  }, [orders, filteredOrders, orderSearch]);
 
-useEffect(() => {
-  if (page > totalPages) {
-    setPage(totalPages);
-  }
-}, [page, totalPages]);
+  const badgeClass = (status) => {
+    const s = norm(status);
 
-const countText = useMemo(() => {
-  const total = Array.isArray(orders)
-    ? orders.length
-    : 0;
+    if (s === "approved") return "po-badge po-approved";
+    if (s === "rejected") return "po-badge po-rejected";
 
-  const filtered =
-    filteredOrders.length;
+    return "po-badge po-pending";
+  };
 
-  if (orderSearch.trim()) {
-    return `${filtered} of ${total} Record${
-      total === 1 ? "" : "s"
-    }`;
-  }
+  const closeViewOrder = () => setViewOrder(null);
 
-  return `${total} Record${
-    total === 1 ? "" : "s"
-  }`;
-}, [
-  orders,
-  filteredOrders,
-  orderSearch,
-]);
+  const actionButtonLabel = (o) => {
+    const stage = norm(o?.approval_stage);
 
-const badgeClass = (status) => {
-  const s = norm(status);
+    if (stage === "hr") return "Upload Final + Approve";
+    if (stage === "tread") return "Upload Req + Approve";
 
-  if (s === "approved") {
-    return "po-badge po-approved";
-  }
-
-  if (s === "rejected") {
-    return "po-badge po-rejected";
-  }
-
-  return "po-badge po-pending";
-};
-
-const closeViewOrder = () =>
-  setViewOrder(null);
+    return "Upload + Approve";
+  };
 
   return (
     <div className="po-page">
       <div className="po-topbar">
         <div>
-          <h2 className="po-title">Promotion Orders</h2>
+          <h2 className="po-title">Promotion Recommendation</h2>
           <p className="po-subtitle">
-            Operation: Branch Manager to Vice President, then final upload.
-            Back office: Senior Vice President, then final upload.
+            Operations uses manager chain. IT/TREAD use AVP → HR. HR/Accounting use SVP only.
+            Audit uses SVP → HR. Office/Production goes HR directly.
           </p>
         </div>
 
@@ -737,7 +768,7 @@ const closeViewOrder = () =>
 
           {canCreatePromotion && (
             <button className="po-btn po-btn-primary" type="button" onClick={() => setShowCreate(true)}>
-              + Create Promotion
+              + Recommendation
             </button>
           )}
         </div>
@@ -764,7 +795,8 @@ const closeViewOrder = () =>
               <option value={100}>100 rows</option>
             </select>
           </div>
-          <div className="po-card-title">Promotion Orders</div>
+
+          <div className="po-card-title">Promotion Recommendations</div>
           <div className="po-card-meta">{countText}</div>
         </div>
 
@@ -790,20 +822,19 @@ const closeViewOrder = () =>
               {loadingOrders ? (
                 <tr>
                   <td colSpan={11} className="po-empty">
-                    Loading promotion orders…
+                    Loading promotion recommendations…
                   </td>
                 </tr>
               ) : filteredOrders.length === 0 ? (
                 <tr>
                   <td colSpan={11} className="po-empty">
-                    No promotion orders found.
+                    No promotion recommendations found.
                   </td>
                 </tr>
               ) : (
                 paginatedOrders.map((o) => {
                   const isPending = norm(o.status) === "pending";
                   const canAct = canApproveStage(o);
-                  const canUploadFinal = canFinalUpload(o);
 
                   return (
                     <tr key={o.id}>
@@ -878,7 +909,7 @@ const closeViewOrder = () =>
                                 disabled={uploadingId === String(o.id)}
                                 onClick={() => approve(o)}
                               >
-                                {uploadingId === String(o.id) ? "Approving..." : "Upload + Approve"}
+                                {uploadingId === String(o.id) ? "Approving..." : actionButtonLabel(o)}
                               </button>
 
                               <button
@@ -889,48 +920,6 @@ const closeViewOrder = () =>
                                 Reject
                               </button>
                             </div>
-                          </div>
-                        ) : canUploadFinal && isPending ? (
-                          <div className="po-action-stack">
-                            <div className="po-file-actions">
-                              <button
-                                className="po-mini-btn po-view-btn"
-                                type="button"
-                                onClick={() => setViewOrder(o)}
-                              >
-                                View
-                              </button>
-
-                              <label className="po-mini-btn po-upload-btn">
-                                {approvalFiles[o.id]?.name ? "Change File" : "Upload Final"}
-                                <input
-                                  type="file"
-                                  hidden
-                                  accept=".pdf,.png,.jpg,.jpeg,.doc,.docx"
-                                  onChange={(e) =>
-                                    setApprovalFiles((prev) => ({
-                                      ...prev,
-                                      [o.id]: e.target.files?.[0] || null,
-                                    }))
-                                  }
-                                />
-                              </label>
-                            </div>
-
-                            {approvalFiles[o.id]?.name ? (
-                              <div className="po-file-name" title={approvalFiles[o.id].name}>
-                                {approvalFiles[o.id].name}
-                              </div>
-                            ) : null}
-
-                            <button
-                              className="po-mini-btn po-approve"
-                              type="button"
-                              disabled={uploadingId === String(o.id)}
-                              onClick={() => finalUpload(o)}
-                            >
-                              {uploadingId === String(o.id) ? "Uploading..." : "Submit Final"}
-                            </button>
                           </div>
                         ) : (
                           <button
@@ -949,6 +938,7 @@ const closeViewOrder = () =>
             </tbody>
           </table>
         </div>
+
         <div className="po-pager">
           <button
             className="po-mini-btn"
@@ -979,7 +969,7 @@ const closeViewOrder = () =>
           <div className="po-record-modal" onMouseDown={(e) => e.stopPropagation()}>
             <div className="po-modal-head">
               <div>
-                <h3 className="po-modal-title">Promotion Record</h3>
+                <h3 className="po-modal-title">Promotion Recommendation Record</h3>
                 <p className="po-modal-sub">
                   {viewOrder.employee_name || "-"} • Order No:{" "}
                   {viewOrder.order_no || `PRO-${viewOrder.id}`}
@@ -1010,6 +1000,7 @@ const closeViewOrder = () =>
               <div><strong>Old ECOLA</strong><span>{money(viewOrder.old_ecola)}</span></div>
               <div><strong>New ECOLA</strong><span>{money(viewOrder.new_ecola)}</span></div>
               <div><strong>Effective Date</strong><span>{fmtDate(viewOrder.effective_date)}</span></div>
+              <div><strong>Recommendation Flow</strong><span>{renderRecommendationFlow(viewOrder)}</span></div>
               <div><strong>Details / Remarks</strong><span>{viewOrder.details || "-"}</span></div>
               <div><strong>Branch Manager Status</strong><span>{viewOrder.branch_manager_status || "-"}</span></div>
               <div><strong>Area Manager Status</strong><span>{viewOrder.area_manager_status || "-"}</span></div>
@@ -1017,6 +1008,8 @@ const closeViewOrder = () =>
               <div><strong>Assistant VP Status</strong><span>{viewOrder.assistant_vice_president_status || "-"}</span></div>
               <div><strong>Vice President Status</strong><span>{viewOrder.vice_president_status || "-"}</span></div>
               <div><strong>Senior VP Status</strong><span>{viewOrder.senior_vice_president_status || "-"}</span></div>
+              <div><strong>TREAD Status</strong><span>{viewOrder.tread_status || "-"}</span></div>
+              <div><strong>HR Status</strong><span>{viewOrder.hr_status || "-"}</span></div>
               <div><strong>Final Status</strong><span>{viewOrder.final_status || "-"}</span></div>
 
               <div>
@@ -1060,9 +1053,9 @@ const closeViewOrder = () =>
           <div className="po-modal" onMouseDown={(e) => e.stopPropagation()}>
             <div className="po-modal-head">
               <div>
-                <h3 className="po-modal-title">Create Promotion Order</h3>
+                <h3 className="po-modal-title">Create Promotion Recommendation</h3>
                 <p className="po-modal-sub">
-                  Approval chain will be based on the promoted staff department.
+                  Approval chain is based on the staff department and current position.
                 </p>
               </div>
 
@@ -1209,7 +1202,7 @@ const closeViewOrder = () =>
                 </div>
 
                 <div className="po-field full">
-                  <label>Attach Request File</label>
+                  <label>Attach Recommendation File</label>
                   <input
                     type="file"
                     accept=".pdf,.png,.jpg,.jpeg,.doc,.docx"
@@ -1235,7 +1228,7 @@ const closeViewOrder = () =>
                 </button>
 
                 <button className="po-btn po-btn-primary" type="submit" disabled={saving || !form.employee_id}>
-                  {saving ? "Creating..." : "Create Order"}
+                  {saving ? "Creating..." : "Create Recommendation"}
                 </button>
               </div>
             </form>
