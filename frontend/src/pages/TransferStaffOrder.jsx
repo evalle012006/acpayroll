@@ -3,10 +3,10 @@ import { useNavigate } from "react-router-dom";
 import api from "../api/axiosClient";
 import "../styles/TransferStaffOrder.css";
 
-const STATUS_PENDING_VP = "Pending VP Approval";
 const STATUS_WAITING_HR_FILE = "Waiting HR File";
 const STATUS_APPROVED = "Approved";
 const STATUS_REJECTED = "Rejected";
+const OLD_STATUS_PENDING_VP = "Pending VP Approval";
 
 const readUser = () => {
   try {
@@ -74,15 +74,14 @@ export default function TransferStaffOrder() {
   const isAdmin = role === "admin";
   const isIT = role === "it";
   const isHR = role === "hr";
-  const isVP = role === "vice president";
   const isBM = role === "branch manager";
   const isAM = role === "area manager";
   const isRM = role === "regional manager";
   const isAVP = role === "assistant vice president";
 
-  const canCreate = isAdmin || isIT || isHR || isBM || isAM || isRM || isAVP || isVP;
-  const canVPApprove = isAdmin || isIT || isVP;
+  const canCreate = isAdmin || isIT || isHR || isBM || isAM || isRM || isAVP;
   const canHRUpload = isAdmin || isIT || isHR;
+  const canReject = isAdmin || isIT || isHR;
 
   const userBranchId = String(user?.branch_id || "");
   const userArea = norm(user?.area);
@@ -91,7 +90,6 @@ export default function TransferStaffOrder() {
 
   const [showModal, setShowModal] = useState(false);
   const [showViewModal, setShowViewModal] = useState(false);
-  const [isRedeploy, setIsRedeploy] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState(null);
 
   const [search, setSearch] = useState("");
@@ -143,6 +141,9 @@ export default function TransferStaffOrder() {
     localStorage.removeItem("user");
     window.location.href = "/login";
   }, []);
+
+  const isUploadStage = (status) =>
+    status === STATUS_WAITING_HR_FILE || status === OLD_STATUS_PENDING_VP;
 
   const canAccessStaff = useCallback(
     (s) => {
@@ -432,7 +433,6 @@ export default function TransferStaffOrder() {
     setToBranchId("");
     setToBranchQuery("");
     setEffectiveDate("");
-    setIsRedeploy(false);
     setError("");
   };
 
@@ -551,27 +551,6 @@ export default function TransferStaffOrder() {
     }
   };
 
-  const approveVP = async (order) => {
-    setActionLoading(true);
-    setError("");
-
-    try {
-      const res = await api.put(`/transfer-staff-orders/${order.id}/vp-approve`);
-      const updated = res.data;
-
-      setOrders((prev) =>
-        prev.map((o) => (Number(o.id) === Number(updated.id) ? updated : o))
-      );
-      setSelectedOrder(updated);
-      setShowViewModal(false);
-    } catch (err) {
-      if (err?.response?.status === 401) return logout();
-      setFilesError(err?.response?.data?.message || "Failed to approve transfer.");
-    } finally {
-      setActionLoading(false);
-    }
-  };
-
   const rejectOrder = async (order) => {
     const reason = prompt("Enter rejection reason:");
     if (!reason || !reason.trim()) return;
@@ -601,6 +580,7 @@ export default function TransferStaffOrder() {
 
   const uploadHRFinalFile = async () => {
     if (!selectedOrder?.id) return;
+
     if (!hrFinalFile) {
       setFilesError("Choose final file first.");
       return;
@@ -633,7 +613,9 @@ export default function TransferStaffOrder() {
       fetchOrders();
     } catch (err) {
       if (err?.response?.status === 401) return logout();
-      setFilesError(err?.response?.data?.message || "Failed to upload HR final file.");
+      setFilesError(
+        err?.response?.data?.message || "Failed to upload final approved file."
+      );
     } finally {
       setActionLoading(false);
     }
@@ -757,7 +739,8 @@ export default function TransferStaffOrder() {
         <div>
           <h2 className="order-title">Transfer Staff</h2>
           <p className="order-subtitle">
-            BM / AM / RM / AVP create. VP approves. HR uploads final file.
+            BM / AM / RM / AVP create. HR uploads final file before approval.
+            Admin and IT can bypass by uploading the final approved file.
           </p>
         </div>
 
@@ -794,7 +777,14 @@ export default function TransferStaffOrder() {
             flexWrap: "wrap",
           }}
         >
-          <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 12,
+              flexWrap: "wrap",
+            }}
+          >
             <div className="order-card-title">Transfer Orders</div>
 
             <div className="order-search-wrap">
@@ -807,7 +797,11 @@ export default function TransferStaffOrder() {
                 className="order-search-input"
               />
 
-              <button className="btn-primary" type="button" onClick={() => setAppliedSearch(search)}>
+              <button
+                className="btn-primary"
+                type="button"
+                onClick={() => setAppliedSearch(search)}
+              >
                 Search
               </button>
 
@@ -830,7 +824,10 @@ export default function TransferStaffOrder() {
         <div className="leave-pager">
           <div className="leave-pager-left">
             <span>Rows per page</span>
-            <select value={tablePageSize} onChange={(e) => setTablePageSize(Number(e.target.value))}>
+            <select
+              value={tablePageSize}
+              onChange={(e) => setTablePageSize(Number(e.target.value))}
+            >
               <option value={25}>25</option>
               <option value={50}>50</option>
               <option value={75}>75</option>
@@ -917,13 +914,23 @@ export default function TransferStaffOrder() {
                     <td>
                       <strong>{o.status}</strong>
                       {o.status === STATUS_REJECTED && o.rejection_reason ? (
-                        <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 4 }}>
+                        <div
+                          style={{
+                            fontSize: 12,
+                            color: "var(--muted)",
+                            marginTop: 4,
+                          }}
+                        >
                           Reason: {o.rejection_reason}
                         </div>
                       ) : null}
                     </td>
                     <td>
-                      <button className="btn-secondary" type="button" onClick={() => openViewModal(o)}>
+                      <button
+                        className="btn-secondary"
+                        type="button"
+                        onClick={() => openViewModal(o)}
+                      >
                         View
                       </button>
                     </td>
@@ -935,7 +942,12 @@ export default function TransferStaffOrder() {
         </div>
 
         <div style={{ padding: 12, display: "flex", justifyContent: "flex-end" }}>
-          <button className="btn-secondary" onClick={fetchOrders} type="button" disabled={loadingOrders}>
+          <button
+            className="btn-secondary"
+            onClick={fetchOrders}
+            type="button"
+            disabled={loadingOrders}
+          >
             {loadingOrders ? "Refreshing..." : "Refresh"}
           </button>
         </div>
@@ -951,7 +963,9 @@ export default function TransferStaffOrder() {
             <div className="modal-head">
               <div>
                 <h3 className="modal-title">Create Transfer Order</h3>
-                <p className="modal-subtitle">Order No. will be auto-generated on save.</p>
+                <p className="modal-subtitle">
+                  Order No. will be auto-generated on save.
+                </p>
               </div>
 
               <button className="modal-x" onClick={closeModal} type="button">
@@ -966,15 +980,27 @@ export default function TransferStaffOrder() {
                 <div className="form-grid">
                   <div className="field">
                     <label>Date Created</label>
-                    <input type="date" value={dateCreated} onChange={(e) => setDateCreated(e.target.value)} />
+                    <input
+                      type="date"
+                      value={dateCreated}
+                      onChange={(e) => setDateCreated(e.target.value)}
+                    />
                   </div>
 
                   <div className="field">
                     <label>Effective Date</label>
-                    <input type="date" value={effectiveDate} onChange={(e) => setEffectiveDate(e.target.value)} />
+                    <input
+                      type="date"
+                      value={effectiveDate}
+                      onChange={(e) => setEffectiveDate(e.target.value)}
+                    />
                   </div>
 
-                  <div className="field full" style={{ position: "relative" }} ref={employeeBoxRef}>
+                  <div
+                    className="field full"
+                    style={{ position: "relative" }}
+                    ref={employeeBoxRef}
+                  >
                     <label>Employee</label>
                     <input
                       type="text"
@@ -999,13 +1025,20 @@ export default function TransferStaffOrder() {
                           maxHeight: 240,
                           overflowY: "auto",
                           background: "var(--card, #0f172a)",
-                          border: "1px solid var(--border, rgba(255,255,255,0.1))",
+                          border:
+                            "1px solid var(--border, rgba(255,255,255,0.1))",
                           borderRadius: 12,
                           zIndex: 30,
                         }}
                       >
                         {filteredStaff.length === 0 ? (
-                          <div style={{ padding: 12, color: "var(--muted)", fontSize: 14 }}>
+                          <div
+                            style={{
+                              padding: 12,
+                              color: "var(--muted)",
+                              fontSize: 14,
+                            }}
+                          >
                             No employee found.
                           </div>
                         ) : (
@@ -1029,7 +1062,13 @@ export default function TransferStaffOrder() {
                                 {displayName(s)}
                                 {s.employee_no ? ` (${s.employee_no})` : ""}
                               </div>
-                              <div style={{ fontSize: 12, opacity: 0.8, marginTop: 2 }}>
+                              <div
+                                style={{
+                                  fontSize: 12,
+                                  opacity: 0.8,
+                                  marginTop: 2,
+                                }}
+                              >
                                 {toStr(s.position) || "No position"}
                               </div>
                             </button>
@@ -1039,7 +1078,11 @@ export default function TransferStaffOrder() {
                     )}
                   </div>
 
-                  <div className="field" style={{ position: "relative" }} ref={fromBranchBoxRef}>
+                  <div
+                    className="field"
+                    style={{ position: "relative" }}
+                    ref={fromBranchBoxRef}
+                  >
                     <label>Previous Branch</label>
                     <input
                       type="text"
@@ -1095,7 +1138,11 @@ export default function TransferStaffOrder() {
                     )}
                   </div>
 
-                  <div className="field" style={{ position: "relative" }} ref={toBranchBoxRef}>
+                  <div
+                    className="field"
+                    style={{ position: "relative" }}
+                    ref={toBranchBoxRef}
+                  >
                     <label>Transfer To</label>
                     <input
                       type="text"
@@ -1147,7 +1194,8 @@ export default function TransferStaffOrder() {
                             <div style={{ fontWeight: 800 }}>{branchLabel(b)}</div>
                             <div style={{ fontSize: 12, opacity: 0.8 }}>
                               Division: {toStr(b.division) || "-"} • Area:{" "}
-                              {toStr(b.area) || "-"} • Region: {toStr(b.region) || "-"}
+                              {toStr(b.area) || "-"} • Region:{" "}
+                              {toStr(b.region) || "-"}
                             </div>
                           </button>
                         ))}
@@ -1157,17 +1205,29 @@ export default function TransferStaffOrder() {
 
                   <div className="field">
                     <label>Division</label>
-                    <input value={division} readOnly placeholder="Auto-filled from Transfer To" />
+                    <input
+                      value={division}
+                      readOnly
+                      placeholder="Auto-filled from Transfer To"
+                    />
                   </div>
 
                   <div className="field">
                     <label>Area</label>
-                    <input value={area} readOnly placeholder="Auto-filled from Transfer To" />
+                    <input
+                      value={area}
+                      readOnly
+                      placeholder="Auto-filled from Transfer To"
+                    />
                   </div>
 
                   <div className="field">
                     <label>Region</label>
-                    <input value={region} readOnly placeholder="Auto-filled from Transfer To" />
+                    <input
+                      value={region}
+                      readOnly
+                      placeholder="Auto-filled from Transfer To"
+                    />
                   </div>
 
                   <div className="field full">
@@ -1186,11 +1246,16 @@ export default function TransferStaffOrder() {
                     <div className="order-card-head">
                       <div>
                         <div className="order-card-title">Details of Account</div>
-                        <div className="order-card-meta">Auto-filled from selected staff record.</div>
+                        <div className="order-card-meta">
+                          Auto-filled from selected staff record.
+                        </div>
                       </div>
                     </div>
 
-                    <div className="form-grid account-details-grid" style={{ padding: 12 }}>
+                    <div
+                      className="form-grid account-details-grid"
+                      style={{ padding: 12 }}
+                    >
                       {accountRows.map((row) => (
                         <div className="field" key={row.label}>
                           <label>{row.label}</label>
@@ -1202,17 +1267,33 @@ export default function TransferStaffOrder() {
                 ) : null}
 
                 {error ? (
-                  <div style={{ marginTop: 10, color: "#ef4444", fontWeight: 800 }}>
+                  <div
+                    style={{
+                      marginTop: 10,
+                      color: "#ef4444",
+                      fontWeight: 800,
+                    }}
+                  >
                     {error}
                   </div>
                 ) : null}
 
                 <div className="modal-buttons">
-                  <button className="btn-secondary" onClick={closeModal} type="button" disabled={saving}>
+                  <button
+                    className="btn-secondary"
+                    onClick={closeModal}
+                    type="button"
+                    disabled={saving}
+                  >
                     Cancel
                   </button>
 
-                  <button className="btn-primary" onClick={saveOrder} type="button" disabled={saving}>
+                  <button
+                    className="btn-primary"
+                    onClick={saveOrder}
+                    type="button"
+                    disabled={saving}
+                  >
                     {saving ? "Saving..." : "Save Order"}
                   </button>
                 </div>
@@ -1343,10 +1424,14 @@ export default function TransferStaffOrder() {
                   </div>
                 )}
 
-                {selectedOrder.status === STATUS_WAITING_HR_FILE && canHRUpload ? (
+                {isUploadStage(selectedOrder.status) && canHRUpload ? (
                   <div style={{ marginTop: 14 }}>
                     <div className="field">
-                      <label>HR Final Approved File</label>
+                      <label>
+                        {isAdmin || isIT
+                          ? "Final Approved File"
+                          : "HR Final Approved File"}
+                      </label>
                       <input
                         type="file"
                         onChange={(e) => setHrFinalFile(e.target.files?.[0] || null)}
@@ -1360,13 +1445,23 @@ export default function TransferStaffOrder() {
                       onClick={uploadHRFinalFile}
                       disabled={actionLoading}
                     >
-                      {actionLoading ? "Uploading..." : "Upload Final File & Approve"}
+                      {actionLoading
+                        ? "Uploading..."
+                        : isAdmin || isIT
+                        ? "Upload Final File & Bypass Approve"
+                        : "Upload Final File & Approve"}
                     </button>
                   </div>
                 ) : null}
 
                 {filesError ? (
-                  <div style={{ marginTop: 10, color: "#ef4444", fontWeight: 800 }}>
+                  <div
+                    style={{
+                      marginTop: 10,
+                      color: "#ef4444",
+                      fontWeight: 800,
+                    }}
+                  >
                     {filesError}
                   </div>
                 ) : null}
@@ -1374,33 +1469,15 @@ export default function TransferStaffOrder() {
             </div>
 
             <div className="modal-buttons">
-              <button className="btn-secondary" type="button" onClick={closeViewModal}>
+              <button
+                className="btn-secondary"
+                type="button"
+                onClick={closeViewModal}
+              >
                 Close
               </button>
 
-              {selectedOrder.status === STATUS_PENDING_VP && canVPApprove ? (
-                <>
-                  <button
-                    className="btn-secondary"
-                    type="button"
-                    onClick={() => rejectOrder(selectedOrder)}
-                    disabled={actionLoading}
-                  >
-                    Reject
-                  </button>
-
-                  <button
-                    className="btn-primary"
-                    type="button"
-                    onClick={() => approveVP(selectedOrder)}
-                    disabled={actionLoading}
-                  >
-                    {actionLoading ? "Approving..." : "VP Approve"}
-                  </button>
-                </>
-              ) : null}
-
-              {selectedOrder.status === STATUS_WAITING_HR_FILE && canHRUpload ? (
+              {isUploadStage(selectedOrder.status) && canReject ? (
                 <button
                   className="btn-secondary"
                   type="button"

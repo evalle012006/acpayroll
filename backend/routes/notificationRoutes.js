@@ -18,7 +18,10 @@ const isAdminLike = (req) => {
   return ["admin", "it", "hr", "accounting"].includes(role);
 };
 
-const getUserBranchId = (req) => toStr(req.user?.branch_id);
+const getUserBranchId = (req) => {
+  const n = toInt(req.user?.branch_id);
+  return n || null;
+};
 const getUserId = (req) => toInt(req.user?.id);
 
 const buildVisibilityWhere = (req, startIndex = 1) => {
@@ -49,7 +52,7 @@ const buildVisibilityWhere = (req, startIndex = 1) => {
           OR LOWER(TRIM(COALESCE(role, ''))) = LOWER(TRIM($${startIndex + 1}))
           OR (
             LOWER(TRIM(COALESCE(scope, ''))) IN ('branch', 'branch-or-admin')
-            AND LOWER(TRIM(COALESCE(target_branch_id, ''))) = LOWER(TRIM($${startIndex + 2}))
+            AND target_branch_id = NULLIF($${startIndex + 2}, '')::int
           )
         )
       `,

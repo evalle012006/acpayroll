@@ -700,6 +700,23 @@ export default function LoanApprovalTab() {
     const total = amount + (amount * interest) / 100;
     const per_month = term ? total / term : total;
 
+    if (loanForm.loan_type === "Cash Advance") {
+      if (amount < 1000 || amount > 5000) {
+        alert("Cash Advance amount must be between ₱1,000 and ₱5,000.");
+        return;
+      }
+
+      if (term !== 1) {
+        alert("Cash Advance term must be 1 month only.");
+        return;
+      }
+
+      if (interest !== 0) {
+        alert("Cash Advance interest must be 0%.");
+        return;
+      }
+    }
+
     if (!loanForm.attachment) {
       alert("Please attach the loan request file before submitting.");
       return;
@@ -1113,7 +1130,7 @@ export default function LoanApprovalTab() {
                         setLoanForm((p) => ({
                           ...p,
                           loan_type: value,
-                          amount: 5000,
+                          amount: "",
                           term: 1,
                           interest: 0,
                         }));
@@ -1158,8 +1175,23 @@ export default function LoanApprovalTab() {
                   <input
                     type="number"
                     value={loanForm.amount}
-                    onChange={(e) => setLoanForm((p) => ({ ...p, amount: e.target.value }))}
-                    readOnly={loanForm.loan_type === "Cash Advance"}
+                    onChange={(e) => {
+                      let value = e.target.value;
+
+                      if (loanForm.loan_type === "Cash Advance") {
+                        const n = Number(value);
+
+                        if (n > 5000) value = "5000";
+                        if (n < 0) value = "";
+                      }
+
+                      setLoanForm((p) => ({
+                        ...p,
+                        amount: value,
+                      }));
+                    }}
+                    min={loanForm.loan_type === "Cash Advance" ? 1000 : undefined}
+                    max={loanForm.loan_type === "Cash Advance" ? 5000 : undefined}
                     required
                   />
                 </div>

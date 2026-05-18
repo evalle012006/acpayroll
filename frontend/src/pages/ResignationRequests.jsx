@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import api from "../api/axiosClient";
+import "../styles/LeaveTransactions.css";
 import "../styles/ResignationRequests.css";
 
 const toStr = (v) => String(v ?? "").trim();
@@ -68,6 +69,7 @@ export default function ResignationRequests() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
+  const [searchText, setSearchText] = useState("");
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
@@ -186,7 +188,7 @@ export default function ResignationRequests() {
           s.department,
           display,
         ]
-          .map((x) => toStr(x))
+          .map(toStr)
           .join(" ")
           .toLowerCase();
 
@@ -237,6 +239,20 @@ export default function ResignationRequests() {
   useEffect(() => {
     if (page > totalPages) setPage(totalPages);
   }, [page, totalPages]);
+
+  const getPageNumbers = () => {
+    const pages = [];
+    const maxButtons = 5;
+    let start = Math.max(1, page - 2);
+    let end = Math.min(totalPages, start + maxButtons - 1);
+
+    if (end - start < maxButtons - 1) {
+      start = Math.max(1, end - maxButtons + 1);
+    }
+
+    for (let i = start; i <= end; i++) pages.push(i);
+    return pages;
+  };
 
   const handleEmployeeSelect = (staffId) => {
     const s = staffList.find((x) => String(x.id) === String(staffId));
@@ -407,13 +423,20 @@ export default function ResignationRequests() {
   const canApproveRow = (row) => {
     const status = toStr(row.status);
 
+    if (
+      (isAdmin || isHr || isAccounting) &&
+      status !== STATUS_APPROVED &&
+      status !== STATUS_REJECTED
+    ) {
+      return true;
+    }
+
     if (isBranchManager && status === STATUS_BRANCH) return true;
     if (isAreaManager && status === STATUS_AREA) return true;
     if (isRegionalManager && status === STATUS_RM) return true;
     if (isAssistantVicePresident && status === STATUS_AVP) return true;
     if (isVicePresident && status === STATUS_VP) return true;
     if (isSeniorVicePresident && status === STATUS_SVP) return true;
-    if ((isAdmin || isHr || isAccounting) && status === STATUS_ADMIN) return true;
 
     return false;
   };
@@ -427,9 +450,9 @@ export default function ResignationRequests() {
 
   const badgeClass = (status) => {
     const s = norm(status);
-    if (s === norm(STATUS_APPROVED)) return "po-badge po-approved";
-    if (s === norm(STATUS_REJECTED)) return "po-badge po-rejected";
-    return "po-badge po-pending";
+    if (s === norm(STATUS_APPROVED)) return "badge badge-approved";
+    if (s === norm(STATUS_REJECTED)) return "badge badge-rejected";
+    return "badge badge-pending";
   };
 
   const attachmentUrl = (row) => {
@@ -465,50 +488,77 @@ export default function ResignationRequests() {
   };
 
   return (
-    <div className="po-page">
-      <div className="po-topbar">
+    <div className="approval-page resignation-page">
+      <div className="approval-page-header">
         <div>
-          <h2 className="po-title">Resignation</h2>
-          <p className="po-subtitle">
-            Branch Manager → Area Manager → Regional Manager → Assistant Vice President → Vice President → Admin/HR/Accounting.
-            Audit Department → Senior Vice President → Admin/HR/Accounting.
+          <h2 className="approval-title">Resignation</h2>
+          <p className="approval-subtitle">
+            Branch Manager → Area Manager → Regional Manager → Assistant Vice
+            President → Vice President → Admin/HR/Accounting.
           </p>
         </div>
 
-        <div className="po-topbar-actions">
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
           <button
-            className="po-btn po-btn-outline"
+            className="btn-secondary"
             onClick={() => navigate("/transactions")}
             type="button"
           >
             ← Back
           </button>
 
-          <button className="po-btn po-btn-outline" onClick={fetchAll} type="button">
+          <button className="btn-secondary" onClick={fetchAll} type="button">
             Refresh
           </button>
 
           {canCreate && (
-            <button className="po-btn po-btn-primary" onClick={openCreate} type="button">
+            <button className="btn-primary" onClick={openCreate} type="button">
               + Add
             </button>
           )}
         </div>
       </div>
 
-      {error ? <div style={{ color: "#ff7e8b", fontWeight: 800 }}>{error}</div> : null}
+      {error ? (
+        <div style={{ color: "#ff7e8b", fontWeight: 800 }}>{error}</div>
+      ) : null}
 
-      <div className="po-card po-toolbar">
-        <div className="po-toolbar-left">
-          <input
-            className="po-search-input"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search request no, employee, branch, status, remarks..."
-          />
+      <div className="leave-searchbar">
+        <input
+          className="leave-search-input"
+          value={searchText}
+          onChange={(e) => setSearchText(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && setSearch(searchText)}
+          placeholder="Search request no, employee, branch, status..."
+        />
+
+        <button
+          className="btn-secondary"
+          type="button"
+          onClick={() => setSearch(searchText)}
+        >
+          Search
+        </button>
+
+        <button
+          className="btn-secondary"
+          type="button"
+          onClick={() => {
+            setSearchText("");
+            setSearch("");
+          }}
+        >
+          Clear
+        </button>
+
+        <span className="leave-search-count">{filteredRows.length} result(s)</span>
+      </div>
+
+      <div className="leave-pager">
+        <div className="leave-pager-left">
+          <span>Rows per page</span>
 
           <select
-            className="po-page-size"
             value={pageSize}
             onChange={(e) => setPageSize(Number(e.target.value))}
           >
@@ -517,14 +567,47 @@ export default function ResignationRequests() {
             <option value={75}>75</option>
             <option value={100}>100</option>
           </select>
+        </div>
 
-          <span className="po-result-pill">{filteredRows.length} result(s)</span>
+        <div className="leave-pager-right">
+          <button
+            className="leave-page-btn"
+            type="button"
+            disabled={page <= 1}
+            onClick={() => setPage((p) => Math.max(1, p - 1))}
+          >
+            ‹
+          </button>
+
+          {getPageNumbers().map((p) => (
+            <button
+              key={p}
+              className={`leave-page-number ${page === p ? "active" : ""}`}
+              type="button"
+              onClick={() => setPage(p)}
+            >
+              {p}
+            </button>
+          ))}
+
+          <button
+            className="leave-page-btn"
+            type="button"
+            disabled={page >= totalPages}
+            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+          >
+            ›
+          </button>
+
+          <span className="leave-page-summary">
+            Page {page} of {totalPages}
+          </span>
         </div>
       </div>
 
-      <div className="po-card">
-        <div className="po-table-wrap">
-          <table className="po-table">
+      <div className="table-card">
+        <div className="table-wrap">
+          <table className="table resignation-table">
             <thead>
               <tr>
                 <th>Request No</th>
@@ -536,20 +619,20 @@ export default function ResignationRequests() {
                 <th>Attachment</th>
                 <th>Status</th>
                 <th>Stage</th>
-                <th>Actions</th>
+                <th style={{ width: 160 }}>Actions</th>
               </tr>
             </thead>
 
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={10} className="po-empty">
+                  <td colSpan={10} className="empty-state">
                     Loading...
                   </td>
                 </tr>
               ) : filteredRows.length === 0 ? (
                 <tr>
-                  <td colSpan={10} className="po-empty">
+                  <td colSpan={10} className="empty-state">
                     No resignation requests found.
                   </td>
                 </tr>
@@ -560,8 +643,8 @@ export default function ResignationRequests() {
 
                   return (
                     <tr key={row.id}>
-                      <td className="mono">{row.request_no || row.id}</td>
-                      <td className="mono">{row.employee_no || "-"}</td>
+                      <td className="td-strong">{row.request_no || row.id}</td>
+                      <td>{row.employee_no || "-"}</td>
                       <td className="td-strong">{row.employee_name || "-"}</td>
                       <td>{branchLabel(row)}</td>
                       <td>{fmtDate(row.resignation_date)}</td>
@@ -573,7 +656,7 @@ export default function ResignationRequests() {
                             href={attachmentUrl(row)}
                             target="_blank"
                             rel="noreferrer"
-                            className="po-mini-btn"
+                            className="btn-secondary"
                             style={{
                               textDecoration: "none",
                               display: "inline-flex",
@@ -596,9 +679,9 @@ export default function ResignationRequests() {
                       <td>{actionLabel(row)}</td>
 
                       <td>
-                        <div className="po-row-actions">
+                        <div className="row-actions">
                           <button
-                            className="po-mini-btn"
+                            className="btn-secondary"
                             type="button"
                             onClick={() => setViewRow(row)}
                           >
@@ -606,7 +689,7 @@ export default function ResignationRequests() {
                           </button>
 
                           {canApprove && isFinalStage ? (
-                            <label className="po-mini-btn" style={{ cursor: "pointer" }}>
+                            <label className="btn-secondary" style={{ cursor: "pointer" }}>
                               {finalFiles[row.id]?.name ? "Change File" : "Final File"}
                               <input
                                 type="file"
@@ -622,14 +705,14 @@ export default function ResignationRequests() {
                           ) : null}
 
                           {finalFiles[row.id]?.name ? (
-                            <span style={{ fontSize: 11, maxWidth: 120 }}>
+                            <span style={{ fontSize: 11, maxWidth: 130 }}>
                               {finalFiles[row.id].name}
                             </span>
                           ) : null}
 
                           {canApprove && (
                             <button
-                              className="po-mini-btn po-approve"
+                              className="btn-success"
                               type="button"
                               onClick={() => approveRequest(row)}
                               disabled={processingId === `approve-${row.id}`}
@@ -644,7 +727,7 @@ export default function ResignationRequests() {
 
                           {canRejectRow(row) && (
                             <button
-                              className="po-mini-btn po-reject"
+                              className="btn-danger"
                               type="button"
                               onClick={() => {
                                 setRejectingRow(row);
@@ -658,7 +741,7 @@ export default function ResignationRequests() {
 
                           {canDeleteRow(row) ? (
                             <button
-                              className="po-mini-btn"
+                              className="btn-secondary"
                               type="button"
                               onClick={() => deleteRequest(row)}
                               disabled={processingId === `delete-${row.id}`}
@@ -677,55 +760,33 @@ export default function ResignationRequests() {
         </div>
       </div>
 
-      <div className="po-card po-pager">
-        <div className="po-pager-inner">
-          <span className="po-page-info">
-            Page {page} of {totalPages}
-          </span>
-
-          <div className="po-pager-buttons">
-            <button
-              className="po-page-btn"
-              type="button"
-              disabled={page <= 1}
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
-            >
-              Previous
-            </button>
-
-            <button
-              className="po-page-btn"
-              type="button"
-              disabled={page >= totalPages}
-              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-            >
-              Next
-            </button>
-          </div>
-        </div>
-      </div>
-
       {showCreate && (
         <div
-          className="po-modal-overlay"
+          className="modal-overlay"
           onMouseDown={(e) =>
-            e.target.classList.contains("po-modal-overlay") && closeCreate()
+            e.target.classList.contains("modal-overlay") && closeCreate()
           }
         >
-          <div className="po-modal" onMouseDown={(e) => e.stopPropagation()}>
-            <div className="po-modal-head">
-              <h3 className="po-modal-title">Create Resignation Request</h3>
-              <button className="po-x" onClick={closeCreate} type="button">
+          <div className="modal saas-modal" onMouseDown={(e) => e.stopPropagation()}>
+            <div className="modal-head">
+              <div>
+                <h3 className="modal-title">Create Resignation Request</h3>
+                <p className="modal-subtitle">
+                  Submitted into approval chain automatically.
+                </p>
+              </div>
+
+              <button className="modal-x" onClick={closeCreate} type="button">
                 ✕
               </button>
             </div>
 
-            <form className="po-form" onSubmit={submitCreate}>
-              <div className="po-grid">
+            <form className="modal-form" onSubmit={submitCreate}>
+              <div className="modal-grid">
                 <div
-                  className="po-field full"
+                  className="form-group full"
                   ref={employeeBoxRef}
-                  style={{ position: "relative" }}
+                  style={{ position: "relative", zIndex: 50 }}
                 >
                   <label>Employee</label>
                   <input
@@ -773,27 +834,27 @@ export default function ResignationRequests() {
                   )}
                 </div>
 
-                <div className="po-field">
+                <div className="form-group">
                   <label>Employee No</label>
                   <input value={form.employee_no} readOnly placeholder="Auto-filled" />
                 </div>
 
-                <div className="po-field">
+                <div className="form-group">
                   <label>Last Name</label>
                   <input value={form.last_name} readOnly placeholder="Auto-filled" />
                 </div>
 
-                <div className="po-field">
+                <div className="form-group">
                   <label>First Name</label>
                   <input value={form.first_name} readOnly placeholder="Auto-filled" />
                 </div>
 
-                <div className="po-field">
+                <div className="form-group">
                   <label>Middle Name</label>
                   <input value={form.middle_name} readOnly placeholder="Auto-filled" />
                 </div>
 
-                <div className="po-field">
+                <div className="form-group">
                   <label>Branch</label>
                   <input
                     value={
@@ -808,7 +869,7 @@ export default function ResignationRequests() {
                   />
                 </div>
 
-                <div className="po-field">
+                <div className="form-group">
                   <label>Resignation Date</label>
                   <input
                     type="date"
@@ -820,7 +881,7 @@ export default function ResignationRequests() {
                   />
                 </div>
 
-                <div className="po-field">
+                <div className="form-group">
                   <label>Effective Date</label>
                   <input
                     type="date"
@@ -832,7 +893,7 @@ export default function ResignationRequests() {
                   />
                 </div>
 
-                <div className="po-field full">
+                <div className="form-group full">
                   <label>Attachment</label>
                   <input
                     type="file"
@@ -845,7 +906,7 @@ export default function ResignationRequests() {
                   />
                 </div>
 
-                <div className="po-field full">
+                <div className="form-group full">
                   <label>Remarks</label>
                   <textarea
                     value={form.remarks}
@@ -857,12 +918,12 @@ export default function ResignationRequests() {
                 </div>
               </div>
 
-              <div className="po-modal-actions">
-                <button className="po-btn po-btn-outline" type="button" onClick={closeCreate}>
+              <div className="modal-buttons">
+                <button className="btn-secondary" type="button" onClick={closeCreate}>
                   Cancel
                 </button>
 
-                <button className="po-btn po-btn-primary" type="submit" disabled={saving}>
+                <button className="btn-primary" type="submit" disabled={saving}>
                   {saving ? "Saving..." : "Create Request"}
                 </button>
               </div>
@@ -873,77 +934,77 @@ export default function ResignationRequests() {
 
       {viewRow && (
         <div
-          className="po-modal-overlay"
+          className="modal-overlay"
           onMouseDown={(e) =>
-            e.target.classList.contains("po-modal-overlay") && setViewRow(null)
+            e.target.classList.contains("modal-overlay") && setViewRow(null)
           }
         >
-          <div className="po-modal" onMouseDown={(e) => e.stopPropagation()}>
-            <div className="po-modal-head">
+          <div className="modal saas-modal" onMouseDown={(e) => e.stopPropagation()}>
+            <div className="modal-head">
               <div>
-                <h3 className="po-modal-title">Resignation Details</h3>
-                <div className="po-modal-sub">
+                <h3 className="modal-title">Resignation Details</h3>
+                <p className="modal-subtitle">
                   {viewRow.request_no || viewRow.id} — {viewRow.employee_name || "-"}
-                </div>
+                </p>
               </div>
 
-              <button className="po-x" type="button" onClick={() => setViewRow(null)}>
+              <button className="modal-x" type="button" onClick={() => setViewRow(null)}>
                 ✕
               </button>
             </div>
 
-            <div className="po-form">
-              <div className="po-grid">
-                <div className="po-field">
+            <div className="modal-form">
+              <div className="modal-grid">
+                <div className="form-group">
                   <label>Employee No</label>
                   <input value={viewRow.employee_no || "-"} readOnly />
                 </div>
 
-                <div className="po-field">
+                <div className="form-group">
                   <label>Branch</label>
                   <input value={branchLabel(viewRow)} readOnly />
                 </div>
 
-                <div className="po-field">
+                <div className="form-group">
                   <label>Resignation Date</label>
                   <input value={fmtDate(viewRow.resignation_date)} readOnly />
                 </div>
 
-                <div className="po-field">
+                <div className="form-group">
                   <label>Effective Date</label>
                   <input value={fmtDate(viewRow.effective_date)} readOnly />
                 </div>
 
-                <div className="po-field">
+                <div className="form-group">
                   <label>Status</label>
                   <input value={viewRow.status || "-"} readOnly />
                 </div>
 
-                <div className="po-field">
+                <div className="form-group">
                   <label>Stage</label>
                   <input value={actionLabel(viewRow)} readOnly />
                 </div>
 
-                <div className="po-field full">
+                <div className="form-group full">
                   <label>Remarks</label>
                   <textarea value={viewRow.remarks || "No remarks"} readOnly />
                 </div>
 
                 {viewRow.rejection_reason ? (
-                  <div className="po-field full">
+                  <div className="form-group full">
                     <label>Rejection Reason</label>
                     <textarea value={viewRow.rejection_reason} readOnly />
                   </div>
                 ) : null}
 
                 {viewRow.attachment_path ? (
-                  <div className="po-field full">
+                  <div className="form-group full">
                     <label>Attachment</label>
                     <a
                       href={attachmentUrl(viewRow)}
                       target="_blank"
                       rel="noreferrer"
-                      className="po-mini-btn"
+                      className="btn-secondary"
                       style={{
                         textDecoration: "none",
                         display: "inline-flex",
@@ -956,9 +1017,9 @@ export default function ResignationRequests() {
                 ) : null}
               </div>
 
-              <div className="po-modal-actions">
+              <div className="modal-buttons">
                 <button
-                  className="po-btn po-btn-outline"
+                  className="btn-secondary"
                   type="button"
                   onClick={() => setViewRow(null)}
                 >
@@ -972,21 +1033,31 @@ export default function ResignationRequests() {
 
       {rejectingRow && (
         <div
-          className="po-modal-overlay"
+          className="modal-overlay"
           onMouseDown={(e) =>
-            e.target.classList.contains("po-modal-overlay") && setRejectingRow(null)
+            e.target.classList.contains("modal-overlay") && setRejectingRow(null)
           }
         >
-          <div className="po-modal po-modal-sm" onMouseDown={(e) => e.stopPropagation()}>
-            <div className="po-modal-head">
-              <h3 className="po-modal-title">Reject Resignation Request</h3>
-              <button className="po-x" type="button" onClick={() => setRejectingRow(null)}>
+          <div
+            className="modal saas-modal"
+            onMouseDown={(e) => e.stopPropagation()}
+            style={{ maxWidth: 560 }}
+          >
+            <div className="modal-head">
+              <div>
+                <h3 className="modal-title">Reject Resignation Request</h3>
+                <p className="modal-subtitle">
+                  Add reason before rejecting this request.
+                </p>
+              </div>
+
+              <button className="modal-x" type="button" onClick={() => setRejectingRow(null)}>
                 ✕
               </button>
             </div>
 
-            <div className="po-form">
-              <div className="po-field full">
+            <div className="modal-form">
+              <div className="form-group full">
                 <label>Reason</label>
                 <textarea
                   value={rejectionReason}
@@ -995,9 +1066,9 @@ export default function ResignationRequests() {
                 />
               </div>
 
-              <div className="po-modal-actions">
+              <div className="modal-buttons">
                 <button
-                  className="po-btn po-btn-outline"
+                  className="btn-secondary"
                   type="button"
                   onClick={() => setRejectingRow(null)}
                 >
@@ -1005,7 +1076,7 @@ export default function ResignationRequests() {
                 </button>
 
                 <button
-                  className="po-btn po-btn-primary"
+                  className="btn-danger"
                   type="button"
                   onClick={rejectRequest}
                   disabled={processingId === `reject-${rejectingRow.id}`}

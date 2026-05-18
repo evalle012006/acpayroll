@@ -608,16 +608,19 @@ export default function ScheduleBalances() {
                       <th>Employee No</th>
                       <th>Full Name</th>
                       <th>Position</th>
+
                       {MONEY_COLS.map((c) => (
                         <th key={c.key}>{c.label}</th>
                       ))}
+
+                      <th>Action</th>
                     </tr>
                   </thead>
 
                   <tbody>
                     {viewBranch.staff_rows.length === 0 ? (
                       <tr>
-                        <td colSpan={MONEY_COLS.length + 3} className="empty-state">
+                        <td colSpan={MONEY_COLS.length + 4} className="empty-state">
                           No staff found.
                         </td>
                       </tr>
@@ -625,7 +628,9 @@ export default function ScheduleBalances() {
                       viewBranch.staff_rows.map((r, idx) => (
                         <tr key={`${r.employee_no || idx}-${idx}`}>
                           <td>{r.employee_no ?? "-"}</td>
+
                           <td className="td-strong">{displayName(r)}</td>
+
                           <td>{r.position ?? "-"}</td>
 
                           {MONEY_COLS.map((c) => (
@@ -633,6 +638,18 @@ export default function ScheduleBalances() {
                               {fmtMoney(r[c.key])}
                             </td>
                           ))}
+
+                          <td>
+                            <button
+                              type="button"
+                              className="staff-edit-btn"
+                              onClick={() => {
+                                window.location.href = `/staff-information?id=${r.id}&tab=balances&edit=true`;
+                              }}
+                            >
+                              Edit
+                            </button>
+                          </td>
                         </tr>
                       ))
                     )}

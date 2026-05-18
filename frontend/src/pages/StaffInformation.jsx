@@ -23,6 +23,12 @@ export default function StaffInformation() {
   const user = useMemo(() => readUser(), []);
   const role = useMemo(() => norm(user?.role), [user]);
 
+  const params = new URLSearchParams(window.location.search);
+
+  const selectedStaffId = params.get("id");
+  const selectedTab = params.get("tab");
+  const editBalances = params.get("edit");
+
   const CONFIDENTIAL_POSITIONS = [
     "vice president",
     "senior vice president",
@@ -372,6 +378,30 @@ export default function StaffInformation() {
     loadAll();
     loadPositionRates();
   }, [loadAll, loadPositionRates]);
+
+  useEffect(() => {
+    if (!selectedStaffId || staff.length === 0) return;
+
+    const found = staff.find(
+      (s) => String(s.id) === String(selectedStaffId)
+    );
+
+    if (!found) return;
+
+    openEdit(found);
+
+    if (
+      selectedTab === "balances" &&
+      editBalances === "true"
+    ) {
+      setFormStep(3);
+    }
+  }, [
+    selectedStaffId,
+    selectedTab,
+    editBalances,
+    staff,
+  ]);
 
   useEffect(() => {
     const isAnyModalOpen = !!viewStaff || !!editStaff;

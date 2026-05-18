@@ -178,7 +178,7 @@ export default function DemotionOrder() {
     const status = norm(order?.status);
 
     if (status === "approved" || status === "rejected") return false;
-    if (isAdmin || isIt) return true;
+    if (isAdmin || isIt || isHr || isAccounting) return true;
 
     const stage = getCurrentStage(order);
 

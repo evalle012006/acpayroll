@@ -41,6 +41,8 @@ const canViewAllLoans = (req) => canViewAll(req);
 
 const canDownloadLoanFiles = (req) =>
   canViewAll(req) ||
+  isIT(req) ||
+  isBranchManager(req) ||
   isAreaManager(req) ||
   isRegionalManager(req) ||
   isAssistantVicePresident(req) ||
@@ -750,20 +752,38 @@ router.get(
       let targetPath = row.attachment_path;
       let targetName = row.attachment_name;
 
-      if (type === "approved") {
+      if (type === "approved" || type === "latest") {
         targetPath = row.approved_attachment_path || row.attachment_path;
         targetName = row.approved_attachment_name || row.attachment_name;
+      }
+
+      if (type === "request") {
+        targetPath = row.attachment_path;
+        targetName = row.attachment_name;
       }
 
       if (!targetPath) {
         return res.status(404).json({ message: "No loan file found" });
       }
 
-      const rel = String(targetPath).replace(/^\/uploads\//, "");
-      const filePath = path.join(__dirname, "..", "uploads", rel);
+      const cleanPath = String(targetPath).replace(/^\/+/, "");
+      const fileNameOnly = path.basename(cleanPath);
 
-      if (!fs.existsSync(filePath)) {
-        return res.status(404).json({ message: "Loan file not found" });
+      const possiblePaths = [
+        path.isAbsolute(targetPath) ? targetPath : null,
+        path.join(__dirname, "..", cleanPath),
+        path.join(process.cwd(), cleanPath),
+        path.join(uploadDir, fileNameOnly),
+      ].filter(Boolean);
+
+      const filePath = possiblePaths.find((p) => fs.existsSync(p));
+
+      if (!filePath) {
+        console.error("Loan file not found. Tried paths:", possiblePaths);
+        return res.status(404).json({
+          message: "Loan file not found",
+          saved_path: targetPath,
+        });
       }
 
       return res.download(filePath, targetName || path.basename(filePath));

@@ -273,6 +273,7 @@
   display: flex;
   flex-direction: column;
   gap: 7px;
+  position: relative;
 }
 
 .reg-field.full {
@@ -336,13 +337,13 @@
   top: calc(100% + 6px);
   left: 0;
   right: 0;
-  max-height: 240px;
+  max-height: 320px;
   overflow-y: auto;
   background: var(--card);
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 12px;
   box-shadow: 0 16px 40px rgba(0, 0, 0, 0.35);
-  z-index: 20;
+  z-index: 99999;
 }
 
 .reg-search-item {
@@ -479,4 +480,36 @@
 .reg-page-buttons button:disabled{
   opacity:.45;
   cursor:not-allowed;
+}
+
+.reg-search-dropdown {
+  max-height: 320px;
+}
+
+.reg-field {
+  position: relative;
+}
+
+.reg-search-dropdown {
+  max-height: 320px;
+  overflow-y: auto;
+  z-index: 99999;
+}
+
+.reg-modal .reg-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.reg-modal .reg-field.full {
+  grid-column: 1 / -1;
+}
+
+.reg-download {
+  background: rgba(79, 107, 255, 0.15);
+  color: #9db0ff;
+  border: 1px solid rgba(157, 176, 255, 0.25);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
 }

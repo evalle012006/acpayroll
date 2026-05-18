@@ -570,11 +570,15 @@ router.put(
         nextStatus = STATUS_ADMIN;
         approverField = "svp_approved_by";
         approverAtField = "svp_approved_at";
+
       } else if (isFinalApprover(req)) {
-        if (currentStatus !== STATUS_ADMIN) {
+        if (
+          currentStatus === STATUS_APPROVED ||
+          currentStatus === STATUS_REJECTED
+        ) {
           await client.query("ROLLBACK");
           return res.status(400).json({
-            message: "This request is not pending Admin approval",
+            message: "This request is already completed",
           });
         }
 
@@ -816,9 +820,12 @@ router.put(
           });
         }
       } else if (isFinalApprover(req)) {
-        if (currentStatus !== STATUS_ADMIN) {
+        if (
+          currentStatus === STATUS_APPROVED ||
+          currentStatus === STATUS_REJECTED
+        ) {
           return res.status(400).json({
-            message: "This request is not pending Admin approval",
+            message: "This request is already completed",
           });
         }
       } else {

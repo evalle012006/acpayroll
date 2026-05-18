@@ -23,10 +23,16 @@ const {
   isPresident,
 } = require("../utils/roleAccess");
 
-const STATUS_PENDING_VP = "Pending VP Approval";
 const STATUS_WAITING_HR_FILE = "Waiting HR File";
 const STATUS_APPROVED = "Approved";
 const STATUS_REJECTED = "Rejected";
+
+/*
+  OLD STATUS SUPPORT:
+  This keeps old records from getting stuck if they were already created
+  before changing the flow.
+*/
+const OLD_STATUS_PENDING_VP = "Pending VP Approval";
 
 const toInt = (v) => {
   const n = Number(v);
@@ -48,7 +54,6 @@ const isCreatorRole = (req) =>
   isAreaManager(req) ||
   isRegionalManager(req) ||
   isAssistantVicePresident(req) ||
-  isVicePresident(req) ||
   isHr(req) ||
   isAdmin(req) ||
   isIT(req);
@@ -62,6 +67,11 @@ const isPowerView = (req) =>
   isVicePresident(req) ||
   isSeniorVicePresident(req) ||
   isPresident(req);
+
+const canUploadFinalFile = (req) => isHr(req) || isAdmin(req) || isIT(req);
+
+const canRejectOrder = (req) =>
+  isHr(req) || isAdmin(req) || isIT(req) || isVicePresident(req);
 
 const getUserBranchId = (req) => req.user?.branch_id ?? null;
 const getUserArea = (req) => toStr(req.user?.area);
@@ -274,7 +284,7 @@ router.post(
       if (!isCreatorRole(req)) {
         return res.status(403).json({
           message:
-            "Only Branch Manager, Area Manager, Regional Manager, Assistant Vice President, Vice President, HR, Admin, or IT can create transfer staff orders.",
+            "Only Branch Manager, Area Manager, Regional Manager, Assistant Vice President, HR, Admin, or IT can create transfer staff orders.",
         });
       }
 
@@ -417,7 +427,7 @@ router.post(
           date_created,
           effective_date,
           details,
-          STATUS_PENDING_VP,
+          STATUS_WAITING_HR_FILE,
           req.user?.id ?? null,
         ]
       );
@@ -501,7 +511,7 @@ router.post(
     const client = await pool.connect();
 
     try {
-      if (!isHr(req) && !isAdmin(req) && !isIT(req)) {
+      if (!canUploadFinalFile(req)) {
         return res.status(403).json({
           message: "Only HR, Admin, or IT can upload the final transfer file.",
         });
@@ -536,12 +546,25 @@ router.post(
 
       const order = orderCheck.rows[0];
 
-      if (order.status !== STATUS_WAITING_HR_FILE) {
+      if (
+        order.status !== STATUS_WAITING_HR_FILE &&
+        order.status !== OLD_STATUS_PENDING_VP
+      ) {
         await client.query("ROLLBACK");
         return res.status(400).json({
-          message: "Order must be Waiting HR File before HR can upload final file.",
+          message:
+            "Order must be Waiting HR File before HR/Admin/IT can upload final file.",
         });
       }
+
+      const oldFiles = await client.query(
+        `
+        SELECT file_path
+        FROM public.transfer_staff_order_files
+        WHERE transfer_order_id = $1
+        `,
+        [id]
+      );
 
       await client.query(
         `
@@ -550,6 +573,19 @@ router.post(
         `,
         [id]
       );
+
+      for (const oldFile of oldFiles.rows) {
+        try {
+          if (oldFile.file_path && fs.existsSync(oldFile.file_path)) {
+            fs.unlinkSync(oldFile.file_path);
+          }
+        } catch (unlinkErr) {
+          console.warn(
+            "Unable to delete old transfer file:",
+            unlinkErr.message
+          );
+        }
+      }
 
       const fileIns = await client.query(
         `
@@ -582,8 +618,11 @@ router.post(
         UPDATE public.transfer_staff_orders
         SET
           status = $2,
-          approved_by = COALESCE(approved_by, $3),
-          approved_at = COALESCE(approved_at, NOW())
+          approved_by = $3,
+          approved_at = NOW(),
+          rejected_by = NULL,
+          rejected_at = NULL,
+          rejection_reason = NULL
         WHERE id = $1
         RETURNING *
         `,
@@ -619,10 +658,22 @@ router.post(
       });
     } catch (e) {
       await client.query("ROLLBACK");
+
+      if (req.file?.path) {
+        try {
+          if (fs.existsSync(req.file.path)) {
+            fs.unlinkSync(req.file.path);
+          }
+        } catch (unlinkErr) {
+          console.warn("Unable to delete failed upload:", unlinkErr.message);
+        }
+      }
+
       console.error(
         "POST /api/transfer-staff-orders/:id/hr-final-file ERROR:",
         e.message
       );
+
       return res.status(500).json({ message: e.message || "Server error" });
     } finally {
       client.release();
@@ -690,61 +741,14 @@ router.get(
 );
 
 router.put(
-  "/transfer-staff-orders/:id/vp-approve",
-  requireAuth,
-  requirePermission("transfer_staff_order", "approve"),
-  async (req, res) => {
-    try {
-      if (!isVicePresident(req) && !isAdmin(req) && !isIT(req)) {
-        return res.status(403).json({
-          message: "Only Vice President, Admin, or IT can approve this step.",
-        });
-      }
-
-      const id = toInt(req.params.id);
-
-      if (!id) return res.status(400).json({ message: "Invalid id" });
-
-      const r = await pool.query(
-        `
-        UPDATE public.transfer_staff_orders
-        SET
-          status = $2,
-          approved_by = $3,
-          approved_at = NOW(),
-          rejected_by = NULL,
-          rejected_at = NULL,
-          rejection_reason = NULL
-        WHERE id = $1
-          AND status = $4
-        RETURNING *
-        `,
-        [id, STATUS_WAITING_HR_FILE, req.user?.id ?? null, STATUS_PENDING_VP]
-      );
-
-      if (r.rowCount === 0) {
-        return res.status(400).json({
-          message: "Order not found or not pending VP approval.",
-        });
-      }
-
-      return res.json(r.rows[0]);
-    } catch (e) {
-      console.error("PUT /api/transfer-staff-orders/:id/vp-approve ERROR:", e.message);
-      return res.status(500).json({ message: e.message || "Server error" });
-    }
-  }
-);
-
-router.put(
   "/transfer-staff-orders/:id/reject",
   requireAuth,
   requirePermission("transfer_staff_order", "reject"),
   async (req, res) => {
     try {
-      if (!isVicePresident(req) && !isHr(req) && !isAdmin(req) && !isIT(req)) {
+      if (!canRejectOrder(req)) {
         return res.status(403).json({
-          message: "Only VP, HR, Admin, or IT can reject transfer orders.",
+          message: "Only HR, Admin, IT, or Vice President can reject transfer orders.",
         });
       }
 
@@ -775,8 +779,8 @@ router.put(
           STATUS_REJECTED,
           req.user?.id ?? null,
           reason,
-          STATUS_PENDING_VP,
           STATUS_WAITING_HR_FILE,
+          OLD_STATUS_PENDING_VP,
         ]
       );
 
@@ -789,53 +793,6 @@ router.put(
       return res.json(r.rows[0]);
     } catch (e) {
       console.error("PUT /api/transfer-staff-orders/:id/reject ERROR:", e.message);
-      return res.status(500).json({ message: e.message || "Server error" });
-    }
-  }
-);
-
-router.put(
-  "/transfer-staff-orders/:id/approve",
-  requireAuth,
-  requirePermission("transfer_staff_order", "approve"),
-  async (req, res) => {
-    try {
-      if (!isVicePresident(req) && !isAdmin(req) && !isIT(req)) {
-        return res.status(403).json({
-          message: "Only Vice President, Admin, or IT can approve this step.",
-        });
-      }
-
-      const id = toInt(req.params.id);
-
-      if (!id) return res.status(400).json({ message: "Invalid id" });
-
-      const r = await pool.query(
-        `
-        UPDATE public.transfer_staff_orders
-        SET
-          status = $2,
-          approved_by = $3,
-          approved_at = NOW(),
-          rejected_by = NULL,
-          rejected_at = NULL,
-          rejection_reason = NULL
-        WHERE id = $1
-          AND status IN ('Pending', $4)
-        RETURNING *
-        `,
-        [id, STATUS_WAITING_HR_FILE, req.user?.id ?? null, STATUS_PENDING_VP]
-      );
-
-      if (r.rowCount === 0) {
-        return res.status(400).json({
-          message: "Order not found or not pending VP approval.",
-        });
-      }
-
-      return res.json(r.rows[0]);
-    } catch (e) {
-      console.error("PUT /api/transfer-staff-orders/:id/approve ERROR:", e.message);
       return res.status(500).json({ message: e.message || "Server error" });
     }
   }

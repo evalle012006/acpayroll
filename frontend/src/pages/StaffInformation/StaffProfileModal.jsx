@@ -188,22 +188,20 @@ export default function StaffProfileModal({ staff, signedPhotoUrl, onClose, bran
 
   const loadBalances = useCallback(async () => {
     if (!staff?.employee_no) return;
-    setLoadingBal(true); setErrBal("");
+
+    setLoadingBal(true);
+    setErrBal("");
+
     try {
-      const now = new Date();
-      const month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-      const res = await api.get(`/schedule-balances/live`, { params: { month } });
-      const rows = Array.isArray(res.data) ? res.data : [];
-      const found =
-        rows.find((r) => String(r.staff_id) === String(staff.id)) ||
-        rows.find((r) => String(r.employee_no) === String(staff.employee_no)) ||
-        null;
-      setBalances(found || {});
+      const res = await api.get(`/staff-balances/${staff.employee_no}`);
+      setBalances(res.data || {});
     } catch (e) {
       setErrBal(e?.response?.data?.message || "Failed to load personal balances.");
       setBalances({});
-    } finally { setLoadingBal(false); }
-  }, [staff?.id, staff?.employee_no]);
+    } finally {
+      setLoadingBal(false);
+    }
+  }, [staff?.employee_no]);
 
   const loadBonus15Data = useCallback(async () => {
   if (!staff?.id || !staff?.branch_id) return;
@@ -370,7 +368,7 @@ export default function StaffProfileModal({ staff, signedPhotoUrl, onClose, bran
   const combinedBalances = useMemo(() => ({
     cbu: toNum(bal.cbu),
     cashbond: toNum(bal.cashbond),
-    utility: toNum(bal.utility ?? staff.utility_charge ?? staff.utility),
+    utility: toNum(bal.utility),
     salary_advance: toNum(bal.salary_advance),
     special_advance: toNum(bal.special_advance),
     cash_advance: toNum(bal.cash_advance),
@@ -378,7 +376,7 @@ export default function StaffProfileModal({ staff, signedPhotoUrl, onClose, bran
     pag_ibig_loan: toNum(bal.pag_ibig_loan),
     other_receivable: toNum(bal.other_receivable),
     staff_accounts_payable: toNum(bal.staff_accounts_payable),
-  }), [bal, staff]);
+  }), [bal]);
 
   const headerName = displayName(staff);
   const headerPosition = toStr(staff?.position) || "-";

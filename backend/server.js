@@ -43,6 +43,7 @@ const cbuWithdrawRoutes = require("./routes/cbuWithdrawRoutes");
 const boardResolutionRoutes = require("./routes/boardResolutionRoutes");
 const rolePermissionsRoutes = require("./routes/rolePermissionsRoutes");
 const awolReportsRoutes = require("./routes/awolReportsRoutes");
+const { startMonthlyBalancePoster } = require("./jobs/monthlyBalancePoster");
 
 const app = express();
 
@@ -122,4 +123,6 @@ const PORT = Number(process.env.PORT || 5000);
 
 app.listen(PORT, () => {
   console.log(`🚀 Server running on http://localhost:${PORT}`);
+
+  startMonthlyBalancePoster();
 });

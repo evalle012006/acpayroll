@@ -18,7 +18,7 @@ const toInt = (v) => {
 const toStr = (v) => String(v ?? "").trim();
 
 const monthToDate = (monthStr) => {
-  const m = String(monthStr || "").trim();
+  const m = toStr(monthStr);
   if (!/^\d{4}-\d{2}$/.test(m)) return null;
   return `${m}-01`;
 };
@@ -51,7 +51,6 @@ const resolveRequestedBranchId = async (rawBranchValue) => {
 
 const resolveBranchScope = async (req) => {
   const role = normRole(req.user?.role);
-
   const requestedRaw = toStr(req.query.branchId);
   const userBranchRaw = toStr(req.user?.branch_id);
   const userAreaRaw = toStr(req.user?.area);
@@ -98,13 +97,7 @@ const resolveBranchScope = async (req) => {
       [userAreaRaw]
     );
 
-    const branchIds = branchRes.rows.map((r) => r.id);
-
-    if (!branchIds.length) {
-      return { branchIds: [] };
-    }
-
-    return { branchIds };
+    return { branchIds: branchRes.rows.map((r) => Number(r.id)) };
   }
 
   return { branchId: requestedBranchId };
@@ -266,35 +259,23 @@ const buildLiveSql = (whereSql = "") => `
       ob.staff_id,
 
       SUM(
-        CASE
-          WHEN LOWER(COALESCE(ob.loan_type, '')) = 'salary advance'
-          THEN COALESCE(ob.remaining_balance, 0)
-          ELSE 0
-        END
+        CASE WHEN LOWER(COALESCE(ob.loan_type, '')) = 'salary advance'
+        THEN COALESCE(ob.remaining_balance, 0) ELSE 0 END
       )::numeric(12,2) AS opening_salary_advance,
 
       SUM(
-        CASE
-          WHEN LOWER(COALESCE(ob.loan_type, '')) = 'motorcycle loan'
-          THEN COALESCE(ob.remaining_balance, 0)
-          ELSE 0
-        END
+        CASE WHEN LOWER(COALESCE(ob.loan_type, '')) = 'motorcycle loan'
+        THEN COALESCE(ob.remaining_balance, 0) ELSE 0 END
       )::numeric(12,2) AS opening_motorcycle_loan,
 
       SUM(
-        CASE
-          WHEN LOWER(COALESCE(ob.loan_type, '')) = 'special advance'
-          THEN COALESCE(ob.remaining_balance, 0)
-          ELSE 0
-        END
+        CASE WHEN LOWER(COALESCE(ob.loan_type, '')) = 'special advance'
+        THEN COALESCE(ob.remaining_balance, 0) ELSE 0 END
       )::numeric(12,2) AS opening_special_advance,
 
       SUM(
-        CASE
-          WHEN LOWER(COALESCE(ob.loan_type, '')) = 'cash advance'
-          THEN COALESCE(ob.remaining_balance, 0)
-          ELSE 0
-        END
+        CASE WHEN LOWER(COALESCE(ob.loan_type, '')) = 'cash advance'
+        THEN COALESCE(ob.remaining_balance, 0) ELSE 0 END
       )::numeric(12,2) AS opening_cash_advance
 
     FROM public.staff_loan_opening_balances ob
@@ -302,10 +283,7 @@ const buildLiveSql = (whereSql = "") => `
     WHERE
       ob.staff_id IS NOT NULL
       AND LOWER(COALESCE(ob.status, '')) = 'active'
-      AND (
-        ob.effective_date IS NULL
-        OR ob.effective_date <= c.month_end
-      )
+      AND (ob.effective_date IS NULL OR ob.effective_date <= c.month_end)
     GROUP BY ob.staff_id
   ),
 
@@ -326,11 +304,11 @@ const buildLiveSql = (whereSql = "") => `
     s.id,
     s.id AS staff_id,
     s.employee_no,
-    COALESCE(sb.fullname, s.fullname) AS fullname,
-    COALESCE(sb.last_name, s.last_name) AS last_name,
-    COALESCE(sb.first_name, s.first_name) AS first_name,
-    COALESCE(sb.middle_name, s.middle_name) AS middle_name,
-    COALESCE(sb.position, s.position) AS position,
+    COALESCE(s.fullname, CONCAT_WS(' ', s.last_name, s.first_name, s.middle_name)) AS fullname,
+    s.last_name,
+    s.first_name,
+    s.middle_name,
+    s.position,
     s.branch_id,
 
     COALESCE(sb.cbu, 0) AS cbu,
@@ -344,14 +322,15 @@ const buildLiveSql = (whereSql = "") => `
     COALESCE(lr.cash_advance, 0) + COALESCE(olr.opening_cash_advance, 0) AS cash_advance,
 
     COALESCE(sb.other_receivable, 0) AS other_receivable,
-    COALESCE(sap.staff_accounts_payable, 0) AS staff_accounts_payable,
+    COALESCE(sap.staff_accounts_payable, COALESCE(sb.staff_accounts_payable, 0), 0) AS staff_accounts_payable,
 
     (SELECT month_end FROM cutoff) AS as_of_date,
     NOW() AS created_at,
     NOW() AS updated_at
-  FROM public.staff_balances sb
-  LEFT JOIN public.staff s
-    ON s.employee_no = sb.employee_no
+
+  FROM public.staff s
+  LEFT JOIN public.staff_balances sb
+    ON sb.employee_no = s.employee_no
   LEFT JOIN loan_remaining lr
     ON lr.staff_id = s.id
   LEFT JOIN opening_loan_remaining olr
@@ -359,7 +338,7 @@ const buildLiveSql = (whereSql = "") => `
   LEFT JOIN sap_remaining sap
     ON sap.employee_no = s.employee_no
   ${whereSql}
-  ORDER BY COALESCE(sb.fullname, s.fullname) ASC
+  ORDER BY COALESCE(s.fullname, CONCAT_WS(' ', s.last_name, s.first_name, s.middle_name)) ASC
 `;
 
 router.get(
@@ -388,41 +367,41 @@ router.get(
 
       let sql = `
         SELECT
-          sbs.id,
-          sbs.snapshot_month,
-          sbs.staff_id,
-          sbs.employee_no,
-          sbs.fullname,
-          sbs.position,
-          sbs.branch_id,
-          sbs.last_name,
-          sbs.first_name,
-          sbs.middle_name,
-          sbs.cbu,
-          sbs.cashbond,
-          sbs.utility,
-          sbs.salary_loan,
-          sbs.salary_advance,
-          sbs.motorcycle_loan,
-          sbs.special_advance,
-          sbs.cash_advance,
-          sbs.other_receivable,
-          sbs.staff_accounts_payable,
-          sbs.created_at,
-          sbs.updated_at
-        FROM public.schedule_balance_snapshots sbs
-        WHERE sbs.snapshot_month = $1::date
+          id,
+          snapshot_month,
+          staff_id,
+          employee_no,
+          fullname,
+          position,
+          branch_id,
+          last_name,
+          first_name,
+          middle_name,
+          cbu,
+          cashbond,
+          utility,
+          salary_loan,
+          salary_advance,
+          motorcycle_loan,
+          special_advance,
+          cash_advance,
+          other_receivable,
+          staff_accounts_payable,
+          created_at,
+          updated_at
+        FROM public.schedule_balance_snapshots
+        WHERE snapshot_month = $1::date
       `;
 
       if (scope.branchIds) {
         params.push(scope.branchIds);
-        sql += ` AND sbs.branch_id = ANY($2::int[])`;
+        sql += ` AND branch_id = ANY($2::int[])`;
       } else if (scope.branchId) {
         params.push(scope.branchId);
-        sql += ` AND sbs.branch_id = $2::int`;
+        sql += ` AND branch_id = $2::int`;
       }
 
-      sql += ` ORDER BY sbs.fullname ASC`;
+      sql += ` ORDER BY fullname ASC`;
 
       const result = await pool.query(sql, params);
       return res.json(result.rows);
@@ -464,11 +443,17 @@ router.get(
       } else if (scope.branchId) {
         params.push(scope.branchId);
         whereSql = ` WHERE s.branch_id = $2::int `;
+      } else {
+        whereSql = ` WHERE LOWER(COALESCE(s.status, 'active')) = 'active' `;
+      }
+
+      if (whereSql && !whereSql.toLowerCase().includes("status")) {
+        whereSql += ` AND LOWER(COALESCE(s.status, 'active')) = 'active' `;
       }
 
       const sql = buildLiveSql(whereSql);
-
       const result = await pool.query(sql, params);
+
       return res.json(result.rows);
     } catch (e) {
       console.error("GET /api/schedule-balances/live ERROR:", e);
@@ -478,14 +463,15 @@ router.get(
 );
 
 router.post(
-  "/schedule-balances/deduct",
+  "/deduct",
   requireAuth,
   requirePermission("schedule_balance", "edit"),
   async (req, res) => {
     try {
       const { staff_id, month } = req.body;
+      const snapshotMonth = monthToDate(month);
 
-      if (!staff_id || !month) {
+      if (!staff_id || !snapshotMonth) {
         return res.status(400).json({ message: "Missing staff_id or month" });
       }
 
@@ -500,10 +486,10 @@ router.post(
           staff_accounts_payable = GREATEST(0, staff_accounts_payable - (staff_accounts_payable / 12)),
           updated_at = NOW()
         WHERE staff_id = $1
-          AND snapshot_month = $2
+          AND snapshot_month = $2::date
         RETURNING *;
         `,
-        [staff_id, month]
+        [staff_id, snapshotMonth]
       );
 
       return res.json(result.rows[0] || {});
@@ -532,7 +518,9 @@ router.post(
     try {
       await client.query("BEGIN");
 
-      const current = await client.query(buildLiveSql(""), [snapshotMonth]);
+      const current = await client.query(buildLiveSql(" WHERE LOWER(COALESCE(s.status, 'active')) = 'active' "), [
+        snapshotMonth,
+      ]);
 
       const rows = current.rows || [];
 
@@ -636,7 +624,7 @@ router.post(
       await client.query("COMMIT");
 
       return res.json({
-        message: "Snapshot saved from month-end live balances",
+        message: "Snapshot saved from current live balances",
         month: snapshotMonth,
         count: rows.length,
       });
@@ -645,10 +633,7 @@ router.post(
         await client.query("ROLLBACK");
       } catch {}
 
-      console.error(
-        "POST /api/schedule-balances/snapshot/from-current ERROR:",
-        e
-      );
+      console.error("POST /api/schedule-balances/snapshot/from-current ERROR:", e);
 
       return res.status(500).json({
         message: e.message || "Server error",
