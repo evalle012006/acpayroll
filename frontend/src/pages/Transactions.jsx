@@ -36,6 +36,7 @@ export default function Transactions() {
         "it",
         "accounting",
         "tread",
+        "branch manager",
         "area manager",
         "regional manager",
         "assistant vice president",

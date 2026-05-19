@@ -58,7 +58,7 @@ const getApplicantRole = (x) =>
 const chainByApplicantRole = (applicantRole) => {
   const role = norm(applicantRole);
 
-  if (role.includes("branch manager")) {
+  if (role === "branch manager") {
     return [
       "Area Manager",
       "Regional Manager",
@@ -67,19 +67,19 @@ const chainByApplicantRole = (applicantRole) => {
     ];
   }
 
-  if (role.includes("area manager")) {
+  if (role === "area manager") {
     return ["Regional Manager", "Assistant Vice President", "Vice President"];
   }
 
-  if (role.includes("regional manager")) {
+  if (role === "regional manager") {
     return ["Assistant Vice President", "Vice President"];
   }
 
-  if (role.includes("assistant vice president")) {
+  if (role === "assistant vice president") {
     return ["Vice President"];
   }
 
-  if (role.includes("vice president")) {
+  if (role === "vice president") {
     return ["Vice President"];
   }
 
@@ -262,42 +262,6 @@ export default function CBUWithdrawApprovalTab() {
     return searchableStaff.filter((s) => s._searchBlob.includes(q)).slice(0, 20);
   }, [searchableStaff, employeeSearch]);
 
-  const filteredRows = useMemo(() => {
-    const q = norm(appliedSearch);
-    if (!q) return rows;
-
-    return rows.filter((x) =>
-      [
-        x.id,
-        staffName(x),
-        x.employee_no,
-        x.amount,
-        x.status,
-        x.approval_stage,
-        x.branch_name,
-        x.branch_code,
-        x.department,
-        x.position,
-        x.reason,
-      ]
-        .map(toStr)
-        .join(" ")
-        .toLowerCase()
-        .includes(q)
-    );
-  }, [rows, appliedSearch]);
-
-  const totalPages = Math.max(1, Math.ceil(filteredRows.length / pageSize));
-
-  const pagedRows = useMemo(() => {
-    const start = (page - 1) * pageSize;
-    return filteredRows.slice(start, start + pageSize);
-  }, [filteredRows, page, pageSize]);
-
-  useEffect(() => {
-    setPage(1);
-  }, [appliedSearch, pageSize]);
-
   const resetForm = () => {
     setForm({
       employee_id: "",
@@ -411,13 +375,17 @@ export default function CBUWithdrawApprovalTab() {
       setProcessingId(`${item.id}-${status}`);
 
       const fd = new FormData();
-      fd.append("status", status);
-      fd.append("rejection_reason", reason || "");
-      fd.append("approval_stage", item.approval_stage || "");
 
-      if (status === "Approved") {
-        fd.append("photo", approvalFiles[item.id]);
-      }
+        fd.append("status", status);
+
+        if (status === "Rejected") {
+          fd.append("rejection_reason", reason || "");
+        }
+
+        if (status === "Approved") {
+          fd.append("approval_stage", item.approval_stage || "");
+          fd.append("photo", approvalFiles[item.id]);
+        }
 
       await api.put(`/cbu-withdrawals/${item.id}`, fd, {
         headers: { "Content-Type": "multipart/form-data" },
@@ -547,6 +515,42 @@ export default function CBUWithdrawApprovalTab() {
 
   const canFinalUploadItem = (item) =>
     norm(item?.status) === norm(WAITING_FINAL_FILE) && canFinalUpload(role);
+
+  const filteredRows = useMemo(() => {
+    const q = norm(appliedSearch);
+    if (!q) return rows;
+
+    return rows.filter((x) =>
+      [
+        x.id,
+        staffName(x),
+        x.employee_no,
+        x.amount,
+        x.status,
+        x.approval_stage,
+        x.branch_name,
+        x.branch_code,
+        x.department,
+        x.position,
+        x.reason,
+      ]
+        .map(toStr)
+        .join(" ")
+        .toLowerCase()
+        .includes(q)
+    );
+  }, [rows, appliedSearch]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredRows.length / pageSize));
+
+  const pagedRows = useMemo(() => {
+    const start = (page - 1) * pageSize;
+    return filteredRows.slice(start, start + pageSize);
+  }, [filteredRows, page, pageSize]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [appliedSearch, pageSize]);
 
   return (
     <>
@@ -809,45 +813,44 @@ export default function CBUWithdrawApprovalTab() {
               </button>
             </div>
 
-            <div
-              style={{
-                display: "flex",
-                gap: 10,
-                flexWrap: "wrap",
-                alignItems: "center",
-                marginBottom: 12,
-              }}
-            >
-              <input
-                className="order-search-input"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && setAppliedSearch(search)}
-                placeholder="Search employee, status, stage, amount..."
-                style={{ minWidth: 280 }}
-              />
-
-              <button
-                className="btn-primary"
-                type="button"
-                onClick={() => setAppliedSearch(search)}
-              >
-                Search
-              </button>
-
-              <button
-                className="btn-secondary"
-                type="button"
-                onClick={() => {
-                  setSearch("");
-                  setAppliedSearch("");
+            <div className="table-card">
+              <div
+                style={{
+                  display: "flex",
+                  gap: 10,
+                  flexWrap: "wrap",
+                  alignItems: "center",
+                  marginBottom: 12,
                 }}
               >
-                Clear
-              </button>
-            </div>
+                <input
+                  className="order-search-input"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && setAppliedSearch(search)}
+                  placeholder="Search employee, status, stage, amount..."
+                  style={{ minWidth: 280 }}
+                />
 
-            <div className="table-card">
+                <button
+                  className="btn-primary"
+                  type="button"
+                  onClick={() => setAppliedSearch(search)}
+                >
+                  Search
+                </button>
+
+                <button
+                  className="btn-secondary"
+                  type="button"
+                  onClick={() => {
+                    setSearch("");
+                    setAppliedSearch("");
+                  }}
+                >
+                  Clear
+                </button>
+              </div>
               <div className="table-wrap">
                 <table className="table">
                   <thead>
@@ -1018,49 +1021,6 @@ export default function CBUWithdrawApprovalTab() {
                     )}
                   </tbody>
                 </table>
-              </div>
-
-              <div className="leave-pager" style={{ marginTop: 12 }}>
-                <div className="leave-pager-left">
-                  <span>Rows per page</span>
-                  <select
-                    value={pageSize}
-                    onChange={(e) => setPageSize(Number(e.target.value))}
-                  >
-                    <option value={25}>25</option>
-                    <option value={50}>50</option>
-                    <option value={75}>75</option>
-                    <option value={100}>100</option>
-                  </select>
-                </div>
-
-                <div className="leave-pager-right">
-                  <button
-                    className="leave-page-btn"
-                    type="button"
-                    disabled={page <= 1}
-                    onClick={() => setPage((p) => Math.max(1, p - 1))}
-                  >
-                    ‹
-                  </button>
-
-                  <button className="leave-page-number active" type="button">
-                    {page}
-                  </button>
-
-                  <button
-                    className="leave-page-btn"
-                    type="button"
-                    disabled={page >= totalPages}
-                    onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                  >
-                    ›
-                  </button>
-
-                  <span className="leave-page-summary">
-                    Page {page} of {totalPages} • {filteredRows.length} records
-                  </span>
-                </div>
               </div>
             </div>
 

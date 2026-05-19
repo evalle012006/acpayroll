@@ -139,13 +139,11 @@ export default function ReimbursementApprovalTab() {
     isHr ||
     isAccounting ||
     isTread ||
-    isBranchManager ||
     isAreaManager ||
     isRegionalManager ||
     isAssistantVicePresident ||
     isVicePresident ||
-    isSeniorVicePresident ||
-    isPresident;
+    isSeniorVicePresident;
 
   const canParticipateInApproval =
     isAdmin ||

@@ -8,11 +8,6 @@ const multer = require("multer");
 const { requireAuth } = require("../middlewares/authMiddleware");
 const { requirePermission } = require("../middlewares/permissionMiddleware");
 
-const toInt = (v) => {
-  const n = Number(v);
-  return Number.isFinite(n) ? Math.trunc(n) : null;
-};
-
 const toStr = (v) => String(v ?? "").trim();
 const norm = (v) => toStr(v).toLowerCase();
 
@@ -26,11 +21,9 @@ const isTread = (req) => roleLower(req) === "tread";
 const isBranchManager = (req) => roleLower(req) === "branch manager";
 const isAreaManager = (req) => roleLower(req) === "area manager";
 const isRegionalManager = (req) => roleLower(req) === "regional manager";
-const isAssistantVicePresident = (req) =>
-      roleLower(req) === "assistant vice president";
+const isAssistantVicePresident = (req) => roleLower(req) === "assistant vice president";
 const isVicePresident = (req) => roleLower(req) === "vice president";
-const isSeniorVicePresident = (req) =>
-      roleLower(req) === "senior vice president";
+const isSeniorVicePresident = (req) => roleLower(req) === "senior vice president";
 const isPresident = (req) => roleLower(req) === "president";
 
 const getUserBranchCode = (req) => toStr(req.user?.branch_id);
@@ -77,14 +70,6 @@ const isFinalApprover = (req) =>
 
 const isFullViewer = (req) =>
   isFinalApprover(req) ||
-  isVicePresident(req) ||
-  isSeniorVicePresident(req) ||
-  isPresident(req);
-
-const isRequestViewer = (req) =>
-  isFinalApprover(req) ||
-  isRegionalManager(req) ||
-  isAssistantVicePresident(req) ||
   isVicePresident(req) ||
   isSeniorVicePresident(req) ||
   isPresident(req);
@@ -279,28 +264,14 @@ const canActOnLeave = async (req, leaveId) => {
 
   if (status === "Pending Branch Manager") {
     if (!isBranchManager(req) && !isFinalApprover(req) && !isPresident(req)) {
-      return {
-        ok: false,
-        code: 403,
-        message: "Only branch manager can act on this stage",
-      };
+      return { ok: false, code: 403, message: "Only branch manager can act on this stage" };
     }
-
     return { ok: true, row };
   }
 
   if (status === "Pending Area Manager") {
-    if (
-      !isAreaManager(req) &&
-      !isFinalApprover(req) &&
-      !isSeniorVicePresident(req) &&
-      !isPresident(req)
-    ) {
-      return {
-        ok: false,
-        code: 403,
-        message: "Only area manager can act on this stage",
-      };
+    if (!isAreaManager(req) && !isFinalApprover(req) && !isSeniorVicePresident(req) && !isPresident(req)) {
+      return { ok: false, code: 403, message: "Only area manager can act on this stage" };
     }
 
     if (isAreaManager(req) && norm(row.area) !== norm(getUserArea(req))) {
@@ -311,17 +282,8 @@ const canActOnLeave = async (req, leaveId) => {
   }
 
   if (status === "Pending Regional Manager") {
-    if (
-      !isRegionalManager(req) &&
-      !isFinalApprover(req) &&
-      !isSeniorVicePresident(req) &&
-      !isPresident(req)
-    ) {
-      return {
-        ok: false,
-        code: 403,
-        message: "Only regional manager can act on this stage",
-      };
+    if (!isRegionalManager(req) && !isFinalApprover(req) && !isSeniorVicePresident(req) && !isPresident(req)) {
+      return { ok: false, code: 403, message: "Only regional manager can act on this stage" };
     }
 
     if (isRegionalManager(req) && norm(row.region) !== norm(getUserRegion(req))) {
@@ -332,23 +294,11 @@ const canActOnLeave = async (req, leaveId) => {
   }
 
   if (status === "Pending Assistant Vice President") {
-    if (
-      !isAssistantVicePresident(req) &&
-      !isFinalApprover(req) &&
-      !isSeniorVicePresident(req) &&
-      !isPresident(req)
-    ) {
-      return {
-        ok: false,
-        code: 403,
-        message: "Only assistant vice president can act on this stage",
-      };
+    if (!isAssistantVicePresident(req) && !isFinalApprover(req) && !isSeniorVicePresident(req) && !isPresident(req)) {
+      return { ok: false, code: 403, message: "Only assistant vice president can act on this stage" };
     }
 
-    if (
-      isAssistantVicePresident(req) &&
-      norm(row.division) !== norm(getUserDivision(req))
-    ) {
+    if (isAssistantVicePresident(req) && norm(row.division) !== norm(getUserDivision(req))) {
       return { ok: false, code: 403, message: "Access denied" };
     }
 
@@ -356,17 +306,8 @@ const canActOnLeave = async (req, leaveId) => {
   }
 
   if (status === "Pending Vice President") {
-    if (
-      !isVicePresident(req) &&
-      !isFinalApprover(req) &&
-      !isSeniorVicePresident(req) &&
-      !isPresident(req)
-    ) {
-      return {
-        ok: false,
-        code: 403,
-        message: "Only vice president can act on this stage",
-      };
+    if (!isVicePresident(req) && !isFinalApprover(req) && !isSeniorVicePresident(req) && !isPresident(req)) {
+      return { ok: false, code: 403, message: "Only vice president can act on this stage" };
     }
 
     return { ok: true, row };
@@ -374,20 +315,12 @@ const canActOnLeave = async (req, leaveId) => {
 
   if (status === "Pending Senior Vice President") {
     if (!isSeniorVicePresident(req) && !isPresident(req) && !isFinalApprover(req)) {
-      return {
-        ok: false,
-        code: 403,
-        message: "Only senior vice president can act on this stage",
-      };
+      return { ok: false, code: 403, message: "Only senior vice president can act on this stage" };
     }
 
     const userDepartment = getUserDepartment(req);
 
-    if (
-      isSeniorVicePresident(req) &&
-      userDepartment &&
-      norm(userDepartment) !== norm(row.department)
-    ) {
+    if (isSeniorVicePresident(req) && userDepartment && norm(userDepartment) !== norm(row.department)) {
       return {
         ok: false,
         code: 403,
@@ -399,16 +332,11 @@ const canActOnLeave = async (req, leaveId) => {
   }
 
   if (status === "Pending Admin") {
-    if (
-      !isFinalApprover(req) &&
-      !isVicePresident(req) &&
-      !isSeniorVicePresident(req) &&
-      !isPresident(req)
-    ) {
+    if (!isFinalApprover(req) && !isVicePresident(req) && !isSeniorVicePresident(req) && !isPresident(req)) {
       return {
         ok: false,
         code: 403,
-        message: "Only admin/hr/accounting/tread or higher roles can act on this stage",
+        message: "Only admin/hr/accounting/it or higher roles can act on this stage",
       };
     }
 
@@ -418,17 +346,81 @@ const canActOnLeave = async (req, leaveId) => {
   return { ok: false, code: 400, message: "Unsupported leave status" };
 };
 
+const deleteOldApprovedAttachments = async (client, leaveId) => {
+  const oldFiles = await client.query(
+    `
+    SELECT file_path
+    FROM public.leave_attachments
+    WHERE leave_request_id = $1
+      AND attachment_type = 'approved'
+    `,
+    [leaveId]
+  );
+
+  for (const old of oldFiles.rows) {
+    try {
+      const rel = String(old.file_path || "").replace(/^\/uploads\//, "");
+      const oldPath = path.join(__dirname, "..", "uploads", rel);
+
+      if (fs.existsSync(oldPath)) {
+        fs.unlinkSync(oldPath);
+      }
+    } catch (e) {
+      console.error("DELETE OLD LEAVE FILE ERROR:", e.message);
+    }
+  }
+
+  await client.query(
+    `
+    DELETE FROM public.leave_attachments
+    WHERE leave_request_id = $1
+      AND attachment_type = 'approved'
+    `,
+    [leaveId]
+  );
+};
+
+const insertApprovedAttachment = async (client, leaveId, file, req) => {
+  await deleteOldApprovedAttachments(client, leaveId);
+
+  await client.query(
+    `
+    INSERT INTO public.leave_attachments
+    (
+      leave_request_id,
+      file_name,
+      file_path,
+      file_mime,
+      file_size,
+      attachment_type,
+      uploaded_by,
+      uploaded_by_role
+    )
+    VALUES
+    (
+      $1,$2,$3,$4,$5,
+      'approved',$6,$7
+    )
+    `,
+    [
+      leaveId,
+      file.originalname || null,
+      `/uploads/leave_attachments/${file.filename}`,
+      file.mimetype || null,
+      file.size || null,
+      req.user?.id ?? null,
+      roleLower(req),
+    ]
+  );
+};
+
 router.get(
   "/leave-requests",
   requireAuth,
   requirePermission("leave_request", "view"),
   async (req, res) => {
     try {
-      if (
-        isFullViewer(req) ||
-        isRegionalManager(req) ||
-        isAssistantVicePresident(req)
-      ) {
+      if (isFullViewer(req) || isRegionalManager(req) || isAssistantVicePresident(req)) {
         const r = await pool.query(`
           ${baseLeaveSelect}
           ORDER BY lr.entry_date DESC NULLS LAST, lr.id DESC
@@ -463,8 +455,7 @@ router.get(
         const r = await pool.query(
           `
           ${baseLeaveSelect}
-          WHERE LOWER(TRIM(COALESCE(s.area, ''))) =
-                LOWER(TRIM($1))
+          WHERE LOWER(TRIM(COALESCE(s.area, ''))) = LOWER(TRIM($1))
           ORDER BY lr.entry_date DESC NULLS LAST, lr.id DESC
           `,
           [area]
@@ -473,15 +464,10 @@ router.get(
         return res.json(r.rows);
       }
 
-      return res.status(403).json({
-        message: "Access denied",
-      });
+      return res.status(403).json({ message: "Access denied" });
     } catch (e) {
       console.error("GET /api/leave-requests ERROR:", e.message);
-
-      return res.status(500).json({
-        message: e?.message || "Server error",
-      });
+      return res.status(500).json({ message: e?.message || "Server error" });
     }
   }
 );
@@ -508,21 +494,12 @@ router.post(
 
       if (!employee_id) {
         await client.query("ROLLBACK");
-
-        return res.status(400).json({
-          message: "employee_id is required",
-        });
+        return res.status(400).json({ message: "employee_id is required" });
       }
 
       const staffRes = await client.query(
         `
-        SELECT
-          id,
-          fullname,
-          department,
-          first_name,
-          middle_name,
-          last_name
+        SELECT id, fullname, department, first_name, middle_name, last_name
         FROM public.staff
         WHERE id = $1
         LIMIT 1
@@ -532,10 +509,7 @@ router.post(
 
       if (staffRes.rowCount === 0) {
         await client.query("ROLLBACK");
-
-        return res.status(404).json({
-          message: "Staff not found",
-        });
+        return res.status(404).json({ message: "Staff not found" });
       }
 
       const staff = staffRes.rows[0];
@@ -649,12 +623,8 @@ router.post(
       return res.json(finalRow.rows[0]);
     } catch (err) {
       await client.query("ROLLBACK");
-
       console.error("CREATE LEAVE ERROR:", err.message);
-
-      return res.status(500).json({
-        message: err.message,
-      });
+      return res.status(500).json({ message: err.message });
     } finally {
       client.release();
     }
@@ -676,96 +646,23 @@ router.post(
 
       if (!req.file) {
         await client.query("ROLLBACK");
-
-        return res.status(400).json({
-          message: "Attachment is required",
-        });
+        return res.status(400).json({ message: "Attachment is required" });
       }
 
       if (!canUploadApprovedLeave(req)) {
         await client.query("ROLLBACK");
-
-        return res.status(403).json({
-          message: "Access denied",
-        });
+        return res.status(403).json({ message: "Access denied" });
       }
 
-      const oldFiles = await client.query(
-        `
-        SELECT file_path
-        FROM public.leave_attachments
-        WHERE leave_request_id = $1
-          AND attachment_type = 'approved'
-        `,
-        [leaveId]
-      );
-
-      for (const old of oldFiles.rows) {
-        try {
-          const rel = String(old.file_path || "").replace(/^\/uploads\//, "");
-
-          const oldPath = path.join(__dirname, "..", "uploads", rel);
-
-          if (fs.existsSync(oldPath)) {
-            fs.unlinkSync(oldPath);
-          }
-        } catch (e) {
-          console.error("DELETE OLD FILE ERROR:", e.message);
-        }
-      }
-
-      await client.query(
-        `
-        DELETE FROM public.leave_attachments
-        WHERE leave_request_id = $1
-          AND attachment_type = 'approved'
-        `,
-        [leaveId]
-      );
-
-      await client.query(
-        `
-        INSERT INTO public.leave_attachments
-        (
-          leave_request_id,
-          file_name,
-          file_path,
-          file_mime,
-          file_size,
-          attachment_type,
-          uploaded_by,
-          uploaded_by_role
-        )
-        VALUES
-        (
-          $1,$2,$3,$4,$5,
-          'approved',$6,$7
-        )
-        `,
-        [
-          leaveId,
-          req.file.originalname || null,
-          `/uploads/leave_attachments/${req.file.filename}`,
-          req.file.mimetype || null,
-          req.file.size || null,
-          req.user?.id ?? null,
-          roleLower(req),
-        ]
-      );
+      await insertApprovedAttachment(client, leaveId, req.file, req);
 
       await client.query("COMMIT");
 
-      return res.json({
-        message: "Approved leave file uploaded",
-      });
+      return res.json({ message: "Approved leave file uploaded" });
     } catch (e) {
       await client.query("ROLLBACK");
-
       console.error("UPLOAD APPROVED FILE ERROR:", e.message);
-
-      return res.status(500).json({
-        message: e?.message || "Server error",
-      });
+      return res.status(500).json({ message: e?.message || "Server error" });
     } finally {
       client.release();
     }
@@ -776,23 +673,27 @@ router.put(
   "/leave-requests/:id",
   requireAuth,
   requirePermission("leave_request", "approve"),
+  upload.single("attachment"),
   async (req, res) => {
+    const client = await pool.connect();
+
     try {
+      await client.query("BEGIN");
+
       const id = String(req.params.id || "").trim();
-      const action = String(req.body?.action || "").trim();
+      const action = String(req.body?.action || "").trim().toLowerCase();
 
       const access = await canActOnLeave(req, id);
 
       if (!access.ok) {
-        return res.status(access.code).json({
-          message: access.message,
-        });
+        await client.query("ROLLBACK");
+        return res.status(access.code).json({ message: access.message });
       }
 
       const currentStatus = toStr(access.row.status);
 
-      if (action.toLowerCase() === "reject") {
-        await pool.query(
+      if (action === "reject") {
+        await client.query(
           `
           UPDATE public.leave_requests
           SET
@@ -800,133 +701,134 @@ router.put(
             rejection_reason = $2
           WHERE id = $1
           `,
-          [id, toStr(req.body?.rejection_reason)]
+          [id, toStr(req.body?.rejection_reason) || "Rejected by approver"]
         );
-      } else {
-        let sql = "";
-        let params = [id, req.user?.id ?? null];
 
-        if (action.toLowerCase() !== "reject" && isSeniorVicePresident(req)) {
-          await pool.query(
-            `
-            UPDATE public.leave_requests
-            SET
-              status = 'Approved',
-              admin_approved_by = $2,
-              admin_approved_at = NOW()
-            WHERE id = $1
-            `,
-            [id, req.user?.id ?? null]
-          );
+        await client.query("COMMIT");
 
-          const finalRow = await pool.query(
-            `
-            ${baseLeaveSelect}
-            WHERE lr.id = $1
-            `,
-            [id]
-          );
+        const finalRow = await pool.query(`${baseLeaveSelect} WHERE lr.id = $1`, [id]);
+        return res.json(finalRow.rows[0]);
+      }
 
-          return res.json(finalRow.rows[0]);
-        }
+      if (action !== "approve") {
+        await client.query("ROLLBACK");
+        return res.status(400).json({ message: "Invalid action" });
+      }
 
-        if (currentStatus === "Pending Branch Manager") {
-          sql = `
-            UPDATE public.leave_requests
-            SET
-              status = 'Pending Area Manager'
-            WHERE id = $1
-          `;
-          params = [id];
-        } else if (currentStatus === "Pending Area Manager") {
-          sql = `
-            UPDATE public.leave_requests
-            SET
-              status = 'Pending Regional Manager',
-              area_approved_by = $2,
-              area_approved_at = NOW()
-            WHERE id = $1
-          `;
-        } else if (currentStatus === "Pending Regional Manager") {
-          sql = `
-            UPDATE public.leave_requests
-            SET
-              status = 'Pending Assistant Vice President',
-              regional_approved_by = $2,
-              regional_approved_at = NOW()
-            WHERE id = $1
-          `;
-        } else if (currentStatus === "Pending Assistant Vice President") {
-          const dept = norm(access.row.department);
+      if (!req.file) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({
+          message:
+            "Please upload the signed/approved leave file before approving. This file will replace the previous file for the next approver.",
+        });
+      }
 
-          if (dept === "it" || dept === "it department") {
-            sql = `
-              UPDATE public.leave_requests
-              SET
-                status = 'Approved',
-                division_approved_by = $2,
-                division_approved_at = NOW()
-              WHERE id = $1
-            `;
-          } else {
-            sql = `
-              UPDATE public.leave_requests
-              SET
-                status = 'Pending Vice President',
-                division_approved_by = $2,
-                division_approved_at = NOW()
-              WHERE id = $1
-            `;
-          }
-        } else if (currentStatus === "Pending Vice President") {
-          sql = `
-            UPDATE public.leave_requests
-            SET
-              status = 'Pending Admin'
-            WHERE id = $1
-          `;
-          params = [id];
-        } else if (currentStatus === "Pending Senior Vice President") {
-          sql = `
-            UPDATE public.leave_requests
-            SET
-              status = 'Approved'
-            WHERE id = $1
-          `;
-          params = [id];
-        } else if (currentStatus === "Pending Admin") {
+      await insertApprovedAttachment(client, id, req.file, req);
+
+      let sql = "";
+      let params = [id, req.user?.id ?? null];
+
+      if (isSeniorVicePresident(req) && currentStatus === "Pending Senior Vice President") {
+        sql = `
+          UPDATE public.leave_requests
+          SET
+            status = 'Approved',
+            admin_approved_by = $2,
+            admin_approved_at = NOW()
+          WHERE id = $1
+        `;
+      } else if (currentStatus === "Pending Branch Manager") {
+        sql = `
+          UPDATE public.leave_requests
+          SET status = 'Pending Area Manager'
+          WHERE id = $1
+        `;
+        params = [id];
+      } else if (currentStatus === "Pending Area Manager") {
+        sql = `
+          UPDATE public.leave_requests
+          SET
+            status = 'Pending Regional Manager',
+            area_approved_by = $2,
+            area_approved_at = NOW()
+          WHERE id = $1
+        `;
+      } else if (currentStatus === "Pending Regional Manager") {
+        sql = `
+          UPDATE public.leave_requests
+          SET
+            status = 'Pending Assistant Vice President',
+            regional_approved_by = $2,
+            regional_approved_at = NOW()
+          WHERE id = $1
+        `;
+      } else if (currentStatus === "Pending Assistant Vice President") {
+        const dept = norm(access.row.department);
+
+        if (dept === "it" || dept === "it department") {
           sql = `
             UPDATE public.leave_requests
             SET
               status = 'Approved',
-              admin_approved_by = $2,
-              admin_approved_at = NOW()
+              division_approved_by = $2,
+              division_approved_at = NOW()
             WHERE id = $1
           `;
         } else {
-          return res.status(400).json({
-            message: "Invalid current status for approval",
-          });
+          sql = `
+            UPDATE public.leave_requests
+            SET
+              status = 'Pending Vice President',
+              division_approved_by = $2,
+              division_approved_at = NOW()
+            WHERE id = $1
+          `;
         }
-
-        await pool.query(sql, params);
+      } else if (currentStatus === "Pending Vice President") {
+        sql = `
+          UPDATE public.leave_requests
+          SET status = 'Pending Admin'
+          WHERE id = $1
+        `;
+        params = [id];
+      } else if (currentStatus === "Pending Senior Vice President") {
+        sql = `
+          UPDATE public.leave_requests
+          SET status = 'Approved'
+          WHERE id = $1
+        `;
+        params = [id];
+      } else if (currentStatus === "Pending Admin") {
+        sql = `
+          UPDATE public.leave_requests
+          SET
+            status = 'Approved',
+            admin_approved_by = $2,
+            admin_approved_at = NOW()
+          WHERE id = $1
+        `;
+      } else {
+        await client.query("ROLLBACK");
+        return res.status(400).json({
+          message: "Invalid current status for approval",
+        });
       }
 
-      const finalRow = await pool.query(
-        `
-        ${baseLeaveSelect}
-        WHERE lr.id = $1
-        `,
-        [id]
-      );
+      await client.query(sql, params);
+      await client.query("COMMIT");
 
+      const finalRow = await pool.query(`${baseLeaveSelect} WHERE lr.id = $1`, [id]);
       return res.json(finalRow.rows[0]);
     } catch (e) {
+      await client.query("ROLLBACK");
+
       console.error("PUT /api/leave-requests/:id ERROR:", e.message);
 
       return res.status(500).json({
         message: e?.message || "Server error",
       });
+    } finally {
+      client.release();
     }
   }
 );
@@ -968,46 +870,68 @@ router.get(
   async (req, res) => {
     try {
       const leaveId = String(req.params.id || "").trim();
-
       const type = String(req.params.type || "").trim().toLowerCase();
 
-      if (!["request", "approved"].includes(type)) {
+      if (!["request", "approved", "latest"].includes(type)) {
         return res.status(400).json({
           message: "Invalid attachment type",
         });
       }
 
+      let attachmentType = type;
+
+      if (type === "latest") {
+        const latest = await pool.query(
+          `
+          SELECT file_name, file_path, file_mime
+          FROM public.leave_attachments
+          WHERE leave_request_id = $1
+            AND attachment_type IN ('approved', 'request')
+          ORDER BY
+            CASE WHEN attachment_type = 'approved' THEN 1 ELSE 2 END,
+            id DESC
+          LIMIT 1
+          `,
+          [leaveId]
+        );
+
+        if (latest.rowCount === 0) {
+          return res.status(404).json({ message: "File not found" });
+        }
+
+        const row = latest.rows[0];
+        const rel = String(row.file_path || "").replace(/^\/uploads\//, "");
+        const absPath = path.join(__dirname, "..", "uploads", rel);
+
+        if (!fs.existsSync(absPath)) {
+          return res.status(404).json({ message: "Physical file missing" });
+        }
+
+        return res.download(absPath, row.file_name || undefined);
+      }
+
       const r = await pool.query(
         `
-        SELECT
-          file_name,
-          file_path,
-          file_mime
+        SELECT file_name, file_path, file_mime
         FROM public.leave_attachments
         WHERE leave_request_id = $1
           AND attachment_type = $2
         ORDER BY id DESC
         LIMIT 1
         `,
-        [leaveId, type]
+        [leaveId, attachmentType]
       );
 
       if (r.rowCount === 0) {
-        return res.status(404).json({
-          message: "File not found",
-        });
+        return res.status(404).json({ message: "File not found" });
       }
 
       const row = r.rows[0];
-
       const rel = String(row.file_path || "").replace(/^\/uploads\//, "");
-
       const absPath = path.join(__dirname, "..", "uploads", rel);
 
       if (!fs.existsSync(absPath)) {
-        return res.status(404).json({
-          message: "Physical file missing",
-        });
+        return res.status(404).json({ message: "Physical file missing" });
       }
 
       return res.download(absPath, row.file_name || undefined);

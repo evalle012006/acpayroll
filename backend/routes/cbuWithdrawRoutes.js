@@ -118,6 +118,24 @@ const canApproveCurrentStage = (req, stage) => {
 const chainTextByApplicantRole = (role) =>
   getApprovalChainByApplicantRole(role).join(" → ");
 
+async function getStaffById(employeeId, client = db) {
+  const r = await client.query(
+    `
+    SELECT
+      id,
+      employee_no,
+      department,
+      position
+    FROM public.staff
+    WHERE id = $1
+    LIMIT 1
+    `,
+    [employeeId]
+  );
+
+  return r.rows[0] || null;
+}
+
 router.get(
   "/cbu-withdrawals",
   requireAuth,
@@ -185,25 +203,12 @@ router.post(
         return res.status(400).json({ message: "Request file is required" });
       }
 
-      const staffRes = await db.query(
-        `
-        SELECT
-          id,
-          employee_no,
-          department,
-          position
-        FROM public.staff
-        WHERE id = $1
-        LIMIT 1
-        `,
-        [employeeId]
-      );
+      const staff = await getStaffById(employeeId);
 
-      if (staffRes.rowCount === 0) {
+      if (!staff) {
         return res.status(404).json({ message: "Staff record not found" });
       }
 
-      const staff = staffRes.rows[0];
       const employeeNo = clean(staff.employee_no);
       const applicantRole = clean(staff.position || req.user?.role);
       const startStage = initialStage(applicantRole);
@@ -378,17 +383,9 @@ router.put(
 
       const current = await client.query(
         `
-        SELECT
-          cw.id,
-          cw.employee_id,
-          cw.amount,
-          cw.status,
-          cw.approval_stage,
-          s.employee_no,
-          s.position AS staff_role
-        FROM public.cbu_withdrawals cw
-        LEFT JOIN public.staff s ON s.id = cw.employee_id
-        WHERE cw.id = $1
+        SELECT *
+        FROM public.cbu_withdrawals
+        WHERE id = $1
         FOR UPDATE
         `,
         [id]
@@ -400,6 +397,13 @@ router.put(
       }
 
       const row = current.rows[0];
+
+      const staff = await getStaffById(row.employee_id, client);
+
+      if (!staff) {
+        await client.query("ROLLBACK");
+        return res.status(404).json({ message: "Staff record not found" });
+      }
 
       if (norm(row.status) === "approved") {
         await client.query("ROLLBACK");
@@ -423,7 +427,7 @@ router.put(
         });
       }
 
-      const applicantRole = clean(row.staff_role || "");
+      const applicantRole = clean(staff.position || "");
       const currentStage = clean(row.approval_stage) || initialStage(applicantRole);
       const col = stageColumn(currentStage);
       const bypass = canBypassApproval(req);
@@ -535,7 +539,7 @@ router.put(
         });
       }
 
-      const employeeNo = clean(row.employee_no);
+      const employeeNo = clean(staff.employee_no);
 
       const balance = await client.query(
         `
@@ -639,15 +643,9 @@ router.post(
 
       const current = await client.query(
         `
-        SELECT
-          cw.id,
-          cw.employee_id,
-          cw.amount,
-          cw.status,
-          s.employee_no
-        FROM public.cbu_withdrawals cw
-        LEFT JOIN public.staff s ON s.id = cw.employee_id
-        WHERE cw.id = $1
+        SELECT *
+        FROM public.cbu_withdrawals
+        WHERE id = $1
         FOR UPDATE
         `,
         [id]
@@ -660,14 +658,20 @@ router.post(
 
       const row = current.rows[0];
 
+      const staff = await getStaffById(row.employee_id, client);
+
+      if (!staff) {
+        await client.query("ROLLBACK");
+        return res.status(404).json({ message: "Staff record not found" });
+      }
+
       if (
         norm(row.status) !== norm(WAITING_FINAL_FILE) &&
         !canBypassApproval(req)
       ) {
         await client.query("ROLLBACK");
         return res.status(400).json({
-          message:
-            "Final file can only be uploaded after Vice President approval.",
+          message: "Final file can only be uploaded after Vice President approval.",
         });
       }
 
@@ -685,7 +689,7 @@ router.post(
         });
       }
 
-      const employeeNo = clean(row.employee_no);
+      const employeeNo = clean(staff.employee_no);
 
       const balance = await client.query(
         `

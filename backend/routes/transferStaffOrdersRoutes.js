@@ -74,6 +74,29 @@ const canRejectOrder = (req) =>
   isHr(req) || isAdmin(req) || isIT(req) || isVicePresident(req);
 
 const getUserBranchId = (req) => req.user?.branch_id ?? null;
+
+  const isNumericId = (v) => /^\d+$/.test(String(v ?? "").trim());
+
+  async function resolveUserBranchId(req) {
+    const raw = String(req.user?.branch_id ?? "").trim();
+
+    if (!raw) return null;
+
+    if (isNumericId(raw)) return Number(raw);
+
+    const r = await pool.query(
+      `
+      SELECT id
+      FROM public.branches
+      WHERE LOWER(TRIM(code)) = LOWER(TRIM($1))
+      LIMIT 1
+      `,
+      [raw]
+    );
+
+    return r.rows[0]?.id || null;
+  }
+
 const getUserArea = (req) => toStr(req.user?.area);
 const getUserRegion = (req) => toStr(req.user?.region);
 const getUserDivision = (req) => toStr(req.user?.division);
@@ -198,7 +221,7 @@ router.get(
       }
 
       if (isBranchManager(req)) {
-        const branchId = getUserBranchId(req);
+        const branchId = await resolveUserBranchId(req);
         if (!branchId) return res.json([]);
 
         const r = await pool.query(
@@ -349,7 +372,9 @@ router.post(
       const staffRow = s.rows[0];
 
       if (isBranchManager(req)) {
-        if (Number(getUserBranchId(req)) !== Number(prev_branch_id)) {
+        const userBranchId = await resolveUserBranchId(req);
+
+        if (Number(userBranchId) !== Number(prev_branch_id)) {
           await client.query("ROLLBACK");
           return res.status(403).json({ message: "Access denied" });
         }
