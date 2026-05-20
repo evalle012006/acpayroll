@@ -440,3 +440,52 @@
     box-shadow: none;
   }
 }
+
+.reports-profile-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-bottom: 28px;
+  padding: 22px;
+  border: 1px solid var(--border);
+  border-radius: 22px;
+  background: var(--stat-bg);
+}
+
+.reports-profile-img {
+  width: 190px;
+  height: 190px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 5px solid rgba(96, 165, 250, 0.75);
+  box-shadow: 0 0 42px rgba(96, 165, 250, 0.35);
+  background: var(--input-bg);
+}
+
+.reports-profile-name {
+  margin-top: 16px;
+  font-size: 28px;
+  font-weight: 950;
+  text-align: center;
+}
+
+.reports-profile-meta {
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.reports-profile-branch {
+  margin-top: 12px;
+  padding: 9px 18px;
+  border-radius: 999px;
+  background: rgba(59, 130, 246, 0.16);
+  border: 1px solid rgba(96, 165, 250, 0.35);
+  color: var(--blue-soft);
+  font-weight: 900;
+}
+
+.reports-modal {
+  width: min(980px, 96vw);
+}

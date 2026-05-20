@@ -44,13 +44,19 @@ const stageLabel = (stage) => {
   if (s === "vice president") return "Vice President";
   if (s === norm(WAITING_FINAL_FILE)) return WAITING_FINAL_FILE;
   if (s === "approved") return "Approved";
+  if (s === "void") return "Void";
 
   return stage || "Pending";
 };
 
 const canBypass = (role) => ["admin", "it"].includes(norm(role));
+
 const canFinalUpload = (role) =>
   ["hr", "accounting", "admin", "it"].includes(norm(role));
+
+const canVoidItem = (role, item) =>
+  canBypass(role) &&
+  !["void", "rejected"].includes(norm(item?.status));
 
 const getApplicantRole = (x) =>
   toStr(x?.staff_role || x?.position || x?.applicant_role || x?.role);
@@ -356,36 +362,39 @@ export default function CBUWithdrawApprovalTab() {
       }
     }
 
+    if (status === "Void" && !canBypass(role)) {
+      alert("Only Admin/IT can void CBU withdrawal.");
+      return;
+    }
+
     if (status === "Approved" && !approvalFiles[item.id]) {
       alert("Please upload the signed/approved CBU file before approving.");
       return;
     }
 
-    if (
-      !window.confirm(
-        status === "Approved"
-          ? "Approve this CBU withdrawal and submit the uploaded signed file to the next approver?"
-          : "Reject this CBU withdrawal?"
-      )
-    ) {
-      return;
-    }
+    const confirmMessage =
+      status === "Approved"
+        ? "Approve this CBU withdrawal and submit the uploaded signed file to the next approver?"
+        : status === "Void"
+        ? "Void this CBU withdrawal?"
+        : "Reject this CBU withdrawal?";
+
+    if (!window.confirm(confirmMessage)) return;
 
     try {
       setProcessingId(`${item.id}-${status}`);
 
       const fd = new FormData();
+      fd.append("status", status);
 
-        fd.append("status", status);
+      if (status === "Rejected") {
+        fd.append("rejection_reason", reason || "");
+      }
 
-        if (status === "Rejected") {
-          fd.append("rejection_reason", reason || "");
-        }
-
-        if (status === "Approved") {
-          fd.append("approval_stage", item.approval_stage || "");
-          fd.append("photo", approvalFiles[item.id]);
-        }
+      if (status === "Approved") {
+        fd.append("approval_stage", item.approval_stage || "");
+        fd.append("photo", approvalFiles[item.id]);
+      }
 
       await api.put(`/cbu-withdrawals/${item.id}`, fd, {
         headers: { "Content-Type": "multipart/form-data" },
@@ -394,6 +403,8 @@ export default function CBUWithdrawApprovalTab() {
       alert(
         status === "Approved"
           ? "CBU withdrawal approved and signed file submitted."
+          : status === "Void"
+          ? "CBU withdrawal voided."
           : "CBU withdrawal rejected."
       );
 
@@ -486,6 +497,7 @@ export default function CBUWithdrawApprovalTab() {
     const s = norm(status);
     if (s === "approved") return "badge badge-approved";
     if (s === "rejected") return "badge badge-rejected";
+    if (s === "void") return "badge badge-rejected";
     if (s === norm(WAITING_FINAL_FILE)) return "badge badge-pending";
     return "badge badge-pending";
   };
@@ -851,6 +863,7 @@ export default function CBUWithdrawApprovalTab() {
                   Clear
                 </button>
               </div>
+
               <div className="table-wrap">
                 <table className="table">
                   <thead>
@@ -883,6 +896,7 @@ export default function CBUWithdrawApprovalTab() {
                       pagedRows.map((x) => {
                         const approveThis = canActOnItem(x);
                         const finalThis = canFinalUploadItem(x);
+                        const voidThis = canVoidItem(role, x);
 
                         return (
                           <tr key={x.id}>
@@ -1012,6 +1026,19 @@ export default function CBUWithdrawApprovalTab() {
                                         : "Final Upload + Approve"}
                                     </button>
                                   </>
+                                ) : null}
+
+                                {voidThis ? (
+                                  <button
+                                    className="btn-danger"
+                                    type="button"
+                                    disabled={processingId === `${x.id}-Void`}
+                                    onClick={() => updateStatus(x, "Void")}
+                                  >
+                                    {processingId === `${x.id}-Void`
+                                      ? "Voiding..."
+                                      : "Void"}
+                                  </button>
                                 ) : null}
                               </div>
                             </td>
@@ -1273,6 +1300,17 @@ export default function CBUWithdrawApprovalTab() {
                     {processingId === `${selected.id}-Final`
                       ? "Uploading..."
                       : "Final Upload + Approve"}
+                  </button>
+                ) : null}
+
+                {canVoidItem(role, selected) ? (
+                  <button
+                    className="btn-danger"
+                    type="button"
+                    disabled={processingId === `${selected.id}-Void`}
+                    onClick={() => updateStatus(selected, "Void")}
+                  >
+                    {processingId === `${selected.id}-Void` ? "Voiding..." : "Void"}
                   </button>
                 ) : null}
 

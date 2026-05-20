@@ -173,6 +173,7 @@ const baseLeaveSelect = `
     s.division,
     s.branch_id,
     s.department,
+    s.photo_url,
 
     req_file.file_name AS request_attachment_name,
     req_file.file_path AS request_attachment_path,

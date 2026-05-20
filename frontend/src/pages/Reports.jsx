@@ -3,13 +3,11 @@ import { useNavigate } from "react-router-dom";
 import "../styles/Reports.css";
 import api from "../api/axiosClient";
 
-const norm = (v) => String(v || "").trim().toLowerCase();
+const API_ORIGIN =
+  import.meta.env.VITE_API_URL?.replace(/\/api\/?$/, "") ||
+  "http://localhost:5000";
 
-const fmtDate = (v) => {
-  if (!v) return "-";
-  const s = String(v);
-  return s.includes("T") ? s.split("T")[0] : s.slice(0, 10);
-};
+const norm = (v) => String(v || "").trim().toLowerCase();
 
 const toNum = (v) => {
   const n = Number(v);
@@ -22,15 +20,55 @@ const money = (v) =>
     maximumFractionDigits: 2,
   })}`;
 
-const getEmployeeName = (item) => {
-  return (
-    item?.employee_name ||
-    item?.staff_name ||
-    item?.fullname ||
-    item?.full_name ||
-    `${item?.first_name || ""} ${item?.last_name || ""}`.trim() ||
-    "-"
-  );
+const getEmployeeName = (item) =>
+  item?.employee_name ||
+  item?.staff_name ||
+  item?.fullname ||
+  item?.full_name ||
+  `${item?.first_name || ""} ${item?.last_name || ""}`.trim() ||
+  "-";
+
+const getBranchName = (item) => {
+  const code =
+    item?.branch_code ||
+    item?.present_branch_code ||
+    item?.prev_branch_code ||
+    item?.current_branch_code ||
+    "";
+
+  const name =
+    item?.branch_name ||
+    item?.branch ||
+    item?.present_branch_name ||
+    item?.prev_branch_name ||
+    item?.current_branch_name ||
+    item?.from_branch_name ||
+    item?.to_branch_name ||
+    "";
+
+  if (code && name) return `${code} - ${name}`;
+  return name || code || "-";
+};
+
+const getStaffPhoto = (item) => {
+  const raw =
+    item?.photo_url ||
+    item?.profile ||
+    item?.photo ||
+    item?.image ||
+    item?.avatar ||
+    "";
+
+  if (!raw) return "/default-avatar.png";
+
+  const img = String(raw).trim();
+
+  if (!img) return "/default-avatar.png";
+  if (img.startsWith("http")) return img;
+  if (img.startsWith("/uploads")) return `${API_ORIGIN}${img}`;
+  if (img.startsWith("uploads/")) return `${API_ORIGIN}/${img}`;
+
+  return `${API_ORIGIN}/uploads/${img}`;
 };
 
 const isPendingLike = (status) => {
@@ -45,9 +83,14 @@ const isDoneLike = (status) => {
 
 const getStatusClass = (status) => {
   const s = norm(status);
-  if (s === "approved" || s === "completed" || s === "done") return "reports-status approved";
+
+  if (s === "approved" || s === "completed" || s === "done") {
+    return "reports-status approved";
+  }
+
   if (s === "rejected") return "reports-status rejected";
   if (s.includes("pending")) return "reports-status pending";
+
   return "reports-status";
 };
 
@@ -86,24 +129,15 @@ export default function Reports() {
   const [search, setSearch] = useState("");
   const [selectedRequest, setSelectedRequest] = useState(null);
 
-  const handleView = (item) => {
-    if (item.department === "Finance") {
-      const type = String(item.type || "").toLowerCase();
-      const id = item.rawId;
-
-      navigate(`/approval?type=${type}&id=${id}`);
-      return;
-    }
-
-    setSelectedRequest(item);
-  };
-
   const safeGet = async (url) => {
     try {
       const res = await api.get(url);
       return Array.isArray(res.data) ? res.data : [];
     } catch (error) {
-      console.warn(`Failed to fetch ${url}:`, error?.response?.data?.message || error.message);
+      console.warn(
+        `Failed to fetch ${url}:`,
+        error?.response?.data?.message || error.message
+      );
       return [];
     }
   };
@@ -168,6 +202,10 @@ export default function Reports() {
     };
   }, [selectedRequest]);
 
+  const handleView = (item) => {
+    setSelectedRequest(item);
+  };
+
   const allRequests = useMemo(() => {
     const rows = [];
 
@@ -180,9 +218,9 @@ export default function Reports() {
         title: item.leave_type || "Leave Request",
         employeeNo: item.employee_no || "-",
         employeeName: getEmployeeName(item),
+        branch: getBranchName(item),
+        photo: getStaffPhoto(item),
         date: item.date_created || item.created_at || item.entry_date,
-        effectiveDate: item.start_date,
-        endDate: item.end_date,
         status: item.status || "Pending",
         amount: null,
         remarks: item.reason || "",
@@ -199,9 +237,9 @@ export default function Reports() {
         title: item.loan_type || "Loan Request",
         employeeNo: item.employee_no || "-",
         employeeName: getEmployeeName(item),
+        branch: getBranchName(item),
+        photo: getStaffPhoto(item),
         date: item.entry_date || item.created_at || item.approved_at,
-        effectiveDate: item.disbursement_date,
-        endDate: null,
         status: item.status || "Pending",
         amount: item.amount ?? item.total ?? null,
         remarks: item.reason || item.description || "",
@@ -218,9 +256,9 @@ export default function Reports() {
         title: item.assistance_type || "SBF Order",
         employeeNo: item.employee_no || "-",
         employeeName: getEmployeeName(item),
+        branch: getBranchName(item),
+        photo: getStaffPhoto(item),
         date: item.date_created || item.created_at,
-        effectiveDate: item.effective_date,
-        endDate: null,
         status: item.status || "Pending",
         amount: item.amount ?? null,
         remarks: item.remarks || item.reason || "",
@@ -234,12 +272,16 @@ export default function Reports() {
         rawId: item.id,
         type: "Reimbursement",
         department: "Finance",
-        title: item.reimbursement_type || item.expense_type || "Reimbursement Request",
+        title:
+          item.reimbursement_type ||
+          item.expense_type ||
+          item.request_type ||
+          "Reimbursement Request",
         employeeNo: item.employee_no || "-",
         employeeName: getEmployeeName(item),
+        branch: getBranchName(item),
+        photo: getStaffPhoto(item),
         date: item.date_created || item.created_at || item.entry_date,
-        effectiveDate: item.transaction_date,
-        endDate: null,
         status: item.status || "Pending",
         amount: item.amount ?? item.total_amount ?? null,
         remarks: item.remarks || item.reason || item.description || "",
@@ -256,9 +298,9 @@ export default function Reports() {
         title: item.order_no || "Regularization Order",
         employeeNo: item.employee_no || "-",
         employeeName: getEmployeeName(item),
+        branch: getBranchName(item),
+        photo: getStaffPhoto(item),
         date: item.date_created || item.created_at,
-        effectiveDate: item.effective_date,
-        endDate: null,
         status: item.status || "Pending",
         amount: item.present_salary ?? null,
         remarks: item.remarks || "",
@@ -275,9 +317,9 @@ export default function Reports() {
         title: item.suspension_type || "Suspension Order",
         employeeNo: item.employee_no || "-",
         employeeName: getEmployeeName(item),
+        branch: getBranchName(item),
+        photo: getStaffPhoto(item),
         date: item.date_created || item.created_at,
-        effectiveDate: item.start_date || item.suspension_start,
-        endDate: item.end_date || item.suspension_end,
         status: item.status || "Pending",
         amount: item.total_deduction ?? null,
         remarks: item.reason || item.remarks || "",
@@ -294,9 +336,9 @@ export default function Reports() {
         title: item.exit_type || item.order_no || "Exit Staff Order",
         employeeNo: item.employee_no || "-",
         employeeName: getEmployeeName(item),
+        branch: getBranchName(item),
+        photo: getStaffPhoto(item),
         date: item.date_created || item.created_at,
-        effectiveDate: item.effective_date,
-        endDate: item.settlement_date,
         status: item.status || "Pending",
         amount: null,
         remarks: item.remarks || item.rejection_reason || "",
@@ -313,9 +355,9 @@ export default function Reports() {
         title: item.order_no || item.request_no || "Resignation Request",
         employeeNo: item.employee_no || "-",
         employeeName: getEmployeeName(item),
+        branch: getBranchName(item),
+        photo: getStaffPhoto(item),
         date: item.date_created || item.created_at,
-        effectiveDate: item.effective_date || item.resignation_date,
-        endDate: null,
         status: item.status || "Pending",
         amount: null,
         remarks: item.remarks || item.reason || "",
@@ -330,6 +372,7 @@ export default function Reports() {
 
       const ad = a.date ? new Date(a.date).getTime() : 0;
       const bd = b.date ? new Date(b.date).getTime() : 0;
+
       return bd - ad;
     });
 
@@ -348,9 +391,18 @@ export default function Reports() {
   const summary = useMemo(() => {
     const pending = allRequests.filter((x) => isPendingLike(x.status)).length;
     const completed = allRequests.filter((x) => isDoneLike(x.status)).length;
-    const hr = allRequests.filter((x) => x.department === "HR" && isPendingLike(x.status)).length;
-    const finance = allRequests.filter((x) => x.department === "Finance" && isPendingLike(x.status)).length;
-    const accounting = allRequests.filter((x) => x.department === "Accounting" && isPendingLike(x.status)).length;
+
+    const hr = allRequests.filter(
+      (x) => x.department === "HR" && isPendingLike(x.status)
+    ).length;
+
+    const finance = allRequests.filter(
+      (x) => x.department === "Finance" && isPendingLike(x.status)
+    ).length;
+
+    const accounting = allRequests.filter(
+      (x) => x.department === "Accounting" && isPendingLike(x.status)
+    ).length;
 
     return {
       total: allRequests.length,
@@ -374,7 +426,9 @@ export default function Reports() {
           : norm(item.status) === norm(selectedStatus);
 
       const departmentOk =
-        selectedDepartment === "All" ? true : item.department === selectedDepartment;
+        selectedDepartment === "All"
+          ? true
+          : item.department === selectedDepartment;
 
       const typeOk = selectedType === "All" ? true : item.type === selectedType;
 
@@ -386,6 +440,7 @@ export default function Reports() {
           item.title,
           item.employeeNo,
           item.employeeName,
+          item.branch,
           item.status,
           item.remarks,
         ]
@@ -405,9 +460,8 @@ Request Type: ${item.type}
 Reference: ${item.rawId}
 Employee: ${item.employeeName}
 Employee No: ${item.employeeNo}
+Branch: ${item.branch || "-"}
 Status: ${item.status}
-Date Filed: ${fmtDate(item.date)}
-Effective Date: ${fmtDate(item.effectiveDate)}
 Remarks: ${item.remarks || "-"}`;
 
     try {
@@ -453,11 +507,17 @@ Remarks: ${item.remarks || "-"}`;
         <div>
           <h2 className="reports-title">Requests / Follow Up</h2>
           <p className="reports-subtitle">
-            Track pending requests and follow up with HR, Finance, Accounting, or Operations.
+            Track pending requests and follow up with HR, Finance, Accounting, or
+            Operations.
           </p>
         </div>
 
-        <button className="reports-btn" type="button" onClick={loadRequests} disabled={loading}>
+        <button
+          className="reports-btn"
+          type="button"
+          onClick={loadRequests}
+          disabled={loading}
+        >
           {loading ? "Refreshing..." : "Refresh"}
         </button>
       </div>
@@ -492,8 +552,11 @@ Remarks: ${item.remarks || "-"}`;
         >
           <div className="reports-stat-head">
             <div className="reports-stat-label">Pending Follow Ups</div>
-            {summary.pending > 0 && <span className="reports-badge">{summary.pending}</span>}
+            {summary.pending > 0 && (
+              <span className="reports-badge">{summary.pending}</span>
+            )}
           </div>
+
           <div className="reports-stat-value">{summary.pending}</div>
           <div className="reports-stat-sub">Needs action or follow up</div>
         </button>
@@ -510,6 +573,7 @@ Remarks: ${item.remarks || "-"}`;
             <div className="reports-stat-label">HR Pending</div>
             {summary.hr > 0 && <span className="reports-badge">{summary.hr}</span>}
           </div>
+
           <div className="reports-stat-value">{summary.hr}</div>
           <div className="reports-stat-sub">Leave, regularization, suspension, exit</div>
         </button>
@@ -524,8 +588,11 @@ Remarks: ${item.remarks || "-"}`;
         >
           <div className="reports-stat-head">
             <div className="reports-stat-label">Finance Pending</div>
-            {summary.finance > 0 && <span className="reports-badge">{summary.finance}</span>}
+            {summary.finance > 0 && (
+              <span className="reports-badge">{summary.finance}</span>
+            )}
           </div>
+
           <div className="reports-stat-value">{summary.finance}</div>
           <div className="reports-stat-sub">Loans, SBF, reimbursement</div>
         </button>
@@ -535,7 +602,7 @@ Remarks: ${item.remarks || "-"}`;
         <div className="reports-toolbar" style={{ marginBottom: 14 }}>
           <input
             className="reports-input"
-            placeholder="Search employee, request type, status, remarks..."
+            placeholder="Search employee, branch, request type, status, remarks..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
@@ -583,8 +650,7 @@ Remarks: ${item.remarks || "-"}`;
                 <th>Department</th>
                 <th>Request Type</th>
                 <th>Employee</th>
-                <th>Date Filed</th>
-                <th>Effective</th>
+                <th>Branch</th>
                 <th>Amount</th>
                 <th>Status</th>
                 <th style={{ width: 280 }}>Follow Up</th>
@@ -594,13 +660,13 @@ Remarks: ${item.remarks || "-"}`;
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan="8" className="reports-empty-cell">
+                  <td colSpan="7" className="reports-empty-cell">
                     Loading requests...
                   </td>
                 </tr>
               ) : filteredRequests.length === 0 ? (
                 <tr>
-                  <td colSpan="8" className="reports-empty-cell">
+                  <td colSpan="7" className="reports-empty-cell">
                     No requests found.
                   </td>
                 </tr>
@@ -608,29 +674,30 @@ Remarks: ${item.remarks || "-"}`;
                 filteredRequests.map((item) => (
                   <tr key={item.id}>
                     <td>{item.department}</td>
+
                     <td>
                       <strong>{item.type}</strong>
                       <div style={{ opacity: 0.75, fontSize: 12, marginTop: 4 }}>
                         {item.title}
                       </div>
                     </td>
+
                     <td>
                       <strong>{item.employeeName}</strong>
                       <div style={{ opacity: 0.75, fontSize: 12, marginTop: 4 }}>
                         {item.employeeNo}
                       </div>
                     </td>
-                    <td>{fmtDate(item.date)}</td>
-                    <td>
-                      {fmtDate(item.effectiveDate)}
-                      {item.endDate ? ` → ${fmtDate(item.endDate)}` : ""}
-                    </td>
+
+                    <td>{item.branch || "-"}</td>
                     <td>{item.amount == null ? "-" : money(item.amount)}</td>
+
                     <td>
                       <span className={getStatusClass(item.status)}>
                         {item.status || "Pending"}
                       </span>
                     </td>
+
                     <td>
                       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                         <button
@@ -667,7 +734,10 @@ Remarks: ${item.remarks || "-"}`;
       </div>
 
       {selectedRequest && (
-        <div className="reports-modal-overlay" onMouseDown={() => setSelectedRequest(null)}>
+        <div
+          className="reports-modal-overlay"
+          onMouseDown={() => setSelectedRequest(null)}
+        >
           <div className="reports-modal" onMouseDown={(e) => e.stopPropagation()}>
             <div className="reports-modal-header">
               <h3 className="reports-modal-title">Request Follow Up</h3>
@@ -682,40 +752,51 @@ Remarks: ${item.remarks || "-"}`;
             </div>
 
             <div className="reports-modal-body">
+              <div className="reports-profile-card">
+                <img
+                  className="reports-profile-img"
+                  src={selectedRequest.photo || "/default-avatar.png"}
+                  alt="Staff"
+                  onError={(e) => {
+                    e.currentTarget.src = "/default-avatar.png";
+                  }}
+                />
+
+                <div className="reports-profile-name">
+                  {selectedRequest.employeeName}
+                </div>
+
+                <div className="reports-profile-meta">
+                  Employee No: {selectedRequest.employeeNo}
+                </div>
+
+                <div className="reports-profile-branch">
+                  {selectedRequest.branch || "-"}
+                </div>
+              </div>
+
               <table className="reports-table">
                 <tbody>
                   <tr>
                     <th>Department</th>
                     <td>{selectedRequest.department}</td>
                   </tr>
+
                   <tr>
                     <th>Request Type</th>
                     <td>{selectedRequest.type}</td>
                   </tr>
+
                   <tr>
                     <th>Reference</th>
                     <td>{selectedRequest.rawId}</td>
                   </tr>
-                  <tr>
-                    <th>Employee</th>
-                    <td>{selectedRequest.employeeName}</td>
-                  </tr>
-                  <tr>
-                    <th>Employee No</th>
-                    <td>{selectedRequest.employeeNo}</td>
-                  </tr>
-                  <tr>
-                    <th>Date Filed</th>
-                    <td>{fmtDate(selectedRequest.date)}</td>
-                  </tr>
-                  <tr>
-                    <th>Effective Date</th>
-                    <td>{fmtDate(selectedRequest.effectiveDate)}</td>
-                  </tr>
+
                   <tr>
                     <th>Status</th>
                     <td>{selectedRequest.status}</td>
                   </tr>
+
                   <tr>
                     <th>Remarks</th>
                     <td>{selectedRequest.remarks || "-"}</td>
@@ -723,7 +804,15 @@ Remarks: ${item.remarks || "-"}`;
                 </tbody>
               </table>
 
-              <div style={{ display: "flex", gap: 10, marginTop: 16, flexWrap: "wrap" }}>
+              <div
+                style={{
+                  display: "flex",
+                  gap: 10,
+                  marginTop: 16,
+                  flexWrap: "wrap",
+                  justifyContent: "center",
+                }}
+              >
                 <button
                   className="reports-btn"
                   type="button"

@@ -913,15 +913,12 @@ export default function StaffInformation() {
                 <thead>
                   <tr>
                     <th style={{ width: 70 }}></th>
-                    <th style={{ width: 90 }}>Slot</th>
                     <th style={{ width: 120 }}>Emp No</th>
                     <th>Name</th>
                     <th style={{ width: 180 }}>Position</th>
                     <th style={{ width: 180 }}>Department</th>
                     <th style={{ width: 200 }}>Branch</th>
                     <th style={{ width: 120 }}>Status</th>
-                    <th style={{ width: 140 }}>Start Date</th>
-                    <th style={{ width: 140 }}>Regularized</th>
                     <th style={{ width: 260 }}>Action</th>
                   </tr>
                 </thead>
@@ -929,7 +926,7 @@ export default function StaffInformation() {
                 <tbody>
                   {filteredStaff.length === 0 ? (
                     <tr>
-                      <td colSpan={11} className="empty">
+                      <td colSpan={8} className="empty">
                         No staff found.
                       </td>
                     </tr>
@@ -949,7 +946,6 @@ export default function StaffInformation() {
                             )}
                           </td>
 
-                          <td className="mono">{s.id}</td>
                           <td className="mono">{s.employee_no || "-"}</td>
                           <td className="strong">{displayName(s)}</td>
                           <td>{s.position || "-"}</td>
@@ -960,8 +956,7 @@ export default function StaffInformation() {
                               {String(s.status || "Active")}
                             </span>
                           </td>
-                          <td>{fmtDate(s.start_date)}</td>
-                          <td>{fmtDate(s.regularization_date)}</td>
+                          
                           <td>
                             <div className="actions">
                               <button

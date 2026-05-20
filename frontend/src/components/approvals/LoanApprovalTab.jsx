@@ -1445,7 +1445,7 @@ export default function LoanApprovalTab() {
                                     >
                                       {processingId === `loan-${item.id}-approve`
                                         ? "Approving..."
-                                        : "Upload + Approve"}
+                                        : "Submit"}
                                     </button>
 
                                     <button

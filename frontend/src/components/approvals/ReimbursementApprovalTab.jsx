@@ -1,5 +1,14 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+
 import api from "../../api/axiosClient";
+
+const WAITING_FINAL_FILE = "Waiting Final File Upload";
 
 const REQUEST_TYPE_OPTIONS = [
   "Transportation Reimbursement",
@@ -8,25 +17,6 @@ const REQUEST_TYPE_OPTIONS = [
   "Food Allocation Reimbursement",
   "Other Reimbursement",
 ];
-
-const DEFAULT_CHAIN = [
-  "branch manager",
-  "area manager",
-  "regional manager",
-  "assistant vice president",
-  "vice president",
-  "senior vice president",
-];
-
-const STAGE_LABELS = {
-  "branch manager": "Branch Manager",
-  "area manager": "Area Manager",
-  "regional manager": "Regional Manager",
-  "assistant vice president": "Assistant Vice President",
-  "vice president": "Vice President",
-  "senior vice president": "Senior Vice President",
-  approved: "Approved",
-};
 
 const readUser = () => {
   try {
@@ -50,215 +40,355 @@ const fmtMoney = (v) =>
     maximumFractionDigits: 2,
   });
 
-const fmtDate = (d) => (d ? String(d).slice(0, 10) : "-");
+const fmtDate = (v) =>
+  v ? String(v).slice(0, 10) : "-";
+
+const STAGE_LABELS = {
+  "branch manager": "Branch Manager",
+  "area manager": "Area Manager",
+  "regional manager": "Regional Manager",
+  "assistant vice president": "Assistant Vice President",
+  "vice president": "Vice President",
+  "senior vice president": "Senior Vice President",
+  approved: "Approved",
+  rejected: "Rejected",
+  void: "Void",
+  [WAITING_FINAL_FILE.toLowerCase()]: WAITING_FINAL_FILE,
+};
 
 const parseChain = (item) => {
   try {
     if (Array.isArray(item?.approval_chain)) {
-      return item.approval_chain.map(norm).filter(Boolean);
+      return item.approval_chain.map(norm);
     }
 
     if (item?.approval_chain) {
       const parsed = JSON.parse(item.approval_chain);
-      if (Array.isArray(parsed)) return parsed.map(norm).filter(Boolean);
+
+      if (Array.isArray(parsed)) {
+        return parsed.map(norm);
+      }
     }
   } catch {}
 
-  return DEFAULT_CHAIN;
+  return [];
 };
 
-const getChainStatus = (item, role) => {
-  const keyMap = {
-    "branch manager": item?.branch_manager_status,
-    "area manager": item?.area_manager_status,
-    "regional manager": item?.regional_manager_status,
-    "assistant vice president": item?.assistant_vice_president_status,
-    "vice president": item?.vice_president_status,
-    "senior vice president": item?.senior_vice_president_status,
-  };
+const canBypass = (role) =>
+  ["admin", "it"].includes(norm(role));
 
-  return toStr(keyMap[role] || "Pending") || "Pending";
-};
+const canFinalUpload = (role) =>
+  ["admin", "it", "accounting", "hr"].includes(norm(role));
+
+const canVoid = (role) =>
+  ["admin", "it"].includes(norm(role));
 
 const getCurrentStage = (item) => {
   const explicit = norm(item?.approval_stage);
-  const chain = parseChain(item);
 
-  if (explicit === "approved") return "approved";
-  if (chain.includes(explicit)) return explicit;
-
-  for (const role of chain) {
-    if (norm(getChainStatus(item, role)) !== "approved") return role;
+  if (
+    explicit === "approved" ||
+    explicit === "void" ||
+    explicit === "rejected"
+  ) {
+    return explicit;
   }
 
-  return chain[chain.length - 1] || "branch manager";
-};
+  if (explicit === norm(WAITING_FINAL_FILE)) {
+    return WAITING_FINAL_FILE;
+  }
 
-const canBypass = (role) => ["admin", "it"].includes(norm(role));
-
-const canUserActOnReimbursement = (item, role) => {
-  const overall = norm(item?.status);
-  if (overall === "approved" || overall === "rejected") return false;
-
-  if (canBypass(role)) return true;
-
-  return norm(role) === getCurrentStage(item);
-};
-
-const renderChainSummary = (item) => {
   const chain = parseChain(item);
 
-  return chain
-    .map((role) => {
-      const status = getChainStatus(item, role);
-      return `${STAGE_LABELS[role] || role}: ${status || "Pending"}`;
-    })
-    .join(" | ");
+  if (chain.includes(explicit)) {
+    return explicit;
+  }
+
+  return chain[0] || "";
+};
+
+const canApprove = (item, role) => {
+  const status = norm(item?.status);
+
+  if (
+    status === "approved" ||
+    status === "rejected" ||
+    status === "void" ||
+    status === norm(WAITING_FINAL_FILE)
+  ) {
+    return false;
+  }
+
+  if (canBypass(role)) {
+    return true;
+  }
+
+  return getCurrentStage(item) === norm(role);
+};
+
+const canUploadFinal = (item, role) =>
+  norm(item?.status) === norm(WAITING_FINAL_FILE) &&
+  canFinalUpload(role);
+
+const badgeClass = (status) => {
+  const s = norm(status);
+
+  if (s === "approved") {
+    return "badge badge-approved";
+  }
+
+  if (
+    s === "rejected" ||
+    s === "void"
+  ) {
+    return "badge badge-rejected";
+  }
+
+  return "badge badge-pending";
 };
 
 export default function ReimbursementApprovalTab() {
   const user = useMemo(() => readUser(), []);
+
   const role = norm(user?.role);
 
-  const isAdmin = role === "admin";
-  const isIt = role === "it";
-  const isHr = role === "hr";
-  const isAccounting = role === "accounting";
-  const isTread = role === "tread";
-  const isAreaManager = role === "area manager";
-  const isBranchManager = role === "branch manager";
-  const isRegionalManager = role === "regional manager";
-  const isAssistantVicePresident = role === "assistant vice president";
-  const isVicePresident = role === "vice president";
-  const isSeniorVicePresident = role === "senior vice president";
-  const isPresident = role === "president";
+  const canCreate =
+    [
+      "admin",
+      "it",
+      "accounting",
+      "hr",
+      "area manager",
+      "regional manager",
+      "assistant vice president",
+      "vice president",
+      "senior vice president",
+    ].includes(role);
 
-  const canCreateReimbursement =
-    isAdmin ||
-    isIt ||
-    isHr ||
-    isAccounting ||
-    isTread ||
-    isAreaManager ||
-    isRegionalManager ||
-    isAssistantVicePresident ||
-    isVicePresident ||
-    isSeniorVicePresident;
-
-  const canParticipateInApproval =
-    isAdmin ||
-    isIt ||
-    isBranchManager ||
-    isAreaManager ||
-    isRegionalManager ||
-    isAssistantVicePresident ||
-    isVicePresident ||
-    isSeniorVicePresident;
-
-  const [reimbursementRows, setReimbursementRows] = useState([]);
+  const [rows, setRows] = useState([]);
   const [staffList, setStaffList] = useState([]);
 
-  const [showReimbursementModal, setShowReimbursementModal] = useState(false);
-  const [showCreateReimbursement, setShowCreateReimbursement] = useState(false);
-  const [showReimbursementView, setShowReimbursementView] = useState(false);
-  const [selectedReimbursement, setSelectedReimbursement] = useState(null);
+  const [loading, setLoading] = useState(false);
 
-  const [loadingReimbursement, setLoadingReimbursement] = useState(false);
-  const [creatingReimbursement, setCreatingReimbursement] = useState(false);
-  const [processingId, setProcessingId] = useState("");
-
-  const [approvalFiles, setApprovalFiles] = useState({});
-  const [selectedApprovalFile, setSelectedApprovalFile] = useState(null);
-
-  const [reimbursementEmployeeSearch, setReimbursementEmployeeSearch] = useState("");
-  const [showReimbursementEmployeeDropdown, setShowReimbursementEmployeeDropdown] =
+  const [showCreate, setShowCreate] =
     useState(false);
-  const reimbursementEmployeeBoxRef = useRef(null);
 
-  const [reimbursementForm, setReimbursementForm] = useState({
-    employee_id: "",
-    employee_no: "",
-    staff_name: "",
-    description: "",
-    amount: "",
-    request_date: "",
-    request_type: "",
-    attachment: null,
-  });
+  const [showTable, setShowTable] =
+    useState(false);
 
-  const [adminReimbursementDate, setAdminReimbursementDate] = useState("");
+  const [showView, setShowView] =
+    useState(false);
 
-  const logout = useCallback(() => {
-    localStorage.removeItem("token");
-    localStorage.removeItem("user");
-    window.location.href = "/login";
-  }, []);
+  const [selected, setSelected] =
+    useState(null);
 
-  const safeGet = useCallback(
-    async (url, setLoading) => {
+  const [processingId, setProcessingId] =
+    useState("");
+
+  const [approvalFiles, setApprovalFiles] =
+    useState({});
+
+  const [finalFiles, setFinalFiles] =
+    useState({});
+
+  const [selectedApprovalFile,
+    setSelectedApprovalFile] =
+    useState(null);
+
+  const [selectedFinalFile,
+    setSelectedFinalFile] =
+    useState(null);
+
+  const [search,
+    setSearch] =
+    useState("");
+
+  const [appliedSearch,
+    setAppliedSearch] =
+    useState("");
+
+  const [page,
+    setPage] =
+    useState(1);
+
+  const [pageSize,
+    setPageSize] =
+    useState(25);
+
+  const employeeBoxRef =
+    useRef(null);
+
+  const [
+    employeeSearch,
+    setEmployeeSearch,
+  ] = useState("");
+
+  const [
+    showEmployeeDropdown,
+    setShowEmployeeDropdown,
+  ] = useState(false);
+
+  const [form,
+    setForm] =
+    useState({
+      employee_id: "",
+      employee_no: "",
+      staff_name: "",
+      amount: "",
+      request_date: "",
+      request_type: "",
+      description: "",
+      attachment: null,
+    });
+
+  const logout =
+    useCallback(() => {
+      localStorage.removeItem("token");
+      localStorage.removeItem("user");
+
+      window.location.href =
+        "/login";
+    }, []);
+
+  const loadRows =
+    useCallback(async () => {
       try {
         setLoading(true);
-        const res = await api.get(url);
-        return Array.isArray(res.data) ? res.data : [];
+
+        const res =
+          await api.get(
+            "/reimbursement-requests"
+          );
+
+        setRows(
+          Array.isArray(
+            res.data
+          )
+            ? res.data
+            : []
+        );
       } catch (err) {
-        console.error(`GET ${url} failed:`, err?.response?.data || err.message);
-        if (err?.response?.status === 401) logout();
-        return [];
+        if (
+          err?.response?.status ===
+          401
+        ) {
+          logout();
+        }
+
+        alert(
+          err?.response?.data
+            ?.message ||
+            "Failed to load reimbursement."
+        );
       } finally {
         setLoading(false);
       }
-    },
-    [logout]
-  );
+    }, [logout]);
 
-  const fetchStaff = useCallback(async () => {
-    try {
-      const res = await api.get("/staff");
-      setStaffList(Array.isArray(res.data) ? res.data : []);
-    } catch (err) {
-      console.error("Failed to fetch staff:", err?.response?.data || err.message);
-      if (err?.response?.status === 401) logout();
-      setStaffList([]);
-    }
-  }, [logout]);
+  const loadStaff =
+    useCallback(async () => {
+      try {
+        const res =
+          await api.get(
+            "/staff"
+          );
 
-  const fetchReimbursement = useCallback(async () => {
-    const data = await safeGet("/reimbursement-requests", setLoadingReimbursement);
-    setReimbursementRows(data);
-  }, [safeGet]);
-
-  useEffect(() => {
-    const token = localStorage.getItem("token");
-    if (!user || !token) {
-      window.location.href = "/login";
-      return;
-    }
-
-    fetchStaff();
-    fetchReimbursement();
-  }, [user, fetchStaff, fetchReimbursement]);
+        setStaffList(
+          Array.isArray(
+            res.data
+          )
+            ? res.data
+            : []
+        );
+      } catch {
+        setStaffList([]);
+      }
+    }, []);
 
   useEffect(() => {
-    const isOpen =
-      showReimbursementModal || showCreateReimbursement || showReimbursementView;
+    loadRows();
+    loadStaff();
+  }, [loadRows, loadStaff]);
+
+  const filteredRows =
+    useMemo(() => {
+      const q =
+        norm(
+          appliedSearch
+        );
+
+      if (!q)
+        return rows;
+
+      return rows.filter(
+        (r) =>
+          [
+            r.staff_name,
+            r.employee_no,
+            r.request_type,
+            r.status,
+            r.amount,
+            r.approval_stage,
+          ]
+            .join(" ")
+            .toLowerCase()
+            .includes(q)
+      );
+    }, [
+      rows,
+      appliedSearch,
+    ]);
+
+  const totalPages =
+    Math.max(
+      1,
+      Math.ceil(
+        filteredRows.length /
+          pageSize
+      )
+    );
+
+  const pagedRows =
+    useMemo(() => {
+      const start =
+        (page - 1) *
+        pageSize;
+
+      return filteredRows.slice(
+        start,
+        start +
+          pageSize
+      );
+    }, [
+      filteredRows,
+      page,
+      pageSize,
+    ]);
+
+      useEffect(() => {
+    setPage(1);
+  }, [appliedSearch, pageSize]);
+
+  useEffect(() => {
+    const isOpen = showCreate || showTable || showView;
 
     if (!isOpen) return;
 
     const onKeyDown = (e) => {
       if (e.key === "Escape") {
-        setShowReimbursementModal(false);
-        setShowCreateReimbursement(false);
-        setShowReimbursementView(false);
-        setShowReimbursementEmployeeDropdown(false);
+        setShowCreate(false);
+        setShowTable(false);
+        setShowView(false);
+        setShowEmployeeDropdown(false);
       }
     };
 
     const onMouseDown = (e) => {
       if (
-        reimbursementEmployeeBoxRef.current &&
-        !reimbursementEmployeeBoxRef.current.contains(e.target)
+        employeeBoxRef.current &&
+        !employeeBoxRef.current.contains(e.target)
       ) {
-        setShowReimbursementEmployeeDropdown(false);
+        setShowEmployeeDropdown(false);
       }
     };
 
@@ -271,7 +401,7 @@ export default function ReimbursementApprovalTab() {
       document.removeEventListener("mousedown", onMouseDown);
       document.body.style.overflow = "";
     };
-  }, [showReimbursementModal, showCreateReimbursement, showReimbursementView]);
+  }, [showCreate, showTable, showView]);
 
   const buildStaffDisplay = useCallback((s) => {
     if (!s) return "-";
@@ -290,6 +420,7 @@ export default function ReimbursementApprovalTab() {
   const searchableStaff = useMemo(() => {
     return staffList.map((s) => {
       const display = buildStaffDisplay(s);
+
       const searchBlob = [
         s.id,
         s.employee_no,
@@ -299,13 +430,14 @@ export default function ReimbursementApprovalTab() {
         s.middle_name,
         display,
         s.position,
+        s.department,
         s.area,
         s.region,
         s.division,
         s.branch_code,
         s.branch_name,
       ]
-        .map((x) => toStr(x))
+        .map(toStr)
         .join(" ")
         .toLowerCase();
 
@@ -317,95 +449,144 @@ export default function ReimbursementApprovalTab() {
     });
   }, [staffList, buildStaffDisplay]);
 
-  const filteredReimbursementEmployees = useMemo(() => {
-    const q = norm(reimbursementEmployeeSearch);
+  const filteredEmployees = useMemo(() => {
+    const q = norm(employeeSearch);
+
     if (!q) return searchableStaff.slice(0, 20);
-    return searchableStaff.filter((s) => s._searchBlob.includes(q)).slice(0, 20);
-  }, [searchableStaff, reimbursementEmployeeSearch]);
 
-  const badgeClass = (status) => {
-    const s = norm(status);
-    if (s === "approved") return "badge badge-approved";
-    if (s === "rejected") return "badge badge-rejected";
-    return "badge badge-pending";
-  };
+    return searchableStaff
+      .filter((s) => s._searchBlob.includes(q))
+      .slice(0, 20);
+  }, [searchableStaff, employeeSearch]);
 
-  const handleReimbursementEmployeeSelect = (employeeId) => {
-    const emp = staffList.find((s) => String(s.id) === String(employeeId));
+  const handleEmployeeSelect = (employeeId) => {
+    const emp = searchableStaff.find(
+      (s) => String(s.id) === String(employeeId)
+    );
+
     const display = buildStaffDisplay(emp);
 
-    setReimbursementForm((prev) => ({
+    setForm((prev) => ({
       ...prev,
       employee_id: String(employeeId || ""),
       employee_no: emp?.employee_no || "",
       staff_name: display || "-",
     }));
 
-    setReimbursementEmployeeSearch(
+    setEmployeeSearch(
       emp ? `${emp.employee_no ? `${emp.employee_no} - ` : ""}${display}` : ""
     );
 
-    setShowReimbursementEmployeeDropdown(false);
+    setShowEmployeeDropdown(false);
   };
 
-  const resetReimbursementForm = () => {
-    setReimbursementForm({
+  const resetForm = () => {
+    setForm({
       employee_id: "",
       employee_no: "",
       staff_name: "",
-      description: "",
       amount: "",
       request_date: "",
       request_type: "",
+      description: "",
       attachment: null,
     });
 
-    setReimbursementEmployeeSearch("");
-    setShowReimbursementEmployeeDropdown(false);
+    setEmployeeSearch("");
+    setShowEmployeeDropdown(false);
   };
 
-  const handleCreateReimbursement = async (e) => {
+  const openView = (item) => {
+    setSelected(item);
+    setSelectedApprovalFile(null);
+    setSelectedFinalFile(null);
+    setShowView(true);
+  };
+
+  const closeView = () => {
+    setSelected(null);
+    setSelectedApprovalFile(null);
+    setSelectedFinalFile(null);
+    setShowView(false);
+  };
+
+  const pendingCount = useMemo(
+    () => rows.filter((x) => norm(x.status) === "pending").length,
+    [rows]
+  );
+
+  const finalUploadCount = useMemo(
+    () =>
+      rows.filter((x) => norm(x.status) === norm(WAITING_FINAL_FILE)).length,
+    [rows]
+  );
+
+  const renderChainSummary = (item) => {
+    const chain = parseChain(item);
+
+    if (!chain.length) return "-";
+
+    return chain
+      .map((stage) => `${STAGE_LABELS[stage] || stage}: ${stage === getCurrentStage(item) ? "Current" : "Pending"}`)
+      .join(" | ");
+  };
+
+  const handleCreate = async (e) => {
     e.preventDefault();
 
-    if (!reimbursementForm.employee_id) return alert("Please select employee.");
-    if (!reimbursementForm.attachment) return alert("Please attach reimbursement file.");
+    if (!form.employee_id) return alert("Please select employee.");
+    if (!form.amount || Number(form.amount) <= 0) {
+      return alert("Amount is required.");
+    }
+    if (!form.request_date) return alert("Request date is required.");
+    if (!form.request_type) return alert("Request type is required.");
+    if (!toStr(form.description)) return alert("Description is required.");
+    if (!form.attachment) return alert("Please attach reimbursement file.");
 
     try {
-      setCreatingReimbursement(true);
+      setProcessingId("create-reimbursement");
 
-      const formData = new FormData();
-      formData.append("employee_id", reimbursementForm.employee_id);
-      formData.append("employee_no", reimbursementForm.employee_no);
-      formData.append("staff_name", reimbursementForm.staff_name);
-      formData.append("description", reimbursementForm.description);
-      formData.append("amount", toNum(reimbursementForm.amount));
-      formData.append("request_date", reimbursementForm.request_date || "");
-      formData.append("request_type", reimbursementForm.request_type || "");
-      formData.append("attachment", reimbursementForm.attachment);
+      const fd = new FormData();
 
-      await api.post("/reimbursement-requests", formData, {
+      fd.append("employee_id", form.employee_id);
+      fd.append("employee_no", form.employee_no);
+      fd.append("staff_name", form.staff_name);
+      fd.append("description", form.description);
+      fd.append("amount", toNum(form.amount));
+      fd.append("request_date", form.request_date || "");
+      fd.append("request_type", form.request_type || "");
+      fd.append("attachment", form.attachment);
+
+      await api.post("/reimbursement-requests", fd, {
         headers: { "Content-Type": "multipart/form-data" },
       });
 
       alert("Reimbursement request submitted successfully.");
-      resetReimbursementForm();
-      setShowCreateReimbursement(false);
-      await fetchReimbursement();
+
+      resetForm();
+      setShowCreate(false);
+
+      await loadRows();
     } catch (err) {
-      console.error("Failed to create reimbursement:", err?.response?.data || err.message);
       if (err?.response?.status === 401) return logout();
-      if (err?.response?.status === 403) return alert("Access denied.");
-      alert(err?.response?.data?.message || "Failed to submit reimbursement request.");
+
+      alert(
+        err?.response?.data?.message ||
+          "Failed to submit reimbursement request."
+      );
     } finally {
-      setCreatingReimbursement(false);
+      setProcessingId("");
     }
   };
 
   const downloadLatestFile = async (id, fallbackName = "") => {
     try {
-      const res = await api.get(`/reimbursement-requests/${id}/download/latest`, {
-        responseType: "blob",
-      });
+      const res = await api.get(
+        `/reimbursement-requests/${id}/download/latest`,
+        {
+          responseType: "blob",
+        }
+      );
 
       const blob = new Blob([res.data]);
       const url = window.URL.createObjectURL(blob);
@@ -423,7 +604,7 @@ export default function ReimbursementApprovalTab() {
     }
   };
 
-  const updateReimbursementStatus = async (item, action, reimbursementDate = "") => {
+  const updateStatus = async (item, action) => {
     const id = item?.id;
 
     if (!id) return alert("Reimbursement record has no valid id.");
@@ -432,35 +613,52 @@ export default function ReimbursementApprovalTab() {
       return alert("Please upload the signed reimbursement file before approving.");
     }
 
-    const ok = window.confirm(
-      action === "approve"
-        ? "Approve and submit the uploaded signed file to the next approver?"
-        : "Reject this reimbursement request?"
-    );
+    if (action === "void" && !canVoid(role)) {
+      return alert("Only Admin/IT can void reimbursement.");
+    }
 
-    if (!ok) return;
+    let rejectionReason = "";
+
+    if (action === "reject") {
+      rejectionReason = window.prompt("Reason for rejection?");
+
+      if (!rejectionReason || !rejectionReason.trim()) {
+        return alert("Rejection reason is required.");
+      }
+    }
+
+    const confirmMessage =
+      action === "approve"
+        ? "Approve and submit uploaded signed file to the next approver?"
+        : action === "void"
+        ? "Void this reimbursement request?"
+        : "Reject this reimbursement request?";
+
+    if (!window.confirm(confirmMessage)) return;
 
     try {
       setProcessingId(`reimbursement-${id}-${action}`);
 
-      const formData = new FormData();
-      formData.append("action", action);
+      const fd = new FormData();
+      fd.append("action", action);
 
       if (action === "approve") {
-        formData.append("attachment", approvalFiles[id]);
+        fd.append("attachment", approvalFiles[id]);
       }
 
-      if ((isAdmin || isIt) && action === "approve" && reimbursementDate) {
-        formData.append("reimbursement_date", reimbursementDate);
+      if (action === "reject") {
+        fd.append("rejection_reason", rejectionReason);
       }
 
-      await api.put(`/reimbursement-requests/${id}`, formData, {
+      await api.put(`/reimbursement-requests/${id}`, fd, {
         headers: { "Content-Type": "multipart/form-data" },
       });
 
       alert(
         action === "approve"
           ? "Reimbursement approved and signed file uploaded."
+          : action === "void"
+          ? "Reimbursement voided successfully."
           : "Reimbursement rejected successfully."
       );
 
@@ -471,42 +669,86 @@ export default function ReimbursementApprovalTab() {
       });
 
       setSelectedApprovalFile(null);
-      setAdminReimbursementDate("");
 
-      if (selectedReimbursement?.id === id) {
-        setSelectedReimbursement(null);
-        setShowReimbursementView(false);
+      if (selected?.id === id) {
+        setSelected(null);
+        setShowView(false);
       }
 
-      await fetchReimbursement();
+      await loadRows();
     } catch (err) {
-      console.error("Reimbursement update error:", err?.response?.data || err.message);
       if (err?.response?.status === 401) return logout();
-      if (err?.response?.status === 403) return alert("Access denied.");
-      alert(err?.response?.data?.message || "Failed to update reimbursement request.");
+
+      alert(
+        err?.response?.data?.message ||
+          "Failed to update reimbursement request."
+      );
     } finally {
       setProcessingId("");
     }
   };
 
-  const reimbursementPendingCount = useMemo(
-    () => reimbursementRows.filter((x) => norm(x.status) === "pending").length,
-    [reimbursementRows]
-  );
+  const uploadFinalFile = async (item) => {
+    const id = item?.id;
 
-  const openReimbursementView = (item) => {
-    setSelectedReimbursement(item);
-    setSelectedApprovalFile(null);
-    setShowReimbursementView(true);
+    if (!id) return alert("Reimbursement record has no valid id.");
+
+    if (!finalFiles[id]) {
+      return alert("Please upload the final approved file first.");
+    }
+
+    if (!canFinalUpload(role)) {
+      return alert("Only Admin/IT/Accounting/HR can upload final file.");
+    }
+
+    if (
+      !window.confirm(
+        "Upload final file and fully approve this reimbursement?"
+      )
+    ) {
+      return;
+    }
+
+    try {
+      setProcessingId(`reimbursement-${id}-final`);
+
+      const fd = new FormData();
+
+      fd.append("attachment", finalFiles[id]);
+
+      await api.post(`/reimbursement-requests/${id}/approved-file`, fd, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+
+      alert("Final approved file uploaded. Reimbursement fully approved.");
+
+      setFinalFiles((prev) => {
+        const copy = { ...prev };
+        delete copy[id];
+        return copy;
+      });
+
+      setSelectedFinalFile(null);
+
+      if (selected?.id === id) {
+        setSelected(null);
+        setShowView(false);
+      }
+
+      await loadRows();
+    } catch (err) {
+      if (err?.response?.status === 401) return logout();
+
+      alert(
+        err?.response?.data?.message ||
+          "Failed to upload final approved file."
+      );
+    } finally {
+      setProcessingId("");
+    }
   };
 
-  const closeReimbursementView = () => {
-    setSelectedReimbursement(null);
-    setSelectedApprovalFile(null);
-    setShowReimbursementView(false);
-  };
-
-  return (
+    return (
     <>
       <div className="approval-grid">
         <div className="approval-card">
@@ -514,25 +756,34 @@ export default function ReimbursementApprovalTab() {
             <div>
               <div className="approval-card-title">Reimbursement Requests</div>
               <div className="approval-card-meta">
-                Pending: <span className="pill">{reimbursementPendingCount}</span>
+                Pending: <span className="pill">{pendingCount}</span>{" "}
+                Final Upload: <span className="pill">{finalUploadCount}</span>
               </div>
             </div>
 
             <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-              {canCreateReimbursement && (
+              {canCreate && (
                 <button
                   className="btn-secondary"
-                  onClick={() => setShowCreateReimbursement(true)}
                   type="button"
+                  onClick={() => setShowCreate(true)}
                 >
                   + Reimbursement Request
                 </button>
               )}
 
               <button
-                className="btn-primary"
-                onClick={() => setShowReimbursementModal(true)}
+                className="btn-secondary"
                 type="button"
+                onClick={loadRows}
+              >
+                Refresh
+              </button>
+
+              <button
+                className="btn-primary"
+                type="button"
+                onClick={() => setShowTable(true)}
               >
                 View
               </button>
@@ -541,20 +792,19 @@ export default function ReimbursementApprovalTab() {
 
           <div className="approval-card-body">
             <div className="mini">
-              {loadingReimbursement
+              {loading
                 ? "Loading reimbursement requests..."
-                : "Approvers must download latest file, upload signed file, then approve."}
+                : "Open View for full details, file download, approval upload, reject, void, and final upload."}
             </div>
           </div>
         </div>
       </div>
 
-      {canCreateReimbursement && showCreateReimbursement && (
+      {canCreate && showCreate && (
         <div
           className="modal-overlay"
           onMouseDown={(e) =>
-            e.target.classList.contains("modal-overlay") &&
-            setShowCreateReimbursement(false)
+            e.target.classList.contains("modal-overlay") && setShowCreate(false)
           }
         >
           <div className="modal saas-modal" onMouseDown={(e) => e.stopPropagation()}>
@@ -569,48 +819,48 @@ export default function ReimbursementApprovalTab() {
               <button
                 className="modal-x"
                 type="button"
-                onClick={() => setShowCreateReimbursement(false)}
+                onClick={() => setShowCreate(false)}
               >
                 ✕
               </button>
             </div>
 
-            <form onSubmit={handleCreateReimbursement} className="modal-form">
+            <form onSubmit={handleCreate} className="modal-form">
               <div className="modal-grid">
                 <div
                   className="form-group full approval-search-select"
-                  ref={reimbursementEmployeeBoxRef}
+                  ref={employeeBoxRef}
                 >
                   <label>Employee</label>
 
                   <input
                     type="text"
-                    value={reimbursementEmployeeSearch}
+                    value={employeeSearch}
                     onChange={(e) => {
-                      setReimbursementEmployeeSearch(e.target.value);
-                      setShowReimbursementEmployeeDropdown(true);
-                      setReimbursementForm((p) => ({
+                      setEmployeeSearch(e.target.value);
+                      setShowEmployeeDropdown(true);
+                      setForm((p) => ({
                         ...p,
                         employee_id: "",
                         employee_no: "",
                         staff_name: "",
                       }));
                     }}
-                    onFocus={() => setShowReimbursementEmployeeDropdown(true)}
+                    onFocus={() => setShowEmployeeDropdown(true)}
                     placeholder="Search employee no or name..."
-                    required={!reimbursementForm.employee_id}
+                    required={!form.employee_id}
                   />
 
-                  {showReimbursementEmployeeDropdown && (
+                  {showEmployeeDropdown && (
                     <div className="approval-search-dropdown">
-                      {filteredReimbursementEmployees.length === 0 ? (
+                      {filteredEmployees.length === 0 ? (
                         <div className="approval-search-empty">No employee found</div>
                       ) : (
-                        filteredReimbursementEmployees.map((s) => (
+                        filteredEmployees.map((s) => (
                           <button
                             key={s.id}
                             type="button"
-                            onClick={() => handleReimbursementEmployeeSelect(s.id)}
+                            onClick={() => handleEmployeeSelect(s.id)}
                             className="approval-search-item"
                           >
                             {s.employee_no ? `${s.employee_no} - ` : ""}
@@ -624,29 +874,21 @@ export default function ReimbursementApprovalTab() {
 
                 <div className="form-group">
                   <label>Employee No</label>
-                  <input
-                    value={reimbursementForm.employee_no}
-                    readOnly
-                    placeholder="Auto-filled"
-                  />
+                  <input value={form.employee_no} readOnly placeholder="Auto-filled" />
                 </div>
 
                 <div className="form-group">
                   <label>Staff Name</label>
-                  <input
-                    value={reimbursementForm.staff_name}
-                    readOnly
-                    placeholder="Auto-filled"
-                  />
+                  <input value={form.staff_name} readOnly placeholder="Auto-filled" />
                 </div>
 
                 <div className="form-group">
                   <label>Amount</label>
                   <input
                     type="number"
-                    value={reimbursementForm.amount}
+                    value={form.amount}
                     onChange={(e) =>
-                      setReimbursementForm((p) => ({ ...p, amount: e.target.value }))
+                      setForm((p) => ({ ...p, amount: e.target.value }))
                     }
                     required
                   />
@@ -656,12 +898,9 @@ export default function ReimbursementApprovalTab() {
                   <label>Request Date</label>
                   <input
                     type="date"
-                    value={reimbursementForm.request_date}
+                    value={form.request_date}
                     onChange={(e) =>
-                      setReimbursementForm((p) => ({
-                        ...p,
-                        request_date: e.target.value,
-                      }))
+                      setForm((p) => ({ ...p, request_date: e.target.value }))
                     }
                     required
                   />
@@ -670,12 +909,9 @@ export default function ReimbursementApprovalTab() {
                 <div className="form-group">
                   <label>Request Type</label>
                   <select
-                    value={reimbursementForm.request_type}
+                    value={form.request_type}
                     onChange={(e) =>
-                      setReimbursementForm((p) => ({
-                        ...p,
-                        request_type: e.target.value,
-                      }))
+                      setForm((p) => ({ ...p, request_type: e.target.value }))
                     }
                     required
                   >
@@ -694,7 +930,7 @@ export default function ReimbursementApprovalTab() {
                     type="file"
                     required
                     onChange={(e) =>
-                      setReimbursementForm((p) => ({
+                      setForm((p) => ({
                         ...p,
                         attachment: e.target.files?.[0] || null,
                       }))
@@ -705,12 +941,9 @@ export default function ReimbursementApprovalTab() {
                 <div className="form-group full">
                   <label>Description</label>
                   <textarea
-                    value={reimbursementForm.description}
+                    value={form.description}
                     onChange={(e) =>
-                      setReimbursementForm((p) => ({
-                        ...p,
-                        description: e.target.value,
-                      }))
+                      setForm((p) => ({ ...p, description: e.target.value }))
                     }
                     required
                   />
@@ -721,7 +954,7 @@ export default function ReimbursementApprovalTab() {
                 <button
                   className="btn-secondary"
                   type="button"
-                  onClick={() => setShowCreateReimbursement(false)}
+                  onClick={() => setShowCreate(false)}
                 >
                   Cancel
                 </button>
@@ -729,9 +962,11 @@ export default function ReimbursementApprovalTab() {
                 <button
                   className="btn-primary"
                   type="submit"
-                  disabled={creatingReimbursement}
+                  disabled={processingId === "create-reimbursement"}
                 >
-                  {creatingReimbursement ? "Submitting..." : "Submit"}
+                  {processingId === "create-reimbursement"
+                    ? "Submitting..."
+                    : "Submit"}
                 </button>
               </div>
             </form>
@@ -739,12 +974,11 @@ export default function ReimbursementApprovalTab() {
         </div>
       )}
 
-      {showReimbursementModal && (
+      {showTable && (
         <div
           className="modal-overlay"
           onMouseDown={(e) =>
-            e.target.classList.contains("modal-overlay") &&
-            setShowReimbursementModal(false)
+            e.target.classList.contains("modal-overlay") && setShowTable(false)
           }
         >
           <div className="modal saas-modal" onMouseDown={(e) => e.stopPropagation()}>
@@ -752,20 +986,71 @@ export default function ReimbursementApprovalTab() {
               <div>
                 <h3 className="modal-title">Reimbursement Requests</h3>
                 <p className="modal-subtitle">
-                  Download latest file, upload signed file, then approve.
+                  Use View to download, upload signed files, approve, reject, void, or final upload.
                 </p>
               </div>
 
               <button
                 className="modal-x"
                 type="button"
-                onClick={() => setShowReimbursementModal(false)}
+                onClick={() => setShowTable(false)}
               >
                 ✕
               </button>
             </div>
 
             <div className="table-card">
+              <div
+                style={{
+                  display: "flex",
+                  gap: 10,
+                  flexWrap: "wrap",
+                  alignItems: "center",
+                  marginBottom: 12,
+                }}
+              >
+                <input
+                  className="order-search-input"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && setAppliedSearch(search)}
+                  placeholder="Search employee, status, stage, amount..."
+                  style={{ minWidth: 280 }}
+                />
+
+                <button
+                  className="btn-primary"
+                  type="button"
+                  onClick={() => setAppliedSearch(search)}
+                >
+                  Search
+                </button>
+
+                <button
+                  className="btn-secondary"
+                  type="button"
+                  onClick={() => {
+                    setSearch("");
+                    setAppliedSearch("");
+                  }}
+                >
+                  Clear
+                </button>
+
+                <select
+                  className="order-search-input"
+                  value={pageSize}
+                  onChange={(e) => setPageSize(Number(e.target.value))}
+                  style={{ width: 110 }}
+                >
+                  {[25, 50, 75, 100].map((n) => (
+                    <option key={n} value={n}>
+                      {n} / page
+                    </option>
+                  ))}
+                </select>
+              </div>
+
               <div className="table-wrap">
                 <table className="table">
                   <thead>
@@ -776,24 +1061,26 @@ export default function ReimbursementApprovalTab() {
                       <th>Amount</th>
                       <th>Status</th>
                       <th>Current Stage</th>
-                      <th>Latest File</th>
                       <th>Action</th>
                     </tr>
                   </thead>
 
                   <tbody>
-                    {reimbursementRows.length === 0 ? (
+                    {loading ? (
                       <tr>
-                        <td colSpan={8} className="empty-state">
+                        <td colSpan={7} className="empty-state">
+                          Loading...
+                        </td>
+                      </tr>
+                    ) : pagedRows.length === 0 ? (
+                      <tr>
+                        <td colSpan={7} className="empty-state">
                           No reimbursement requests found.
                         </td>
                       </tr>
                     ) : (
-                      reimbursementRows.map((item) => {
+                      pagedRows.map((item) => {
                         const currentStage = getCurrentStage(item);
-                        const canAct =
-                          canParticipateInApproval &&
-                          canUserActOnReimbursement(item, role);
 
                         return (
                           <tr key={item.id}>
@@ -815,100 +1102,22 @@ export default function ReimbursementApprovalTab() {
                               </span>
                             </td>
 
-                            <td>{STAGE_LABELS[currentStage] || "-"}</td>
-
                             <td>
-                              {item.attachment_path ? (
-                                <button
-                                  className="btn-secondary"
-                                  type="button"
-                                  onClick={() =>
-                                    downloadLatestFile(
-                                      item.id,
-                                      item.attachment_name || ""
-                                    )
-                                  }
-                                >
-                                  Download Latest
-                                </button>
-                              ) : (
-                                "-"
-                              )}
+                              {STAGE_LABELS[norm(currentStage)] ||
+                                currentStage ||
+                                "-"}
                             </td>
 
                             <td>
                               <div className="row-actions loan-row-actions">
                                 <button
                                   className="btn-secondary"
-                                  onClick={() => openReimbursementView(item)}
                                   type="button"
+                                  title="View details and actions"
+                                  onClick={() => openView(item)}
                                 >
-                                  View
+                                  👁 View
                                 </button>
-
-                                {canAct ? (
-                                  <>
-                                    <label className="loan-upload-pill">
-                                      <input
-                                        type="file"
-                                        hidden
-                                        onChange={(e) =>
-                                          setApprovalFiles((prev) => ({
-                                            ...prev,
-                                            [item.id]: e.target.files?.[0] || null,
-                                          }))
-                                        }
-                                      />
-                                      📎{" "}
-                                      {approvalFiles[item.id]?.name
-                                        ? "Change File"
-                                        : "Upload File"}
-                                    </label>
-
-                                    {approvalFiles[item.id]?.name ? (
-                                      <span
-                                        className="loan-file-name"
-                                        title={approvalFiles[item.id].name}
-                                      >
-                                        {approvalFiles[item.id].name}
-                                      </span>
-                                    ) : null}
-
-                                    <button
-                                      className="btn-success"
-                                      onClick={() =>
-                                        updateReimbursementStatus(item, "approve")
-                                      }
-                                      type="button"
-                                      disabled={
-                                        processingId ===
-                                        `reimbursement-${item.id}-approve`
-                                      }
-                                    >
-                                      {processingId ===
-                                      `reimbursement-${item.id}-approve`
-                                        ? "Approving..."
-                                        : "Upload + Approve"}
-                                    </button>
-
-                                    <button
-                                      className="btn-danger"
-                                      onClick={() =>
-                                        updateReimbursementStatus(item, "reject")
-                                      }
-                                      type="button"
-                                      disabled={
-                                        processingId ===
-                                        `reimbursement-${item.id}-reject`
-                                      }
-                                    >
-                                      {processingId ===
-                                      `reimbursement-${item.id}-reject`
-                                        ? "Rejecting..."
-                                        : "Reject"}
-                                    </button>
-                                  </>
-                                ) : null}
                               </div>
                             </td>
                           </tr>
@@ -918,13 +1127,48 @@ export default function ReimbursementApprovalTab() {
                   </tbody>
                 </table>
               </div>
+
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: 12,
+                  marginTop: 12,
+                  flexWrap: "wrap",
+                }}
+              >
+                <div className="mini">
+                  Page {page} of {totalPages} • {filteredRows.length} records
+                </div>
+
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button
+                    className="btn-secondary"
+                    type="button"
+                    disabled={page <= 1}
+                    onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  >
+                    Prev
+                  </button>
+
+                  <button
+                    className="btn-secondary"
+                    type="button"
+                    disabled={page >= totalPages}
+                    onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                  >
+                    Next
+                  </button>
+                </div>
+              </div>
             </div>
 
             <div className="modal-buttons">
               <button
                 className="btn-secondary"
                 type="button"
-                onClick={() => setShowReimbursementModal(false)}
+                onClick={() => setShowTable(false)}
               >
                 Close
               </button>
@@ -933,23 +1177,21 @@ export default function ReimbursementApprovalTab() {
         </div>
       )}
 
-      {showReimbursementView && selectedReimbursement && (
+      {showView && selected && (
         <div
           className="modal-overlay"
           onMouseDown={(e) =>
-            e.target.classList.contains("modal-overlay") && closeReimbursementView()
+            e.target.classList.contains("modal-overlay") && closeView()
           }
         >
           <div className="modal saas-modal" onMouseDown={(e) => e.stopPropagation()}>
             <div className="modal-head">
               <div>
                 <h3 className="modal-title">Reimbursement Request Details</h3>
-                <p className="modal-subtitle">
-                  {selectedReimbursement.staff_name || "-"}
-                </p>
+                <p className="modal-subtitle">{selected.staff_name || "-"}</p>
               </div>
 
-              <button className="modal-x" type="button" onClick={closeReimbursementView}>
+              <button className="modal-x" type="button" onClick={closeView}>
                 ✕
               </button>
             </div>
@@ -958,52 +1200,51 @@ export default function ReimbursementApprovalTab() {
               <div className="modal-grid">
                 <div className="form-group">
                   <label>ID</label>
-                  <input value={selectedReimbursement.id ?? "-"} readOnly />
+                  <input value={selected.id ?? "-"} readOnly />
                 </div>
 
                 <div className="form-group">
                   <label>Employee No</label>
-                  <input value={selectedReimbursement.employee_no || "-"} readOnly />
+                  <input value={selected.employee_no || "-"} readOnly />
                 </div>
 
                 <div className="form-group">
                   <label>Staff Name</label>
-                  <input value={selectedReimbursement.staff_name || "-"} readOnly />
+                  <input value={selected.staff_name || "-"} readOnly />
                 </div>
 
                 <div className="form-group">
                   <label>Request Type</label>
-                  <input value={selectedReimbursement.request_type || "-"} readOnly />
+                  <input value={selected.request_type || "-"} readOnly />
                 </div>
 
                 <div className="form-group">
                   <label>Amount</label>
-                  <input value={`₱ ${fmtMoney(selectedReimbursement.amount)}`} readOnly />
+                  <input value={`₱ ${fmtMoney(selected.amount)}`} readOnly />
                 </div>
 
                 <div className="form-group">
                   <label>Request Date</label>
-                  <input value={fmtDate(selectedReimbursement.request_date)} readOnly />
+                  <input value={fmtDate(selected.request_date)} readOnly />
                 </div>
 
                 <div className="form-group">
                   <label>Reimbursement Date</label>
-                  <input
-                    value={fmtDate(selectedReimbursement.reimbursement_date)}
-                    readOnly
-                  />
+                  <input value={fmtDate(selected.reimbursement_date)} readOnly />
                 </div>
 
                 <div className="form-group">
                   <label>Status</label>
-                  <input value={selectedReimbursement.status || "-"} readOnly />
+                  <input value={selected.status || "-"} readOnly />
                 </div>
 
                 <div className="form-group">
                   <label>Current Approval Stage</label>
                   <input
                     value={
-                      STAGE_LABELS[getCurrentStage(selectedReimbursement)] || "-"
+                      STAGE_LABELS[norm(getCurrentStage(selected))] ||
+                      getCurrentStage(selected) ||
+                      "-"
                     }
                     readOnly
                   />
@@ -1011,20 +1252,17 @@ export default function ReimbursementApprovalTab() {
 
                 <div className="form-group full">
                   <label>Approval Chain</label>
-                  <textarea value={renderChainSummary(selectedReimbursement)} readOnly />
+                  <textarea value={renderChainSummary(selected)} readOnly />
                 </div>
 
                 <div className="form-group full">
                   <label>Latest File</label>
-                  {selectedReimbursement.attachment_path ? (
+                  {selected.attachment_path ? (
                     <button
                       className="btn-secondary"
                       type="button"
                       onClick={() =>
-                        downloadLatestFile(
-                          selectedReimbursement.id,
-                          selectedReimbursement.attachment_name || ""
-                        )
+                        downloadLatestFile(selected.id, selected.attachment_name || "")
                       }
                     >
                       Download Latest File
@@ -1034,8 +1272,7 @@ export default function ReimbursementApprovalTab() {
                   )}
                 </div>
 
-                {canParticipateInApproval &&
-                canUserActOnReimbursement(selectedReimbursement, role) ? (
+                {canApprove(selected, role) ? (
                   <div className="form-group full">
                     <label>Upload Signed File Before Approving</label>
 
@@ -1048,7 +1285,7 @@ export default function ReimbursementApprovalTab() {
                           setSelectedApprovalFile(file);
                           setApprovalFiles((prev) => ({
                             ...prev,
-                            [selectedReimbursement.id]: file,
+                            [selected.id]: file,
                           }));
                         }}
                       />
@@ -1056,52 +1293,80 @@ export default function ReimbursementApprovalTab() {
                     </label>
 
                     {selectedApprovalFile?.name ? (
-                      <span
-                        className="loan-file-name"
-                        title={selectedApprovalFile.name}
-                      >
+                      <span className="loan-file-name" title={selectedApprovalFile.name}>
                         {selectedApprovalFile.name}
                       </span>
                     ) : null}
+
+                    <small style={{ opacity: 0.75, display: "block", marginTop: 8 }}>
+                      This file replaces the previous file. The next approver downloads this new file.
+                    </small>
+                  </div>
+                ) : null}
+
+                {canUploadFinal(selected, role) ? (
+                  <div className="form-group full">
+                    <label>Upload Final Approved File</label>
+
+                    <label className="loan-upload-pill" style={{ width: "fit-content" }}>
+                      <input
+                        type="file"
+                        hidden
+                        onChange={(e) => {
+                          const file = e.target.files?.[0] || null;
+                          setSelectedFinalFile(file);
+                          setFinalFiles((prev) => ({
+                            ...prev,
+                            [selected.id]: file,
+                          }));
+                        }}
+                      />
+                      📎{" "}
+                      {selectedFinalFile?.name
+                        ? "Change Final File"
+                        : "Upload Final File"}
+                    </label>
+
+                    {selectedFinalFile?.name ? (
+                      <span className="loan-file-name" title={selectedFinalFile.name}>
+                        {selectedFinalFile.name}
+                      </span>
+                    ) : null}
+
+                    <small style={{ opacity: 0.75, display: "block", marginTop: 8 }}>
+                      Admin/IT/Accounting/HR final upload will fully approve this reimbursement.
+                    </small>
                   </div>
                 ) : null}
 
                 <div className="form-group full">
                   <label>Description</label>
-                  <textarea value={selectedReimbursement.description || "-"} readOnly />
+                  <textarea value={selected.description || "-"} readOnly />
                 </div>
+
+                {selected.rejection_reason ? (
+                  <div className="form-group full">
+                    <label>Rejection Reason</label>
+                    <textarea value={selected.rejection_reason} readOnly />
+                  </div>
+                ) : null}
               </div>
 
               <div className="modal-buttons">
-                {canParticipateInApproval &&
-                canUserActOnReimbursement(selectedReimbursement, role) ? (
+                {canApprove(selected, role) ? (
                   <>
-                    {(isAdmin || isIt) && (
-                      <input
-                        type="date"
-                        value={adminReimbursementDate}
-                        onChange={(e) => setAdminReimbursementDate(e.target.value)}
-                      />
-                    )}
-
                     <button
                       className="btn-success"
                       type="button"
                       disabled={
-                        processingId ===
-                        `reimbursement-${selectedReimbursement.id}-approve`
+                        processingId === `reimbursement-${selected.id}-approve`
                       }
-                      onClick={() =>
-                        updateReimbursementStatus(
-                          selectedReimbursement,
-                          "approve",
-                          adminReimbursementDate
-                        )
-                      }
+                      onClick={() => updateStatus(selected, "approve")}
                     >
-                      {processingId ===
-                      `reimbursement-${selectedReimbursement.id}-approve`
+                      {processingId === `reimbursement-${selected.id}-approve`
                         ? "Approving..."
+                        : canBypass(role)
+                        ? "Bypass Approve"
                         : "Upload + Approve"}
                     </button>
 
@@ -1109,26 +1374,47 @@ export default function ReimbursementApprovalTab() {
                       className="btn-danger"
                       type="button"
                       disabled={
-                        processingId ===
-                        `reimbursement-${selectedReimbursement.id}-reject`
+                        processingId === `reimbursement-${selected.id}-reject`
                       }
-                      onClick={() =>
-                        updateReimbursementStatus(selectedReimbursement, "reject")
-                      }
+                      onClick={() => updateStatus(selected, "reject")}
                     >
-                      {processingId ===
-                      `reimbursement-${selectedReimbursement.id}-reject`
+                      {processingId === `reimbursement-${selected.id}-reject`
                         ? "Rejecting..."
                         : "Reject"}
                     </button>
                   </>
                 ) : null}
 
-                <button
-                  className="btn-secondary"
-                  type="button"
-                  onClick={closeReimbursementView}
-                >
+                {canUploadFinal(selected, role) ? (
+                  <button
+                    className="btn-success"
+                    type="button"
+                    disabled={
+                      processingId === `reimbursement-${selected.id}-final`
+                    }
+                    onClick={() => uploadFinalFile(selected)}
+                  >
+                    {processingId === `reimbursement-${selected.id}-final`
+                      ? "Uploading..."
+                      : "Final Upload + Approve"}
+                  </button>
+                ) : null}
+
+                {canVoid(role) &&
+                !["void", "rejected"].includes(norm(selected.status)) ? (
+                  <button
+                    className="btn-danger"
+                    type="button"
+                    disabled={processingId === `reimbursement-${selected.id}-void`}
+                    onClick={() => updateStatus(selected, "void")}
+                  >
+                    {processingId === `reimbursement-${selected.id}-void`
+                      ? "Voiding..."
+                      : "Void"}
+                  </button>
+                ) : null}
+
+                <button className="btn-secondary" type="button" onClick={closeView}>
                   Close
                 </button>
               </div>
