@@ -779,6 +779,18 @@ router.put(
         extraFields.push(`hr_approved_by=$6`, `hr_approved_at=NOW()`);
       }
 
+      const updateParams = [
+        id,
+        nextStage,
+        latestPath,
+        latestName,
+        latestMime,
+      ];
+
+      if (extraFields.length) {
+        updateParams.push(req.user?.id ?? null);
+      }
+
       await client.query(
         `
         UPDATE public.promotion_orders
@@ -794,14 +806,7 @@ router.put(
           ${extraFields.length ? `, ${extraFields.join(", ")}` : ""}
         WHERE id=$1
         `,
-        [
-          id,
-          nextStage,
-          latestPath,
-          latestName,
-          latestMime,
-          req.user?.id ?? null,
-        ]
+        updateParams
       );
 
       await client.query("COMMIT");
