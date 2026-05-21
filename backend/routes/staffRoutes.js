@@ -80,15 +80,9 @@ const getUserDepartment = (req) => toStr(req.user?.department);
 const isFullStaffAccess = async (req) => {
   const department = getUserDepartment(req).toLowerCase();
 
-  const canViewAllStaff = await hasPermission(
-    req.user,
-    "staff",
-    "view_all"
-  );
+  const canViewAllStaff = await hasPermission(req.user, "staff", "view_all");
 
-  if (canViewAllStaff) {
-    return true;
-  }
+  if (canViewAllStaff) return true;
 
   return (
     isAdmin(req) ||
@@ -172,6 +166,30 @@ const computeTotals = (body) => {
 
 const generateEmployeeNoFromId = (id) => `EMP-${String(id).padStart(6, "0")}`;
 
+const STAFF_REMARKS_SQL = `
+  CASE
+    WHEN EXISTS (
+      SELECT 1
+      FROM public.suspension_orders so
+      WHERE so.employee_id = s.id
+        AND LOWER(COALESCE(so.status, '')) = 'approved'
+        AND CURRENT_DATE BETWEEN so.start_date AND COALESCE(so.end_date, CURRENT_DATE)
+    )
+    THEN 'Suspended'
+
+    WHEN EXISTS (
+      SELECT 1
+      FROM public.leave_requests lr
+      WHERE lr.employee_id = s.id
+        AND LOWER(COALESCE(lr.status, '')) = 'approved'
+        AND CURRENT_DATE BETWEEN lr.start_date AND COALESCE(lr.end_date, CURRENT_DATE)
+    )
+    THEN 'On Leave'
+
+    ELSE 'On Work'
+  END AS remarks
+`;
+
 async function getBranchIdFromCode(branchCode) {
   const code = toStr(branchCode);
   if (!code) return null;
@@ -194,9 +212,7 @@ async function canAccessStaffById(client, req, staffId) {
   const id = toInt(staffId);
   if (!id) return false;
 
-  if (await isTopManagement(req)) {
-    return true;
-  }
+  if (await isTopManagement(req)) return true;
 
   const r = await client.query(
     `
@@ -232,17 +248,11 @@ async function canAccessStaffById(client, req, staffId) {
     const department = getUserDepartment(req);
     const division = getUserDivision(req);
 
-    if (
-      department &&
-      toStr(row.department).toLowerCase() === department.toLowerCase()
-    ) {
+    if (department && toStr(row.department).toLowerCase() === department.toLowerCase()) {
       return true;
     }
 
-    if (
-      division &&
-      toStr(row.division).toLowerCase() === division.toLowerCase()
-    ) {
+    if (division && toStr(row.division).toLowerCase() === division.toLowerCase()) {
       return true;
     }
 
@@ -522,6 +532,7 @@ router.get(
         const r = await pool.query(`
           SELECT
             s.*,
+            ${STAFF_REMARKS_SQL},
             b.name AS branch_name,
             b.code AS branch_code,
             COALESCE(sbal.cbu, 0) AS cbu_balance
@@ -545,6 +556,7 @@ router.get(
           `
           SELECT
             s.*,
+            ${STAFF_REMARKS_SQL},
             b.name AS branch_name,
             b.code AS branch_code
           FROM public.staff s
@@ -566,6 +578,7 @@ router.get(
           `
           SELECT
             s.*,
+            ${STAFF_REMARKS_SQL},
             b.name AS branch_name,
             b.code AS branch_code
           FROM public.staff s
@@ -587,6 +600,7 @@ router.get(
           `
           SELECT
             s.*,
+            ${STAFF_REMARKS_SQL},
             b.name AS branch_name,
             b.code AS branch_code
           FROM public.staff s
@@ -610,6 +624,7 @@ router.get(
           `
           SELECT
             s.*,
+            ${STAFF_REMARKS_SQL},
             b.name AS branch_name,
             b.code AS branch_code
           FROM public.staff s
@@ -972,7 +987,11 @@ router.put(
       const beneficiaries = toJsonbArray(body.beneficiaries);
 
       const oldStatus = toStr(existing.rows[0]?.status || "Active");
-      const newStatus = toStr(body.status || oldStatus || "Active");
+      const newStatus = toStr(body.status || existing.rows[0]?.status || "Active");
+
+      const isReactivation =
+        oldStatus.toLowerCase() === "inactive" &&
+        newStatus.toLowerCase() === "active";
 
       const branchId = toInt(body.branch_id);
 
@@ -1163,7 +1182,51 @@ router.put(
         return res.status(404).json({ message: "Staff not found" });
       }
 
-      if (finalEmployeeNo && oldStatus !== newStatus) {
+      if (isReactivation && finalEmployeeNo) {
+        await client.query(
+          `
+          UPDATE public.exit_staff_orders
+          SET status = 'Re-Applied'
+          WHERE employee_no = $1
+            AND LOWER(COALESCE(status, '')) = 'approved'
+          `,
+          [finalEmployeeNo]
+        );
+
+        await client.query(
+          `
+          UPDATE public.staff
+          SET
+            status = 'Active',
+            exit_type = NULL,
+            exit_date = NULL,
+            exit_remarks = NULL
+          WHERE employee_no = $1
+          `,
+          [finalEmployeeNo]
+        );
+
+        await client.query(
+          `
+          INSERT INTO public.status_history
+            (employee_no, effective_date, status, reason, remarks)
+          SELECT
+            $1::varchar,
+            CURRENT_DATE,
+            'Active',
+            're-apply',
+            'Reactivated from Staff Information'
+          WHERE NOT EXISTS (
+            SELECT 1
+            FROM public.status_history
+            WHERE employee_no = $1
+              AND effective_date = CURRENT_DATE
+              AND LOWER(COALESCE(reason, '')) = 're-apply'
+          )
+          `,
+          [finalEmployeeNo]
+        );
+      } else if (finalEmployeeNo && oldStatus !== newStatus) {
         const effectiveDate =
           toDateOrNull(body.status_effective_date) ||
           toDateOrNull(body.reactivation_date) ||

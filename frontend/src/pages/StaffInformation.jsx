@@ -8,7 +8,16 @@ import ContractDetailsStep from "./StaffInformation/ContractDetailsStep";
 import PersonalBalancesStep from "./StaffInformation/PersonalBalancesStep";
 import StaffProfileModal from "./StaffInformation/StaffProfileModal";
 import useStaffSignedUrls from "./StaffInformation/useStaffSignedUrls";
-import { safeJsonArray, toStr, norm, fmtDate, toNum, displayName, displayFormName, } from "./StaffInformation/staffInfoUtils";
+
+import {
+  safeJsonArray,
+  toStr,
+  norm,
+  toNum,
+  displayName,
+  displayFormName,
+} from "./StaffInformation/staffInfoUtils";
+
 import { FaEye, FaEdit } from "react-icons/fa";
 
 export default function StaffInformation() {
@@ -24,7 +33,6 @@ export default function StaffInformation() {
   const role = useMemo(() => norm(user?.role), [user]);
 
   const params = new URLSearchParams(window.location.search);
-
   const selectedStaffId = params.get("id");
   const selectedTab = params.get("tab");
   const editBalances = params.get("edit");
@@ -382,26 +390,16 @@ export default function StaffInformation() {
   useEffect(() => {
     if (!selectedStaffId || staff.length === 0) return;
 
-    const found = staff.find(
-      (s) => String(s.id) === String(selectedStaffId)
-    );
+    const found = staff.find((s) => String(s.id) === String(selectedStaffId));
 
     if (!found) return;
 
     openEdit(found);
 
-    if (
-      selectedTab === "balances" &&
-      editBalances === "true"
-    ) {
+    if (selectedTab === "balances" && editBalances === "true") {
       setFormStep(3);
     }
-  }, [
-    selectedStaffId,
-    selectedTab,
-    editBalances,
-    staff,
-  ]);
+  }, [selectedStaffId, selectedTab, editBalances, staff]);
 
   useEffect(() => {
     const isAnyModalOpen = !!viewStaff || !!editStaff;
@@ -464,6 +462,7 @@ export default function StaffInformation() {
         branch?.code,
         branch?.name,
         s.status,
+        s.remarks,
         s.address,
         s.municipality,
         s.province,
@@ -475,15 +474,7 @@ export default function StaffInformation() {
 
       return hay.includes(q);
     });
-  }, [
-    staff,
-    search,
-    statusFilter,
-    role,
-    user,
-    sameBranch,
-    findBranch,
-  ]);
+  }, [staff, search, statusFilter, role, user, sameBranch, findBranch]);
 
   const totalPages = Math.max(1, Math.ceil(filteredStaff.length / pageSize));
 
@@ -814,6 +805,15 @@ export default function StaffInformation() {
       ? "status-badge inactive"
       : "status-badge active";
 
+  const remarksBadgeClass = (remarks) => {
+    const r = norm(remarks);
+
+    if (r === "suspended") return "status-badge inactive";
+    if (r === "on leave") return "status-badge warning";
+
+    return "status-badge active";
+  };
+
   return (
     <div className="staffinfo-page">
       <div className="staffinfo-header">
@@ -856,7 +856,7 @@ export default function StaffInformation() {
 
           <input
             className="input"
-            placeholder="Search by ID, name, position, department, area, region, division, branch..."
+            placeholder="Search by ID, name, position, department, area, region, division, branch, remarks..."
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && setSearch(searchInput)}
@@ -919,6 +919,7 @@ export default function StaffInformation() {
                     <th style={{ width: 180 }}>Department</th>
                     <th style={{ width: 200 }}>Branch</th>
                     <th style={{ width: 120 }}>Status</th>
+                    <th style={{ width: 130 }}>Remarks</th>
                     <th style={{ width: 260 }}>Action</th>
                   </tr>
                 </thead>
@@ -926,7 +927,7 @@ export default function StaffInformation() {
                 <tbody>
                   {filteredStaff.length === 0 ? (
                     <tr>
-                      <td colSpan={8} className="empty">
+                      <td colSpan={9} className="empty">
                         No staff found.
                       </td>
                     </tr>
@@ -951,12 +952,19 @@ export default function StaffInformation() {
                           <td>{s.position || "-"}</td>
                           <td>{s.department || "-"}</td>
                           <td>{branchNameById(s.branch_id) || "-"}</td>
+
                           <td>
                             <span className={statusBadgeClass(s.status)}>
                               {String(s.status || "Active")}
                             </span>
                           </td>
-                          
+
+                          <td>
+                            <span className={remarksBadgeClass(s.remarks)}>
+                              {s.remarks || "On Work"}
+                            </span>
+                          </td>
+
                           <td>
                             <div className="actions">
                               <button

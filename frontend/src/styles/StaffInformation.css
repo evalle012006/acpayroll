@@ -150,6 +150,12 @@
   display: inline-block;
 }
 
+.status-badge.warning {
+  background: #f59e0b22;
+  color: #b45309;
+  border: 1px solid #f59e0b55;
+}
+
 .status-badge.active {
   background: #dcfce7;
   color: #15803d;
@@ -374,3 +380,4 @@
   opacity: 0.35;
   cursor: not-allowed;
 }
+
