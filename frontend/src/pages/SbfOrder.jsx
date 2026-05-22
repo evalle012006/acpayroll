@@ -19,13 +19,14 @@ export default function SbfOrder() {
   const role = norm(user?.role);
 
   const isAdmin = role === "admin";
+  const isIt = role === "it";
   const isHr = role === "hr";
   const isAccounting = role === "accounting";
   const isBranchManager = role === "branch manager";
 
-  const canView = isAdmin || isHr || isAccounting || isBranchManager;
-  const canCreate = isAdmin || isHr || isAccounting || isBranchManager;
-  const canApprove = isAdmin || isHr || isAccounting;
+  const canView = isAdmin || isIt || isHr || isAccounting || isBranchManager;
+  const canCreate = isAdmin || isIt || isHr || isAccounting || isBranchManager;
+  const canApprove = isAdmin || isIt || isHr || isAccounting;
 
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("All");
@@ -33,9 +34,12 @@ export default function SbfOrder() {
   const [showCreate, setShowCreate] = useState(false);
   const [showView, setShowView] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState(null);
+
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+
+  const [attachment, setAttachment] = useState(null);
 
   const [form, setForm] = useState({
     employee_no: "",
@@ -50,18 +54,21 @@ export default function SbfOrder() {
   });
 
   const filteredOrders = orders.filter((o) => {
-    const text =
-      `${o.order_no} ${o.employee_no} ${o.employee_name}`.toLowerCase();
+    const text = `${o.order_no || ""} ${o.employee_no || ""} ${
+      o.employee_name || ""
+    } ${o.branch_code || ""} ${o.branch_name || ""} ${
+      o.assistance_type || ""
+    }`.toLowerCase();
 
     const matchesSearch = text.includes(search.toLowerCase());
-
-    const matchesStatus =
-      statusFilter === "All" || o.status === statusFilter;
+    const matchesStatus = statusFilter === "All" || o.status === statusFilter;
 
     return matchesSearch && matchesStatus;
   });
 
-  const closeModal = () => setShowCreate(false);
+  const closeModal = () => {
+    setShowCreate(false);
+  };
 
   const openViewModal = (order) => {
     setSelectedOrder(order);
@@ -85,6 +92,11 @@ export default function SbfOrder() {
       date_created: "",
       effective_date: "",
     });
+
+    setAttachment(null);
+
+    const fileInput = document.getElementById("sbf-attachment-input");
+    if (fileInput) fileInput.value = "";
   };
 
   const handleChange = (e) => {
@@ -126,9 +138,22 @@ export default function SbfOrder() {
     try {
       setSubmitting(true);
 
-      await api.post("/sbf-orders", {
-        ...form,
-        amount: Number(form.amount),
+      const data = new FormData();
+
+      Object.entries(form).forEach(([key, value]) => {
+        data.append(key, value ?? "");
+      });
+
+      data.set("amount", Number(form.amount || 0));
+
+      if (attachment) {
+        data.append("attachment", attachment);
+      }
+
+      await api.post("/sbf-orders", data, {
+        headers: {
+          "Content-Type": "multipart/form-data",
+        },
       });
 
       alert("SBF Order created successfully");
@@ -178,6 +203,30 @@ export default function SbfOrder() {
     }
   };
 
+  const handleDownload = async (order) => {
+    if (!order?.id) return;
+
+    try {
+      const res = await api.get(`/sbf-orders/${order.id}/download`, {
+        responseType: "blob",
+      });
+
+      const blobUrl = window.URL.createObjectURL(new Blob([res.data]));
+      const link = document.createElement("a");
+
+      link.href = blobUrl;
+      link.download = order.attachment_name || `SBF-${order.id}-attachment`;
+      document.body.appendChild(link);
+      link.click();
+
+      link.remove();
+      window.URL.revokeObjectURL(blobUrl);
+    } catch (err) {
+      console.error("Download SBF file error:", err);
+      alert(err?.response?.data?.message || "Failed to download file");
+    }
+  };
+
   const formatAmount = (value) => {
     return Number(value || 0).toLocaleString();
   };
@@ -192,9 +241,7 @@ export default function SbfOrder() {
         <div className="exit-topbar">
           <div>
             <h2 className="exit-title">SBF Order</h2>
-            <p className="exit-subtitle">
-              Access denied
-            </p>
+            <p className="exit-subtitle">Access denied</p>
           </div>
 
           <div className="exit-actions">
@@ -251,7 +298,9 @@ export default function SbfOrder() {
           <div className="exit-card-title">Staff Benevolent Fund</div>
           <div className="exit-card-meta">{orders.length} Records</div>
         </div>
+
         <br />
+
         {loading ? (
           <div className="exit-empty">Loading...</div>
         ) : orders.length === 0 ? (
@@ -288,6 +337,7 @@ export default function SbfOrder() {
                   <th>Branch Name</th>
                   <th>Assistance Type</th>
                   <th>Date Created</th>
+                  <th>File</th>
                   <th>Status</th>
                   <th>Action</th>
                 </tr>
@@ -303,6 +353,19 @@ export default function SbfOrder() {
                     <td>{item.branch_name}</td>
                     <td>{item.assistance_type}</td>
                     <td>{formatDate(item.date_created)}</td>
+                    <td>
+                      {item.attachment_path ? (
+                        <button
+                          className="sbf-btn sbf-btn-view"
+                          type="button"
+                          onClick={() => handleDownload(item)}
+                        >
+                          Download
+                        </button>
+                      ) : (
+                        <span className="sbf-done">No File</span>
+                      )}
+                    </td>
                     <td>
                       <span
                         className={
@@ -335,6 +398,7 @@ export default function SbfOrder() {
                             >
                               Approve
                             </button>
+
                             <button
                               className="sbf-btn sbf-btn-reject"
                               type="button"
@@ -354,6 +418,10 @@ export default function SbfOrder() {
                 ))}
               </tbody>
             </table>
+
+            {filteredOrders.length === 0 && (
+              <div className="exit-empty">No matching SBF orders found.</div>
+            )}
           </div>
         )}
       </div>
@@ -440,11 +508,15 @@ export default function SbfOrder() {
                     required
                   >
                     <option value="">Select assistance type</option>
-                    <option value="Medical Assistance">Medical Assistance</option>
+                    <option value="Medical Assistance">
+                      Medical Assistance
+                    </option>
                     <option value="Cash Gift Assistance (Child Birth)">
                       Cash Gift Assistance (Child Birth)
                     </option>
-                    <option value="Financial Assistance">Financial Assistance</option>
+                    <option value="Financial Assistance">
+                      Financial Assistance
+                    </option>
                     <option value="Death Benefits Assistance">
                       Death Benefits Assistance
                     </option>
@@ -465,6 +537,8 @@ export default function SbfOrder() {
                     value={form.amount}
                     onChange={handleChange}
                     placeholder="0.00"
+                    min="0"
+                    step="0.01"
                     required
                   />
                 </div>
@@ -489,6 +563,23 @@ export default function SbfOrder() {
                     onChange={handleChange}
                     required
                   />
+                </div>
+
+                <div className="exit-field full">
+                  <label>Attachment</label>
+                  <input
+                    id="sbf-attachment-input"
+                    type="file"
+                    onChange={(e) =>
+                      setAttachment(e.target.files?.[0] || null)
+                    }
+                  />
+
+                  {attachment && (
+                    <small className="view-value">
+                      Selected file: {attachment.name}
+                    </small>
+                  )}
                 </div>
 
                 <div className="exit-field full">
@@ -535,10 +626,16 @@ export default function SbfOrder() {
             }
           }}
         >
-          <div className="exit-modal view-modal" onMouseDown={(e) => e.stopPropagation()}>
+          <div
+            className="exit-modal view-modal"
+            onMouseDown={(e) => e.stopPropagation()}
+          >
             <div className="exit-modal-head">
               <h3 className="exit-modal-title">SBF Order Details</h3>
-              <button className="exit-x" onClick={closeViewModal}>✕</button>
+
+              <button className="exit-x" type="button" onClick={closeViewModal}>
+                ✕
+              </button>
             </div>
 
             <div className="view-grid">
@@ -554,7 +651,9 @@ export default function SbfOrder() {
 
               <div className="view-row">
                 <span className="view-label">Employee Name</span>
-                <span className="view-value">{selectedOrder.employee_name}</span>
+                <span className="view-value">
+                  {selectedOrder.employee_name}
+                </span>
               </div>
 
               <div className="view-row">
@@ -566,13 +665,15 @@ export default function SbfOrder() {
 
               <div className="view-row">
                 <span className="view-label">Assistance Type</span>
-                <span className="view-value">{selectedOrder.assistance_type}</span>
+                <span className="view-value">
+                  {selectedOrder.assistance_type}
+                </span>
               </div>
 
               <div className="view-row">
                 <span className="view-label">Amount</span>
                 <span className="view-value">
-                  {Number(selectedOrder.amount).toLocaleString()}
+                  {formatAmount(selectedOrder.amount)}
                 </span>
               </div>
 
@@ -584,27 +685,53 @@ export default function SbfOrder() {
               <div className="view-row">
                 <span className="view-label">Date Created</span>
                 <span className="view-value">
-                  {String(selectedOrder.date_created).slice(0, 10)}
+                  {formatDate(selectedOrder.date_created)}
                 </span>
               </div>
 
               <div className="view-row">
                 <span className="view-label">Effective Date</span>
                 <span className="view-value">
-                  {String(selectedOrder.effective_date).slice(0, 10)}
+                  {formatDate(selectedOrder.effective_date)}
                 </span>
               </div>
 
               <div className="view-row full">
+                <span className="view-label">Attachment</span>
+
+                {selectedOrder.attachment_path ? (
+                  <div className="view-reason">
+                    <div>
+                      {selectedOrder.attachment_name || "Uploaded File"}
+                    </div>
+
+                    <br />
+
+                    <button
+                      className="exit-btn exit-btn-primary"
+                      type="button"
+                      onClick={() => handleDownload(selectedOrder)}
+                    >
+                      Download File
+                    </button>
+                  </div>
+                ) : (
+                  <div className="view-reason">No file uploaded</div>
+                )}
+              </div>
+
+              <div className="view-row full">
                 <span className="view-label">Reason</span>
-                <div className="view-reason">
-                  {selectedOrder.reason}
-                </div>
+                <div className="view-reason">{selectedOrder.reason}</div>
               </div>
             </div>
 
             <div className="exit-modal-actions">
-              <button className="exit-btn exit-btn-primary" onClick={closeViewModal}>
+              <button
+                className="exit-btn exit-btn-primary"
+                type="button"
+                onClick={closeViewModal}
+              >
                 Close
               </button>
             </div>

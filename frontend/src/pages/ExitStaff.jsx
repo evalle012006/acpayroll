@@ -3,9 +3,11 @@ import { useNavigate } from "react-router-dom";
 import "../styles/ExitStaff.css";
 import api from "../api/axiosClient";
 
+import StaffProfileModal from "./StaffInformation/StaffProfileModal";
+import useStaffSignedUrls from "./StaffInformation/useStaffSignedUrls";
+
 const toStr = (v) => String(v ?? "").trim();
 const norm = (v) => toStr(v).toLowerCase();
-const toDate10 = (v) => (v ? String(v).slice(0, 10) : "");
 const todayDate = () => new Date().toISOString().slice(0, 10);
 
 const readUser = () => {
@@ -40,6 +42,8 @@ export default function ExitStaff() {
     role === "hr" ||
     role === "accounting";
 
+  const canEditLeaveDetails = ["admin", "hr", "accounting"].includes(role);
+
   const [viewStaff, setViewStaff] = useState(null);
   const [showReApply, setShowReApply] = useState(false);
   const [reApplyStaffRow, setReApplyStaffRow] = useState(null);
@@ -68,6 +72,26 @@ export default function ExitStaff() {
     start_date: todayDate(),
     remarks: "",
   });
+
+  const signedUrls = useStaffSignedUrls(rows);
+
+  const branchMapById = useMemo(() => {
+    const m = new Map();
+    branches.forEach((b) => m.set(String(b.id), b));
+    return m;
+  }, [branches]);
+
+  const branchNameById = useCallback(
+    (id) => {
+      if (id === null || id === undefined || id === "") return "";
+
+      const branch = branchMapById.get(String(id));
+      if (branch) return branch.name || branch.code || String(id);
+
+      return String(id);
+    },
+    [branchMapById]
+  );
 
   const loadExitStaff = useCallback(async () => {
     try {
@@ -103,6 +127,22 @@ export default function ExitStaff() {
     loadBranches();
   }, [loadExitStaff, loadBranches]);
 
+  const closeReApplyModal = useCallback(() => {
+    setShowReApply(false);
+    setReApplyStaffRow(null);
+    setReApplyForm({
+      branch_id: "",
+      branch_code: "",
+      branch_name: "",
+      area: "",
+      region: "",
+      division: "",
+      position: "",
+      start_date: todayDate(),
+      remarks: "",
+    });
+  }, []);
+
   useEffect(() => {
     const isOpen = viewStaff || showReApply;
 
@@ -122,23 +162,7 @@ export default function ExitStaff() {
       document.removeEventListener("keydown", onKeyDown);
       document.body.style.overflow = "";
     };
-  }, [viewStaff, showReApply]);
-
-  const closeReApplyModal = () => {
-    setShowReApply(false);
-    setReApplyStaffRow(null);
-    setReApplyForm({
-      branch_id: "",
-      branch_code: "",
-      branch_name: "",
-      area: "",
-      region: "",
-      division: "",
-      position: "",
-      start_date: todayDate(),
-      remarks: "",
-    });
-  };
+  }, [viewStaff, showReApply, closeReApplyModal]);
 
   const openReApplyModal = (row) => {
     if (!canManageOrders) {
@@ -286,12 +310,14 @@ export default function ExitStaff() {
     const awol = rows.filter((x) => norm(x.exit_type) === "awol").length;
     const resigned = rows.filter((x) => norm(x.exit_type) === "resigned").length;
     const terminated = rows.filter((x) => norm(x.exit_type) === "terminated").length;
+    const deceased = rows.filter((x) => norm(x.exit_type) === "deceased").length;
 
     return {
       total: rows.length,
       awol,
       resigned,
       terminated,
+      deceased,
     };
   }, [rows]);
 
@@ -301,7 +327,7 @@ export default function ExitStaff() {
         <div>
           <h2 className="exit-title">Exit Staff</h2>
           <p className="exit-subtitle">
-            List of inactive staff tagged as AWOL, Resigned, or Terminated.
+            List of inactive staff tagged as AWOL, Resigned, Terminated, or Deceased.
           </p>
         </div>
 
@@ -361,6 +387,11 @@ export default function ExitStaff() {
           <div className="exit-card-title">Terminated</div>
           <div className="exit-card-meta">{stats.terminated}</div>
         </div>
+
+        <div className="exit-card">
+          <div className="exit-card-title">Deceased</div>
+          <div className="exit-card-meta">{stats.deceased}</div>
+        </div>
       </div>
 
       <div className="exit-card">
@@ -394,6 +425,7 @@ export default function ExitStaff() {
             <option value="awol">AWOL</option>
             <option value="resigned">Resigned</option>
             <option value="terminated">Terminated</option>
+            <option value="deceased">Deceased</option>
           </select>
         </div>
 
@@ -446,18 +478,21 @@ export default function ExitStaff() {
                             ? "awol"
                             : norm(r.exit_type) === "terminated"
                             ? "terminated"
+                            : norm(r.exit_type) === "deceased"
+                            ? "deceased"
                             : "resigned"
                         }`}
                       >
                         {r.exit_type || "-"}
                       </span>
                     </td>
+
                     <td>
                       <div className="exit-action-icons">
                         <button
                           className="exit-icon-btn view"
                           type="button"
-                          title="View Staff"
+                          title="View Full Staff Profile"
                           onClick={() => setViewStaff(r)}
                         >
                           👁
@@ -524,156 +559,14 @@ export default function ExitStaff() {
       </div>
 
       {viewStaff && (
-        <div
-          className="modal-overlay"
-          onMouseDown={(e) =>
-            e.target.classList.contains("modal-overlay") && setViewStaff(null)
-          }
-        >
-          <div
-            className="modal saas-modal"
-            style={{ maxWidth: 950, width: "95vw" }}
-            onMouseDown={(e) => e.stopPropagation()}
-          >
-            <div className="modal-head">
-              <div>
-                <h3 className="modal-title">Exit Staff Details</h3>
-                <p className="modal-subtitle">{displayNameParts(viewStaff)}</p>
-              </div>
-
-              <button
-                className="modal-x"
-                type="button"
-                onClick={() => setViewStaff(null)}
-              >
-                ✕
-              </button>
-            </div>
-
-            <div className="modal-form">
-              <div className="modal-grid">
-                <div className="form-group">
-                  <label>Employee ID</label>
-                  <input value={viewStaff.id || "-"} readOnly />
-                </div>
-
-                <div className="form-group">
-                  <label>Employee No</label>
-                  <input
-                    value={viewStaff.staff_code || viewStaff.employee_no || "-"}
-                    readOnly
-                  />
-                </div>
-
-                <div className="form-group">
-                  <label>Full Name</label>
-                  <input value={displayNameParts(viewStaff)} readOnly />
-                </div>
-
-                <div className="form-group">
-                  <label>Status</label>
-                  <input value={viewStaff.status || "-"} readOnly />
-                </div>
-
-                <div className="form-group">
-                  <label>Branch</label>
-                  <input
-                    value={`${viewStaff.branch_code || "-"} - ${
-                      viewStaff.branch_name || "-"
-                    }`}
-                    readOnly
-                  />
-                </div>
-
-                <div className="form-group">
-                  <label>Department</label>
-                  <input value={viewStaff.department || "-"} readOnly />
-                </div>
-
-                <div className="form-group">
-                  <label>Position</label>
-                  <input value={viewStaff.position || "-"} readOnly />
-                </div>
-
-                <div className="form-group">
-                  <label>Date Start</label>
-                  <input
-                    value={
-                      toDate10(viewStaff.date_start) ||
-                      toDate10(viewStaff.start_date) ||
-                      toDate10(viewStaff.hired_date) ||
-                      toDate10(viewStaff.date_hired) ||
-                      "-"
-                    }
-                    readOnly
-                  />
-                </div>
-
-                <div className="form-group">
-                  <label>Regularized Date</label>
-                  <input
-                    value={
-                      toDate10(viewStaff.regularized_date) ||
-                      toDate10(viewStaff.regularization_date) ||
-                      "-"
-                    }
-                    readOnly
-                  />
-                </div>
-
-                <div className="form-group">
-                  <label>Exit Type</label>
-                  <input value={viewStaff.exit_type || "-"} readOnly />
-                </div>
-
-                <div className="form-group">
-                  <label>Exit Date</label>
-                  <input value={toDate10(viewStaff.exit_date) || "-"} readOnly />
-                </div>
-
-                <div className="form-group">
-                  <label>Area</label>
-                  <input value={viewStaff.area || "-"} readOnly />
-                </div>
-
-                <div className="form-group">
-                  <label>Region</label>
-                  <input value={viewStaff.region || "-"} readOnly />
-                </div>
-
-                <div className="form-group">
-                  <label>Division</label>
-                  <input value={viewStaff.division || "-"} readOnly />
-                </div>
-
-                <div className="form-group full">
-                  <label>Remarks</label>
-                  <textarea value={viewStaff.exit_remarks || "-"} readOnly />
-                </div>
-              </div>
-
-              <div className="modal-buttons">
-                {canManageOrders && (
-                  <button
-                    className="btn-primary"
-                    type="button"
-                    onClick={() => openReApplyModal(viewStaff)}
-                  >
-                    Re-Apply Staff
-                  </button>
-                )}
-
-                <button
-                  className="btn-secondary"
-                  type="button"
-                  onClick={() => setViewStaff(null)}
-                >
-                  Close
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
+        <StaffProfileModal
+          staff={viewStaff}
+          signedPhotoUrl={signedUrls[viewStaff.id]}
+          onClose={() => setViewStaff(null)}
+          branchNameById={branchNameById}
+          canViewPrivateDetails={true}
+          canEditLeaveDetails={canEditLeaveDetails}
+        />
       )}
 
       {showReApply && reApplyStaffRow && (
@@ -692,7 +585,7 @@ export default function ExitStaff() {
               <div>
                 <h3 className="modal-title">Re-Apply Staff</h3>
                 <p className="modal-subtitle">
-                  {displayNameParts(reApplyStaffRow)} • Employee No:{" "}
+                  {displayNameParts(reApplyStaffRow)} • Employee No: {" "}
                   {reApplyStaffRow.employee_no || "-"}
                 </p>
               </div>

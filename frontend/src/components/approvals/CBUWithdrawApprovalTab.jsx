@@ -51,8 +51,24 @@ const stageLabel = (stage) => {
 
 const canBypass = (role) => ["admin", "it"].includes(norm(role));
 
-const canFinalUpload = (role) =>
-  ["hr", "accounting", "admin", "it"].includes(norm(role));
+const canFinalUpload = (role, item) => {
+  const dept = norm(item?.department);
+
+  if (dept === "operation department") {
+  return [
+  "vice president",
+  "admin",
+  "it",
+  ].includes(norm(role));
+  }
+
+  return [
+  "hr",
+  "accounting",
+  "admin",
+  "it",
+  ].includes(norm(role));
+  };
 
 const canVoidItem = (role, item) =>
   canBypass(role) &&
@@ -526,7 +542,7 @@ export default function CBUWithdrawApprovalTab() {
     canApproveStage(role, item?.approval_stage);
 
   const canFinalUploadItem = (item) =>
-    norm(item?.status) === norm(WAITING_FINAL_FILE) && canFinalUpload(role);
+    norm(item?.status) === norm(WAITING_FINAL_FILE) && canFinalUpload(role, item);
 
   const filteredRows = useMemo(() => {
     const q = norm(appliedSearch);
@@ -606,7 +622,7 @@ export default function CBUWithdrawApprovalTab() {
             <div className="mini">
               {loading
                 ? "Loading CBU withdraw requests..."
-                : "Download latest file, upload signed file, then approve. After VP approval, HR/Accounting/Admin/IT uploads final file."}
+                : "Download latest file → upload signed file → approve. Operation Department = VP Final Upload, Back Office = HR/Admin/Accounting Final Upload"}
             </div>
           </div>
         </div>
@@ -811,8 +827,9 @@ export default function CBUWithdrawApprovalTab() {
               <div>
                 <h3 className="modal-title">CBU Withdraw Requests</h3>
                 <p className="modal-subtitle">
-                  Chain depends on applicant role. Final file upload is handled by
-                  HR/Accounting/Admin/IT.
+                  Chain depends on applicant role.
+                  Operation Department → VP Final Upload
+                  Back Office → HR/Accounting/Admin/IT Final Upload
                 </p>
               </div>
 
@@ -1255,7 +1272,10 @@ export default function CBUWithdrawApprovalTab() {
                     ) : null}
 
                     <small style={{ opacity: 0.75, display: "block", marginTop: 8 }}>
-                      HR/Accounting/Admin/IT final upload will fully approve and deduct CBU balance.
+                      {norm(selected?.department) === "operation department"
+                        ? "Vice President final upload will fully approve and deduct CBU balance."
+                        : "HR/Accounting/Admin/IT final upload will fully approve and deduct CBU balance."
+                        }
                     </small>
                   </div>
                 ) : null}

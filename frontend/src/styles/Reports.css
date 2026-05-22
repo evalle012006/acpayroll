@@ -457,6 +457,10 @@
   height: 190px;
   border-radius: 50%;
   object-fit: cover;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
   border: 5px solid rgba(96, 165, 250, 0.75);
   box-shadow: 0 0 42px rgba(96, 165, 250, 0.35);
   background: var(--input-bg);
@@ -488,4 +492,13 @@
 
 .reports-modal {
   width: min(980px, 96vw);
+}
+
+.reports-profile-img-fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 64px;
+  font-weight: 950;
+  color: var(--blue-soft);
 }

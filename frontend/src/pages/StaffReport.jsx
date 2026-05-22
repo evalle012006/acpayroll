@@ -3,10 +3,10 @@ import { useNavigate } from "react-router-dom";
 import api from "../api/axiosClient";
 import "../styles/StaffReport.css";
 
-const STATUS_PENDING_VP = "Pending Vice President";
 const STATUS_WAITING_HR = "Waiting HR Final File";
 const STATUS_APPROVED = "Approved";
 const STATUS_REJECTED = "Rejected";
+const STATUS_VOID = "Voided";
 
 const readUser = () => {
   try {
@@ -54,8 +54,9 @@ export default function StaffReport() {
   const isAVP = role === "assistant vice president";
 
   const canCreate = isAdmin || isIT || isBM || isAM || isRM || isAVP;
-  const canVPApprove = isAdmin || isIT || isVP;
+  const canBypassApprove = isAdmin || isIT;
   const canHRUpload = isAdmin || isIT || isHR;
+  const canVoid = isAdmin || isIT || isHR;
 
   const employeePickerRef = useRef(null);
 
@@ -279,27 +280,6 @@ export default function StaffReport() {
     }
   };
 
-  const approveVP = async (report) => {
-    try {
-      setActionLoading(true);
-
-      const res = await api.put(`/awol-reports/${report.id}/vp-approve`);
-      const updated = res.data;
-
-      setReports((prev) =>
-        prev.map((r) => (Number(r.id) === Number(updated.id) ? updated : r))
-      );
-
-      setSelectedReport(updated);
-      alert("Approved by Vice President. Waiting HR final file.");
-    } catch (err) {
-      if (err?.response?.status === 401) return logout();
-      alert(err?.response?.data?.message || "Failed to approve report.");
-    } finally {
-      setActionLoading(false);
-    }
-  };
-
   const rejectReport = async (report) => {
     const reason = prompt("Enter rejection reason:");
     if (!reason || !reason.trim()) return;
@@ -322,6 +302,72 @@ export default function StaffReport() {
     } catch (err) {
       if (err?.response?.status === 401) return logout();
       alert(err?.response?.data?.message || "Failed to reject report.");
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const bypassApprove = async (report) => {
+    if (!window.confirm("Bypass and approve this report?")) return;
+
+    try {
+      setActionLoading(true);
+
+      const res = await api.put(
+        `/awol-reports/${report.id}/admin-bypass-approve`
+      );
+
+      const updated = res.data;
+
+      setReports((prev) =>
+        prev.map((r) =>
+          Number(r.id) === Number(updated.id) ? updated : r
+        )
+      );
+
+      setSelectedReport(updated);
+
+      alert("Report bypass-approved.");
+    } catch (err) {
+      if (err?.response?.status === 401) return logout();
+
+      alert(
+        err?.response?.data?.message ||
+          "Failed to bypass approve report."
+      );
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const voidReport = async (report) => {
+    if (!window.confirm("Void this AWOL report?")) return;
+
+    try {
+      setActionLoading(true);
+
+      const res = await api.put(
+        `/awol-reports/${report.id}/void`
+      );
+
+      const updated = res.data;
+
+      setReports((prev) =>
+        prev.map((r) =>
+          Number(r.id) === Number(updated.id) ? updated : r
+        )
+      );
+
+      setSelectedReport(updated);
+
+      alert("Report voided.");
+    } catch (err) {
+      if (err?.response?.status === 401) return logout();
+
+      alert(
+        err?.response?.data?.message ||
+          "Failed to void report."
+      );
     } finally {
       setActionLoading(false);
     }
@@ -388,8 +434,10 @@ export default function StaffReport() {
   };
 
   const badgeClass = (status) => {
-    if (status === STATUS_APPROVED) return "badge badge-approved";
-    if (status === STATUS_REJECTED) return "badge badge-rejected";
+      if (status === STATUS_APPROVED) return "badge badge-approved";
+      if (status === STATUS_REJECTED) return "badge badge-rejected";
+      if (status === STATUS_VOID) return "badge badge-rejected";
+
     return "badge badge-pending";
   };
 
@@ -661,7 +709,7 @@ export default function StaffReport() {
               <div>
                 <h3 className="modal-title">Create AWOL Report</h3>
                 <p className="modal-subtitle">
-                  Report will go directly to Vice President approval.
+                  Report will go directly to HR final approval.
                 </p>
               </div>
 
@@ -967,38 +1015,42 @@ export default function StaffReport() {
                 Close
               </button>
 
-              {selectedReport.status === STATUS_PENDING_VP && canVPApprove ? (
+              {selectedReport.status === STATUS_WAITING_HR ? (
                 <>
+                  {canHRUpload && (
+                    <button
+                      className="btn-danger"
+                      type="button"
+                      disabled={actionLoading}
+                      onClick={() => rejectReport(selectedReport)}
+                    >
+                      Reject
+                    </button>
+                  )}
+
+                  {canBypassApprove && (
+                    <button
+                      className="btn-success"
+                      type="button"
+                      disabled={actionLoading}
+                      onClick={() => bypassApprove(selectedReport)}
+                    >
+                      Admin/IT Bypass
+                    </button>
+                  )}
+                </>
+                ) : null}
+
+                {selectedReport.status === STATUS_APPROVED && canVoid ? (
                   <button
                     className="btn-danger"
                     type="button"
                     disabled={actionLoading}
-                    onClick={() => rejectReport(selectedReport)}
+                    onClick={() => voidReport(selectedReport)}
                   >
-                    Reject
+                    Void
                   </button>
-
-                  <button
-                    className="btn-success"
-                    type="button"
-                    disabled={actionLoading}
-                    onClick={() => approveVP(selectedReport)}
-                  >
-                    {actionLoading ? "Approving..." : "VP Approve"}
-                  </button>
-                </>
-              ) : null}
-
-              {selectedReport.status === STATUS_WAITING_HR && canHRUpload ? (
-                <button
-                  className="btn-danger"
-                  type="button"
-                  disabled={actionLoading}
-                  onClick={() => rejectReport(selectedReport)}
-                >
-                  Reject
-                </button>
-              ) : null}
+                  ) : null}
             </div>
           </div>
         </div>

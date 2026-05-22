@@ -2,10 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import "../styles/Reports.css";
 import api from "../api/axiosClient";
-
-const API_ORIGIN =
-  import.meta.env.VITE_API_URL?.replace(/\/api\/?$/, "") ||
-  "http://localhost:5000";
+import useStaffSignedUrls from "./StaffInformation/useStaffSignedUrls";
 
 const norm = (v) => String(v || "").trim().toLowerCase();
 
@@ -48,27 +45,6 @@ const getBranchName = (item) => {
 
   if (code && name) return `${code} - ${name}`;
   return name || code || "-";
-};
-
-const getStaffPhoto = (item) => {
-  const raw =
-    item?.photo_url ||
-    item?.profile ||
-    item?.photo ||
-    item?.image ||
-    item?.avatar ||
-    "";
-
-  if (!raw) return "/default-avatar.png";
-
-  const img = String(raw).trim();
-
-  if (!img) return "/default-avatar.png";
-  if (img.startsWith("http")) return img;
-  if (img.startsWith("/uploads")) return `${API_ORIGIN}${img}`;
-  if (img.startsWith("uploads/")) return `${API_ORIGIN}/${img}`;
-
-  return `${API_ORIGIN}/uploads/${img}`;
 };
 
 const isPendingLike = (status) => {
@@ -114,6 +90,7 @@ export default function Reports() {
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
 
+  const [staffList, setStaffList] = useState([]);
   const [leaves, setLeaves] = useState([]);
   const [loans, setLoans] = useState([]);
   const [sbfOrders, setSbfOrders] = useState([]);
@@ -128,6 +105,10 @@ export default function Reports() {
   const [selectedStatus, setSelectedStatus] = useState("Pending");
   const [search, setSearch] = useState("");
   const [selectedRequest, setSelectedRequest] = useState(null);
+
+  // This is the same photo system used by StaffInformation.jsx.
+  // It converts Spaces keys like acpayroll/staff/... into signed image URLs.
+  const signedUrls = useStaffSignedUrls(staffList);
 
   const safeGet = async (url) => {
     try {
@@ -148,6 +129,7 @@ export default function Reports() {
 
     try {
       const [
+        staffData,
         leaveData,
         loanData,
         sbfData,
@@ -157,6 +139,7 @@ export default function Reports() {
         exitData,
         resignationData,
       ] = await Promise.all([
+        safeGet("/staff"),
         safeGet("/leave-requests"),
         safeGet("/loan-requests"),
         safeGet("/sbf-orders"),
@@ -167,6 +150,7 @@ export default function Reports() {
         safeGet("/resignation-requests"),
       ]);
 
+      setStaffList(staffData);
       setLeaves(leaveData);
       setLoans(loanData);
       setSbfOrders(sbfData);
@@ -202,6 +186,31 @@ export default function Reports() {
     };
   }, [selectedRequest]);
 
+  const staffPhotoMap = useMemo(() => {
+    const m = new Map();
+
+    staffList.forEach((s) => {
+      const employeeNo = String(s?.employee_no || "").trim();
+      const signedPhoto = signedUrls?.[s.id];
+
+      if (employeeNo && signedPhoto) {
+        m.set(employeeNo, signedPhoto);
+      }
+    });
+
+    return m;
+  }, [staffList, signedUrls]);
+
+  const getReportPhoto = (item) => {
+    const employeeNo = String(item?.employee_no || "").trim();
+
+    if (employeeNo && staffPhotoMap.has(employeeNo)) {
+      return staffPhotoMap.get(employeeNo);
+    }
+
+    return "";
+  };
+
   const handleView = (item) => {
     setSelectedRequest(item);
   };
@@ -219,7 +228,7 @@ export default function Reports() {
         employeeNo: item.employee_no || "-",
         employeeName: getEmployeeName(item),
         branch: getBranchName(item),
-        photo: getStaffPhoto(item),
+        photo: getReportPhoto(item),
         date: item.date_created || item.created_at || item.entry_date,
         status: item.status || "Pending",
         amount: null,
@@ -238,7 +247,7 @@ export default function Reports() {
         employeeNo: item.employee_no || "-",
         employeeName: getEmployeeName(item),
         branch: getBranchName(item),
-        photo: getStaffPhoto(item),
+        photo: getReportPhoto(item),
         date: item.entry_date || item.created_at || item.approved_at,
         status: item.status || "Pending",
         amount: item.amount ?? item.total ?? null,
@@ -257,7 +266,7 @@ export default function Reports() {
         employeeNo: item.employee_no || "-",
         employeeName: getEmployeeName(item),
         branch: getBranchName(item),
-        photo: getStaffPhoto(item),
+        photo: getReportPhoto(item),
         date: item.date_created || item.created_at,
         status: item.status || "Pending",
         amount: item.amount ?? null,
@@ -280,7 +289,7 @@ export default function Reports() {
         employeeNo: item.employee_no || "-",
         employeeName: getEmployeeName(item),
         branch: getBranchName(item),
-        photo: getStaffPhoto(item),
+        photo: getReportPhoto(item),
         date: item.date_created || item.created_at || item.entry_date,
         status: item.status || "Pending",
         amount: item.amount ?? item.total_amount ?? null,
@@ -299,7 +308,7 @@ export default function Reports() {
         employeeNo: item.employee_no || "-",
         employeeName: getEmployeeName(item),
         branch: getBranchName(item),
-        photo: getStaffPhoto(item),
+        photo: getReportPhoto(item),
         date: item.date_created || item.created_at,
         status: item.status || "Pending",
         amount: item.present_salary ?? null,
@@ -318,7 +327,7 @@ export default function Reports() {
         employeeNo: item.employee_no || "-",
         employeeName: getEmployeeName(item),
         branch: getBranchName(item),
-        photo: getStaffPhoto(item),
+        photo: getReportPhoto(item),
         date: item.date_created || item.created_at,
         status: item.status || "Pending",
         amount: item.total_deduction ?? null,
@@ -337,7 +346,7 @@ export default function Reports() {
         employeeNo: item.employee_no || "-",
         employeeName: getEmployeeName(item),
         branch: getBranchName(item),
-        photo: getStaffPhoto(item),
+        photo: getReportPhoto(item),
         date: item.date_created || item.created_at,
         status: item.status || "Pending",
         amount: null,
@@ -356,7 +365,7 @@ export default function Reports() {
         employeeNo: item.employee_no || "-",
         employeeName: getEmployeeName(item),
         branch: getBranchName(item),
-        photo: getStaffPhoto(item),
+        photo: getReportPhoto(item),
         date: item.date_created || item.created_at,
         status: item.status || "Pending",
         amount: null,
@@ -386,6 +395,7 @@ export default function Reports() {
     suspensions,
     exitOrders,
     resignations,
+    staffPhotoMap,
   ]);
 
   const summary = useMemo(() => {
@@ -753,14 +763,22 @@ Remarks: ${item.remarks || "-"}`;
 
             <div className="reports-modal-body">
               <div className="reports-profile-card">
-                <img
-                  className="reports-profile-img"
-                  src={selectedRequest.photo || "/default-avatar.png"}
-                  alt="Staff"
-                  onError={(e) => {
-                    e.currentTarget.src = "/default-avatar.png";
-                  }}
-                />
+                {selectedRequest.photo ? (
+                  <img
+                    className="reports-profile-img"
+                    src={selectedRequest.photo}
+                    alt="Staff"
+                    onError={(e) => {
+                      e.currentTarget.style.display = "none";
+                    }}
+                  />
+                ) : (
+                  <div className="reports-profile-img reports-profile-img-fallback">
+                    {String(selectedRequest.employeeName || "?")
+                      .slice(0, 1)
+                      .toUpperCase()}
+                  </div>
+                )}
 
                 <div className="reports-profile-name">
                   {selectedRequest.employeeName}

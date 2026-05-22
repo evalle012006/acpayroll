@@ -23,13 +23,14 @@ const {
   isTread,
 } = require("../utils/roleAccess");
 
-const STATUS_PENDING_VP = "Pending Vice President";
 const STATUS_WAITING_HR = "Waiting HR Final File";
 const STATUS_APPROVED = "Approved";
 const STATUS_REJECTED = "Rejected";
+const STATUS_VOID = "Voided";
 
 const toStr = (v) => String(v ?? "").trim();
 const norm = (v) => toStr(v).toLowerCase();
+
 const toInt = (v) => {
   const n = Number(v);
   return Number.isFinite(n) ? Math.trunc(n) : null;
@@ -38,6 +39,7 @@ const toInt = (v) => {
 const toDateOrNull = (v) => {
   const s = toStr(v);
   if (!s) return null;
+
   const d = s.slice(0, 10);
   return /^\d{4}-\d{2}-\d{2}$/.test(d) ? d : null;
 };
@@ -60,10 +62,16 @@ const canViewAll = (req) =>
   isSeniorVicePresident(req) ||
   isPresident(req);
 
+const canUploadFinalFile = (req) => isHr(req) || isAdmin(req) || isIT(req);
+const canBypassApprove = (req) => isAdmin(req) || isIT(req);
+const canVoidAwol = (req) => isHr(req) || isAdmin(req) || isIT(req);
+const canRejectAwol = (req) => isHr(req) || isAdmin(req) || isIT(req);
+
 const displayName = (s) => {
   const ln = toStr(s?.last_name);
   const fn = toStr(s?.first_name);
   const mn = toStr(s?.middle_name);
+
   return (
     `${ln}${ln && fn ? ", " : ""}${fn}${mn ? ` ${mn}` : ""}`
       .replace(/\s+/g, " ")
@@ -83,6 +91,7 @@ const storage = multer.diskStorage({
     const base = path
       .basename(file.originalname || "file", ext)
       .replace(/[^a-zA-Z0-9-_]/g, "_");
+
     cb(null, `${Date.now()}-${Math.round(Math.random() * 1e9)}-${base}${ext}`);
   },
 });
@@ -101,7 +110,7 @@ async function generateReportNo(client) {
   await client.query(
     `
     INSERT INTO public.order_sequences(prefix, year, month, next_value)
-    VALUES ($1,$2,$3,1)
+    VALUES ($1, $2, $3, 1)
     ON CONFLICT (prefix, year, month) DO NOTHING
     `,
     [prefix, year, month]
@@ -111,7 +120,9 @@ async function generateReportNo(client) {
     `
     SELECT next_value
     FROM public.order_sequences
-    WHERE prefix=$1 AND year=$2 AND month=$3
+    WHERE prefix = $1
+      AND year = $2
+      AND month = $3
     FOR UPDATE
     `,
     [prefix, year, month]
@@ -123,14 +134,14 @@ async function generateReportNo(client) {
     `
     UPDATE public.order_sequences
     SET next_value = next_value + 1
-    WHERE prefix=$1 AND year=$2 AND month=$3
+    WHERE prefix = $1
+      AND year = $2
+      AND month = $3
     `,
     [prefix, year, month]
   );
 
-  return `${prefix}-${year}-${String(month).padStart(2, "0")}-${String(
-    nextVal
-  ).padStart(4, "0")}`;
+  return `${prefix}-${year}-${String(month).padStart(2, "0")}-${String(nextVal).padStart(4, "0")}`;
 }
 
 const canAccessRow = (req, row) => {
@@ -167,6 +178,7 @@ router.get(
           FROM public.awol_reports
           ORDER BY created_at DESC
         `);
+
         return res.json(r.rows);
       }
 
@@ -177,13 +189,13 @@ router.get(
         sql = "branch_id = $1";
         value = req.user?.branch_id;
       } else if (isAreaManager(req)) {
-        sql = "LOWER(TRIM(COALESCE(area,''))) = LOWER(TRIM($1))";
+        sql = "LOWER(TRIM(COALESCE(area, ''))) = LOWER(TRIM($1))";
         value = req.user?.area;
       } else if (isRegionalManager(req)) {
-        sql = "LOWER(TRIM(COALESCE(region,''))) = LOWER(TRIM($1))";
+        sql = "LOWER(TRIM(COALESCE(region, ''))) = LOWER(TRIM($1))";
         value = req.user?.region;
       } else if (isAssistantVicePresident(req)) {
-        sql = "LOWER(TRIM(COALESCE(division,''))) = LOWER(TRIM($1))";
+        sql = "LOWER(TRIM(COALESCE(division, ''))) = LOWER(TRIM($1))";
         value = req.user?.division;
       } else {
         return res.status(403).json({ message: "Access denied" });
@@ -280,10 +292,7 @@ router.post(
         return res.status(403).json({ message: "Access denied" });
       }
 
-      if (
-        isAssistantVicePresident(req) &&
-        norm(req.user?.division) !== norm(s.division)
-      ) {
+      if (isAssistantVicePresident(req) && norm(req.user?.division) !== norm(s.division)) {
         await client.query("ROLLBACK");
         return res.status(403).json({ message: "Access denied" });
       }
@@ -314,7 +323,7 @@ router.post(
         )
         VALUES
         (
-          $1,$2,$3,$4,$5,$6,$7,$8,$9,$10::date,$11::date,$12,$13,$14,$15,$16,$17
+          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10::date, $11::date, $12, $13, $14, $15, $16, $17
         )
         RETURNING *
         `,
@@ -331,7 +340,7 @@ router.post(
           dateCreated,
           awolDate,
           details,
-          STATUS_PENDING_VP,
+          STATUS_WAITING_HR,
           req.user?.id ?? null,
           req.file?.path || null,
           req.file?.originalname || null,
@@ -352,59 +361,21 @@ router.post(
 );
 
 router.put(
-  "/awol-reports/:id/vp-approve",
-  requireAuth,
-  requirePermission("staff_report", "approve"),
-  async (req, res) => {
-    try {
-      if (!isVicePresident(req) && !isAdmin(req) && !isIT(req)) {
-        return res.status(403).json({ message: "Only VP can approve" });
-      }
-
-      const id = toInt(req.params.id);
-
-      const r = await pool.query(
-        `
-        UPDATE public.awol_reports
-        SET
-          status = $2,
-          vp_approved_by = $3,
-          vp_approved_at = NOW(),
-          rejected_by = NULL,
-          rejected_at = NULL,
-          rejection_reason = NULL,
-          updated_at = NOW()
-        WHERE id = $1
-          AND status = $4
-        RETURNING *
-        `,
-        [id, STATUS_WAITING_HR, req.user?.id ?? null, STATUS_PENDING_VP]
-      );
-
-      if (r.rowCount === 0) {
-        return res.status(400).json({ message: "Report not pending VP approval" });
-      }
-
-      return res.json(r.rows[0]);
-    } catch (e) {
-      console.error("PUT /api/awol-reports/:id/vp-approve ERROR:", e.message);
-      return res.status(500).json({ message: e.message || "Server error" });
-    }
-  }
-);
-
-router.put(
   "/awol-reports/:id/reject",
   requireAuth,
   requirePermission("staff_report", "reject"),
   async (req, res) => {
     try {
-      if (!isVicePresident(req) && !isHr(req) && !isAdmin(req) && !isIT(req)) {
+      if (!canRejectAwol(req)) {
         return res.status(403).json({ message: "Access denied" });
       }
 
       const id = toInt(req.params.id);
       const reason = toStr(req.body?.reason);
+
+      if (!id) {
+        return res.status(400).json({ message: "Invalid report id" });
+      }
 
       if (!reason) {
         return res.status(400).json({ message: "Rejection reason required" });
@@ -420,7 +391,7 @@ router.put(
           rejection_reason = $4,
           updated_at = NOW()
         WHERE id = $1
-          AND status IN ($5,$6)
+          AND status = $5
         RETURNING *
         `,
         [
@@ -428,7 +399,6 @@ router.put(
           STATUS_REJECTED,
           req.user?.id ?? null,
           reason,
-          STATUS_PENDING_VP,
           STATUS_WAITING_HR,
         ]
       );
@@ -445,6 +415,106 @@ router.put(
   }
 );
 
+router.put(
+  "/awol-reports/:id/void",
+  requireAuth,
+  requirePermission("staff_report", "approve"),
+  async (req, res) => {
+    try {
+      if (!canVoidAwol(req)) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      const id = toInt(req.params.id);
+      const reason = toStr(req.body?.reason);
+
+      if (!id) {
+        return res.status(400).json({ message: "Invalid report id" });
+      }
+
+      const r = await pool.query(
+        `
+        UPDATE public.awol_reports
+        SET
+        status = $2,
+        rejected_by = NULL,
+        rejected_at = NULL,
+        rejection_reason = COALESCE($3, rejection_reason),
+        updated_at = NOW()
+        WHERE id = $1
+        AND status = $4
+        RETURNING *
+        `,
+        [
+        id,
+        STATUS_VOID,
+        reason || null,
+        STATUS_APPROVED,
+        ]
+        );
+
+      if (r.rowCount === 0) {
+        return res.status(400).json({ message: "Report cannot be voided" });
+      }
+
+      return res.json(r.rows[0]);
+    } catch (e) {
+      console.error("PUT /api/awol-reports/:id/void ERROR:", e.message);
+      return res.status(500).json({ message: e.message || "Server error" });
+    }
+  }
+);
+
+router.put(
+  "/awol-reports/:id/admin-bypass-approve",
+  requireAuth,
+  requirePermission("staff_report", "approve"),
+  async (req, res) => {
+    try {
+      if (!canBypassApprove(req)) {
+        return res.status(403).json({ message: "Admin/IT only" });
+      }
+
+      const id = toInt(req.params.id);
+
+      if (!id) {
+        return res.status(400).json({ message: "Invalid report id" });
+      }
+
+      const r = await pool.query(
+        `
+        UPDATE public.awol_reports
+        SET
+          status = $2,
+          approved_by = $3,
+          approved_at = NOW(),
+          hr_uploaded_by = NULL,
+          hr_uploaded_at = NULL,
+          updated_at = NOW()
+        WHERE id = $1
+          AND status = $4
+        RETURNING *
+        `,
+        [
+          id,
+          STATUS_APPROVED,
+          req.user?.id ?? null,
+          STATUS_WAITING_HR,
+        ]
+      );
+
+      if (r.rowCount === 0) {
+        return res.status(400).json({ message: "Report cannot be bypass-approved" });
+      }
+
+      return res.json(r.rows[0]);
+    } catch (e) {
+      console.error("PUT /api/awol-reports/:id/admin-bypass-approve ERROR:", e.message);
+      return res.status(500).json({ message: e.message || "Server error" });
+    }
+  }
+);
+
 router.post(
   "/awol-reports/:id/hr-final-file",
   requireAuth,
@@ -452,11 +522,15 @@ router.post(
   upload.single("attachment"),
   async (req, res) => {
     try {
-      if (!isHr(req) && !isAdmin(req) && !isIT(req)) {
-        return res.status(403).json({ message: "Only HR can upload final file" });
+      if (!canUploadFinalFile(req)) {
+        return res.status(403).json({ message: "Only HR/Admin/IT can upload final file" });
       }
 
       const id = toInt(req.params.id);
+
+      if (!id) {
+        return res.status(400).json({ message: "Invalid report id" });
+      }
 
       if (!req.file) {
         return res.status(400).json({ message: "Final file required" });
@@ -469,9 +543,14 @@ router.post(
           status = $2,
           hr_uploaded_by = $3,
           hr_uploaded_at = NOW(),
+          approved_by = $3,
+          approved_at = NOW(),
           approved_attachment_path = $4,
           approved_attachment_name = $5,
           approved_attachment_mime = $6,
+          rejected_by = NULL,
+          rejected_at = NULL,
+          rejection_reason = NULL,
           updated_at = NOW()
         WHERE id = $1
           AND status = $7
@@ -508,6 +587,10 @@ router.get(
     try {
       const id = toInt(req.params.id);
       const type = toStr(req.params.type);
+
+      if (!id) {
+        return res.status(400).json({ message: "Invalid report id" });
+      }
 
       const r = await pool.query(
         `

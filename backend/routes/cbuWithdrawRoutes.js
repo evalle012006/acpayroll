@@ -28,8 +28,24 @@ const isAccounting = (req) => getUserRole(req) === "accounting";
 
 const canBypassApproval = (req) => isAdmin(req) || isIT(req);
 
-const canFinalUpload = (req) =>
-  isHR(req) || isAccounting(req) || isAdmin(req) || isIT(req);
+const canFinalUpload = (req, department) => {
+  const dept = norm(department);
+
+  if (dept === "operation department") {
+    return (
+      getUserRole(req) === "vice president" ||
+      isAdmin(req) ||
+      isIT(req)
+    );
+  }
+
+  return (
+    isHR(req) ||
+    isAccounting(req) ||
+    isAdmin(req) ||
+    isIT(req)
+  );
+};
 
 const WAITING_FINAL_FILE = "Waiting Final File Upload";
 
@@ -400,6 +416,17 @@ router.put(
       const row = current.rows[0];
 
       const staff = await getStaffById(row.employee_id, client);
+      
+      if (!canFinalUpload(req, staff.department)) {
+        await client.query("ROLLBACK");
+
+        return res.status(403).json({
+          message:
+            norm(staff.department) === "operation department"
+              ? "Only Vice President, Admin, or IT can upload final file."
+              : "Only HR, Accounting, Admin, or IT can upload final file.",
+        });
+      }
 
       if (!staff) {
         await client.query("ROLLBACK");
@@ -604,7 +631,9 @@ router.put(
 
       return res.json({
         message:
-          "Vice President approved. Waiting for HR/Accounting/Admin/IT final file upload.",
+          norm(staff.department) === "operation department"
+            ? "Vice President approval reached. Waiting Vice President final upload."
+            : "Waiting for HR/Accounting/Admin/IT final file upload.",
         data: updated.rows[0],
       });
     } catch (err) {
@@ -640,12 +669,6 @@ router.post(
         return res.status(400).json({ message: "No file uploaded" });
       }
 
-      if (!canFinalUpload(req)) {
-        return res.status(403).json({
-          message: "Only HR, Accounting, Admin, or IT can upload the final file.",
-        });
-      }
-
       await client.query("BEGIN");
 
       const current = await client.query(
@@ -673,12 +696,15 @@ router.post(
       }
 
       if (
-        norm(row.status) !== norm(WAITING_FINAL_FILE) &&
-        !canBypassApproval(req)
-      ) {
+        norm(row.status) !== norm(WAITING_FINAL_FILE)
+        && !canBypassApproval(req)
+        ) {
         await client.query("ROLLBACK");
         return res.status(400).json({
-          message: "Final file can only be uploaded after Vice President approval.",
+          message:
+            norm(staff.department) === "operation department"
+            ? "Final upload only allowed for Vice President."
+            : "Final file can only be uploaded after VP approval."
         });
       }
 
