@@ -44,9 +44,10 @@ const STAGE_LABELS = {
   "vice president": "Vice President",
   "senior vice president": "Senior Vice President",
   tread: "TREAD Department",
-  hr: "HR Department",
+  final: "HR / Accounting / IT / Admin",
   approved: "Approved",
   rejected: "Rejected",
+  voided: "Voided",
 };
 
 const getDepartment = (o) =>
@@ -65,83 +66,89 @@ const normalizePosition = (position) =>
 const getOperationStartStage = (oldPosition) => {
   const pos = normalizePosition(oldPosition);
 
-  if (pos.includes("branch manager")) return "area manager";
+  if (pos.includes("branch manager")) return "regional manager";
   if (pos.includes("area manager")) return "regional manager";
   if (pos.includes("regional manager")) return "assistant vice president";
   if (pos.includes("assistant vice president")) return "vice president";
   if (pos.includes("vice president")) return "tread";
 
-  return "branch manager";
+  return "area manager";
 };
 
 const getOperationChain = (oldPosition) => {
   const full = [
-    "branch manager",
     "area manager",
     "regional manager",
     "assistant vice president",
     "vice president",
     "tread",
-    "hr",
+    "final",
   ];
 
   const start = getOperationStartStage(oldPosition);
+
   const idx = full.indexOf(start);
 
-  return idx >= 0 ? full.slice(idx) : full;
+  return idx >= 0
+    ? full.slice(idx)
+    : full;
 };
 
 const getApprovalChain = (department, oldPosition) => {
   const dept = norm(department);
 
-  if (isOperationDepartment(dept)) {
+  if (isOperationDepartment(dept))
     return getOperationChain(oldPosition);
-  }
-
-  if (dept === "it" || dept === "it department") {
-    return ["assistant vice president", "hr"];
-  }
 
   if (
-    dept === "tread" ||
-    dept === "tread department" ||
-    dept === "treadt department"
-  ) {
-    return ["assistant vice president", "hr"];
-  }
+    dept === "it" ||
+    dept === "it department"
+  )
+    return ["assistant vice president", "final"];
+
+  if (
+    dept === "accounting" ||
+    dept === "accounting department"
+  )
+    return ["senior vice president", "final"];
 
   if (
     dept === "hr" ||
     dept === "hr department" ||
-    dept === "human resources" ||
-    dept === "human resources department" ||
-    dept === "accounting" ||
-    dept === "accounting department"
-  ) {
-    return ["senior vice president"];
-  }
-
-  if (dept === "audit" || dept === "audit department") {
-    return ["senior vice president", "hr"];
-  }
+    dept === "human resources"
+  )
+    return ["senior vice president", "final"];
 
   if (
-    dept === "office of the president" ||
-    dept === "production & logistic" ||
-    dept === "production & logistic department" ||
-    dept === "production and logistic" ||
-    dept === "production and logistic department"
-  ) {
-    return ["hr"];
-  }
+    dept === "office of the president"
+  )
+    return ["assistant vice president", "final"];
 
-  return ["hr"];
+  if (
+    dept === "tread" ||
+    dept === "tread department"
+  )
+    return ["assistant vice president", "final"];
+
+  if (
+    dept.includes("production")
+  )
+    return ["assistant vice president", "final"];
+
+  if (
+    dept === "audit" ||
+    dept === "audit department"
+  )
+    return ["senior vice president", "final"];
+
+  return ["final"];
 };
 
 const getCurrentStageLabel = (o) => {
   const status = norm(o?.status);
   if (status === "approved") return "Approved";
   if (status === "rejected") return "Rejected";
+  if (status === "voided") return "Voided";
 
   const stage = norm(o?.approval_stage);
   return STAGE_LABELS[stage] || "-";
@@ -157,6 +164,7 @@ const stageStatus = (o, stage) => {
     "senior vice president": o?.senior_vice_president_status,
     tread: o?.tread_status,
     hr: o?.hr_status,
+    final: o?.final_status,
   };
 
   return toStr(map[stage] || "Pending");
@@ -209,23 +217,46 @@ export default function PromotionOrder() {
     isPresident;
 
   const canApproveStage = (o) => {
-    if (!o || norm(o.status) !== "pending") return false;
+  if (!o) return false;
 
-    if (isAdmin || isIt) return true;
+  if (
+    isAdmin ||
+    isIt ||
+    isHr ||
+    isAccounting
+  )
+    return norm(o.status) === "pending";
 
-    const stage = norm(o.approval_stage);
+  const stage = norm(o.approval_stage);
 
-    if (stage === "branch manager") return isBranchManager;
-    if (stage === "area manager") return isAreaManager;
-    if (stage === "regional manager") return isRegionalManager;
-    if (stage === "assistant vice president") return isAssistantVicePresident;
-    if (stage === "vice president") return isVicePresident;
-    if (stage === "senior vice president") return isSeniorVicePresident;
-    if (stage === "tread") return isTread;
-    if (stage === "hr") return isHr;
+  if (stage === "area manager")
+    return isAreaManager;
 
-    return false;
-  };
+  if (stage === "regional manager")
+    return isRegionalManager;
+
+  if (stage === "assistant vice president")
+    return isAssistantVicePresident;
+
+  if (stage === "vice president")
+    return isVicePresident;
+
+  if (stage === "senior vice president")
+    return isSeniorVicePresident;
+
+  if (stage === "tread")
+    return isTread;
+
+  if (stage === "final")
+    return (
+      isAdmin ||
+      isIt ||
+      isHr ||
+      isAccounting
+    );
+
+  return false;
+};
 
   const [staff, setStaff] = useState([]);
   const [branches, setBranches] = useState([]);
@@ -643,6 +674,30 @@ export default function PromotionOrder() {
     }
   };
 
+  const canPowerAction = isAdmin || isIt || isHr || isAccounting;
+
+  const voidPromotion = async (id) => {
+    if (!window.confirm("Void this approved promotion? Staff will be reverted.")) return;
+
+    try {
+      await api.put(`/promotion-orders/${id}/void`);
+      await loadOrders();
+    } catch (e) {
+      alert(e?.response?.data?.message || "Failed to void promotion.");
+    }
+  };
+
+  const deletePromotion = async (id) => {
+    if (!window.confirm("Delete this promotion order?")) return;
+
+    try {
+      await api.delete(`/promotion-orders/${id}`);
+      await loadOrders();
+    } catch (e) {
+      alert(e?.response?.data?.message || "Failed to delete promotion.");
+    }
+  };
+
   const reject = async (id) => {
     const reason = prompt("Enter rejection reason:");
     if (!reason || !reason.trim()) return;
@@ -731,6 +786,7 @@ export default function PromotionOrder() {
 
     if (s === "approved") return "po-badge po-approved";
     if (s === "rejected") return "po-badge po-rejected";
+    if (s === "voided") return "po-badge po-rejected";
 
     return "po-badge po-pending";
   };
@@ -738,10 +794,15 @@ export default function PromotionOrder() {
   const closeViewOrder = () => setViewOrder(null);
 
   const actionButtonLabel = (o) => {
-    const stage = norm(o?.approval_stage);
+    const stage = norm(
+      o?.approval_stage
+    );
 
-    if (stage === "hr") return "Upload Final + Approve";
-    if (stage === "tread") return "Upload Req + Approve";
+    if (stage === "final")
+      return "Final Upload + Approve";
+
+    if (stage === "tread")
+      return "Upload + Recommend";
 
     return "Upload + Approve";
   };
@@ -752,8 +813,8 @@ export default function PromotionOrder() {
         <div>
           <h2 className="po-title">Promotion Recommendation</h2>
           <p className="po-subtitle">
-            Operations uses manager chain. IT/TREAD use AVP → HR. HR/Accounting use SVP only.
-            Audit uses SVP → HR. Office/Production goes HR directly.
+            Operations: Area/Regional/AVP/VP → TREAD → HR/Accounting/IT/Admin final upload.
+            IT/TREAD/Production/Office: AVP → Final. HR/Accounting/Audit: SVP → Final.
           </p>
         </div>
 
@@ -919,16 +980,50 @@ export default function PromotionOrder() {
                               >
                                 Reject
                               </button>
+
+                              {canPowerAction && norm(o.status) !== "approved" && (
+                                <button
+                                  className="po-mini-btn po-reject"
+                                  type="button"
+                                  onClick={() => deletePromotion(o.id)}
+                                >
+                                  Delete
+                                </button>
+                              )}
                             </div>
                           </div>
                         ) : (
-                          <button
-                            className="po-mini-btn po-view-btn"
-                            type="button"
-                            onClick={() => setViewOrder(o)}
-                          >
-                            View
-                          </button>
+                          <div className="po-action-stack">
+                            <div className="po-file-actions">
+                              <button
+                                className="po-mini-btn po-view-btn"
+                                type="button"
+                                onClick={() => setViewOrder(o)}
+                              >
+                                View
+                              </button>
+
+                              {canPowerAction && norm(o.status) === "approved" && (
+                                <button
+                                  className="po-mini-btn po-reject"
+                                  type="button"
+                                  onClick={() => voidPromotion(o.id)}
+                                >
+                                  Void
+                                </button>
+                              )}
+
+                              {canPowerAction && norm(o.status) !== "approved" && (
+                                <button
+                                  className="po-mini-btn po-reject"
+                                  type="button"
+                                  onClick={() => deletePromotion(o.id)}
+                                >
+                                  Delete
+                                </button>
+                              )}
+                            </div>
+                          </div>
                         )}
                       </td>
                     </tr>

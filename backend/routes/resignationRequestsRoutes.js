@@ -85,7 +85,8 @@ const upload = multer({
   limits: { fileSize: 50 * 1024 * 1024 },
 });
 
-const isAuditDepartment = (staff) => norm(staff?.department) === "audit department";
+const isAuditDepartment = (staff) =>
+  norm(staff?.department) === "audit department";
 
 const determineInitialStatus = (req, staff) => {
   const staffPosition = norm(staff?.position)
@@ -93,9 +94,7 @@ const determineInitialStatus = (req, staff) => {
     .replace(/\s+/g, " ")
     .trim();
 
-  if (isAuditDepartment(staff)) {
-    return STATUS_SVP;
-  }
+  if (isAuditDepartment(staff)) return STATUS_SVP;
 
   if (
     isAreaManager(req) &&
@@ -118,6 +117,37 @@ const determineInitialStatus = (req, staff) => {
   if (isFinalApprover(req) || isTread(req)) return STATUS_ADMIN;
 
   return STATUS_AREA;
+};
+
+const canActOnCurrentStage = (req, row) => {
+  const status = clean(row.status);
+
+  if (isFinalApprover(req)) {
+    return status !== STATUS_APPROVED && status !== STATUS_REJECTED;
+  }
+
+  if (isBranchManager(req)) {
+    return (
+      status === STATUS_BRANCH &&
+      matchBranch(getUserBranchId(req), row.branch_id, row.branch_code)
+    );
+  }
+
+  if (isAreaManager(req)) {
+    return status === STATUS_AREA && norm(getUserArea(req)) === norm(row.area);
+  }
+
+  if (isRegionalManager(req)) {
+    return (
+      status === STATUS_RM && norm(getUserRegion(req)) === norm(row.region)
+    );
+  }
+
+  if (isAssistantVicePresident(req)) return status === STATUS_AVP;
+  if (isVicePresident(req)) return status === STATUS_VP;
+  if (isSeniorVicePresident(req)) return status === STATUS_SVP;
+
+  return false;
 };
 
 router.get(
@@ -146,7 +176,6 @@ router.get(
         // full access
       } else if (isBranchManager(req)) {
         const branchId = getUserBranchId(req);
-
         if (!branchId) return res.json([]);
 
         params.push(String(branchId));
@@ -160,7 +189,6 @@ router.get(
         `;
       } else if (isAreaManager(req)) {
         const area = getUserArea(req);
-
         if (!area) return res.json([]);
 
         params.push(area);
@@ -171,7 +199,6 @@ router.get(
         `;
       } else if (isRegionalManager(req)) {
         const region = getUserRegion(req);
-
         if (!region) return res.json([]);
 
         params.push(region);
@@ -317,7 +344,7 @@ router.post(
         SELECT 1
         FROM public.resignation_requests
         WHERE employee_no = $1
-          AND status IN ($2, $3, $4, $5, $6, $7, $8)
+          AND status IN ($2,$3,$4,$5,$6,$7,$8)
         LIMIT 1
         `,
         [
@@ -434,6 +461,65 @@ router.post(
 );
 
 router.put(
+  "/resignation-requests/:id/upload",
+  requireAuth,
+  requirePermission("resignation_request", "approve"),
+  upload.single("attachment"),
+  async (req, res) => {
+    try {
+      const id = toInt(req.params.id);
+
+      if (!id) return res.status(400).json({ message: "Invalid id" });
+
+      if (!req.file) {
+        return res.status(400).json({ message: "Attachment file is required" });
+      }
+
+      const requestRes = await pool.query(
+        `
+        SELECT *
+        FROM public.resignation_requests
+        WHERE id = $1
+        `,
+        [id]
+      );
+
+      if (requestRes.rowCount === 0) {
+        return res.status(404).json({ message: "Resignation request not found" });
+      }
+
+      const row = requestRes.rows[0];
+
+      if (!canActOnCurrentStage(req, row)) {
+        return res.status(403).json({
+          message: "You cannot upload file for this current approval stage",
+        });
+      }
+
+      const attachmentPath = `/uploads/resignation-requests/${req.file.filename}`;
+
+      const r = await pool.query(
+        `
+        UPDATE public.resignation_requests
+        SET
+          attachment_path = $2,
+          approved_attachment_name = $3,
+          approved_attachment_mime = $4
+        WHERE id = $1
+        RETURNING *;
+        `,
+        [id, attachmentPath, req.file.originalname || null, req.file.mimetype || null]
+      );
+
+      return res.json(r.rows[0]);
+    } catch (e) {
+      console.error("PUT /resignation-requests/:id/upload ERROR:", e);
+      return res.status(500).json({ message: e?.message || "Server error" });
+    }
+  }
+);
+
+router.put(
   "/resignation-requests/:id/approve",
   requireAuth,
   requirePermission("resignation_request", "approve"),
@@ -468,6 +554,120 @@ router.put(
 
       const existing = requestRes.rows[0];
       const currentStatus = clean(existing.status);
+
+      if (currentStatus === STATUS_APPROVED || currentStatus === STATUS_REJECTED) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({
+          message: "This request is already completed",
+        });
+      }
+
+      const uploadedAttachmentPath = req.file
+        ? `/uploads/resignation-requests/${req.file.filename}`
+        : null;
+
+      if (isFinalApprover(req)) {
+        const finalAttachmentPath =
+          uploadedAttachmentPath || existing.attachment_path || null;
+
+        if (!finalAttachmentPath) {
+          await client.query("ROLLBACK");
+          return res.status(400).json({
+            message: "Final approved file is required before approval",
+          });
+        }
+
+        const employeeNo = clean(existing.employee_no);
+        const effectiveDate = toDate(existing.effective_date);
+        const remarks = clean(existing.remarks) || null;
+
+        if (!employeeNo) {
+          await client.query("ROLLBACK");
+          return res.status(400).json({ message: "Request has no employee number" });
+        }
+
+        if (!effectiveDate) {
+          await client.query("ROLLBACK");
+          return res.status(400).json({
+            message: "Request has invalid effective date",
+          });
+        }
+
+        const staffRes = await client.query(
+          `
+          SELECT id, employee_no
+          FROM public.staff
+          WHERE employee_no = $1
+          FOR UPDATE
+          `,
+          [employeeNo]
+        );
+
+        if (staffRes.rowCount === 0) {
+          await client.query("ROLLBACK");
+          return res.status(404).json({
+            message: "Staff record not found for this employee number",
+          });
+        }
+
+        const updateRequest = await client.query(
+          `
+          UPDATE public.resignation_requests
+          SET
+            status = $2,
+            approved_by = $3,
+            approved_at = NOW(),
+            rejected_by = NULL,
+            rejected_at = NULL,
+            rejection_reason = NULL,
+            attachment_path = $4,
+            approved_attachment_path = $4,
+            approved_attachment_name = $5,
+            approved_attachment_mime = $6
+          WHERE id = $1
+          RETURNING *;
+          `,
+          [
+            id,
+            STATUS_APPROVED,
+            req.user?.id ?? null,
+            finalAttachmentPath,
+            req.file?.originalname || existing.approved_attachment_name || null,
+            req.file?.mimetype || existing.approved_attachment_mime || null,
+          ]
+        );
+
+        await client.query(
+          `
+          UPDATE public.staff
+          SET
+            status = 'Inactive',
+            exit_type = 'Resigned',
+            exit_date = $2::date,
+            exit_remarks = $3
+          WHERE employee_no = $1
+          `,
+          [employeeNo, effectiveDate, remarks]
+        );
+
+        try {
+          await client.query(
+            `
+            INSERT INTO public.status_history
+              (employee_no, effective_date, status, reason, remarks)
+            VALUES
+              ($1, $2::date, 'Inactive', 'Resigned', $3)
+            ON CONFLICT DO NOTHING
+            `,
+            [employeeNo, effectiveDate, remarks]
+          );
+        } catch (historyErr) {
+          console.warn("status_history insert skipped:", historyErr.message);
+        }
+
+        await client.query("COMMIT");
+        return res.json(updateRequest.rows[0]);
+      }
 
       let nextStatus = null;
       let approverField = null;
@@ -570,117 +770,6 @@ router.put(
         nextStatus = STATUS_ADMIN;
         approverField = "svp_approved_by";
         approverAtField = "svp_approved_at";
-
-      } else if (isFinalApprover(req)) {
-        if (
-          currentStatus === STATUS_APPROVED ||
-          currentStatus === STATUS_REJECTED
-        ) {
-          await client.query("ROLLBACK");
-          return res.status(400).json({
-            message: "This request is already completed",
-          });
-        }
-
-        if (!req.file) {
-          await client.query("ROLLBACK");
-          return res.status(400).json({
-            message: "Final approved file is required before approval",
-          });
-        }
-
-        const employeeNo = clean(existing.employee_no);
-        const effectiveDate = toDate(existing.effective_date);
-        const remarks = clean(existing.remarks) || null;
-
-        if (!employeeNo) {
-          await client.query("ROLLBACK");
-          return res.status(400).json({ message: "Request has no employee number" });
-        }
-
-        if (!effectiveDate) {
-          await client.query("ROLLBACK");
-          return res.status(400).json({
-            message: "Request has invalid effective date",
-          });
-        }
-
-        const staffRes = await client.query(
-          `
-          SELECT id, employee_no
-          FROM public.staff
-          WHERE employee_no = $1
-          FOR UPDATE
-          `,
-          [employeeNo]
-        );
-
-        if (staffRes.rowCount === 0) {
-          await client.query("ROLLBACK");
-          return res.status(404).json({
-            message: "Staff record not found for this employee number",
-          });
-        }
-
-        const approvedAttachmentPath = `/uploads/resignation-requests/${req.file.filename}`;
-
-        const updateRequest = await client.query(
-          `
-          UPDATE public.resignation_requests
-          SET
-            status = $2,
-            approved_by = $3,
-            approved_at = NOW(),
-            rejected_by = NULL,
-            rejected_at = NULL,
-            rejection_reason = NULL,
-            attachment_path = $4,
-            approved_attachment_path = $4,
-            approved_attachment_name = $5,
-            approved_attachment_mime = $6
-          WHERE id = $1
-          RETURNING *;
-          `,
-          [
-            id,
-            STATUS_APPROVED,
-            req.user?.id ?? null,
-            approvedAttachmentPath,
-            req.file.originalname || null,
-            req.file.mimetype || null,
-          ]
-        );
-
-        await client.query(
-          `
-          UPDATE public.staff
-          SET
-            status = 'Inactive',
-            exit_type = 'Resigned',
-            exit_date = $2::date,
-            exit_remarks = $3
-          WHERE employee_no = $1
-          `,
-          [employeeNo, effectiveDate, remarks]
-        );
-
-        try {
-          await client.query(
-            `
-            INSERT INTO public.status_history
-              (employee_no, effective_date, status, reason, remarks)
-            VALUES
-              ($1, $2::date, 'Inactive', 'Resigned', $3)
-            ON CONFLICT DO NOTHING
-            `,
-            [employeeNo, effectiveDate, remarks]
-          );
-        } catch (historyErr) {
-          console.warn("status_history insert skipped:", historyErr.message);
-        }
-
-        await client.query("COMMIT");
-        return res.json(updateRequest.rows[0]);
       } else {
         await client.query("ROLLBACK");
         return res.status(403).json({ message: "Access denied" });
@@ -693,7 +782,8 @@ router.put(
         });
       }
 
-      const sql = `
+      const updateRes = await client.query(
+        `
         UPDATE public.resignation_requests
         SET
           status = $2,
@@ -701,16 +791,22 @@ router.put(
           ${approverAtField} = NOW(),
           rejected_by = NULL,
           rejected_at = NULL,
-          rejection_reason = NULL
+          rejection_reason = NULL,
+          attachment_path = COALESCE($4, attachment_path),
+          approved_attachment_name = COALESCE($5, approved_attachment_name),
+          approved_attachment_mime = COALESCE($6, approved_attachment_mime)
         WHERE id = $1
         RETURNING *;
-      `;
-
-      const updateRes = await client.query(sql, [
-        id,
-        nextStatus,
-        req.user?.id ?? null,
-      ]);
+        `,
+        [
+          id,
+          nextStatus,
+          req.user?.id ?? null,
+          uploadedAttachmentPath,
+          req.file?.originalname || null,
+          req.file?.mimetype || null,
+        ]
+      );
 
       await client.query("COMMIT");
       return res.json(updateRes.rows[0]);
@@ -741,7 +837,7 @@ router.put(
 
       const requestRes = await pool.query(
         `
-        SELECT id, status, area, region, branch_id, branch_code
+        SELECT *
         FROM public.resignation_requests
         WHERE id = $1
         `,
@@ -753,83 +849,11 @@ router.put(
       }
 
       const existing = requestRes.rows[0];
-      const currentStatus = clean(existing.status);
 
-      if (isBranchManager(req)) {
-        if (currentStatus !== STATUS_BRANCH) {
-          return res.status(400).json({
-            message: "This request is not pending Branch Manager approval",
-          });
-        }
-
-        const userBranchId = getUserBranchId(req);
-
-        if (!matchBranch(userBranchId, existing.branch_id, existing.branch_code)) {
-          return res.status(403).json({
-            message:
-              "You can only reject resignation requests within your branch",
-          });
-        }
-      } else if (isAreaManager(req)) {
-        if (currentStatus !== STATUS_AREA) {
-          return res.status(400).json({
-            message: "This request is not pending Area Manager approval",
-          });
-        }
-
-        const userArea = getUserArea(req);
-
-        if (!userArea || norm(userArea) !== norm(existing.area)) {
-          return res.status(403).json({
-            message: "You can only reject resignation requests within your area",
-          });
-        }
-      } else if (isRegionalManager(req)) {
-        if (currentStatus !== STATUS_RM) {
-          return res.status(400).json({
-            message: "This request is not pending Regional Manager approval",
-          });
-        }
-
-        const userRegion = getUserRegion(req);
-
-        if (!userRegion || norm(userRegion) !== norm(existing.region)) {
-          return res.status(403).json({
-            message:
-              "You can only reject resignation requests within your region",
-          });
-        }
-      } else if (isAssistantVicePresident(req)) {
-        if (currentStatus !== STATUS_AVP) {
-          return res.status(400).json({
-            message:
-              "This request is not pending Assistant Vice President approval",
-          });
-        }
-      } else if (isVicePresident(req)) {
-        if (currentStatus !== STATUS_VP) {
-          return res.status(400).json({
-            message: "This request is not pending Vice President approval",
-          });
-        }
-      } else if (isSeniorVicePresident(req)) {
-        if (currentStatus !== STATUS_SVP) {
-          return res.status(400).json({
-            message:
-              "This request is not pending Senior Vice President approval",
-          });
-        }
-      } else if (isFinalApprover(req)) {
-        if (
-          currentStatus === STATUS_APPROVED ||
-          currentStatus === STATUS_REJECTED
-        ) {
-          return res.status(400).json({
-            message: "This request is already completed",
-          });
-        }
-      } else {
-        return res.status(403).json({ message: "Access denied" });
+      if (!canActOnCurrentStage(req, existing)) {
+        return res.status(403).json({
+          message: "You cannot reject this current approval stage",
+        });
       }
 
       const r = await pool.query(
@@ -856,6 +880,103 @@ router.put(
   }
 );
 
+router.put(
+  "/resignation-requests/:id/revoke",
+  requireAuth,
+  requirePermission("resignation_request", "approve"),
+  async (req, res) => {
+    const client = await pool.connect();
+
+    try {
+      await client.query("BEGIN");
+
+      const id = toInt(req.params.id);
+
+      if (!id) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({ message: "Invalid id" });
+      }
+
+      if (!isFinalApprover(req)) {
+        await client.query("ROLLBACK");
+        return res.status(403).json({
+          message:
+            "Only Admin, IT, HR, or Accounting can revoke approved resignation",
+        });
+      }
+
+      const requestRes = await client.query(
+        `
+        SELECT *
+        FROM public.resignation_requests
+        WHERE id = $1
+        FOR UPDATE
+        `,
+        [id]
+      );
+
+      if (requestRes.rowCount === 0) {
+        await client.query("ROLLBACK");
+        return res.status(404).json({ message: "Request not found" });
+      }
+
+      const existing = requestRes.rows[0];
+
+      if (clean(existing.status) !== STATUS_APPROVED) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({
+          message: "Only approved resignation requests can be revoked",
+        });
+      }
+
+      const employeeNo = clean(existing.employee_no);
+
+      const updated = await client.query(
+        `
+        UPDATE public.resignation_requests
+        SET
+          status = $2,
+          approved_by = NULL,
+          approved_at = NULL,
+          rejected_by = NULL,
+          rejected_at = NULL,
+          rejection_reason = NULL,
+          approved_attachment_path = NULL,
+          approved_attachment_name = NULL,
+          approved_attachment_mime = NULL
+        WHERE id = $1
+        RETURNING *;
+        `,
+        [id, STATUS_ADMIN]
+      );
+
+      if (employeeNo) {
+        await client.query(
+          `
+          UPDATE public.staff
+          SET
+            status = 'Active',
+            exit_type = NULL,
+            exit_date = NULL,
+            exit_remarks = NULL
+          WHERE employee_no = $1
+          `,
+          [employeeNo]
+        );
+      }
+
+      await client.query("COMMIT");
+      return res.json(updated.rows[0]);
+    } catch (e) {
+      await client.query("ROLLBACK");
+      console.error("PUT /resignation-requests/:id/revoke ERROR:", e);
+      return res.status(500).json({ message: e?.message || "Server error" });
+    } finally {
+      client.release();
+    }
+  }
+);
+
 router.delete(
   "/resignation-requests/:id",
   requireAuth,
@@ -866,9 +987,16 @@ router.delete(
 
       if (!id) return res.status(400).json({ message: "Invalid id" });
 
+      if (!isFinalApprover(req)) {
+        return res.status(403).json({
+          message:
+            "Only Admin, IT, HR, or Accounting can delete resignation requests",
+        });
+      }
+
       const check = await pool.query(
         `
-        SELECT status, attachment_path, area, branch_id, branch_code, created_by
+        SELECT status, attachment_path
         FROM public.resignation_requests
         WHERE id = $1
         `,
@@ -883,29 +1011,8 @@ router.delete(
 
       if (norm(row.status) === norm(STATUS_APPROVED)) {
         return res.status(400).json({
-          message: "Approved requests cannot be deleted",
+          message: "Approved requests cannot be deleted. Use revoke instead.",
         });
-      }
-
-      if (isAreaManager(req)) {
-        const userArea = getUserArea(req);
-
-        if (!userArea || norm(userArea) !== norm(row.area)) {
-          return res.status(403).json({
-            message: "You can only delete resignation requests within your area",
-          });
-        }
-      }
-
-      if (isBranchManager(req)) {
-        const userBranchId = getUserBranchId(req);
-
-        if (!matchBranch(userBranchId, row.branch_id, row.branch_code)) {
-          return res.status(403).json({
-            message:
-              "You can only delete resignation requests within your branch",
-          });
-        }
       }
 
       const attachmentPath = row.attachment_path;

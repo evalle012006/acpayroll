@@ -62,6 +62,8 @@ export default function ResignationRequests() {
     isVicePresident ||
     isSeniorVicePresident;
 
+  const canFinalAction = isAdmin || isHr || isAccounting;
+
   const [rows, setRows] = useState([]);
   const [staffList, setStaffList] = useState([]);
   const [branches, setBranches] = useState([]);
@@ -85,7 +87,7 @@ export default function ResignationRequests() {
   const [rejectionReason, setRejectionReason] = useState("");
   const [processingId, setProcessingId] = useState("");
 
-  const [finalFiles, setFinalFiles] = useState({});
+  const [uploadFiles, setUploadFiles] = useState({});
 
   const [form, setForm] = useState({
     staff_id: "",
@@ -348,21 +350,56 @@ export default function ResignationRequests() {
     }
   };
 
-  const approveRequest = async (row) => {
-    const isFinalStage = toStr(row.status) === STATUS_ADMIN;
+  const setRowFile = (rowId, file) => {
+    setUploadFiles((prev) => ({
+      ...prev,
+      [rowId]: file || null,
+    }));
+  };
 
-    if (isFinalStage && !finalFiles[row.id]) {
-      return alert("Please upload the final approved file first.");
+  const uploadOnly = async (row) => {
+    const file = uploadFiles[row.id];
+
+    if (!file) {
+      return alert("Please choose a file first.");
     }
+
+    try {
+      setProcessingId(`upload-${row.id}`);
+
+      const fd = new FormData();
+      fd.append("attachment", file);
+
+      await api.put(`/resignation-requests/${row.id}/upload`, fd, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+
+      setUploadFiles((prev) => {
+        const copy = { ...prev };
+        delete copy[row.id];
+        return copy;
+      });
+
+      alert("File uploaded.");
+      await fetchAll();
+    } catch (err) {
+      alert(err?.response?.data?.message || "Failed to upload file.");
+    } finally {
+      setProcessingId("");
+    }
+  };
+
+  const approveRequest = async (row) => {
+    const file = uploadFiles[row.id];
 
     if (!window.confirm("Approve this resignation request?")) return;
 
     try {
       setProcessingId(`approve-${row.id}`);
 
-      if (isFinalStage) {
+      if (file) {
         const fd = new FormData();
-        fd.append("attachment", finalFiles[row.id]);
+        fd.append("attachment", file);
 
         await api.put(`/resignation-requests/${row.id}/approve`, fd, {
           headers: { "Content-Type": "multipart/form-data" },
@@ -371,7 +408,7 @@ export default function ResignationRequests() {
         await api.put(`/resignation-requests/${row.id}/approve`);
       }
 
-      setFinalFiles((prev) => {
+      setUploadFiles((prev) => {
         const copy = { ...prev };
         delete copy[row.id];
         return copy;
@@ -406,6 +443,23 @@ export default function ResignationRequests() {
     }
   };
 
+  const revokeRequest = async (row) => {
+    if (!window.confirm("Revoke this approved resignation? Staff will become Active again.")) {
+      return;
+    }
+
+    try {
+      setProcessingId(`revoke-${row.id}`);
+      await api.put(`/resignation-requests/${row.id}/revoke`);
+      alert("Resignation revoked.");
+      await fetchAll();
+    } catch (err) {
+      alert(err?.response?.data?.message || "Failed to revoke request.");
+    } finally {
+      setProcessingId("");
+    }
+  };
+
   const deleteRequest = async (row) => {
     if (!window.confirm("Delete this resignation request?")) return;
 
@@ -424,7 +478,7 @@ export default function ResignationRequests() {
     const status = toStr(row.status);
 
     if (
-      (isAdmin || isHr || isAccounting) &&
+      canFinalAction &&
       status !== STATUS_APPROVED &&
       status !== STATUS_REJECTED
     ) {
@@ -445,7 +499,19 @@ export default function ResignationRequests() {
 
   const canDeleteRow = (row) => {
     const status = norm(row.status);
-    return status !== norm(STATUS_APPROVED) && status !== norm(STATUS_REJECTED);
+
+    return (
+      canFinalAction &&
+      status !== norm(STATUS_APPROVED) &&
+      status !== norm(STATUS_REJECTED)
+    );
+  };
+
+  const canRevokeRow = (row) => {
+    return (
+      canFinalAction &&
+      norm(row.status) === norm(STATUS_APPROVED)
+    );
   };
 
   const badgeClass = (status) => {
@@ -456,9 +522,10 @@ export default function ResignationRequests() {
   };
 
   const attachmentUrl = (row) => {
-    if (!row?.attachment_path) return "";
-    if (String(row.attachment_path).startsWith("http")) return row.attachment_path;
-    return `${baseUrl}${row.attachment_path}`;
+    const p = row?.approved_attachment_path || row?.attachment_path;
+    if (!p) return "";
+    if (String(p).startsWith("http")) return p;
+    return `${baseUrl}${p}`;
   };
 
   const actionLabel = (row) => {
@@ -485,6 +552,15 @@ export default function ResignationRequests() {
     }
 
     return "-";
+  };
+
+  const fileNameLabel = (row) => {
+    return (
+      row?.approved_attachment_name ||
+      row?.attachment_name ||
+      row?.attachment_path?.split("/")?.pop() ||
+      "Latest File"
+    );
   };
 
   return (
@@ -619,7 +695,7 @@ export default function ResignationRequests() {
                 <th>Attachment</th>
                 <th>Status</th>
                 <th>Stage</th>
-                <th style={{ width: 160 }}>Actions</th>
+                <th style={{ width: 190 }}>Actions</th>
               </tr>
             </thead>
 
@@ -638,8 +714,11 @@ export default function ResignationRequests() {
                 </tr>
               ) : (
                 pagedRows.map((row) => {
-                  const isFinalStage = toStr(row.status) === STATUS_ADMIN;
                   const canApprove = canApproveRow(row);
+                  const selectedFile = uploadFiles[row.id];
+                  const hasFile = Boolean(row.attachment_path || row.approved_attachment_path);
+                  const approved = norm(row.status) === norm(STATUS_APPROVED);
+                  const rejected = norm(row.status) === norm(STATUS_REJECTED);
 
                   return (
                     <tr key={row.id}>
@@ -651,7 +730,7 @@ export default function ResignationRequests() {
                       <td>{fmtDate(row.effective_date)}</td>
 
                       <td>
-                        {row.attachment_path ? (
+                        {hasFile ? (
                           <a
                             href={attachmentUrl(row)}
                             target="_blank"
@@ -688,44 +767,81 @@ export default function ResignationRequests() {
                             View
                           </button>
 
-                          {canApprove && isFinalStage ? (
-                            <label className="btn-secondary" style={{ cursor: "pointer" }}>
-                              {finalFiles[row.id]?.name ? "Change File" : "Final File"}
-                              <input
-                                type="file"
-                                style={{ display: "none" }}
-                                onChange={(e) =>
-                                  setFinalFiles((prev) => ({
-                                    ...prev,
-                                    [row.id]: e.target.files?.[0] || null,
-                                  }))
-                                }
-                              />
-                            </label>
-                          ) : null}
-
-                          {finalFiles[row.id]?.name ? (
-                            <span style={{ fontSize: 11, maxWidth: 130 }}>
-                              {finalFiles[row.id].name}
-                            </span>
-                          ) : null}
-
-                          {canApprove && (
-                            <button
-                              className="btn-success"
-                              type="button"
-                              onClick={() => approveRequest(row)}
-                              disabled={processingId === `approve-${row.id}`}
+                          {hasFile && (
+                            <a
+                              href={attachmentUrl(row)}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="btn-secondary"
+                              style={{
+                                textDecoration: "none",
+                                display: "inline-flex",
+                                justifyContent: "center",
+                              }}
                             >
-                              {processingId === `approve-${row.id}`
-                                ? "Approving..."
-                                : isFinalStage
-                                ? "Upload + Approve"
-                                : "Approve"}
-                            </button>
+                              Download Latest
+                            </a>
                           )}
 
-                          {canRejectRow(row) && (
+                          {canApprove && !approved && !rejected && (
+                            <>
+                              <label
+                                className="btn-secondary"
+                                style={{
+                                  cursor: "pointer",
+                                  textAlign: "center",
+                                }}
+                              >
+                                {selectedFile?.name ? "Change File" : "Upload File"}
+                                <input
+                                  type="file"
+                                  style={{ display: "none" }}
+                                  onChange={(e) =>
+                                    setRowFile(row.id, e.target.files?.[0] || null)
+                                  }
+                                />
+                              </label>
+
+                              {selectedFile?.name ? (
+                                <span
+                                  style={{
+                                    fontSize: 11,
+                                    maxWidth: 140,
+                                    color: "#cbd5e1",
+                                    wordBreak: "break-word",
+                                  }}
+                                >
+                                  {selectedFile.name}
+                                </span>
+                              ) : null}
+
+                              {selectedFile && (
+                                <button
+                                  className="btn-secondary"
+                                  type="button"
+                                  onClick={() => uploadOnly(row)}
+                                  disabled={processingId === `upload-${row.id}`}
+                                >
+                                  {processingId === `upload-${row.id}`
+                                    ? "Uploading..."
+                                    : "Upload File"}
+                                </button>
+                              )}
+
+                              <button
+                                className="btn-success"
+                                type="button"
+                                onClick={() => approveRequest(row)}
+                                disabled={processingId === `approve-${row.id}`}
+                              >
+                                {processingId === `approve-${row.id}`
+                                  ? "Approving..."
+                                  : "Upload + Approve"}
+                              </button>
+                            </>
+                          )}
+
+                          {canRejectRow(row) && !approved && !rejected && (
                             <button
                               className="btn-danger"
                               type="button"
@@ -736,6 +852,19 @@ export default function ResignationRequests() {
                               disabled={processingId === `reject-${row.id}`}
                             >
                               Reject
+                            </button>
+                          )}
+
+                          {canRevokeRow(row) && (
+                            <button
+                              className="btn-danger"
+                              type="button"
+                              onClick={() => revokeRequest(row)}
+                              disabled={processingId === `revoke-${row.id}`}
+                            >
+                              {processingId === `revoke-${row.id}`
+                                ? "Revoking..."
+                                : "Revoke"}
                             </button>
                           )}
 
@@ -875,7 +1004,10 @@ export default function ResignationRequests() {
                     type="date"
                     value={form.resignation_date}
                     onChange={(e) =>
-                      setForm((prev) => ({ ...prev, resignation_date: e.target.value }))
+                      setForm((prev) => ({
+                        ...prev,
+                        resignation_date: e.target.value,
+                      }))
                     }
                     required
                   />
@@ -887,7 +1019,10 @@ export default function ResignationRequests() {
                     type="date"
                     value={form.effective_date}
                     onChange={(e) =>
-                      setForm((prev) => ({ ...prev, effective_date: e.target.value }))
+                      setForm((prev) => ({
+                        ...prev,
+                        effective_date: e.target.value,
+                      }))
                     }
                     required
                   />
@@ -997,7 +1132,7 @@ export default function ResignationRequests() {
                   </div>
                 ) : null}
 
-                {viewRow.attachment_path ? (
+                {viewRow.attachment_path || viewRow.approved_attachment_path ? (
                   <div className="form-group full">
                     <label>Attachment</label>
                     <a
@@ -1011,7 +1146,7 @@ export default function ResignationRequests() {
                         width: "fit-content",
                       }}
                     >
-                      View File
+                      Download Latest - {fileNameLabel(viewRow)}
                     </a>
                   </div>
                 ) : null}
@@ -1051,7 +1186,11 @@ export default function ResignationRequests() {
                 </p>
               </div>
 
-              <button className="modal-x" type="button" onClick={() => setRejectingRow(null)}>
+              <button
+                className="modal-x"
+                type="button"
+                onClick={() => setRejectingRow(null)}
+              >
                 ✕
               </button>
             </div>
@@ -1081,7 +1220,9 @@ export default function ResignationRequests() {
                   onClick={rejectRequest}
                   disabled={processingId === `reject-${rejectingRow.id}`}
                 >
-                  {processingId === `reject-${rejectingRow.id}` ? "Rejecting..." : "Reject"}
+                  {processingId === `reject-${rejectingRow.id}`
+                    ? "Rejecting..."
+                    : "Reject"}
                 </button>
               </div>
             </div>

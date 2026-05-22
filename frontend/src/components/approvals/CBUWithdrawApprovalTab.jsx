@@ -49,26 +49,29 @@ const stageLabel = (stage) => {
   return stage || "Pending";
 };
 
-const canBypass = (role) => ["admin", "it"].includes(norm(role));
+const canBypass = (role) =>
+  [
+    "admin",
+    "it",
+    "hr",
+    "accounting",
+  ].includes(norm(role));
 
 const canFinalUpload = (role, item) => {
+  const r = norm(role);
+
+  if (["admin", "it", "hr", "accounting"].includes(r)) {
+    return true;
+  }
+
   const dept = norm(item?.department);
 
   if (dept === "operation department") {
-  return [
-  "vice president",
-  "admin",
-  "it",
-  ].includes(norm(role));
+    return r === "vice president";
   }
 
-  return [
-  "hr",
-  "accounting",
-  "admin",
-  "it",
-  ].includes(norm(role));
-  };
+  return false;
+};
 
 const canVoidItem = (role, item) =>
   canBypass(role) &&
@@ -379,10 +382,11 @@ export default function CBUWithdrawApprovalTab() {
     }
 
     if (status === "Void" && !canBypass(role)) {
-      alert("Only Admin/IT can void CBU withdrawal.");
+      alert(
+      "Only Admin / IT / HR / Accounting can void."
+      );
       return;
-    }
-
+      }
     if (status === "Approved" && !approvalFiles[item.id]) {
       alert("Please upload the signed/approved CBU file before approving.");
       return;
@@ -537,12 +541,29 @@ export default function CBUWithdrawApprovalTab() {
     setShowView(false);
   };
 
-  const canActOnItem = (item) =>
-    norm(item?.status) === "pending" &&
-    canApproveStage(role, item?.approval_stage);
+  const canActOnItem = (item) => {
+    const status = norm(item?.status);
 
-  const canFinalUploadItem = (item) =>
-    norm(item?.status) === norm(WAITING_FINAL_FILE) && canFinalUpload(role, item);
+    if (
+      status === "approved" ||
+      status === "rejected" ||
+      status === "void" ||
+      status === norm(WAITING_FINAL_FILE)
+    ) {
+      return false;
+    }
+
+    if (canBypass(role)) return true;
+
+    return canApproveStage(role, item?.approval_stage);
+  };
+
+  const canFinalUploadItem = (item) => {
+    return (
+      norm(item?.status) === norm(WAITING_FINAL_FILE) &&
+      canFinalUpload(role, item)
+    );
+  };
 
   const filteredRows = useMemo(() => {
     const q = norm(appliedSearch);
