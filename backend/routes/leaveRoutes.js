@@ -17,13 +17,14 @@ const isAdmin = (req) => ["admin", "it"].includes(roleLower(req));
 const isIT = (req) => roleLower(req) === "it";
 const isHr = (req) => roleLower(req) === "hr";
 const isAccounting = (req) => roleLower(req) === "accounting";
-const isTread = (req) => roleLower(req) === "tread";
 const isBranchManager = (req) => roleLower(req) === "branch manager";
 const isAreaManager = (req) => roleLower(req) === "area manager";
 const isRegionalManager = (req) => roleLower(req) === "regional manager";
-const isAssistantVicePresident = (req) => roleLower(req) === "assistant vice president";
+const isAssistantVicePresident = (req) =>
+  roleLower(req) === "assistant vice president";
 const isVicePresident = (req) => roleLower(req) === "vice president";
-const isSeniorVicePresident = (req) => roleLower(req) === "senior vice president";
+const isSeniorVicePresident = (req) =>
+  roleLower(req) === "senior vice president";
 const isPresident = (req) => roleLower(req) === "president";
 
 const getUserBranchCode = (req) => toStr(req.user?.branch_id);
@@ -41,29 +42,8 @@ const OPERATION_DEPARTMENTS = [
   "payroll department",
 ];
 
-const BACK_OFFICE_DEPARTMENTS = [
-  "it",
-  "it department",
-  "accounting",
-  "accounting department",
-  "hr",
-  "hr department",
-  "human resources",
-  "human resources department",
-  "audit",
-  "audit department",
-  "tread",
-  "tread department",
-  "office",
-  "main office",
-  "office of the president",
-];
-
 const isOperationDepartment = (department) =>
   OPERATION_DEPARTMENTS.includes(norm(department));
-
-const isBackOfficeDepartment = (department) =>
-  BACK_OFFICE_DEPARTMENTS.includes(norm(department));
 
 const isFinalApprover = (req) =>
   isAdmin(req) || isIT(req) || isHr(req) || isAccounting(req);
@@ -74,12 +54,7 @@ const isFullViewer = (req) =>
   isSeniorVicePresident(req) ||
   isPresident(req);
 
-const canUploadApprovedLeave = (req) =>
-  isAdmin(req) ||
-  isIT(req) ||
-  isHr(req) ||
-  isAccounting(req) ||
-  isSeniorVicePresident(req);
+const canUploadApprovedLeave = (req) => isFinalApprover(req);
 
 async function getBranchIdFromCode(branchCode) {
   const code = toStr(branchCode);
@@ -120,7 +95,13 @@ const buildStaffName = (staff) => {
   );
 };
 
-const leaveUploadDir = path.join(__dirname, "..", "uploads", "leave_attachments");
+const leaveUploadDir = path.join(
+  __dirname,
+  "..",
+  "uploads",
+  "leave_attachments"
+);
+
 fs.mkdirSync(leaveUploadDir, { recursive: true });
 
 const storage = multer.diskStorage({
@@ -173,6 +154,7 @@ const baseLeaveSelect = `
     s.division,
     s.branch_id,
     s.department,
+    s.position,
     s.photo_url,
 
     req_file.file_name AS request_attachment_name,
@@ -209,13 +191,40 @@ const baseLeaveSelect = `
   ) appr_file ON true
 `;
 
-const getInitialStatusByDepartment = (req, department) => {
+const isVicePresidentPosition = (position) => {
+  const pos = norm(position);
+  return pos === "vice president" || pos === "vp";
+};
+
+const isSeniorVicePresidentPosition = (position) => {
+  const pos = norm(position);
+  return pos === "senior vice president" || pos === "svp";
+};
+
+const getInitialStatusByDepartment = (req, staff) => {
+  const department = toStr(staff?.department);
+  const position = toStr(staff?.position);
+  const userDepartment = getUserDepartment(req) || department;
+
+  if (
+    isOperationDepartment(userDepartment || department) &&
+    (
+      isVicePresident(req) ||
+      isSeniorVicePresident(req) ||
+      isVicePresidentPosition(position) ||
+      isSeniorVicePresidentPosition(position)
+    )
+  ) {
+    return "Pending Admin";
+  }
+
   if (isOperationDepartment(department)) {
     if (isBranchManager(req)) return "Pending Area Manager";
     if (isAreaManager(req)) return "Pending Regional Manager";
     if (isRegionalManager(req)) return "Pending Assistant Vice President";
     if (isAssistantVicePresident(req)) return "Pending Vice President";
     if (isVicePresident(req)) return "Pending Admin";
+    if (isSeniorVicePresident(req)) return "Pending Admin";
     return "Pending Branch Manager";
   }
 
@@ -265,14 +274,27 @@ const canActOnLeave = async (req, leaveId) => {
 
   if (status === "Pending Branch Manager") {
     if (!isBranchManager(req) && !isFinalApprover(req) && !isPresident(req)) {
-      return { ok: false, code: 403, message: "Only branch manager can act on this stage" };
+      return {
+        ok: false,
+        code: 403,
+        message: "Only branch manager can act on this stage",
+      };
     }
     return { ok: true, row };
   }
 
   if (status === "Pending Area Manager") {
-    if (!isAreaManager(req) && !isFinalApprover(req) && !isSeniorVicePresident(req) && !isPresident(req)) {
-      return { ok: false, code: 403, message: "Only area manager can act on this stage" };
+    if (
+      !isAreaManager(req) &&
+      !isFinalApprover(req) &&
+      !isSeniorVicePresident(req) &&
+      !isPresident(req)
+    ) {
+      return {
+        ok: false,
+        code: 403,
+        message: "Only area manager can act on this stage",
+      };
     }
 
     if (isAreaManager(req) && norm(row.area) !== norm(getUserArea(req))) {
@@ -283,8 +305,17 @@ const canActOnLeave = async (req, leaveId) => {
   }
 
   if (status === "Pending Regional Manager") {
-    if (!isRegionalManager(req) && !isFinalApprover(req) && !isSeniorVicePresident(req) && !isPresident(req)) {
-      return { ok: false, code: 403, message: "Only regional manager can act on this stage" };
+    if (
+      !isRegionalManager(req) &&
+      !isFinalApprover(req) &&
+      !isSeniorVicePresident(req) &&
+      !isPresident(req)
+    ) {
+      return {
+        ok: false,
+        code: 403,
+        message: "Only regional manager can act on this stage",
+      };
     }
 
     if (isRegionalManager(req) && norm(row.region) !== norm(getUserRegion(req))) {
@@ -295,11 +326,23 @@ const canActOnLeave = async (req, leaveId) => {
   }
 
   if (status === "Pending Assistant Vice President") {
-    if (!isAssistantVicePresident(req) && !isFinalApprover(req) && !isSeniorVicePresident(req) && !isPresident(req)) {
-      return { ok: false, code: 403, message: "Only assistant vice president can act on this stage" };
+    if (
+      !isAssistantVicePresident(req) &&
+      !isFinalApprover(req) &&
+      !isSeniorVicePresident(req) &&
+      !isPresident(req)
+    ) {
+      return {
+        ok: false,
+        code: 403,
+        message: "Only assistant vice president can act on this stage",
+      };
     }
 
-    if (isAssistantVicePresident(req) && norm(row.division) !== norm(getUserDivision(req))) {
+    if (
+      isAssistantVicePresident(req) &&
+      norm(row.division) !== norm(getUserDivision(req))
+    ) {
       return { ok: false, code: 403, message: "Access denied" };
     }
 
@@ -307,8 +350,17 @@ const canActOnLeave = async (req, leaveId) => {
   }
 
   if (status === "Pending Vice President") {
-    if (!isVicePresident(req) && !isFinalApprover(req) && !isSeniorVicePresident(req) && !isPresident(req)) {
-      return { ok: false, code: 403, message: "Only vice president can act on this stage" };
+    if (
+      !isVicePresident(req) &&
+      !isFinalApprover(req) &&
+      !isSeniorVicePresident(req) &&
+      !isPresident(req)
+    ) {
+      return {
+        ok: false,
+        code: 403,
+        message: "Only vice president can act on this stage",
+      };
     }
 
     return { ok: true, row };
@@ -316,12 +368,20 @@ const canActOnLeave = async (req, leaveId) => {
 
   if (status === "Pending Senior Vice President") {
     if (!isSeniorVicePresident(req) && !isPresident(req) && !isFinalApprover(req)) {
-      return { ok: false, code: 403, message: "Only senior vice president can act on this stage" };
+      return {
+        ok: false,
+        code: 403,
+        message: "Only senior vice president can act on this stage",
+      };
     }
 
     const userDepartment = getUserDepartment(req);
 
-    if (isSeniorVicePresident(req) && userDepartment && norm(userDepartment) !== norm(row.department)) {
+    if (
+      isSeniorVicePresident(req) &&
+      userDepartment &&
+      norm(userDepartment) !== norm(row.department)
+    ) {
       return {
         ok: false,
         code: 403,
@@ -333,11 +393,11 @@ const canActOnLeave = async (req, leaveId) => {
   }
 
   if (status === "Pending Admin") {
-    if (!isFinalApprover(req) && !isVicePresident(req) && !isSeniorVicePresident(req) && !isPresident(req)) {
+    if (!isFinalApprover(req)) {
       return {
         ok: false,
         code: 403,
-        message: "Only admin/hr/accounting/it or higher roles can act on this stage",
+        message: "Only admin/hr/accounting/it can act on this stage",
       };
     }
 
@@ -421,7 +481,11 @@ router.get(
   requirePermission("leave_request", "view"),
   async (req, res) => {
     try {
-      if (isFullViewer(req) || isRegionalManager(req) || isAssistantVicePresident(req)) {
+      if (
+        isFullViewer(req) ||
+        isRegionalManager(req) ||
+        isAssistantVicePresident(req)
+      ) {
         const r = await pool.query(`
           ${baseLeaveSelect}
           ORDER BY lr.entry_date DESC NULLS LAST, lr.id DESC
@@ -500,7 +564,7 @@ router.post(
 
       const staffRes = await client.query(
         `
-        SELECT id, fullname, department, first_name, middle_name, last_name
+        SELECT id, fullname, department, position, first_name, middle_name, last_name
         FROM public.staff
         WHERE id = $1
         LIMIT 1
@@ -529,7 +593,7 @@ router.post(
 
       const leaveSeq = Number(seqRes.rows[0].n);
       const transaction_code = `LV-${String(leaveSeq).padStart(7, "0")}`;
-      const status = getInitialStatusByDepartment(req, staff.department);
+      const status = getInitialStatusByDepartment(req, staff);
 
       const insertRes = await client.query(
         `
@@ -707,7 +771,9 @@ router.put(
 
         await client.query("COMMIT");
 
-        const finalRow = await pool.query(`${baseLeaveSelect} WHERE lr.id = $1`, [id]);
+        const finalRow = await pool.query(`${baseLeaveSelect} WHERE lr.id = $1`, [
+          id,
+        ]);
         return res.json(finalRow.rows[0]);
       }
 
@@ -729,7 +795,7 @@ router.put(
       let sql = "";
       let params = [id, req.user?.id ?? null];
 
-      if (isSeniorVicePresident(req) && currentStatus === "Pending Senior Vice President") {
+      if (isFinalApprover(req)) {
         sql = `
           UPDATE public.leave_requests
           SET
@@ -795,7 +861,7 @@ router.put(
       } else if (currentStatus === "Pending Senior Vice President") {
         sql = `
           UPDATE public.leave_requests
-          SET status = 'Approved'
+          SET status = 'Pending Admin'
           WHERE id = $1
         `;
         params = [id];
@@ -818,7 +884,9 @@ router.put(
       await client.query(sql, params);
       await client.query("COMMIT");
 
-      const finalRow = await pool.query(`${baseLeaveSelect} WHERE lr.id = $1`, [id]);
+      const finalRow = await pool.query(`${baseLeaveSelect} WHERE lr.id = $1`, [
+        id,
+      ]);
       return res.json(finalRow.rows[0]);
     } catch (e) {
       await client.query("ROLLBACK");
@@ -838,9 +906,9 @@ router.get(
   "/leave-requests/staff/:staffId",
   requireAuth,
   requirePermission("leave_request", "view"),
-  async (req, res) => {
+  async (_req, res) => {
     try {
-      const staffId = Number(req.params.staffId);
+      const staffId = Number(_req.params.staffId);
 
       if (!Number.isFinite(staffId)) {
         return res.status(400).json({ message: "Invalid staff id" });
@@ -878,8 +946,6 @@ router.get(
           message: "Invalid attachment type",
         });
       }
-
-      let attachmentType = type;
 
       if (type === "latest") {
         const latest = await pool.query(
@@ -920,7 +986,7 @@ router.get(
         ORDER BY id DESC
         LIMIT 1
         `,
-        [leaveId, attachmentType]
+        [leaveId, type]
       );
 
       if (r.rowCount === 0) {

@@ -559,7 +559,7 @@ export default function LeaveTransactions() {
       case "Pending Senior Vice President":
         return "Waiting SVP";
       case "Pending Admin":
-        return "Waiting HR/Admin";
+        return "Waiting HR/Admin/IT/Accounting";
       default:
         return status || "-";
     }
