@@ -68,7 +68,18 @@ const isTopManagement = (req) =>
   isPresident(req);
 
 const isFinalUploader = (req) =>
-  isAdmin(req) || isIT(req) || isHr(req) || isAccounting(req);
+  isAdmin(req) || isIT(req) || isHr(req) || isAccounting(req) || isSeniorVicePresident(req);
+
+const canCreateDemotion = (req) =>
+  isAdmin(req) ||
+  isIT(req) ||
+  isHr(req) ||
+  isAccounting(req) ||
+  isAreaManager(req) ||
+  isRegionalManager(req) ||
+  isAssistantVicePresident(req) ||
+  isVicePresident(req) ||
+  isSeniorVicePresident(req);
 
 const getUserArea = (req) => toStr(req.user?.area);
 const getUserRegion = (req) => toStr(req.user?.region);
@@ -110,21 +121,35 @@ const isBackOfficeDepartment = (department) =>
 const isOperationDepartment = (department) =>
   OPERATION_DEPARTMENTS.includes(norm(department));
 
-const getInitialStage = (department) => {
-  if (isOperationDepartment(department)) return "area manager";
-  if (isBackOfficeDepartment(department)) return "admin";
+const getInitialStage = (department, oldPosition) => {
+  const pos = norm(oldPosition);
+
+  if (isOperationDepartment(department)) {
+    if (pos.includes("area manager")) return "assistant vice president";
+    if (pos.includes("regional manager")) return "assistant vice president";
+    if (pos.includes("assistant vice president")) return "vice president";
+    if (pos.includes("vice president")) return "admin";
+
+    return "area manager";
+  }
+
   return "admin";
 };
 
-const getApprovalChain = (department) => {
+const getApprovalChain = (department, oldPosition = "") => {
   if (isOperationDepartment(department)) {
-    return [
+    const full = [
       "area manager",
       "regional manager",
       "assistant vice president",
       "vice president",
       "admin",
     ];
+
+    const start = getInitialStage(department, oldPosition);
+    const index = full.indexOf(start);
+
+    return index >= 0 ? full.slice(index) : full;
   }
 
   return ["admin"];
@@ -462,6 +487,14 @@ router.post(
     try {
       await client.query("BEGIN");
 
+        if (!canCreateDemotion(req)) {
+          await client.query("ROLLBACK");
+          return res.status(403).json({
+            message:
+              "Only Area Manager, Regional Manager, Assistant Vice President, Vice President, Senior Vice President, Admin, IT, HR, or Accounting can create demotion orders.",
+          });
+        }
+
       const b = req.body || {};
       const employee_id = toInt(b.employee_id);
       const new_position = toStr(b.new_position);
@@ -538,7 +571,7 @@ router.post(
       const employee_name = buildEmployeeName(staffRow);
       const orderNo = await generateOrderNo(client, "DMO");
       const department = toStr(staffRow.department);
-      const initialStage = getInitialStage(department);
+      const initialStage = getInitialStage(department, staffRow.position);
 
       const attachment_path = `/uploads/demotions/${req.file.filename}`;
       const attachment_name = req.file.originalname || null;
@@ -782,7 +815,7 @@ router.put(
       }
 
       const department = toStr(order.department);
-      const chain = getApprovalChain(department);
+      const chain = getApprovalChain(department, order.old_position);
 
       let currentStage = norm(order.approval_stage);
 

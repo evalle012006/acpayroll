@@ -40,7 +40,7 @@ const isSeniorVicePresident = (req) =>
   roleLower(req) === "senior vice president";
 
 const isFinalApprover = (req) =>
-  isAdmin(req) || isIT(req) || isHr(req) || isAccounting(req);
+  isAdmin(req) || isIT(req) || isHr(req) || isAccounting(req) || isSeniorVicePresident(req);
 
 const getUserBranchId = (req) => req.user?.branch_id ?? null;
 const getUserArea = (req) => clean(req.user?.area);
@@ -159,8 +159,11 @@ router.get(
       const params = [];
 
       let sql = `
-        SELECT *
-        FROM public.resignation_requests
+        SELECT rr.*
+        FROM public.resignation_requests rr
+        LEFT JOIN public.staff s
+          ON s.id = rr.staff_id
+          OR s.employee_no = rr.employee_no
         WHERE 1=1
       `;
 
@@ -182,8 +185,8 @@ router.get(
 
         sql += `
           AND (
-            CAST(branch_id AS TEXT) = $${params.length}
-            OR LOWER(TRIM(COALESCE(branch_code, ''))) =
+            CAST(COALESCE(s.branch_id, rr.branch_id) AS TEXT) = $${params.length}
+            OR LOWER(TRIM(COALESCE(rr.branch_code, ''))) =
                LOWER(TRIM($${params.length}))
           )
         `;
@@ -194,7 +197,7 @@ router.get(
         params.push(area);
 
         sql += `
-          AND LOWER(TRIM(COALESCE(area, ''))) =
+          AND LOWER(TRIM(COALESCE(s.area, rr.area, ''))) =
               LOWER(TRIM($${params.length}))
         `;
       } else if (isRegionalManager(req)) {
@@ -204,24 +207,35 @@ router.get(
         params.push(region);
 
         sql += `
-          AND LOWER(TRIM(COALESCE(region, ''))) =
+          AND LOWER(TRIM(COALESCE(s.region, rr.region, ''))) =
               LOWER(TRIM($${params.length}))
         `;
       } else if (isAssistantVicePresident(req)) {
-        sql += `
-          AND status IN (
-            '${STATUS_AVP}',
-            '${STATUS_VP}',
-            '${STATUS_ADMIN}',
-            '${STATUS_APPROVED}',
-            '${STATUS_REJECTED}'
-          )
-        `;
+        const division = clean(req.user?.division);
+
+        if (division) {
+          params.push(division);
+
+          sql += `
+            AND LOWER(TRIM(COALESCE(s.division, ''))) =
+                LOWER(TRIM($${params.length}))
+          `;
+        } else {
+          sql += `
+            AND status IN (
+              '${STATUS_AVP}',
+              '${STATUS_VP}',
+              '${STATUS_ADMIN}',
+              '${STATUS_APPROVED}',
+              '${STATUS_REJECTED}'
+            )
+          `;
+        }
       } else {
         return res.status(403).json({ message: "Access denied" });
       }
 
-      sql += ` ORDER BY id DESC`;
+      sql += ` ORDER BY rr.id DESC`;
 
       const r = await pool.query(sql, params);
       return res.json(r.rows);

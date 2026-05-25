@@ -27,11 +27,6 @@ const STATUS_WAITING_HR_FILE = "Waiting HR File";
 const STATUS_APPROVED = "Approved";
 const STATUS_REJECTED = "Rejected";
 
-/*
-  OLD STATUS SUPPORT:
-  This keeps old records from getting stuck if they were already created
-  before changing the flow.
-*/
 const OLD_STATUS_PENDING_VP = "Pending VP Approval";
 
 const toInt = (v) => {
@@ -68,10 +63,10 @@ const isPowerView = (req) =>
   isSeniorVicePresident(req) ||
   isPresident(req);
 
-const canUploadFinalFile = (req) => isHr(req) || isAdmin(req) || isIT(req);
+const canUploadFinalFile = (req) =>
+  isHr(req) || isAdmin(req) || isIT(req) || isAccounting(req) || isSeniorVicePresident(req);
 
-const canRejectOrder = (req) =>
-  isHr(req) || isAdmin(req) || isIT(req) || isVicePresident(req);
+const canRejectOrder = (req) => isHr(req) || isAdmin(req) || isIT(req) || isAccounting(req) || isVicePresident(req) || isSeniorVicePresident(req);
 
 const getUserBranchId = (req) => req.user?.branch_id ?? null;
 

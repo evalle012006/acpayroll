@@ -78,10 +78,12 @@ export default function TransferStaffOrder() {
   const isAM = role === "area manager";
   const isRM = role === "regional manager";
   const isAVP = role === "assistant vice president";
+  const isVP = role === "vice president";
+  const isSVP = role === "senior vice president";
 
   const canCreate = isAdmin || isIT || isHR || isBM || isAM || isRM || isAVP;
-  const canHRUpload = isAdmin || isIT || isHR;
-  const canReject = isAdmin || isIT || isHR;
+  const canHRUpload = isAdmin || isIT || isHR || isSVP;
+  const canReject = isAdmin || isIT || isHR || isSVP;
 
   const userBranchId = String(user?.branch_id || "");
   const userArea = norm(user?.area);
@@ -478,9 +480,18 @@ export default function TransferStaffOrder() {
     setShowEmployeeResults(false);
 
     if (s.branch_id) {
-      const branch = branches.find((b) => Number(b.id) === Number(s.branch_id));
+      const branch = branches.find(
+        (b) => Number(b.id) === Number(s.branch_id)
+      );
+
       setFromBranchId(String(s.branch_id));
       setFromBranchQuery(branch ? branchLabel(branch) : "");
+
+      if (branch) {
+        setArea(toStr(branch.area));
+        setRegion(toStr(branch.region));
+        setDivision(toStr(branch.division));
+      }
     }
   };
 
@@ -494,10 +505,6 @@ export default function TransferStaffOrder() {
     setToBranchId(String(b.id || ""));
     setToBranchQuery(branchLabel(b));
     setShowToBranchResults(false);
-
-    setDivision(toStr(b.division));
-    setArea(toStr(b.area));
-    setRegion(toStr(b.region));
   };
 
   const saveOrder = async () => {
@@ -1149,13 +1156,10 @@ export default function TransferStaffOrder() {
                       value={toBranchQuery}
                       placeholder="Search transfer branch..."
                       onChange={(e) => {
-                        setToBranchQuery(e.target.value);
-                        setToBranchId("");
-                        setDivision("");
-                        setArea("");
-                        setRegion("");
-                        setShowToBranchResults(true);
-                      }}
+                      setToBranchQuery(e.target.value);
+                      setToBranchId("");
+                      setShowToBranchResults(true);
+                    }}
                       onFocus={() => setShowToBranchResults(true)}
                     />
 
@@ -1206,28 +1210,46 @@ export default function TransferStaffOrder() {
                   <div className="field">
                     <label>Division</label>
                     <input
+                      list="division-options"
                       value={division}
-                      readOnly
-                      placeholder="Auto-filled from Transfer To"
+                      onChange={(e) => setDivision(e.target.value)}
+                      placeholder="Search or select division"
                     />
+                    <datalist id="division-options">
+                      {[...new Set(branches.map((b) => toStr(b.division)).filter(Boolean))].map((x) => (
+                        <option key={x} value={x} />
+                      ))}
+                    </datalist>
                   </div>
 
                   <div className="field">
                     <label>Area</label>
                     <input
+                      list="area-options"
                       value={area}
-                      readOnly
-                      placeholder="Auto-filled from Transfer To"
+                      onChange={(e) => setArea(e.target.value)}
+                      placeholder="Search or select area"
                     />
+                    <datalist id="area-options">
+                      {[...new Set(branches.map((b) => toStr(b.area)).filter(Boolean))].map((x) => (
+                        <option key={x} value={x} />
+                      ))}
+                    </datalist>
                   </div>
 
                   <div className="field">
                     <label>Region</label>
                     <input
+                      list="region-options"
                       value={region}
-                      readOnly
-                      placeholder="Auto-filled from Transfer To"
+                      onChange={(e) => setRegion(e.target.value)}
+                      placeholder="Search or select region"
                     />
+                    <datalist id="region-options">
+                      {[...new Set(branches.map((b) => toStr(b.region)).filter(Boolean))].map((x) => (
+                        <option key={x} value={x} />
+                      ))}
+                    </datalist>
                   </div>
 
                   <div className="field full">

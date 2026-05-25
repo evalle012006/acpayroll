@@ -47,7 +47,7 @@ const isSeniorVicePresident = (req) =>
 const isPresident = (req) => roleLower(req) === "president";
 
 const isFinalPowerUser = (req) =>
-  isAdmin(req) || isIT(req) || isHr(req) || isAccounting(req);
+  isAdmin(req) || isIT(req) || isHr(req) || isAccounting(req) || isSeniorVicePresident(req);
 
 const isHrDepartmentUser = (req) =>
   isHr(req) ||
@@ -165,25 +165,45 @@ const positionRank = (position) => {
 };
 
 const isHigherPosition = (approverPosition, targetPosition) => {
-  return (
+  return (  
     positionRank(approverPosition) >
     positionRank(targetPosition)
   );
 };
 
-const getOperationStartStage = (oldPosition) => {
-  const pos = normalizePosition(oldPosition);
+const getOperationStartStage = (oldPosition, newPosition = "") => {
+  const newPos = normalizePosition(newPosition);
+  const oldPos = normalizePosition(oldPosition);
 
-  if (pos.includes("branch manager")) return "regional manager";
-  if (pos.includes("area manager")) return "regional manager";
-  if (pos.includes("regional manager")) return "assistant vice president";
-  if (pos.includes("assistant vice president")) return "vice president";
-  if (pos.includes("vice president")) return "tread";
+  if (newPos.includes("branch manager")) {
+    return "area manager";
+  }
+
+  if (
+    newPos.includes("area manager") ||
+    newPos.includes("regional manager")
+  ) {
+    return "assistant vice president";
+  }
+
+  if (newPos.includes("assistant vice president")) {
+    return "vice president";
+  }
+
+  if (newPos.includes("vice president")) {
+    return "tread";
+  }
+
+  if (oldPos.includes("branch manager")) return "regional manager";
+  if (oldPos.includes("area manager")) return "regional manager";
+  if (oldPos.includes("regional manager")) return "assistant vice president";
+  if (oldPos.includes("assistant vice president")) return "vice president";
+  if (oldPos.includes("vice president")) return "tread";
 
   return "area manager";
 };
 
-const getOperationChain = (oldPosition) => {
+const getOperationChain = (oldPosition, newPosition = "") => {
   const full = [
     "area manager",
     "regional manager",
@@ -193,17 +213,17 @@ const getOperationChain = (oldPosition) => {
     "final",
   ];
 
-  const start = getOperationStartStage(oldPosition);
+  const start = getOperationStartStage(oldPosition, newPosition);
   const idx = full.indexOf(start);
 
   return idx >= 0 ? full.slice(idx) : full;
 };
 
-const getPromotionChain = (department, oldPosition) => {
+const getPromotionChain = (department, oldPosition, newPosition = "") => {
   const dept = norm(department);
 
   if (isOperationDepartment(dept)) {
-    return getOperationChain(oldPosition);
+    return getOperationChain(oldPosition, newPosition);
   }
 
   if (isDepartment(dept, ["it", "it department"])) {
@@ -257,8 +277,8 @@ const getPromotionChain = (department, oldPosition) => {
   return ["final"];
 };
 
-const getInitialApprovalStage = (department, oldPosition) =>
-  getPromotionChain(department, oldPosition)[0];
+const getInitialApprovalStage = (department, oldPosition, newPosition = "") =>
+  getPromotionChain(department, oldPosition, newPosition)[0];
 
 const canCreatePromotionForStaff = (req, staffRow) => {
   if (isFinalPowerUser(req)) return true;
@@ -604,7 +624,11 @@ router.post(
       const attachment_mime = req.file.mimetype || null;
 
       const applicantRole = roleLower(req);
-      const approvalStage = getInitialApprovalStage(department, currentPosition);
+      const approvalStage = getInitialApprovalStage(
+        department,
+        currentPosition,
+        new_position
+      );
       const orderNo = await generateOrderNo(client, "PRO");
 
       const ins = await client.query(
@@ -763,7 +787,11 @@ router.put(
       }
 
       const department = toStr(order.department);
-      const chain = getPromotionChain(department, order.old_position);
+      const chain = getPromotionChain(
+        department,
+        order.old_position,
+        order.new_position
+      );
       let currentStage = norm(order.approval_stage);
 
       if (!chain.includes(currentStage)) {
@@ -920,7 +948,11 @@ router.put(
       }
 
       const department = toStr(order.department);
-      const chain = getPromotionChain(department, order.old_position);
+      const chain = getPromotionChain(
+        department,
+        order.old_position,
+        order.new_position
+      );
       let currentStage = norm(order.approval_stage);
 
       if (!chain.includes(currentStage)) {

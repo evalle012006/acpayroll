@@ -154,12 +154,14 @@ export default function DemotionOrder() {
     isIt ||
     isHr ||
     isAccounting ||
-    isBranchManager ||
     isAreaManager ||
     isRegionalManager ||
-    isAssistantVicePresident;
+    isAssistantVicePresident ||
+    isVicePresident ||
+    isSeniorVicePresident;
 
-  const canFinalUpload = isAdmin || isIt || isHr || isAccounting;
+  const canFinalUpload =
+    isAdmin || isIt || isHr || isAccounting || isSeniorVicePresident;
 
   const canDownloadFile =
     isAdmin ||
@@ -178,7 +180,7 @@ export default function DemotionOrder() {
     const status = norm(order?.status);
 
     if (status === "approved" || status === "rejected") return false;
-    if (isAdmin || isIt || isHr || isAccounting) return true;
+    if (isAdmin || isIt || isHr || isAccounting || isSeniorVicePresident) return true;
 
     const stage = getCurrentStage(order);
 

@@ -62,7 +62,8 @@ export default function ResignationRequests() {
     isVicePresident ||
     isSeniorVicePresident;
 
-  const canFinalAction = isAdmin || isHr || isAccounting;
+  const canFinalAction =
+    isAdmin || isHr || isAccounting || isSeniorVicePresident;
 
   const [rows, setRows] = useState([]);
   const [staffList, setStaffList] = useState([]);
@@ -478,7 +479,7 @@ export default function ResignationRequests() {
     const status = toStr(row.status);
 
     if (
-      canFinalAction &&
+      (isAdmin || isHr || isAccounting || isSeniorVicePresident) &&
       status !== STATUS_APPROVED &&
       status !== STATUS_REJECTED
     ) {

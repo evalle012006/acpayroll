@@ -74,7 +74,8 @@ export default function LeaveTransactions() {
   const isSeniorVicePresident = role === "senior vice president";
   const isPresident = role === "president";
 
-  const canBypassLeaveApproval = isAdmin || isIT || isHr || isAccounting;
+  const canBypassLeaveApproval =
+    isAdmin || isIT || isHr || isAccounting || isSeniorVicePresident;
 
   const canCreateLeave =
     isAdmin ||
@@ -294,7 +295,11 @@ export default function LeaveTransactions() {
     }));
 
     setEmployeeSearch(
-      emp ? `${emp.employee_no ? `${emp.employee_no} - ` : ""}${emp.fullname || "-"}` : ""
+      emp
+        ? `${emp.employee_no ? `${emp.employee_no} - ` : ""}${
+            emp.fullname || "-"
+          }`
+        : ""
     );
 
     setShowEmployeeDropdown(false);
@@ -350,7 +355,10 @@ export default function LeaveTransactions() {
     );
 
     const available = toNum(selectedStaff?.[creditField]);
-    const used = getApprovedUsedLeave(leaveForm.employee_id, leaveForm.leave_type);
+    const used = getApprovedUsedLeave(
+      leaveForm.employee_id,
+      leaveForm.leave_type
+    );
 
     return available - used;
   }, [
@@ -376,7 +384,10 @@ export default function LeaveTransactions() {
         return alert("Start date must be on or before end date.");
       }
 
-      const requestedDays = diffDaysInclusive(leaveForm.start_date, leaveForm.end_date);
+      const requestedDays = diffDaysInclusive(
+        leaveForm.start_date,
+        leaveForm.end_date
+      );
       const remainingLeave = getLeaveRemaining();
 
       if (remainingLeave <= 0) {
@@ -441,7 +452,7 @@ export default function LeaveTransactions() {
     }
 
     if (status === "Pending Admin") {
-      return isAdmin || isIT || isHr || isAccounting;
+      return isAdmin || isIT || isHr || isAccounting || isSeniorVicePresident;
     }
 
     return false;
@@ -504,12 +515,44 @@ export default function LeaveTransactions() {
     }
   };
 
+  const voidLeaveRequest = async (item) => {
+    if (!item?.id) return;
+
+    if (!window.confirm("Void this approved leave request?")) return;
+
+    try {
+      await api.put(`/leave-requests/${item.id}/void`);
+      await fetchLeave();
+      await fetchStaff();
+    } catch (err) {
+      if (err?.response?.status === 401) return logout();
+      alert(err?.response?.data?.message || "Failed to void leave request.");
+    }
+  };
+
+  const deleteLeaveRequest = async (item) => {
+    if (!item?.id) return;
+
+    if (!window.confirm("Delete this rejected leave request?")) return;
+
+    try {
+      await api.delete(`/leave-requests/${item.id}`);
+      await fetchLeave();
+      await fetchStaff();
+    } catch (err) {
+      if (err?.response?.status === 401) return logout();
+      alert(err?.response?.data?.message || "Failed to delete leave request.");
+    }
+  };
+
   const filteredLeave = useMemo(() => {
     const q = String(search || "").trim().toLowerCase();
 
     return (leaveRequests || []).filter((x) => {
       const matchType =
-        selectedLeaveType === "All" ? true : String(x.leave_type) === selectedLeaveType;
+        selectedLeaveType === "All"
+          ? true
+          : String(x.leave_type) === selectedLeaveType;
 
       const haystack = [
         x.transaction_code,
@@ -560,6 +603,8 @@ export default function LeaveTransactions() {
         return "Waiting SVP";
       case "Pending Admin":
         return "Waiting HR/Admin/IT/Accounting";
+      case "Voided":
+        return "Voided";
       default:
         return status || "-";
     }
@@ -568,6 +613,7 @@ export default function LeaveTransactions() {
   const badgeClass = (status) => {
     if (status === "Approved") return "badge badge-approved";
     if (status === "Rejected") return "badge badge-rejected";
+    if (status === "Voided") return "badge badge-rejected";
     if (String(status || "").includes("Pending")) return "badge badge-pending";
     return "badge badge-pending";
   };
@@ -770,7 +816,10 @@ export default function LeaveTransactions() {
         <div className="leave-pager-left">
           <span>Rows per page</span>
 
-          <select value={pageSize} onChange={(e) => setPageSize(Number(e.target.value))}>
+          <select
+            value={pageSize}
+            onChange={(e) => setPageSize(Number(e.target.value))}
+          >
             <option value={25}>25</option>
             <option value={50}>50</option>
             <option value={75}>75</option>
@@ -846,7 +895,12 @@ export default function LeaveTransactions() {
                 </tr>
               ) : (
                 pagedLeave.map((item) => {
+                  const status = String(item.status || "").trim();
+                  const approved = status === "Approved";
+                  const rejected = status === "Rejected";
+                  const pending = status.includes("Pending");
                   const canApprove = canApproveThisRow(item);
+
                   const selectedFile = approvalFiles[item.id];
                   const approving = processingApproval[`${item.id}-approve`];
                   const rejecting = processingApproval[`${item.id}-reject`];
@@ -886,7 +940,7 @@ export default function LeaveTransactions() {
                           {!canApprove && renderRequestFileAction(item)}
                           {!canApprove && renderApprovedFileAction(item)}
 
-                          {canApprove ? (
+                          {canApprove && pending ? (
                             <>
                               <label
                                 className="btn-secondary"
@@ -922,9 +976,7 @@ export default function LeaveTransactions() {
                                 disabled={approving}
                                 onClick={() => updateLeaveStatus(item, "approve")}
                               >
-                                {approving
-                                  ? "Approving..."
-                                  : "Upload + Approve"}
+                                {approving ? "Approving..." : "Upload + Approve"}
                               </button>
 
                               <button
@@ -936,6 +988,26 @@ export default function LeaveTransactions() {
                                 {rejecting ? "Rejecting..." : "Reject"}
                               </button>
                             </>
+                          ) : null}
+
+                          {isAdmin && approved ? (
+                            <button
+                              className="btn-danger"
+                              type="button"
+                              onClick={() => voidLeaveRequest(item)}
+                            >
+                              Void
+                            </button>
+                          ) : null}
+
+                          {isAdmin && rejected ? (
+                            <button
+                              className="btn-danger"
+                              type="button"
+                              onClick={() => deleteLeaveRequest(item)}
+                            >
+                              Delete
+                            </button>
                           ) : null}
                         </div>
                       </td>
@@ -1158,9 +1230,7 @@ export default function LeaveTransactions() {
                   <input
                     type="file"
                     accept=".pdf,.png,.jpg,.jpeg,.doc,.docx"
-                    onChange={(e) =>
-                      setAttachmentFile(e.target.files?.[0] || null)
-                    }
+                    onChange={(e) => setAttachmentFile(e.target.files?.[0] || null)}
                   />
                 </div>
 

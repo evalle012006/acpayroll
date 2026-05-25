@@ -28,7 +28,7 @@ const isAccounting = (req) => getUserRole(req) === "accounting";
 const isVicePresident = (req) => getUserRole(req) === "vice president";
 
 const canPowerAction = (req) =>
-  isAdmin(req) || isIT(req) || isHR(req) || isAccounting(req);
+  isAdmin(req) || isIT(req) || isHR(req) || isAccounting(req) || isSeniorVicePresident(req);
 
 const canBypassApproval = canPowerAction;
 
@@ -47,7 +47,8 @@ const canFinalUpload = (req, department) => {
     isAdmin(req) ||
     isIT(req) ||
     isHR(req) ||
-    isAccounting(req)
+    isAccounting(req) ||
+    isSeniorVicePresident(req)
   ) {
     return true;
   }

@@ -164,7 +164,8 @@ const canUserActOnLoan = (item, role) => {
     normalizedRole === "it" ||
     normalizedRole === "hr" ||
     normalizedRole === "accounting" ||
-    normalizedRole === "tread"
+    normalizedRole === "tread" ||
+    normalizedRole === "senior vice president"
   ) {
     return true;
   }

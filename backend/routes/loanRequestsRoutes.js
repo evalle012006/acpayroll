@@ -36,7 +36,8 @@ const toStr = (v) => String(v ?? "").trim();
 const norm = (v) => toStr(v).toLowerCase();
 const roleLower = (req) => getRole(req);
 
-const isFinalApprover = (req) => isVicePresident(req) || canFinalApprove(req);
+const isFinalApprover = (req) => isVicePresident(req) || isSeniorVicePresident(req) || canFinalApprove(req);
+
 const canViewAllLoans = (req) => canViewAll(req);
 
 const canDownloadLoanFiles = (req) =>

@@ -223,7 +223,8 @@ export default function PromotionOrder() {
     isAdmin ||
     isIt ||
     isHr ||
-    isAccounting
+    isAccounting ||
+    isSeniorVicePresident
   )
     return norm(o.status) === "pending";
 
@@ -674,8 +675,9 @@ export default function PromotionOrder() {
     }
   };
 
-  const canPowerAction = isAdmin || isIt || isHr || isAccounting;
-
+ const canPowerAction =
+    isAdmin || isIt || isHr || isAccounting || isSeniorVicePresident;
+    
   const voidPromotion = async (id) => {
     if (!window.confirm("Void this approved promotion? Staff will be reverted.")) return;
 

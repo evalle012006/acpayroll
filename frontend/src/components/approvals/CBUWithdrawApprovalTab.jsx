@@ -55,12 +55,13 @@ const canBypass = (role) =>
     "it",
     "hr",
     "accounting",
+    "senior vice president",
   ].includes(norm(role));
 
 const canFinalUpload = (role, item) => {
   const r = norm(role);
 
-  if (["admin", "it", "hr", "accounting"].includes(r)) {
+  if (["admin", "it", "hr", "accounting", "senior vice president"].includes(r)) {
     return true;
   }
 
