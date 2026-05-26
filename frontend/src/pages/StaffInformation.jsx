@@ -430,6 +430,23 @@ export default function StaffInformation() {
       const staffRegion = norm(s?.region);
       const staffDivision = norm(s?.division);
 
+      const staffStatus = norm(s?.status || "Active");
+
+      if (
+      [
+      "branch manager",
+      "area manager",
+      "acting area manager",
+      "regional manager",
+      "acting regional manager",
+      "assistant vice president",
+      "vice president",
+      ].includes(role)
+      && staffStatus !== "active"
+      ) {
+      return false;
+      }
+
       if (role === "branch manager") {
         if (!sameBranch(staffBranch, userBranch)) return false;
       }

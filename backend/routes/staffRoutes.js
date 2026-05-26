@@ -82,7 +82,12 @@ const isFullStaffAccess = async (req) => {
 
   const canViewAllStaff = await hasPermission(req.user, "staff", "view_all");
 
-  if (canViewAllStaff) return true;
+  if (
+    canViewAllStaff &&
+    !isVicePresident(req)
+  ) {
+    return true;
+  }
 
   return (
     isAdmin(req) ||
@@ -92,7 +97,6 @@ const isFullStaffAccess = async (req) => {
     department === "accounting department" ||
     department === "tread department" ||
     department === "audit department" ||
-    isVicePresident(req) ||
     isSeniorVicePresident(req) ||
     isPresident(req) ||
     canViewAll(req)
@@ -562,6 +566,7 @@ router.get(
           FROM public.staff s
           LEFT JOIN public.branches b ON b.id = s.branch_id
           WHERE s.branch_id = $1
+          AND LOWER(COALESCE(s.status,'active'))='active'
           ORDER BY s.id DESC
           `,
           [bid]
@@ -583,7 +588,8 @@ router.get(
             b.code AS branch_code
           FROM public.staff s
           LEFT JOIN public.branches b ON b.id = s.branch_id
-          WHERE LOWER(TRIM(COALESCE(s.area, ''))) = LOWER(TRIM($1))
+          WHERE LOWER(TRIM(COALESCE(s.area,'')))=LOWER(TRIM($1))
+          AND LOWER(COALESCE(s.status,'active'))='active'
           ORDER BY s.id DESC
           `,
           [area]
@@ -605,7 +611,8 @@ router.get(
             b.code AS branch_code
           FROM public.staff s
           LEFT JOIN public.branches b ON b.id = s.branch_id
-          WHERE LOWER(TRIM(COALESCE(s.region, ''))) = LOWER(TRIM($1))
+          WHERE LOWER(TRIM(COALESCE(s.region,'')))=LOWER(TRIM($1))
+          AND LOWER(COALESCE(s.status,'active'))='active'
           ORDER BY s.id DESC
           `,
           [region]
@@ -631,18 +638,45 @@ router.get(
           LEFT JOIN public.branches b ON b.id = s.branch_id
           WHERE
             (
+            (
               $1 <> ''
-              AND LOWER(TRIM(COALESCE(s.department, ''))) = LOWER(TRIM($1))
+              AND LOWER(TRIM(COALESCE(s.department,'')))
+              =
+              LOWER(TRIM($1))
             )
             OR
             (
               $2 <> ''
-              AND LOWER(TRIM(COALESCE(s.division, ''))) = LOWER(TRIM($2))
+              AND LOWER(TRIM(COALESCE(s.division,'')))
+              =
+              LOWER(TRIM($2))
             )
-          ORDER BY s.id DESC
+            )
+            AND LOWER(COALESCE(s.status,'active'))='active'
+            ORDER BY s.id DESC
           `,
           [department, division]
         );
+
+        return res.json(r.rows);
+      }
+
+      if (isVicePresident(req)) {
+        const r = await pool.query(`
+          SELECT
+            s.*,
+            ${STAFF_REMARKS_SQL},
+            b.name AS branch_name,
+            b.code AS branch_code,
+            COALESCE(sbal.cbu, 0) AS cbu_balance
+          FROM public.staff s
+          LEFT JOIN public.branches b
+            ON b.id = s.branch_id
+          LEFT JOIN public.staff_balances sbal
+            ON sbal.employee_no = s.employee_no
+          WHERE LOWER(COALESCE(s.status,'active'))='active'
+          ORDER BY s.id DESC
+        `);
 
         return res.json(r.rows);
       }

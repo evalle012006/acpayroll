@@ -42,6 +42,7 @@ const stageLabel = (stage) => {
   if (s === "regional manager") return "Regional Manager";
   if (s === "assistant vice president") return "Assistant Vice President";
   if (s === "vice president") return "Vice President";
+  if (s === "senior vice president") return "Senior Vice President";
   if (s === norm(WAITING_FINAL_FILE)) return WAITING_FINAL_FILE;
   if (s === "approved") return "Approved";
   if (s === "void") return "Void";
@@ -58,6 +59,17 @@ const canBypass = (role) =>
     "senior vice president",
   ].includes(norm(role));
 
+  const isOperationDepartment = (department) => {
+    const dept = norm(department);
+
+    return (
+      dept === "operation department" ||
+      dept === "operations department" ||
+      dept === "operation" ||
+      dept === "operations"
+    );
+  };
+
 const canFinalUpload = (role, item) => {
   const r = norm(role);
 
@@ -65,12 +77,9 @@ const canFinalUpload = (role, item) => {
     return true;
   }
 
-  const dept = norm(item?.department);
-
-  if (dept === "operation department") {
+  if (isOperationDepartment(item?.department)) {
     return r === "vice president";
   }
-
   return false;
 };
 
@@ -84,29 +93,33 @@ const getApplicantRole = (x) =>
 const chainByApplicantRole = (applicantRole) => {
   const role = norm(applicantRole);
 
-  if (role === "branch manager") {
+  if (role.includes("senior vice president")) {
+    return [WAITING_FINAL_FILE];
+  }
+
+  if (role.includes("vice president")) {
+    return ["Senior Vice President"];
+  }
+
+  if (role.includes("assistant vice president")) {
+    return ["Vice President"];
+  }
+
+  if (role.includes("regional manager")) {
+    return ["Assistant Vice President", "Vice President"];
+  }
+
+  if (role.includes("area manager") || role.includes("acting area manager")) {
+    return ["Regional Manager", "Assistant Vice President", "Vice President"];
+  }
+
+  if (role.includes("branch manager")) {
     return [
       "Area Manager",
       "Regional Manager",
       "Assistant Vice President",
       "Vice President",
     ];
-  }
-
-  if (role === "area manager") {
-    return ["Regional Manager", "Assistant Vice President", "Vice President"];
-  }
-
-  if (role === "regional manager") {
-    return ["Assistant Vice President", "Vice President"];
-  }
-
-  if (role === "assistant vice president") {
-    return ["Vice President"];
-  }
-
-  if (role === "vice president") {
-    return ["Vice President"];
   }
 
   return [
@@ -131,6 +144,7 @@ const canApproveStage = (role, stage) => {
   if (s === "regional manager") return r === "regional manager";
   if (s === "assistant vice president") return r === "assistant vice president";
   if (s === "vice president") return r === "vice president";
+  if (s === "senior vice president") return r === "senior vice president";
 
   return false;
 };
@@ -139,7 +153,7 @@ export default function CBUWithdrawApprovalTab() {
   const user = useMemo(() => readUser(), []);
   const role = norm(user?.role);
 
-  const canCreate = [
+ const canCreate = [
     "admin",
     "it",
     "hr",
@@ -149,6 +163,7 @@ export default function CBUWithdrawApprovalTab() {
     "regional manager",
     "assistant vice president",
     "vice president",
+    "senior vice president"
   ].includes(role);
 
   const [rows, setRows] = useState([]);
@@ -384,7 +399,7 @@ export default function CBUWithdrawApprovalTab() {
 
     if (status === "Void" && !canBypass(role)) {
       alert(
-      "Only Admin / IT / HR / Accounting can void."
+      "Only Admin / IT / HR / Accounting / SVP can void."
       );
       return;
       }
@@ -1009,7 +1024,7 @@ export default function CBUWithdrawApprovalTab() {
                                       {processingId === `${x.id}-Approved`
                                         ? "Approving..."
                                         : canBypass(role)
-                                        ? "Bypass Approve"
+                                        ? "Bypass Final Approve"
                                         : "Upload + Approve"}
                                     </button>
 
@@ -1294,10 +1309,9 @@ export default function CBUWithdrawApprovalTab() {
                     ) : null}
 
                     <small style={{ opacity: 0.75, display: "block", marginTop: 8 }}>
-                      {norm(selected?.department) === "operation department"
-                        ? "Vice President final upload will fully approve and deduct CBU balance."
-                        : "HR/Accounting/Admin/IT final upload will fully approve and deduct CBU balance."
-                        }
+                      {isOperationDepartment(selected?.department)
+                      ? "Vice President final upload will fully approve and deduct CBU balance."
+                      : "HR/Accounting/Admin/IT/SVP final upload will fully approve and deduct CBU balance."}
                     </small>
                   </div>
                 ) : null}
@@ -1315,7 +1329,7 @@ export default function CBUWithdrawApprovalTab() {
                       {processingId === `${selected.id}-Approved`
                         ? "Approving..."
                         : canBypass(role)
-                        ? "Bypass Approve"
+                        ? "Bypass Final Approve"
                         : "Upload + Approve"}
                     </button>
 

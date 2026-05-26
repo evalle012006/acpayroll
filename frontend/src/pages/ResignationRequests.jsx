@@ -503,8 +503,7 @@ export default function ResignationRequests() {
 
     return (
       canFinalAction &&
-      status !== norm(STATUS_APPROVED) &&
-      status !== norm(STATUS_REJECTED)
+      status !== norm(STATUS_APPROVED)
     );
   };
 
