@@ -1,7 +1,17 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
-import { FaUser, FaCog, FaSignOutAlt, FaMoon, FaSun, FaBell, FaCheck, FaTrash, } from "react-icons/fa";
-import { TbMessageCircle } from "react-icons/tb";
+import {
+  FaUser,
+  FaCog,
+  FaSignOutAlt,
+  FaMoon,
+  FaSun,
+  FaBell,
+  FaCheck,
+  FaTrash,
+} from "react-icons/fa";
+import { IoChatbubbleEllipses } from "react-icons/io5";
+import { BsMessenger } from "react-icons/bs";
 import { GoSidebarCollapse } from "react-icons/go";
 import api from "../api/axiosClient";
 import "../styles/Header.css";
@@ -41,14 +51,15 @@ const Header = ({ toggleSidebar }) => {
 
   const [notifications, setNotifications] = useState([]);
   const [loadingNotifs, setLoadingNotifs] = useState(false);
+  const [chatUnread, setChatUnread] = useState(0);
 
-  const displayName = [
-    user?.first_name,
-    user?.middle_name,
-    user?.last_name,
-  ]
-    .filter(Boolean)
-    .join(" ") || user?.username || "User";
+  const displayName =
+    [user?.first_name, user?.middle_name, user?.last_name]
+      .filter(Boolean)
+      .join(" ") ||
+    user?.username ||
+    "User";
+
   const displayRole = user?.role || "Unknown";
 
   const unreadCount = useMemo(
@@ -82,6 +93,15 @@ const Header = ({ toggleSidebar }) => {
     }
   }, []);
 
+  const loadChatUnread = useCallback(async () => {
+    try {
+      const res = await api.get("/chat/unread-count");
+      setChatUnread(Number(res.data?.unread_count || 0));
+    } catch {
+      setChatUnread(0);
+    }
+  }, []);
+
   useEffect(() => {
     loadNotifications();
 
@@ -91,6 +111,16 @@ const Header = ({ toggleSidebar }) => {
 
     return () => clearInterval(interval);
   }, [loadNotifications]);
+
+  useEffect(() => {
+    loadChatUnread();
+
+    const interval = setInterval(() => {
+      loadChatUnread();
+    }, 3000);
+
+    return () => clearInterval(interval);
+  }, [loadChatUnread]);
 
   useEffect(() => {
     const handleClickOutside = (event) => {
@@ -113,6 +143,7 @@ const Header = ({ toggleSidebar }) => {
       setUser(readUser());
       setAvatar(readAvatar());
       loadNotifications();
+      loadChatUnread();
     };
 
     window.addEventListener("auth-changed", onAuthChanged);
@@ -122,7 +153,7 @@ const Header = ({ toggleSidebar }) => {
       window.removeEventListener("auth-changed", onAuthChanged);
       window.removeEventListener("storage", onAuthChanged);
     };
-  }, [loadNotifications]);
+  }, [loadNotifications, loadChatUnread]);
 
   const handleLogout = useCallback(() => {
     setProfileOpen(false);
@@ -201,7 +232,24 @@ const Header = ({ toggleSidebar }) => {
           </span>
         </button>
 
-        <TbMessageCircle />
+        <button
+          className="notif-btn"
+          type="button"
+          onClick={() => {
+            setNotifOpen(false);
+            setProfileOpen(false);
+            navigate("/chat");
+          }}
+          aria-label="Chat"
+        >
+          <BsMessenger />
+
+          {chatUnread > 0 && (
+            <span className="notif-badge">
+              {chatUnread > 99 ? "99+" : chatUnread}
+            </span>
+          )}
+        </button>
 
         <div className="notif-wrap" ref={notifRef}>
           <button
@@ -211,6 +259,7 @@ const Header = ({ toggleSidebar }) => {
             aria-label="Notifications"
           >
             <FaBell />
+
             {unreadCount > 0 && (
               <span className="notif-badge">
                 {unreadCount > 99 ? "99+" : unreadCount}
@@ -232,6 +281,7 @@ const Header = ({ toggleSidebar }) => {
                   >
                     <FaCheck />
                   </button>
+
                   <button
                     className="notif-action"
                     type="button"
@@ -273,7 +323,8 @@ const Header = ({ toggleSidebar }) => {
                           className="notif-item-msg"
                           style={{ opacity: 0.75, marginTop: 4 }}
                         >
-                          Branch: {[n.target_branch_code, n.target_branch_name]
+                          Branch:{" "}
+                          {[n.target_branch_code, n.target_branch_name]
                             .filter(Boolean)
                             .join(" - ")}
                         </div>
@@ -326,6 +377,7 @@ const Header = ({ toggleSidebar }) => {
               >
                 <FaUser /> Profile
               </div>
+
               <div
                 className="dropdown-item"
                 onClick={() => {
@@ -335,6 +387,7 @@ const Header = ({ toggleSidebar }) => {
               >
                 <FaCog /> Settings
               </div>
+
               <div className="dropdown-item logout" onClick={handleLogout}>
                 <FaSignOutAlt /> Logout
               </div>

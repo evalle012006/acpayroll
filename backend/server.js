@@ -30,6 +30,7 @@ const consolidationRoutes = require("./routes/consolidationRoutes");
 const logisticRoutes = require("./routes/logisticRoutes");
 const pendingStaffRoutes = require("./routes/pendingStaffRoutes");
 const notificationRoutes = require("./routes/notificationRoutes");
+const chatRoutes = require("./routes/chatRoutes");
 
 const transportationHistoryRoutes = require("./routes/transportationHistoryRoutes");
 const salaryHistoryRoutes = require("./routes/salaryHistoryRoutes");
@@ -70,6 +71,7 @@ app.use("/api/logistic", logisticRoutes);
 app.use("/api/salary-history", salaryHistoryRoutes);
 app.use("/api/status-history", statusHistoryRoutes);
 app.use("/api/transport-history", transportationHistoryRoutes);
+app.use("/api/chat", chatRoutes);
 
 app.use("/api", compRatesRoutes);
 app.use("/api", staffRoutes);

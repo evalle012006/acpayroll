@@ -522,6 +522,39 @@ router.get(
   }
 );
 
+router.get(
+  "/transfer-staff-orders/staff/:staffId",
+  requireAuth,
+  requirePermission("transfer_staff_order", "view"),
+  async (req, res) => {
+    try {
+      const staffId = toInt(req.params.staffId);
+
+      if (!staffId) {
+        return res.status(400).json({ message: "Invalid staff id" });
+      }
+
+      const r = await pool.query(
+        `
+        SELECT *
+        FROM public.transfer_staff_orders
+        WHERE employee_id = $1
+        ORDER BY created_at DESC
+        `,
+        [staffId]
+      );
+
+      return res.json(r.rows);
+    } catch (e) {
+      console.error(
+        "GET /api/transfer-staff-orders/staff/:staffId ERROR:",
+        e.message
+      );
+      return res.status(500).json({ message: "Failed to load transfer history" });
+    }
+  }
+);
+
 router.post(
   "/transfer-staff-orders/:id/hr-final-file",
   requireAuth,

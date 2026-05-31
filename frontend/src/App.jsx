@@ -47,6 +47,7 @@ import StaffAccountsPayable from "./pages/StaffAccountsPayable";
 import BoardResolutionRequests from "./pages/BoardResolutionRequests";
 import Permissions from "./pages/Permissions";
 import StaffReport from "./pages/StaffReport";
+import Chat from "./pages/Chat";
 
 const readUser = () => {
   try {
@@ -178,6 +179,7 @@ function AppShell() {
       <Route path="/transactions/board-resolution" element={ <ProtectedRoute allowedRoles={["admin", "it", "hr", "accounting", "tread", "regional manager", "assistant vice president", "vice president", "senior vice president", "president", ]}><ProtectedLayout><BoardResolutionRequests /></ProtectedLayout></ProtectedRoute>}/>
       <Route path="/permissions" element={ <ProtectedRoute allowedRoles={["admin", "it", "hr", "accounting", "tread", "regional manager", "assistant vice president", "vice president", "senior vice president", "president", ]}><ProtectedLayout><Permissions /></ProtectedLayout></ProtectedRoute>}/>
       <Route path="/transactions/staff-report" element={ <ProtectedRoute allowedRoles={[ "admin", "it", "hr", "accounting", "branch manager", "area manager", "regional manager", "assistant vice president", "vice president", "senior vice president", "president", "tread",]}><ProtectedLayout><StaffReport /></ProtectedLayout></ProtectedRoute>}/>
+      <Route path="/chat" element={ <ProtectedRoute allowedRoles={[ "admin", "it", "hr", "accounting", "branch manager", "area manager", "regional manager", "assistant vice president", "vice president", "senior vice president", "president", "tread", ]}><ProtectedLayout><Chat /></ProtectedLayout></ProtectedRoute>}/>
       <Route path="*" element={<Navigate to={homeRedirect()} replace />} />
     </Routes>
   );

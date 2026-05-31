@@ -3,7 +3,10 @@ import api from "../../api/axiosClient";
 import PersonalBalancesStep from "./PersonalBalancesStep";
 import { safeJsonArray, toStr, fmtDate, toNum, money, displayName, loanDisplayDate, compute13thMonthBreakdown, } from "./staffInfoUtils";
 
-export default function StaffProfileModal({ staff, signedPhotoUrl, onClose, branchNameById, canViewPrivateDetails = true, canEditLeaveDetails = false, }) {
+export default function StaffProfileModal({ 
+  staff, signedPhotoUrl, onClose, branchNameById, 
+  canViewPrivateDetails = true, canEditLeaveDetails = false, }) {
+    
   const [tab, setTab] = useState("staff");
   const [leaveKind, setLeaveKind] = useState("All");
   const [leaveRows, setLeaveRows] = useState([]);
@@ -14,6 +17,18 @@ export default function StaffProfileModal({ staff, signedPhotoUrl, onClose, bran
   const [loanRows, setLoanRows] = useState([]);
   const [loadingLoan, setLoadingLoan] = useState(false);
   const [errLoan, setErrLoan] = useState("");
+
+  const [transferRows, setTransferRows] = useState([]);
+  const [loadingTransfer, setLoadingTransfer] = useState(false);
+  const [errTransfer, setErrTransfer] = useState("");
+
+  const [promotionRows, setPromotionRows] = useState([]);
+  const [loadingPromotion, setLoadingPromotion] = useState(false);
+  const [errPromotion, setErrPromotion] = useState("");
+
+  const [suspensionRows, setSuspensionRows] = useState([]);
+  const [loadingSuspension, setLoadingSuspension] = useState(false);
+  const [errSuspension, setErrSuspension] = useState("");
 
   const [sapHistoryRows, setSapHistoryRows] = useState([]);
   const [loadingSapHist, setLoadingSapHist] = useState(false);
@@ -26,6 +41,32 @@ export default function StaffProfileModal({ staff, signedPhotoUrl, onClose, bran
   const [openingLoanRows, setOpeningLoanRows] = useState([]);
   const [loadingOpeningLoans, setLoadingOpeningLoans] = useState(false);
   const [errOpeningLoans, setErrOpeningLoans] = useState("");
+
+  const [attachments, setAttachments] = useState([]);
+  const [loadingAttachments, setLoadingAttachments] = useState(false);
+  const [errAttachments, setErrAttachments] = useState("");
+
+  const [attachmentFiles, setAttachmentFiles] = useState([]);
+  const [attachmentName, setAttachmentName] = useState("");
+  const [uploadingAttachment, setUploadingAttachment] = useState(false);
+
+  const user = (() => {
+    try {
+      return JSON.parse(localStorage.getItem("user") || "null");
+    } catch {
+      return null;
+    }
+  })();
+
+  const role = String(user?.role || "").trim().toLowerCase();
+  const department = String(user?.department || "").trim().toLowerCase();
+
+  const canManageAttachments =
+    role === "admin" ||
+    role === "it" ||
+    department === "hr department" ||
+    department === "accounting department" ||
+    department === "it department";
 
   const [balances, setBalances] = useState(null);
   const [loadingBal, setLoadingBal] = useState(false);
@@ -116,14 +157,34 @@ export default function StaffProfileModal({ staff, signedPhotoUrl, onClose, bran
 
   const loadLeaves = useCallback(async () => {
     if (!staff?.id) return;
-    setLoadingLeave(true); setErrLeave("");
+
+    setLoadingLeave(true);
+    setErrLeave("");
+
     try {
-      const res = await api.get(`/leave-requests/staff/${staff.id}`);
-      setLeaveRows(Array.isArray(res.data) ? res.data : []);
+      let rows = [];
+
+      try {
+        const res = await api.get(`/leave-requests/staff/${staff.id}`);
+        rows = Array.isArray(res.data) ? res.data : [];
+      } catch {
+        const res2 = await api.get("/leave-requests");
+        const all = Array.isArray(res2.data) ? res2.data : [];
+
+        rows = all.filter(
+          (x) =>
+            String(x.employee_id) === String(staff.id) ||
+            String(x.staff_id) === String(staff.id)
+        );
+      }
+
+      setLeaveRows(rows);
     } catch (e) {
-      setErrLeave(e?.response?.data?.message || "Failed to load leave details.");
+      setErrLeave(e?.response?.data?.message || "Failed to load leave history.");
       setLeaveRows([]);
-    } finally { setLoadingLeave(false); }
+    } finally {
+      setLoadingLeave(false);
+    }
   }, [staff?.id]);
 
   const loadSapHistory = useCallback(async () => {
@@ -173,6 +234,229 @@ export default function StaffProfileModal({ staff, signedPhotoUrl, onClose, bran
       setDemotionRows([]);
     } finally { setLoadingDemotion(false); }
   }, [staff?.id]);
+
+  const loadTransfers = useCallback(async () => {
+    if (!staff?.id) return;
+
+    setLoadingTransfer(true);
+    setErrTransfer("");
+
+    try {
+      let rows = [];
+
+      try {
+        const res = await api.get(`/transfer-staff-orders/staff/${staff.id}`);
+        rows = Array.isArray(res.data) ? res.data : [];
+      } catch {
+        const res2 = await api.get(`/transfer-staff-orders`);
+        const all = Array.isArray(res2.data) ? res2.data : [];
+        rows = all.filter((x) => String(x.employee_id) === String(staff.id));
+      }
+
+      setTransferRows(rows);
+    } catch (e) {
+      setErrTransfer(e?.response?.data?.message || "Failed to load transfer orders.");
+      setTransferRows([]);
+    } finally {
+      setLoadingTransfer(false);
+    }
+  }, [staff?.id]);
+
+  const loadPromotions = useCallback(async () => {
+    if (!staff?.id) return;
+
+    setLoadingPromotion(true);
+    setErrPromotion("");
+
+    try {
+      let rows = [];
+
+      try {
+        const res = await api.get(`/promotion-orders/staff/${staff.id}`);
+        rows = Array.isArray(res.data) ? res.data : [];
+      } catch {
+        const res2 = await api.get(`/promotion-orders`);
+        const all = Array.isArray(res2.data) ? res2.data : [];
+        rows = all.filter((x) => String(x.employee_id) === String(staff.id));
+      }
+
+      setPromotionRows(rows);
+    } catch (e) {
+      setErrPromotion(e?.response?.data?.message || "Failed to load promotion orders.");
+      setPromotionRows([]);
+    } finally {
+      setLoadingPromotion(false);
+    }
+  }, [staff?.id]);
+
+  const loadSuspensions = useCallback(async () => {
+    if (!staff?.id) return;
+
+    setLoadingSuspension(true);
+    setErrSuspension("");
+
+    try {
+      let rows = [];
+
+      try {
+        const res = await api.get(`/suspension-orders/staff/${staff.id}`);
+        rows = Array.isArray(res.data) ? res.data : [];
+      } catch {
+        const res2 = await api.get(`/suspension-orders`);
+        const all = Array.isArray(res2.data) ? res2.data : [];
+        rows = all.filter((x) => String(x.employee_id) === String(staff.id));
+      }
+
+      setSuspensionRows(rows);
+    } catch (e) {
+      setErrSuspension(e?.response?.data?.message || "Failed to load suspension orders.");
+      setSuspensionRows([]);
+    } finally {
+      setLoadingSuspension(false);
+    }
+  }, [staff?.id]);
+
+  const loadAttachments = useCallback(async () => {
+    if (!staff?.id) return;
+
+    setLoadingAttachments(true);
+    setErrAttachments("");
+
+    try {
+      const res = await api.get(`/staff/${staff.id}/attachments`);
+
+      setAttachments(
+        Array.isArray(res.data) ? res.data : []
+      );
+    } catch (e) {
+      setErrAttachments(
+        e?.response?.data?.message ||
+        "Failed to load attachments."
+      );
+
+      setAttachments([]);
+    } finally {
+      setLoadingAttachments(false);
+    }
+  }, [staff?.id]);
+
+  const uploadAttachment = async () => {
+    if (!attachmentFiles.length) {
+      alert("Please select at least one file.");
+      return;
+    }
+
+    try {
+      setUploadingAttachment(true);
+
+      for (const file of attachmentFiles) {
+        const fd = new FormData();
+
+        fd.append("photo", file);
+        fd.append(
+          "file_name",
+          attachmentFiles.length === 1
+            ? attachmentName || file.name
+            : file.name
+        );
+
+        await api.post(
+          `/staff/${staff.id}/attachments`,
+          fd,
+          {
+            headers: {
+              "Content-Type": "multipart/form-data",
+            },
+          }
+        );
+      }
+
+      setAttachmentFiles([]);
+      setAttachmentName("");
+
+      const input = document.getElementById("staff-attachment-file-input");
+      if (input) input.value = "";
+
+      await loadAttachments();
+      alert("Attachment uploaded successfully.");
+    } catch (e) {
+      alert(
+        e?.response?.data?.message ||
+        "Upload failed."
+      );
+    } finally {
+      setUploadingAttachment(false);
+    }
+  };
+
+  const renameAttachment = async (row) => {
+    const newName = prompt(
+      "Rename file",
+      row.file_name
+    );
+
+    if (!newName) return;
+
+    try {
+      await api.put(
+        `/staff/attachments/${row.id}`,
+        {
+          file_name: newName,
+        }
+      );
+
+      await loadAttachments();
+    } catch (e) {
+      alert(
+        e?.response?.data?.message ||
+        "Rename failed."
+      );
+    }
+  };
+
+  const deleteAttachment = async (row) => {
+    if (
+      !window.confirm(
+        `Delete "${row.file_name}"?`
+      )
+    ) {
+      return;
+    }
+
+    try {
+      await api.delete(
+        `/staff/attachments/${row.id}`
+      );
+
+      await loadAttachments();
+    } catch (e) {
+      alert(
+        e?.response?.data?.message ||
+        "Delete failed."
+      );
+    }
+  };
+
+  const downloadAttachment = async (row) => {
+    try {
+      const res = await api.get(
+        `/staff/attachments/${row.id}/download`
+      );
+
+      if (res.data?.url) {
+        window.open(
+          res.data.url,
+          "_blank",
+          "noopener,noreferrer"
+        );
+      }
+    } catch (e) {
+      alert(
+        e?.response?.data?.message ||
+        "Download failed."
+      );
+    }
+  };
 
   const loadOpeningLoans = useCallback(async () => {
     if (!staff?.id) return;
@@ -244,10 +528,18 @@ export default function StaffProfileModal({ staff, signedPhotoUrl, onClose, bran
     if (tab === "leave") loadLeaves();
 
     if (tab === "history") {
+      loadTransfers();
+      loadPromotions();
+      loadSuspensions();
+      loadLeaves();
       loadLoans();
       loadOpeningLoans();
       loadDemotions();
       loadSapHistory();
+    }
+
+    if (tab === "attachments") {
+      loadAttachments();
     }
 
     if (tab === "balances") {
@@ -260,6 +552,10 @@ export default function StaffProfileModal({ staff, signedPhotoUrl, onClose, bran
   }, [
     tab,
     loadLeaves,
+    loadTransfers,
+    loadPromotions,
+    loadSuspensions,
+    loadAttachments,
     loadLoans,
     loadOpeningLoans,
     loadDemotions,
@@ -311,13 +607,104 @@ export default function StaffProfileModal({ staff, signedPhotoUrl, onClose, bran
         });
       }
     }
+    if (historyKind === "All" || historyKind === "Leaves") {
+      for (const l of leaveRows || []) {
+        items.push({
+          _type: "LEAVE",
+          id: l.id,
+          ref: l.leave_no || l.request_no || l.id,
+          date: l.created_at || l.date_created || l.start_date || null,
+          status: l.status || "Pending",
+          title: `${l.leave_type || "Leave"} Request`,
+          subtitle: `${fmtDate(l.start_date)} → ${fmtDate(l.end_date)}`,
+          extra: `Days: ${l.total_days || l.days || 0}`,
+          reason: l.reason || l.details || "",
+          rejection_reason: l.rejection_reason || "",
+        });
+      }
+    }
+    if (historyKind === "All" || historyKind === "Transfers") {
+      for (const t of transferRows || []) {
+        items.push({
+          _type: "TRANSFER",
+          id: t.id,
+          ref: t.order_no || t.transfer_no || t.id,
+          date: t.created_at || t.updated_at || t.effective_date || null,
+          status: t.status || "Pending",
+          title: "Transfer Staff Order",
+          subtitle: `From: ${
+            `${t.from_branch_code || ""} ${t.from_branch_name || ""}`.trim() ||
+            t.prev_branch_name ||
+            "-"
+          } → To: ${
+            `${t.to_branch_code || ""} ${t.to_branch_name || ""}`.trim() ||
+            t.present_branch_name ||
+            "-"
+          }`,
+          extra: `Effective: ${fmtDate(t.effective_date)} • Position: ${
+            t.position || t.old_position || "-"
+          }`,
+          reason: t.details || t.remarks || "",
+          rejection_reason: t.rejection_reason || "",
+        });
+      }
+    }
+    if (historyKind === "All" || historyKind === "Promotions") {
+      for (const p of promotionRows || []) {
+        items.push({
+          _type: "PROMOTION",
+          id: p.id,
+          ref: p.order_no || p.promotion_no || p.id,
+          date: p.created_at || p.updated_at || p.effective_date || null,
+          status: p.status || p.final_status || "Pending",
+          title: "Promotion Order",
+          subtitle: `Prev: ${p.old_position || "-"} → New: ${p.new_position || "-"}`,
+          extra: `Effective: ${fmtDate(p.effective_date)} • Branch: ${
+            `${p.present_branch_code || ""} ${p.present_branch_name || ""}`.trim() ||
+            `${p.branch_code || ""} ${p.branch_name || ""}`.trim() ||
+            "-"
+          }`,
+          reason: p.details || p.remarks || "",
+          rejection_reason: p.rejection_reason || "",
+        });
+      }
+    }
+    if (historyKind === "All" || historyKind === "Suspensions") {
+      for (const s of suspensionRows || []) {
+        items.push({
+          _type: "SUSPENSION",
+          id: s.id,
+          ref: s.order_no || s.suspension_no || s.id,
+          date: s.created_at || s.updated_at || s.effective_date || s.start_date || null,
+          status: s.status || "Pending",
+          title: "Suspension Order",
+          subtitle: `${fmtDate(s.start_date || s.effective_date)} → ${fmtDate(s.end_date)}`,
+          extra: `Days: ${s.total_days || s.days || "-"} • Branch: ${
+            `${s.branch_code || ""} ${s.branch_name || ""}`.trim() ||
+            s.branch ||
+            "-"
+          }`,
+          reason: s.details || s.reason || s.remarks || "",
+          rejection_reason: s.rejection_reason || "",
+        });
+      }
+    }
     items.sort((a, b) => {
       const ad = a.date ? new Date(a.date).getTime() : 0;
       const bd = b.date ? new Date(b.date).getTime() : 0;
       return bd - ad;
     });
     return items;
-  }, [loanRows, sapHistoryRows, demotionRows, historyKind]);
+  }, [
+    loanRows,
+    sapHistoryRows,
+    demotionRows,
+    transferRows,
+    leaveRows,
+    promotionRows,
+    suspensionRows,
+    historyKind,
+  ]);
 
   const filteredLeaves = useMemo(() => {
     const list = Array.isArray(leaveRows) ? leaveRows : [];
@@ -431,7 +818,12 @@ export default function StaffProfileModal({ staff, signedPhotoUrl, onClose, bran
 
   return (
     <div className="modal-overlay" onMouseDown={onClose}>
-      <div className="modal staff-profile-modal" onMouseDown={(e) => e.stopPropagation()} style={{ maxWidth: 1200 }}>
+      <div className="modal staff-profile-modal" onMouseDown={(e) => e.stopPropagation()}
+        style={{
+          width: "92vw",
+          maxWidth: 1500,
+        }}
+      >
         <div className="modal-head">
           <div><h3>Staff Profile</h3></div>
           <button className="icon-btn" onClick={onClose} type="button">✕</button>
@@ -696,25 +1088,238 @@ export default function StaffProfileModal({ staff, signedPhotoUrl, onClose, bran
             </>
           )}
 
-          {tab === "attachments" && <EmptyState title="No attachments yet." hint="Add upload routes later and this will show files." />}
+          {tab === "attachments" && (
+            <>
+              {canManageAttachments && (
+                <div
+                  className="leave-edit-card"
+                style={{
+                  marginBottom: 14,
+                  padding: 14,
+                  borderRadius: 14,
+                }}
+              >
+                <div style={{ fontWeight: 900, marginBottom: 10 }}>
+                  Upload Staff Attachment
+                </div>
+
+                <div
+                  className="leave-edit-grid"
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr) auto",
+                    gap: 10,
+                    alignItems: "end",
+                  }}
+                >
+                  <div className="leave-field">
+                    <label className="leave-label">Rename File As</label>
+                    <input
+                      type="text"
+                      className="leave-input"
+                      value={attachmentName}
+                      onChange={(e) => setAttachmentName(e.target.value)}
+                      placeholder={
+                        attachmentFiles.length > 1
+                          ? "Used only when uploading one file"
+                          : "Example: Contract 2026"
+                      }
+                      disabled={attachmentFiles.length > 1}
+                    />
+                  </div>
+
+                  <div className="leave-field">
+                    <label className="leave-label">Choose File(s)</label>
+                    <input
+                      id="staff-attachment-file-input"
+                      type="file"
+                      multiple
+                      className="leave-input"
+                      onChange={(e) =>
+                        setAttachmentFiles(Array.from(e.target.files || []))
+                      }
+                    />
+                  </div>
+
+                  <button
+                    type="button"
+                    className="btn btn-primary"
+                    onClick={uploadAttachment}
+                    disabled={uploadingAttachment}
+                    style={{ whiteSpace: "nowrap" }}
+                  >
+                    {uploadingAttachment ? "Uploading..." : "Upload"}
+                  </button>
+                </div>
+
+                {attachmentFiles.length > 0 ? (
+                  <div style={{ fontSize: 12, opacity: 0.85, marginTop: 8 }}>
+                    Selected: {attachmentFiles.map((f) => f.name).join(", ")}
+                  </div>
+                ) : null}
+          </div>
+            )}
+
+              {loadingAttachments ? (
+                <div className="empty-state">Loading attachments…</div>
+              ) : null}
+
+              {!loadingAttachments && errAttachments ? (
+                <div className="empty-state" style={{ color: "#ef4444" }}>
+                  {errAttachments}
+                </div>
+              ) : null}
+
+              {!loadingAttachments && !errAttachments && attachments.length === 0 ? (
+                <EmptyState
+                  title="No attachments yet."
+                  hint="Uploaded staff files will appear here."
+                />
+              ) : null}
+
+              {!loadingAttachments && attachments.length > 0 ? (
+                <div className="table-scroll" style={{ overflowX: "hidden" }}>
+                  <table className="saas-table staffinfo-table">
+                    <thead>
+                      <tr>
+                        <th style={{ width: "35%" }}>File Name</th>
+                        <th style={{ width: "25%" }}>Original Name</th>
+                        <th style={{ width: 150 }}>Uploaded</th>
+                        <th style={{ width: 320 }}>Action</th>
+                      </tr>
+                    </thead>
+
+                    <tbody>
+                      {attachments.map((row) => (
+                        <tr key={row.id}>
+                          <td className="strong" style={{ wordBreak: "break-word" }}>
+                            {row.file_name || row.original_name || "-"}
+                          </td>
+                          <td style={{ wordBreak: "break-word" }}>
+                            {row.original_name || "-"}
+                          </td>
+                          <td className="mono">
+                            {row.created_at ? fmtDate(row.created_at) : "-"}
+                          </td>
+                          <td>
+                            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                              <button
+                                type="button"
+                                className="btn btn-outline"
+                                onClick={() => downloadAttachment(row)}
+                              >
+                                Download
+                              </button>
+
+                              {canManageAttachments && (
+                                <>
+                                  <button
+                                    type="button"
+                                    className="btn btn-outline"
+                                    onClick={() => renameAttachment(row)}
+                                  >
+                                    Rename
+                                  </button>
+
+                                  <button
+                                    type="button"
+                                    className="btn btn-danger"
+                                    onClick={() => deleteAttachment(row)}
+                                  >
+                                    Delete
+                                  </button>
+                                </>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : null}
+            </>
+          )}
+
+
+
 
           {tab === "history" && (
             <>
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
                 <Chip label="All" active={historyKind === "All"} onClick={() => setHistoryKind("All")} />
+                <Chip label="Leaves" active={historyKind === "Leaves"} onClick={() => setHistoryKind("Leaves")} />
+                <Chip label="Transfers" active={historyKind === "Transfers"} onClick={() => setHistoryKind("Transfers")} />
+                <Chip label="Promotions" active={historyKind === "Promotions"} onClick={() => setHistoryKind("Promotions")} />
+                <Chip label="Suspensions" active={historyKind === "Suspensions"} onClick={() => setHistoryKind("Suspensions")} />
                 <Chip label="Loans" active={historyKind === "Loans"} onClick={() => setHistoryKind("Loans")} />
                 <Chip label="Demotions" active={historyKind === "Demotions"} onClick={() => setHistoryKind("Demotions")} />
                 <Chip label="SAP" active={historyKind === "SAP"} onClick={() => setHistoryKind("SAP")} />
               </div>
-              {(loadingLoan || loadingDemotion || loadingSapHist) && <div className="empty-state">Loading transaction history…</div>}
-              {!loadingLoan && errLoan ? <div className="empty-state" style={{ color: "#ef4444" }}>{errLoan}</div> : null}
-              {!loadingDemotion && errDemotion ? <div className="empty-state" style={{ color: "#ef4444" }}>{errDemotion}</div> : null}
-              {!loadingSapHist && errSapHist ? <div className="empty-state" style={{ color: "#ef4444" }}>{errSapHist}</div> : null}
-              {!loadingLoan && !loadingDemotion && !errLoan && !errDemotion && historyItems.length === 0 ? (
-                <EmptyState title="No transaction history yet." hint="Loans + Demotion orders will appear here." />
+
+              {(loadingLoan || loadingLeave || loadingTransfer || loadingPromotion || loadingSuspension || loadingDemotion || loadingSapHist) && (
+                <div className="empty-state">Loading transaction history…</div>
+              )}
+
+              {!loadingLoan && errLoan ? (
+                <div className="empty-state" style={{ color: "#ef4444" }}>{errLoan}</div>
               ) : null}
-              {!loadingLoan && !loadingDemotion && historyItems.length > 0 ? (
-                <div className="table-scroll">
+
+              {!loadingDemotion && errDemotion ? (
+                <div className="empty-state" style={{ color: "#ef4444" }}>{errDemotion}</div>
+              ) : null}
+
+              {!loadingSapHist && errSapHist ? (
+                <div className="empty-state" style={{ color: "#ef4444" }}>{errSapHist}</div>
+              ) : null}
+
+              {!loadingTransfer && errTransfer ? (
+                <div className="empty-state" style={{ color: "#ef4444" }}>{errTransfer}</div>
+              ) : null}
+
+              {!loadingPromotion && errPromotion ? (
+                <div className="empty-state" style={{ color: "#ef4444" }}>{errPromotion}</div>
+              ) : null}
+
+              {!loadingSuspension && errSuspension ? (
+                <div className="empty-state" style={{ color: "#ef4444" }}>{errSuspension}</div>
+              ) : null}
+
+              {!loadingLeave && errLeave ? (
+                <div className="empty-state" style={{ color: "#ef4444" }}>{errLeave}</div>
+              ) : null}
+
+
+              {!loadingLoan &&
+              !loadingLeave &&
+              !loadingTransfer &&
+              !loadingPromotion &&
+              !loadingSuspension &&
+              !loadingDemotion &&
+              !loadingSapHist &&
+              !errLoan &&
+              !errLeave &&
+              !errTransfer &&
+              !errPromotion &&
+              !errSuspension &&
+              !errDemotion &&
+              !errSapHist &&
+              historyItems.length === 0 ? (
+                <EmptyState
+                  title="No transaction history yet."
+                  hint="Leaves, Transfers, Promotions, Suspensions, Loans, Demotions, and SAP records will appear here."
+                />
+              ) : null}
+
+              {!loadingLoan &&
+              !loadingLeave &&
+              !loadingTransfer &&
+              !loadingPromotion &&
+              !loadingSuspension &&
+              !loadingDemotion &&
+              !loadingSapHist &&
+              historyItems.length > 0 ? (
+                <div className="table-scroll" style={{ overflowX: "hidden" }}>
                   <table className="saas-table staffinfo-table">
                     <thead>
                       <tr>
@@ -725,6 +1330,7 @@ export default function StaffProfileModal({ staff, signedPhotoUrl, onClose, bran
                         <th style={{ width: 130 }}>Status</th>
                       </tr>
                     </thead>
+
                     <tbody>
                       {historyItems.map((it) => (
                         <tr key={`${it._type}-${it.id}`}>
@@ -732,11 +1338,29 @@ export default function StaffProfileModal({ staff, signedPhotoUrl, onClose, bran
                           <td className="mono">{it.ref}</td>
                           <td>
                             <div className="strong">{it.title}</div>
-                            <div style={{ fontSize: 12, opacity: 0.9, marginTop: 4 }}>{it.subtitle}</div>
-                            {it.extra ? <div style={{ fontSize: 12, opacity: 0.85, marginTop: 4 }}>{it.extra}</div> : null}
-                            {it.reason ? <div style={{ fontSize: 12, opacity: 0.85, marginTop: 6 }}>Remarks: {it.reason}</div> : null}
-                            {it.rejection_reason ? <div style={{ fontSize: 12, color: "#ef4444", marginTop: 6 }}>Rejection: {it.rejection_reason}</div> : null}
+                            <div style={{ fontSize: 12, opacity: 0.9, marginTop: 4 }}>
+                              {it.subtitle}
+                            </div>
+
+                            {it.extra ? (
+                              <div style={{ fontSize: 12, opacity: 0.85, marginTop: 4 }}>
+                                {it.extra}
+                              </div>
+                            ) : null}
+
+                            {it.reason ? (
+                              <div style={{ fontSize: 12, opacity: 0.85, marginTop: 6 }}>
+                                Remarks: {it.reason}
+                              </div>
+                            ) : null}
+
+                            {it.rejection_reason ? (
+                              <div style={{ fontSize: 12, color: "#ef4444", marginTop: 6 }}>
+                                Rejection: {it.rejection_reason}
+                              </div>
+                            ) : null}
                           </td>
+
                           <td className="mono">{it.date ? fmtDate(it.date) : "-"}</td>
                           <td className="mono">{it.status}</td>
                         </tr>

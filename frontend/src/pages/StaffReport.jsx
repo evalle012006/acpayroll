@@ -3,10 +3,20 @@ import { useNavigate } from "react-router-dom";
 import api from "../api/axiosClient";
 import "../styles/StaffReport.css";
 
-const STATUS_WAITING_HR = "Waiting HR Final File";
+const STATUS_AREA = "Waiting Area Manager Approval";
+const STATUS_REGIONAL = "Waiting Regional Manager Approval";
+const STATUS_AVP = "Waiting Assistant Vice President Approval";
+const STATUS_VP = "Waiting Vice President Approval";
+const STATUS_WAITING_FINAL = "Waiting Final File Upload";
 const STATUS_APPROVED = "Approved";
 const STATUS_REJECTED = "Rejected";
 const STATUS_VOID = "Voided";
+
+const REPORT_TYPES = [
+  "AWOL Report",
+  "Notice to Explain",
+  "Termination of Contract",
+];
 
 const readUser = () => {
   try {
@@ -39,6 +49,22 @@ const branchLabel = (s) => {
   return code || name ? `${code}${code && name ? " - " : ""}${name}` : "-";
 };
 
+const getReportType = (r) => toStr(r?.report_type) || "AWOL Report";
+
+const dateLabel = (reportType) => {
+  const t = norm(reportType);
+  if (t === "notice to explain") return "Notice Date";
+  if (t === "termination of contract") return "Termination Date";
+  return "AWOL Date";
+};
+
+const fileLabel = (reportType) => {
+  const t = norm(reportType);
+  if (t === "notice to explain") return "Upload NTE File";
+  if (t === "termination of contract") return "Upload Termination File";
+  return "Upload AWOL File";
+};
+
 export default function StaffReport() {
   const navigate = useNavigate();
   const user = useMemo(() => readUser(), []);
@@ -47,16 +73,17 @@ export default function StaffReport() {
   const isAdmin = role === "admin";
   const isIT = role === "it";
   const isHR = role === "hr";
-  const isVP = role === "vice president";
+  const isAccounting = role === "accounting";
   const isBM = role === "branch manager";
   const isAM = role === "area manager";
   const isRM = role === "regional manager";
   const isAVP = role === "assistant vice president";
+  const isVP = role === "vice president";
 
-  const canCreate = isAdmin || isIT || isBM || isAM || isRM || isAVP;
+  const canCreate = isAdmin || isIT || isBM || isAM || isRM || isAVP || isVP;
   const canBypassApprove = isAdmin || isIT;
-  const canHRUpload = isAdmin || isIT || isHR;
-  const canVoid = isAdmin || isIT || isHR;
+  const canFinalUpload = isAdmin || isIT || isHR || isAccounting;
+  const canVoid = isAdmin || isIT || isHR || isAccounting;
 
   const employeePickerRef = useRef(null);
 
@@ -79,10 +106,13 @@ export default function StaffReport() {
 
   const [employeeSearch, setEmployeeSearch] = useState("");
   const [showEmployeeDropdown, setShowEmployeeDropdown] = useState(false);
+
   const [attachmentFile, setAttachmentFile] = useState(null);
-  const [hrFinalFile, setHrFinalFile] = useState(null);
+  const [approvalFile, setApprovalFile] = useState(null);
+  const [finalFile, setFinalFile] = useState(null);
 
   const [form, setForm] = useState({
+    report_type: "AWOL Report",
     employee_id: "",
     employee_name: "",
     branch_id: "",
@@ -120,7 +150,7 @@ export default function StaffReport() {
     } catch (err) {
       if (err?.response?.status === 401) return logout();
       setReports([]);
-      alert(err?.response?.data?.message || "Failed to load AWOL reports.");
+      alert(err?.response?.data?.message || "Failed to load staff reports.");
     } finally {
       setLoadingList(false);
     }
@@ -143,10 +173,7 @@ export default function StaffReport() {
 
   useEffect(() => {
     const onMouseDown = (e) => {
-      if (
-        employeePickerRef.current &&
-        !employeePickerRef.current.contains(e.target)
-      ) {
+      if (employeePickerRef.current && !employeePickerRef.current.contains(e.target)) {
         setShowEmployeeDropdown(false);
       }
     };
@@ -185,6 +212,7 @@ export default function StaffReport() {
 
   const resetForm = () => {
     setForm({
+      report_type: "AWOL Report",
       employee_id: "",
       employee_name: "",
       branch_id: "",
@@ -215,13 +243,15 @@ export default function StaffReport() {
 
   const openViewModal = (report) => {
     setSelectedReport(report);
-    setHrFinalFile(null);
+    setApprovalFile(null);
+    setFinalFile(null);
     setShowViewModal(true);
   };
 
   const closeViewModal = () => {
     setSelectedReport(null);
-    setHrFinalFile(null);
+    setApprovalFile(null);
+    setFinalFile(null);
     setShowViewModal(false);
   };
 
@@ -241,42 +271,77 @@ export default function StaffReport() {
     setEmployeeSearch(
       `${toStr(s.employee_no) ? `${toStr(s.employee_no)} - ` : ""}${displayName(s)}`
     );
-
     setShowEmployeeDropdown(false);
+  };
+
+  const updateReportInState = (updated) => {
+    setReports((prev) =>
+      prev.map((r) => (Number(r.id) === Number(updated.id) ? updated : r))
+    );
+    setSelectedReport(updated);
   };
 
   const createReport = async (e) => {
     e.preventDefault();
 
+    if (!form.report_type) return alert("Select report type.");
     if (!form.employee_id) return alert("Select employee.");
     if (!form.date_created) return alert("Date created required.");
-    if (!form.awol_date) return alert("AWOL date required.");
+    if (!form.awol_date) return alert(`${dateLabel(form.report_type)} required.`);
 
     try {
       setLoadingCreate(true);
 
       const fd = new FormData();
+      fd.append("report_type", form.report_type);
       fd.append("employee_id", form.employee_id);
       fd.append("date_created", form.date_created);
       fd.append("awol_date", form.awol_date);
       fd.append("details", form.details || "");
 
-      if (attachmentFile) {
-        fd.append("attachment", attachmentFile);
-      }
+      if (attachmentFile) fd.append("attachment", attachmentFile);
 
       await api.post("/awol-reports", fd, {
         headers: { "Content-Type": "multipart/form-data" },
       });
 
-      alert("AWOL report created.");
+      alert(`${form.report_type} created.`);
       closeCreateModal();
       await fetchReports();
     } catch (err) {
       if (err?.response?.status === 401) return logout();
-      alert(err?.response?.data?.message || "Failed to create AWOL report.");
+      alert(err?.response?.data?.message || "Failed to create staff report.");
     } finally {
       setLoadingCreate(false);
+    }
+  };
+
+  const approveReportWithUpload = async (report) => {
+    if (!approvalFile) {
+      return alert("Please choose the approved file before approving.");
+    }
+
+    if (!window.confirm("Approve this report and replace the latest file?")) return;
+
+    try {
+      setActionLoading(true);
+
+      const fd = new FormData();
+      fd.append("attachment", approvalFile);
+
+      const res = await api.post(`/awol-reports/${report.id}/approve-upload`, fd, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+
+      updateReportInState(res.data);
+      setApprovalFile(null);
+
+      alert("Report approved. Uploaded file is now the latest file.");
+    } catch (err) {
+      if (err?.response?.status === 401) return logout();
+      alert(err?.response?.data?.message || "Failed to approve with upload.");
+    } finally {
+      setActionLoading(false);
     }
   };
 
@@ -291,14 +356,8 @@ export default function StaffReport() {
         reason: reason.trim(),
       });
 
-      const updated = res.data;
-
-      setReports((prev) =>
-        prev.map((r) => (Number(r.id) === Number(updated.id) ? updated : r))
-      );
-
-      setSelectedReport(updated);
-      alert("AWOL report rejected.");
+      updateReportInState(res.data);
+      alert("Staff report rejected.");
     } catch (err) {
       if (err?.response?.status === 401) return logout();
       alert(err?.response?.data?.message || "Failed to reject report.");
@@ -308,96 +367,59 @@ export default function StaffReport() {
   };
 
   const bypassApprove = async (report) => {
-    if (!window.confirm("Bypass and approve this report?")) return;
+    if (!window.confirm("Bypass approval and send this report to final file upload?")) return;
 
     try {
       setActionLoading(true);
 
-      const res = await api.put(
-        `/awol-reports/${report.id}/admin-bypass-approve`
-      );
-
-      const updated = res.data;
-
-      setReports((prev) =>
-        prev.map((r) =>
-          Number(r.id) === Number(updated.id) ? updated : r
-        )
-      );
-
-      setSelectedReport(updated);
+      const res = await api.put(`/awol-reports/${report.id}/admin-bypass-approve`);
+      updateReportInState(res.data);
 
       alert("Report bypass-approved.");
     } catch (err) {
       if (err?.response?.status === 401) return logout();
-
-      alert(
-        err?.response?.data?.message ||
-          "Failed to bypass approve report."
-      );
+      alert(err?.response?.data?.message || "Failed to bypass approve report.");
     } finally {
       setActionLoading(false);
     }
   };
 
   const voidReport = async (report) => {
-    if (!window.confirm("Void this AWOL report?")) return;
+    if (!window.confirm("Void this staff report?")) return;
 
     try {
       setActionLoading(true);
 
-      const res = await api.put(
-        `/awol-reports/${report.id}/void`
-      );
-
-      const updated = res.data;
-
-      setReports((prev) =>
-        prev.map((r) =>
-          Number(r.id) === Number(updated.id) ? updated : r
-        )
-      );
-
-      setSelectedReport(updated);
+      const res = await api.put(`/awol-reports/${report.id}/void`);
+      updateReportInState(res.data);
 
       alert("Report voided.");
     } catch (err) {
       if (err?.response?.status === 401) return logout();
-
-      alert(
-        err?.response?.data?.message ||
-          "Failed to void report."
-      );
+      alert(err?.response?.data?.message || "Failed to void report.");
     } finally {
       setActionLoading(false);
     }
   };
 
-  const uploadHRFinalFile = async () => {
+  const uploadFinalFile = async () => {
     if (!selectedReport?.id) return;
-    if (!hrFinalFile) return alert("Choose final HR file first.");
+    if (!finalFile) return alert("Choose final file first.");
 
     try {
       setActionLoading(true);
 
       const fd = new FormData();
-      fd.append("attachment", hrFinalFile);
+      fd.append("attachment", finalFile);
 
-      const res = await api.post(
-        `/awol-reports/${selectedReport.id}/hr-final-file`,
-        fd,
-        { headers: { "Content-Type": "multipart/form-data" } }
-      );
+      const res = await api.post(`/awol-reports/${selectedReport.id}/hr-final-file`, fd, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
 
-      const updated = res.data;
+      updateReportInState(res.data);
+      setFinalFile(null);
 
-      setReports((prev) =>
-        prev.map((r) => (Number(r.id) === Number(updated.id) ? updated : r))
-      );
-
-      setSelectedReport(updated);
-      setHrFinalFile(null);
-      alert("HR final file uploaded. AWOL report approved.");
+      alert("Final file uploaded. Staff report approved.");
     } catch (err) {
       if (err?.response?.status === 401) return logout();
       alert(err?.response?.data?.message || "Failed to upload final file.");
@@ -422,24 +444,67 @@ export default function StaffReport() {
 
       const a = document.createElement("a");
       a.href = url;
-      a.download = name || `awol-${report.id}-${type}`;
+      a.download = name || `staff-report-${report.id}-${type}`;
       document.body.appendChild(a);
       a.click();
       a.remove();
 
       window.URL.revokeObjectURL(url);
-    } catch (err) {
-      alert(err?.response?.data?.message || "Failed to download file.");
+    } catch {
+      alert("Failed to download file.");
     }
   };
 
-  const badgeClass = (status) => {
-      if (status === STATUS_APPROVED) return "badge badge-approved";
-      if (status === STATUS_REJECTED) return "badge badge-rejected";
-      if (status === STATUS_VOID) return "badge badge-rejected";
+  const isPendingStatus = (status) =>
+    [
+      STATUS_AREA,
+      STATUS_REGIONAL,
+      STATUS_AVP,
+      STATUS_VP,
+      STATUS_WAITING_FINAL,
+    ].includes(status);
 
+  const canApproveSelected = (report) => {
+    if (!report) return false;
+    if (canBypassApprove) return true;
+
+    if (report.status === STATUS_AREA && isAM) return true;
+    if (report.status === STATUS_REGIONAL && isRM) return true;
+    if (report.status === STATUS_AVP && isAVP) return true;
+    if (report.status === STATUS_VP && isVP) return true;
+
+    return false;
+  };
+
+  const canRejectSelected = (report) => {
+    if (!report) return false;
+    if (!isPendingStatus(report.status)) return false;
+
+    if (canBypassApprove) return true;
+    if (report.status === STATUS_WAITING_FINAL && canFinalUpload) return true;
+
+    return canApproveSelected(report);
+  };
+
+  const canShowApprovalUpload = (report) =>
+    canApproveSelected(report) &&
+    report.status !== STATUS_WAITING_FINAL &&
+    report.status !== STATUS_APPROVED &&
+    report.status !== STATUS_REJECTED &&
+    report.status !== STATUS_VOID;
+
+  const badgeClass = (status) => {
+    if (status === STATUS_APPROVED) return "badge badge-approved";
+    if (status === STATUS_REJECTED) return "badge badge-rejected";
+    if (status === STATUS_VOID) return "badge badge-rejected";
     return "badge badge-pending";
   };
+
+  const latestFileName = (r) =>
+    r?.approved_attachment_name || r?.request_attachment_name || "-";
+
+  const latestFileType = (r) =>
+    r?.approved_attachment_path ? "approved" : "request";
 
   const filteredReports = useMemo(() => {
     const q = norm(search);
@@ -449,6 +514,7 @@ export default function StaffReport() {
 
       return [
         r.report_no,
+        getReportType(r),
         r.employee_name,
         r.branch_code,
         r.branch_name,
@@ -494,9 +560,10 @@ export default function StaffReport() {
     }
 
     for (let i = start; i <= end; i++) pages.push(i);
-
     return pages;
   };
+
+  const selectedReportType = selectedReport ? getReportType(selectedReport) : "Staff Report";
 
   return (
     <div className="approval-page staff-report-page">
@@ -504,33 +571,24 @@ export default function StaffReport() {
         <div>
           <h2 className="approval-title">Staff Report</h2>
           <p className="approval-subtitle">
-            Create and manage AWOL staff reports.
+            Create and manage AWOL, Notice to Explain, and Termination of Contract reports.
           </p>
         </div>
 
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-          <button
-            className="btn-secondary"
-            onClick={() => navigate(-1)}
-            type="button"
-          >
+          <button className="btn-secondary" onClick={() => navigate(-1)} type="button">
             ← Back
           </button>
 
-          <button
-            className="btn-secondary"
-            onClick={refreshAll}
-            type="button"
-            disabled={loadingList}
-          >
+          <button className="btn-secondary" onClick={refreshAll} type="button" disabled={loadingList}>
             {loadingList ? "Refreshing..." : "Refresh"}
           </button>
 
-          {canCreate ? (
+          {canCreate && (
             <button className="btn-primary" onClick={openCreateModal} type="button">
-              + Create AWOL Report
+              + Create Staff Report
             </button>
-          ) : null}
+          )}
         </div>
       </div>
 
@@ -540,14 +598,10 @@ export default function StaffReport() {
           value={searchText}
           onChange={(e) => setSearchText(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && setSearch(searchText)}
-          placeholder="Search report no, name, branch, status..."
+          placeholder="Search report type, report no, employee, branch, status..."
         />
 
-        <button
-          className="btn-secondary"
-          type="button"
-          onClick={() => setSearch(searchText)}
-        >
+        <button className="btn-secondary" type="button" onClick={() => setSearch(searchText)}>
           Search
         </button>
 
@@ -562,19 +616,14 @@ export default function StaffReport() {
           Clear
         </button>
 
-        <span className="leave-search-count">
-          {filteredReports.length} result(s)
-        </span>
+        <span className="leave-search-count">{filteredReports.length} result(s)</span>
       </div>
 
       <div className="leave-pager">
         <div className="leave-pager-left">
           <span>Rows per page</span>
 
-          <select
-            value={pageSize}
-            onChange={(e) => setPageSize(Number(e.target.value))}
-          >
+          <select value={pageSize} onChange={(e) => setPageSize(Number(e.target.value))}>
             <option value={25}>25</option>
             <option value={50}>50</option>
             <option value={75}>75</option>
@@ -624,12 +673,13 @@ export default function StaffReport() {
             <thead>
               <tr>
                 <th>Report No</th>
+                <th>Type</th>
                 <th>Employee</th>
                 <th>Branch</th>
                 <th>Area</th>
                 <th>Region</th>
                 <th>Date Created</th>
-                <th>AWOL Date</th>
+                <th>Report Date</th>
                 <th>Status</th>
                 <th style={{ width: 150 }}>Action</th>
               </tr>
@@ -638,20 +688,21 @@ export default function StaffReport() {
             <tbody>
               {loadingList ? (
                 <tr>
-                  <td colSpan={9} className="empty-state">
+                  <td colSpan={10} className="empty-state">
                     Loading…
                   </td>
                 </tr>
               ) : filteredReports.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="empty-state">
-                    No AWOL reports found.
+                  <td colSpan={10} className="empty-state">
+                    No staff reports found.
                   </td>
                 </tr>
               ) : (
                 pagedReports.map((r) => (
                   <tr key={r.id}>
                     <td className="td-strong">{r.report_no}</td>
+                    <td>{getReportType(r)}</td>
                     <td>{r.employee_name}</td>
                     <td>
                       {toStr(r.branch_code)} - {toStr(r.branch_name)}
@@ -662,25 +713,10 @@ export default function StaffReport() {
                     <td>{fmtDate(r.awol_date)}</td>
                     <td>
                       <span className={badgeClass(r.status)}>{r.status}</span>
-                      {r.status === STATUS_REJECTED && r.rejection_reason ? (
-                        <div
-                          style={{
-                            marginTop: 6,
-                            fontSize: 12,
-                            color: "var(--muted)",
-                          }}
-                        >
-                          Reason: {r.rejection_reason}
-                        </div>
-                      ) : null}
                     </td>
                     <td>
                       <div className="row-actions">
-                        <button
-                          className="btn-secondary"
-                          type="button"
-                          onClick={() => openViewModal(r)}
-                        >
+                        <button className="btn-secondary" type="button" onClick={() => openViewModal(r)}>
                           View
                         </button>
                       </div>
@@ -707,9 +743,9 @@ export default function StaffReport() {
           >
             <div className="modal-head">
               <div>
-                <h3 className="modal-title">Create AWOL Report</h3>
+                <h3 className="modal-title">Create Staff Report</h3>
                 <p className="modal-subtitle">
-                  Report will go directly to HR final approval.
+                  Each approver downloads the latest file, uploads a new approved file, and that file becomes the latest file.
                 </p>
               </div>
 
@@ -720,11 +756,27 @@ export default function StaffReport() {
 
             <form onSubmit={createReport} className="modal-form">
               <div className="modal-grid" style={{ overflow: "visible" }}>
-                <div
-                  className="form-group"
-                  ref={employeePickerRef}
-                  style={{ position: "relative", zIndex: 50 }}
-                >
+                <div className="form-group">
+                  <label>Report Type</label>
+                  <select
+                    value={form.report_type}
+                    onChange={(e) =>
+                      setForm((p) => ({
+                        ...p,
+                        report_type: e.target.value,
+                      }))
+                    }
+                    required
+                  >
+                    {REPORT_TYPES.map((t) => (
+                      <option key={t} value={t}>
+                        {t}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="form-group" ref={employeePickerRef} style={{ position: "relative", zIndex: 50 }}>
                   <label>Employee</label>
 
                   <input
@@ -750,7 +802,7 @@ export default function StaffReport() {
                     required={!form.employee_id}
                   />
 
-                  {showEmployeeDropdown ? (
+                  {showEmployeeDropdown && (
                     <div className="approval-search-dropdown">
                       {filteredEmployees.length === 0 ? (
                         <div className="approval-search-empty">No results</div>
@@ -762,13 +814,12 @@ export default function StaffReport() {
                             className="approval-search-item"
                             onClick={() => handleChooseEmployee(s)}
                           >
-                            {(s.employee_no ? `${s.employee_no} - ` : "") +
-                              displayName(s)}
+                            {(s.employee_no ? `${s.employee_no} - ` : "") + displayName(s)}
                           </button>
                         ))
                       )}
                     </div>
-                  ) : null}
+                  )}
                 </div>
 
                 <div className="form-group">
@@ -796,27 +847,23 @@ export default function StaffReport() {
                   <input
                     type="date"
                     value={form.date_created}
-                    onChange={(e) =>
-                      setForm((p) => ({ ...p, date_created: e.target.value }))
-                    }
+                    onChange={(e) => setForm((p) => ({ ...p, date_created: e.target.value }))}
                     required
                   />
                 </div>
 
                 <div className="form-group">
-                  <label>AWOL Date</label>
+                  <label>{dateLabel(form.report_type)}</label>
                   <input
                     type="date"
                     value={form.awol_date}
-                    onChange={(e) =>
-                      setForm((p) => ({ ...p, awol_date: e.target.value }))
-                    }
+                    onChange={(e) => setForm((p) => ({ ...p, awol_date: e.target.value }))}
                     required
                   />
                 </div>
 
                 <div className="form-group">
-                  <label>Upload AWOL File</label>
+                  <label>{fileLabel(form.report_type)}</label>
                   <input
                     type="file"
                     accept=".pdf,.png,.jpg,.jpeg,.doc,.docx"
@@ -828,28 +875,18 @@ export default function StaffReport() {
                   <label>Details</label>
                   <textarea
                     value={form.details}
-                    onChange={(e) =>
-                      setForm((p) => ({ ...p, details: e.target.value }))
-                    }
-                    placeholder="AWOL report details..."
+                    onChange={(e) => setForm((p) => ({ ...p, details: e.target.value }))}
+                    placeholder={`${form.report_type} details...`}
                   />
                 </div>
               </div>
 
               <div className="modal-buttons">
-                <button
-                  className="btn-secondary"
-                  type="button"
-                  onClick={closeCreateModal}
-                >
+                <button className="btn-secondary" type="button" onClick={closeCreateModal}>
                   Cancel
                 </button>
 
-                <button
-                  className="btn-primary"
-                  type="submit"
-                  disabled={loadingCreate}
-                >
+                <button className="btn-primary" type="submit" disabled={loadingCreate}>
                   {loadingCreate ? "Submitting..." : "Submit"}
                 </button>
               </div>
@@ -865,14 +902,10 @@ export default function StaffReport() {
             e.target.classList.contains("modal-overlay") && closeViewModal()
           }
         >
-          <div
-            className="modal saas-modal"
-            onMouseDown={(e) => e.stopPropagation()}
-            style={{ maxWidth: 950, width: "95%" }}
-          >
+          <div className="modal saas-modal view-report-modal" onMouseDown={(e) => e.stopPropagation()}>
             <div className="modal-head">
               <div>
-                <h3 className="modal-title">AWOL Report Details</h3>
+                <h3 className="modal-title">{selectedReportType} Details</h3>
                 <p className="modal-subtitle">
                   {selectedReport.report_no} — {selectedReport.status}
                 </p>
@@ -883,7 +916,18 @@ export default function StaffReport() {
               </button>
             </div>
 
-            <div className="modal-grid">
+            <div
+              className="modal-grid"
+              style={{
+                gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+                gap: "18px",
+              }}
+            >
+              <div className="form-group">
+                <label>Report Type</label>
+                <input value={selectedReportType} readOnly />
+              </div>
+
               <div className="form-group">
                 <label>Employee</label>
                 <input value={toStr(selectedReport.employee_name)} readOnly />
@@ -896,12 +940,7 @@ export default function StaffReport() {
 
               <div className="form-group">
                 <label>Branch</label>
-                <input
-                  value={`${toStr(selectedReport.branch_code)} - ${toStr(
-                    selectedReport.branch_name
-                  )}`}
-                  readOnly
-                />
+                <input value={`${toStr(selectedReport.branch_code)} - ${toStr(selectedReport.branch_name)}`} readOnly />
               </div>
 
               <div className="form-group">
@@ -925,7 +964,7 @@ export default function StaffReport() {
               </div>
 
               <div className="form-group">
-                <label>AWOL Date</label>
+                <label>{dateLabel(selectedReportType)}</label>
                 <input value={fmtDate(selectedReport.awol_date)} readOnly />
               </div>
 
@@ -948,7 +987,25 @@ export default function StaffReport() {
 
                   <tbody>
                     <tr>
-                      <td>Request File</td>
+                      <td>Latest File</td>
+                      <td>{latestFileName(selectedReport)}</td>
+                      <td>
+                        {selectedReport.approved_attachment_path || selectedReport.request_attachment_path ? (
+                          <button
+                            className="btn-secondary"
+                            type="button"
+                            onClick={() => downloadFile(selectedReport, latestFileType(selectedReport))}
+                          >
+                            Download Latest
+                          </button>
+                        ) : (
+                          "-"
+                        )}
+                      </td>
+                    </tr>
+
+                    <tr>
+                      <td>Original Request File</td>
                       <td>{selectedReport.request_attachment_name || "-"}</td>
                       <td>
                         {selectedReport.request_attachment_path ? (
@@ -964,37 +1021,42 @@ export default function StaffReport() {
                         )}
                       </td>
                     </tr>
-
-                    <tr>
-                      <td>HR Final File</td>
-                      <td>{selectedReport.approved_attachment_name || "-"}</td>
-                      <td>
-                        {selectedReport.approved_attachment_path ? (
-                          <button
-                            className="btn-secondary"
-                            type="button"
-                            onClick={() => downloadFile(selectedReport, "approved")}
-                          >
-                            Download
-                          </button>
-                        ) : (
-                          "-"
-                        )}
-                      </td>
-                    </tr>
                   </tbody>
                 </table>
               </div>
             </div>
 
-            {selectedReport.status === STATUS_WAITING_HR && canHRUpload ? (
+            {canShowApprovalUpload(selectedReport) ? (
               <div style={{ marginTop: 14 }}>
                 <div className="form-group">
-                  <label>HR Final Approved File</label>
+                  <label>Upload Approved File for Next Approver</label>
                   <input
                     type="file"
                     accept=".pdf,.png,.jpg,.jpeg,.doc,.docx"
-                    onChange={(e) => setHrFinalFile(e.target.files?.[0] || null)}
+                    onChange={(e) => setApprovalFile(e.target.files?.[0] || null)}
+                  />
+                </div>
+
+                <button
+                  className="btn-success"
+                  type="button"
+                  style={{ marginTop: 10 }}
+                  onClick={() => approveReportWithUpload(selectedReport)}
+                  disabled={actionLoading}
+                >
+                  {actionLoading ? "Approving..." : "Upload File & Approve"}
+                </button>
+              </div>
+            ) : null}
+
+            {selectedReport.status === STATUS_WAITING_FINAL && canFinalUpload ? (
+              <div style={{ marginTop: 14 }}>
+                <div className="form-group">
+                  <label>Upload Final Approved File</label>
+                  <input
+                    type="file"
+                    accept=".pdf,.png,.jpg,.jpeg,.doc,.docx"
+                    onChange={(e) => setFinalFile(e.target.files?.[0] || null)}
                   />
                 </div>
 
@@ -1002,7 +1064,7 @@ export default function StaffReport() {
                   className="btn-primary"
                   type="button"
                   style={{ marginTop: 10 }}
-                  onClick={uploadHRFinalFile}
+                  onClick={uploadFinalFile}
                   disabled={actionLoading}
                 >
                   {actionLoading ? "Uploading..." : "Upload Final File & Approve"}
@@ -1015,42 +1077,42 @@ export default function StaffReport() {
                 Close
               </button>
 
-              {selectedReport.status === STATUS_WAITING_HR ? (
-                <>
-                  {canHRUpload && (
-                    <button
-                      className="btn-danger"
-                      type="button"
-                      disabled={actionLoading}
-                      onClick={() => rejectReport(selectedReport)}
-                    >
-                      Reject
-                    </button>
-                  )}
+              {canRejectSelected(selectedReport) ? (
+                <button
+                  className="btn-danger"
+                  type="button"
+                  disabled={actionLoading}
+                  onClick={() => rejectReport(selectedReport)}
+                >
+                  Reject
+                </button>
+              ) : null}
 
-                  {canBypassApprove && (
-                    <button
-                      className="btn-success"
-                      type="button"
-                      disabled={actionLoading}
-                      onClick={() => bypassApprove(selectedReport)}
-                    >
-                      Admin/IT Bypass
-                    </button>
-                  )}
-                </>
-                ) : null}
+              {canBypassApprove &&
+              selectedReport.status !== STATUS_WAITING_FINAL &&
+              selectedReport.status !== STATUS_APPROVED &&
+              selectedReport.status !== STATUS_REJECTED &&
+              selectedReport.status !== STATUS_VOID ? (
+                <button
+                  className="btn-success"
+                  type="button"
+                  disabled={actionLoading}
+                  onClick={() => bypassApprove(selectedReport)}
+                >
+                  Admin/IT Bypass
+                </button>
+              ) : null}
 
-                {selectedReport.status === STATUS_APPROVED && canVoid ? (
-                  <button
-                    className="btn-danger"
-                    type="button"
-                    disabled={actionLoading}
-                    onClick={() => voidReport(selectedReport)}
-                  >
-                    Void
-                  </button>
-                  ) : null}
+              {selectedReport.status === STATUS_APPROVED && canVoid ? (
+                <button
+                  className="btn-danger"
+                  type="button"
+                  disabled={actionLoading}
+                  onClick={() => voidReport(selectedReport)}
+                >
+                  Void
+                </button>
+              ) : null}
             </div>
           </div>
         </div>

@@ -1457,4 +1457,278 @@ router.get("/staff/:id/photo-url", requireAuth, async (req, res) => {
   }
 });
 
+router.get(
+  "/staff/:id/attachments",
+  requireAuth,
+  requirePermission("staff", "view"),
+  async (req, res) => {
+    const client = await pool.connect();
+
+    try {
+      const staffId = toInt(req.params.id);
+
+      if (!staffId) {
+        return res.status(400).json({ message: "Invalid staff id" });
+      }
+
+      const allowed = await canAccessStaffById(client, req, staffId);
+
+      if (!allowed) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      const r = await client.query(
+        `
+        SELECT *
+        FROM public.staff_attachments
+        WHERE staff_id = $1
+        ORDER BY uploaded_at DESC, id DESC
+        `,
+        [staffId]
+      );
+
+      return res.json(r.rows);
+    } finally {
+      client.release();
+    }
+  }
+);
+
+router.post(
+  "/staff/:id/attachments",
+  requireAuth,
+  requirePermission("staff", "edit"),
+  uploadToTemp,
+  async (req, res) => {
+    const client = await pool.connect();
+
+    try {
+      const staffId = toInt(req.params.id);
+
+      if (!staffId) {
+        if (req.file?.key) {
+          await deleteKey(req.file.key).catch(() => {});
+        }
+
+        return res.status(400).json({
+          message: "Invalid staff id",
+        });
+      }
+
+      if (!req.file?.key) {
+        return res.status(400).json({ message: "No file uploaded" });
+      }
+
+      const allowed = await canAccessStaffById(client, req, staffId);
+
+      if (!allowed) {
+        if (req.file?.key) {
+          await deleteKey(req.file.key).catch(() => {});
+        }
+
+        return res.status(403).json({
+          message: "Access denied"
+        });
+      }
+
+      const finalKey = await moveFromTemp(
+        req.file.key,
+        "staff-attachments",
+        String(staffId),
+        req.file.originalname
+      );
+
+      const r = await client.query(
+        `
+        INSERT INTO public.staff_attachments
+          (
+            staff_id,
+            file_name,
+            original_name,
+            file_url
+          )
+          VALUES
+          ($1,$2,$3,$4)
+        RETURNING *
+        `,
+        [
+          staffId,
+          toStr(req.body.file_name) || req.file.originalname,
+          req.file.originalname,
+          finalKey,
+        ]
+      );
+
+      return res.json(r.rows[0]);
+    } catch (e) {
+      console.error(e);
+
+      if (req.file?.key) {
+        await deleteKey(req.file.key).catch(() => {});
+      }
+
+      return res.status(500).json({
+        message: e.message || "Upload failed",
+      });
+    } finally {
+      client.release();
+    }
+  }
+);
+
+router.put(
+  "/staff/attachments/:id",
+  requireAuth,
+  requirePermission("staff", "edit"),
+  async (req, res) => {
+    try {
+      const id = toInt(req.params.id);
+
+        if (!id) {
+          return res.status(400).json({
+            message: "Invalid attachment id",
+          });
+        }
+
+      const r = await pool.query(
+        `
+        UPDATE public.staff_attachments
+        SET
+          file_name = $2
+        WHERE id = $1
+        RETURNING *
+        `,
+        [id, toStr(req.body.file_name)]
+      );
+
+      if (!r.rowCount) {
+        return res.status(404).json({
+          message: "Attachment not found",
+        });
+      }
+
+      return res.json(r.rows[0]);
+    } catch (e) {
+      return res.status(500).json({
+        message: e.message,
+      });
+    }
+  }
+);
+
+router.delete(
+  "/staff/attachments/:id",
+  requireAuth,
+  requirePermission("staff", "edit"),
+  async (req, res) => {
+    try {
+      const id = toInt(req.params.id);
+
+        if (!id) {
+          return res.status(400).json({
+            message: "Invalid attachment id",
+          });
+        }
+
+      const existing = await pool.query(
+        `
+        SELECT *
+        FROM public.staff_attachments
+        WHERE id = $1
+        `,
+        [id]
+      );
+
+      if (!existing.rowCount) {
+        return res.status(404).json({
+          message: "Attachment not found",
+        });
+      }
+
+      const row = existing.rows[0];
+
+      if (row.file_url) {
+        await deleteKey(row.file_url).catch(() => {});
+      }
+
+      await pool.query(
+        `
+        DELETE FROM public.staff_attachments
+        WHERE id = $1
+        `,
+        [id]
+      );
+
+      return res.json({
+        message: "Attachment deleted",
+      });
+    } catch (e) {
+      return res.status(500).json({
+        message: e.message,
+      });
+    }
+  }
+);
+
+router.get(
+  "/staff/attachments/:id/download",
+  requireAuth,
+  requirePermission("staff", "view"),
+  async (req, res) => {
+    const client = await pool.connect();
+
+    try {
+      const id = toInt(req.params.id);
+
+      if (!id) {
+        return res.status(400).json({
+          message: "Invalid attachment id",
+        });
+      }
+
+      const r = await client.query(
+        `
+        SELECT *
+        FROM public.staff_attachments
+        WHERE id = $1
+        `,
+        [id]
+      );
+
+      if (!r.rowCount) {
+        return res.status(404).json({
+          message: "Attachment not found",
+        });
+      }
+
+      const row = r.rows[0];
+
+      const allowed = await canAccessStaffById(
+        client,
+        req,
+        row.staff_id
+      );
+
+      if (!allowed) {
+        return res.status(403).json({
+          message: "Access denied",
+        });
+      }
+
+      const url = await getSignedDownloadUrl(row.file_url, 3600);
+
+      return res.json({
+        url,
+        file_name: row.file_name,
+      });
+    } catch (e) {
+      return res.status(500).json({
+        message: e.message,
+      });
+    } finally {
+      client.release();
+    }
+  }
+);
+
 module.exports = router;

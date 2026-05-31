@@ -517,6 +517,44 @@ router.get(
   }
 );
 
+router.get(
+  "/promotion-orders/staff/:staffId",
+  requireAuth,
+  requirePermission("promotion_order", "view"),
+  async (req, res) => {
+    try {
+      const staffId = toInt(req.params.staffId);
+
+      if (!staffId) {
+        return res.status(400).json({
+          message: "Invalid staff id",
+        });
+      }
+
+      const r = await pool.query(
+        `
+        SELECT *
+        FROM public.promotion_orders
+        WHERE employee_id = $1
+        ORDER BY created_at DESC
+        `,
+        [staffId]
+      );
+
+      return res.json(r.rows);
+    } catch (e) {
+      console.error(
+        "GET /api/promotion-orders/staff/:staffId ERROR:",
+        e
+      );
+
+      return res.status(500).json({
+        message: "Failed to load promotion history",
+      });
+    }
+  }
+);
+
 router.post(
   "/promotion-orders",
   requireAuth,
