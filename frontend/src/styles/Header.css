@@ -330,3 +330,7 @@
 .notif-foot {
   padding: 10px 12px;
 }
+
+.notif-btn svg {
+  font-size: 18px;
+}
