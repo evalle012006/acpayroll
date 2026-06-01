@@ -36,13 +36,26 @@ const toStr = (v) => String(v ?? "").trim();
 const norm = (v) => toStr(v).toLowerCase();
 const roleLower = (req) => getRole(req);
 
-const isFinalApprover = (req) => isVicePresident(req) || isSeniorVicePresident(req) || canFinalApprove(req);
+const isFinalApprover = (req) =>
+  isVicePresident(req) || isSeniorVicePresident(req) || canFinalApprove(req);
 
 const canViewAllLoans = (req) => canViewAll(req);
+
+const isAccountingDepartmentUser = (req) => {
+  const role = norm(getRole(req));
+  const dept = norm(req.user?.department);
+
+  return (
+    role === "accounting" ||
+    dept === "accounting" ||
+    dept === "accounting department"
+  );
+};
 
 const canDownloadLoanFiles = (req) =>
   canViewAll(req) ||
   isIT(req) ||
+  isAccountingDepartmentUser(req) ||
   isBranchManager(req) ||
   isAreaManager(req) ||
   isRegionalManager(req) ||
@@ -51,7 +64,8 @@ const canDownloadLoanFiles = (req) =>
   isSeniorVicePresident(req) ||
   isPresident(req);
 
-const canFinalUploadLoanFile = (req) => canFinalApprove(req) || isIT(req);
+const canFinalUploadLoanFile = (req) =>
+  canFinalApprove(req) || isIT(req) || isAccountingDepartmentUser(req);
 
 const getUserBranchCode = (req) => toStr(req.user?.branch_id);
 const getUserArea = (req) => toStr(req.user?.area);
@@ -92,28 +106,14 @@ const BACK_OFFICE_DEPARTMENTS = [
   "main office",
 ];
 
-const OPERATION_DEPARTMENTS = [
-  "operation",
-  "operations",
-  "operation department",
-  "operations department",
-  "payroll",
-  "payroll department",
-];
-
 const isValidLoanPurpose = (purpose) =>
   VALID_LOAN_PURPOSES.map(norm).includes(norm(purpose));
 
 const isBackOfficeDepartment = (department) =>
   BACK_OFFICE_DEPARTMENTS.includes(norm(department));
 
-const isOperationDepartment = (department) =>
-  OPERATION_DEPARTMENTS.includes(norm(department));
-
 const getInitialApprovalStage = (applicantRole, department) => {
-  if (isBackOfficeDepartment(department)) {
-    return "assistant vice president";
-  }
+  if (isBackOfficeDepartment(department)) return "assistant vice president";
 
   const role = norm(applicantRole);
 
@@ -126,9 +126,7 @@ const getInitialApprovalStage = (applicantRole, department) => {
 };
 
 const getApprovalChain = (applicantRole, department) => {
-  if (isBackOfficeDepartment(department)) {
-    return ["assistant vice president"];
-  }
+  if (isBackOfficeDepartment(department)) return ["assistant vice president"];
 
   const role = norm(applicantRole);
 
@@ -446,9 +444,7 @@ router.get(
   async (req, res) => {
     try {
       const staffId = toInt(req.params.staffId);
-      if (!staffId) {
-        return res.status(400).json({ message: "Invalid staff id" });
-      }
+      if (!staffId) return res.status(400).json({ message: "Invalid staff id" });
 
       const s = await pool.query(
         `
@@ -468,22 +464,16 @@ router.get(
 
       if (!canViewAllLoans(req)) {
         if (isBranchManager(req)) {
-          const branchCode = getUserBranchCode(req);
-          const bid = await getBranchIdFromCode(branchCode);
-
+          const bid = await getBranchIdFromCode(getUserBranchCode(req));
           if (!bid || Number(staffRow.branch_id) !== Number(bid)) {
             return res.status(403).json({ message: "Access denied" });
           }
         } else if (isAreaManager(req)) {
-          const area = getUserArea(req);
-
-          if (!area || norm(staffRow.area) !== norm(area)) {
+          if (norm(staffRow.area) !== norm(getUserArea(req))) {
             return res.status(403).json({ message: "Access denied" });
           }
         } else if (isRegionalManager(req)) {
-          const region = getUserRegion(req);
-
-          if (!region || norm(staffRow.region) !== norm(region)) {
+          if (norm(staffRow.region) !== norm(getUserRegion(req))) {
             return res.status(403).json({ message: "Access denied" });
           }
         } else if (isAssistantVicePresident(req)) {
@@ -537,13 +527,30 @@ router.post(
       let interest = toNum(req.body?.interest);
 
       if (norm(loan_type) === "cash advance") {
-        amount = 5000;
         term = 1;
         interest = 0;
+
+        if (amount < 1000 || amount > 5000) {
+          return res.status(400).json({
+            message: "Cash Advance amount must be between ₱1,000 and ₱5,000.",
+          });
+        }
       }
 
       const total = amount + (amount * interest) / 100;
-      const per_month = term ? total / term : total;
+
+      const per_month =
+        norm(loan_type) === "motorcycle loan"
+          ? toNum(req.body?.per_month)
+          : term
+          ? total / term
+          : total;
+
+      if (norm(loan_type) === "motorcycle loan" && per_month <= 0) {
+        return res.status(400).json({
+          message: "Per month is required for Motorcycle Loan",
+        });
+      }
 
       if (!staff_id) return res.status(400).json({ message: "staff_id is required" });
       if (!loan_type) return res.status(400).json({ message: "loan_type is required" });
@@ -573,41 +580,27 @@ router.post(
       }
 
       const staffRow = s.rows[0];
-      const employee_no = staffRow?.employee_no ?? null;
 
       if (isBranchManager(req)) {
-        const branchCode = getUserBranchCode(req);
-        const bid = await getBranchIdFromCode(branchCode);
-
+        const bid = await getBranchIdFromCode(getUserBranchCode(req));
         if (!bid || Number(staffRow.branch_id) !== Number(bid)) {
           await client.query("ROLLBACK");
           return res.status(403).json({ message: "Access denied" });
         }
       }
 
-      if (isAreaManager(req)) {
-        const area = getUserArea(req);
-
-        if (!area || norm(staffRow.area) !== norm(area)) {
-          await client.query("ROLLBACK");
-          return res.status(403).json({ message: "Access denied" });
-        }
+      if (isAreaManager(req) && norm(staffRow.area) !== norm(getUserArea(req))) {
+        await client.query("ROLLBACK");
+        return res.status(403).json({ message: "Access denied" });
       }
 
-      if (isRegionalManager(req)) {
-        const region = getUserRegion(req);
-
-        if (!region || norm(staffRow.region) !== norm(region)) {
-          await client.query("ROLLBACK");
-          return res.status(403).json({ message: "Access denied" });
-        }
+      if (isRegionalManager(req) && norm(staffRow.region) !== norm(getUserRegion(req))) {
+        await client.query("ROLLBACK");
+        return res.status(403).json({ message: "Access denied" });
       }
 
       const applicant_role = roleLower(req);
-      const approval_stage = getInitialApprovalStage(
-        applicant_role,
-        staffRow.department
-      );
+      const approval_stage = getInitialApprovalStage(applicant_role, staffRow.department);
 
       const attachment_path = `/uploads/loans/${req.file.filename}`;
       const attachment_name = req.file.originalname || null;
@@ -677,7 +670,7 @@ router.post(
         `,
         [
           staff_id,
-          employee_no,
+          staffRow.employee_no ?? null,
           loan_type,
           loan_purpose,
           reason,
@@ -740,9 +733,7 @@ router.get(
         [id]
       );
 
-      if (r.rowCount === 0) {
-        return res.status(404).json({ message: "Loan not found" });
-      }
+      if (r.rowCount === 0) return res.status(404).json({ message: "Loan not found" });
 
       if (!canDownloadLoanFiles(req)) {
         return res.status(403).json({ message: "Access denied" });
@@ -763,9 +754,7 @@ router.get(
         targetName = row.attachment_name;
       }
 
-      if (!targetPath) {
-        return res.status(404).json({ message: "No loan file found" });
-      }
+      if (!targetPath) return res.status(404).json({ message: "No loan file found" });
 
       const cleanPath = String(targetPath).replace(/^\/+/, "");
       const fileNameOnly = path.basename(cleanPath);
@@ -814,8 +803,7 @@ router.put(
 
       if (action === "approve" && !req.file) {
         return res.status(400).json({
-          message:
-            "Please upload the signed/approved loan file before approving. This file will replace the previous file for the next approver.",
+          message: "Please upload the signed/approved loan file before approving.",
         });
       }
 
@@ -824,12 +812,7 @@ router.put(
       await client.query("BEGIN");
 
       const cur = await client.query(
-        `
-        SELECT *
-        FROM public.loan_requests
-        WHERE id = $1
-        FOR UPDATE
-        `,
+        `SELECT * FROM public.loan_requests WHERE id = $1 FOR UPDATE`,
         [id]
       );
 
@@ -840,7 +823,7 @@ router.put(
 
       const loan = cur.rows[0];
 
-      if (loan.status === "Approved" || loan.status === "Rejected") {
+      if (["Approved", "Rejected", "Voided"].includes(toStr(loan.status))) {
         await client.query("ROLLBACK");
         return res.status(400).json({ message: "Already finalized" });
       }
@@ -860,10 +843,7 @@ router.put(
       const chain = getApprovalChain(applicantRole, department);
 
       let currentStage = norm(loan.approval_stage);
-
-      if (!chain.includes(currentStage)) {
-        currentStage = chain[0] || "admin";
-      }
+      if (!chain.includes(currentStage)) currentStage = chain[0] || "admin";
 
       const canAct =
         currentStage === "admin" ? isFinalApprover(req) : role === currentStage;
@@ -896,9 +876,8 @@ router.put(
         await client.query(
           `
           UPDATE public.loan_requests
-          SET
-            status = 'Rejected',
-            ${column} = 'Rejected'
+          SET status = 'Rejected',
+              ${column} = 'Rejected'
           WHERE id = $1
           `,
           [id]
@@ -920,46 +899,23 @@ router.put(
           `
           UPDATE public.loan_requests
           SET
-            status = 'Approved',
+            status = 'Pending Accounting',
+            approval_stage = 'accounting',
             ${column} = 'Approved',
-            approved_at = CURRENT_DATE,
-            disbursement_date = CURRENT_DATE,
 
             attachment_path = $2,
             attachment_name = $3,
-            attachment_mime = $4,
-
-            approved_attachment_path = $2,
-            approved_attachment_name = $3,
-            approved_attachment_mime = $4
+            attachment_mime = $4
           WHERE id = $1
           `,
           [id, latestPath, latestName, latestMime]
         );
 
-        const employeeNo = loan.employee_no;
-        const total = toNum(loan.total) || toNum(loan.amount);
-        const balanceColumn = loanTypeToBalanceColumn(loan.loan_type);
-
-        if (employeeNo && balanceColumn) {
-          await ensureBalanceRow(client, employeeNo);
-
-          await client.query(
-            `
-            UPDATE public.staff_balances
-            SET ${balanceColumn} = COALESCE(${balanceColumn}, 0) + $1,
-                updated_at = NOW()
-            WHERE employee_no = $2
-            `,
-            [total, employeeNo]
-          );
-        }
-
-        await createLoanApprovedNotification(client, id);
-
         await client.query("COMMIT");
+
         return res.json({
-          message: "Fully Approved. Final file is now available to staff.",
+          message:
+            "Approved by final approver. Loan is now Pending Accounting for final file upload.",
         });
       }
 
@@ -1007,14 +963,11 @@ router.post(
       const id = toInt(req.params.id);
 
       if (!id) return res.status(400).json({ message: "Invalid id" });
-      if (!req.file) {
-        return res.status(400).json({ message: "Attachment is required" });
-      }
+      if (!req.file) return res.status(400).json({ message: "Attachment is required" });
 
       if (!canFinalUploadLoanFile(req)) {
         return res.status(403).json({
-          message:
-            "Only HR, IT, Admin, and Accounting can upload final approved files",
+          message: "Only HR, IT, Admin, and Accounting can upload final approved files",
         });
       }
 
@@ -1022,10 +975,10 @@ router.post(
 
       const cur = await client.query(
         `
-        SELECT id, status
+        SELECT id, status, employee_no, total, amount, loan_type
         FROM public.loan_requests
         WHERE id = $1
-        LIMIT 1
+        FOR UPDATE
         `,
         [id]
       );
@@ -1035,10 +988,12 @@ router.post(
         return res.status(404).json({ message: "Loan not found" });
       }
 
-      if (toStr(cur.rows[0].status) !== "Approved") {
+      const loan = cur.rows[0];
+
+      if (toStr(loan.status) !== "Pending Accounting") {
         await client.query("ROLLBACK");
         return res.status(400).json({
-          message: "Final signed file can only be uploaded after final approval",
+          message: "Loan must be Pending Accounting first",
         });
       }
 
@@ -1050,9 +1005,15 @@ router.post(
         `
         UPDATE public.loan_requests
         SET
+          status = 'Approved',
+          admin_status = 'Approved',
+          approved_at = CURRENT_DATE,
+          disbursement_date = CURRENT_DATE,
+
           attachment_path = $2,
           attachment_name = $3,
           attachment_mime = $4,
+
           approved_attachment_path = $2,
           approved_attachment_name = $3,
           approved_attachment_mime = $4
@@ -1061,8 +1022,30 @@ router.post(
         [id, finalPath, finalName, finalMime]
       );
 
+      const employeeNo = loan.employee_no;
+      const total = toNum(loan.total) || toNum(loan.amount);
+      const balanceColumn = loanTypeToBalanceColumn(loan.loan_type);
+
+      if (employeeNo && balanceColumn) {
+        await ensureBalanceRow(client, employeeNo);
+
+        await client.query(
+          `
+          UPDATE public.staff_balances
+          SET ${balanceColumn} = COALESCE(${balanceColumn}, 0) + $1,
+              updated_at = NOW()
+          WHERE employee_no = $2
+          `,
+          [total, employeeNo]
+        );
+      }
+
+      await createLoanApprovedNotification(client, id);
+
       await client.query("COMMIT");
-      return res.json({ message: "Final signed file uploaded successfully" });
+      return res.json({
+        message: "Final signed file uploaded. Loan is now fully approved.",
+      });
     } catch (e) {
       try {
         await client.query("ROLLBACK");
@@ -1076,201 +1059,106 @@ router.post(
   }
 );
 
-/* =========================================================
-   VOID LOAN
-========================================================= */
-
 router.put(
   "/loan-requests/:id/void",
-
   requireAuth,
-
   async (req, res, next) => {
     if (!isIT(req) && !canViewAll(req)) {
       return res.status(403).json({
-        message:
-          "Only Admin and IT can void loans",
+        message: "Only Admin and IT can void loans",
       });
     }
 
     next();
   },
   async (req, res) => {
-    const client =
-      await pool.connect();
+    const client = await pool.connect();
 
     try {
-      const id = toInt(
-        req.params.id
+      const id = toInt(req.params.id);
+      const reason = toStr(req.body?.reason);
+
+      if (!id) return res.status(400).json({ message: "Invalid loan id" });
+
+      await client.query("BEGIN");
+
+      const cur = await client.query(
+        `
+        SELECT
+          id,
+          status,
+          employee_no,
+          total,
+          amount,
+          loan_type
+        FROM public.loan_requests
+        WHERE id = $1
+        FOR UPDATE
+        `,
+        [id]
       );
 
-      const reason =
-        toStr(
-          req.body?.reason
-        );
+      if (cur.rowCount === 0) {
+        await client.query("ROLLBACK");
+        return res.status(404).json({ message: "Loan not found" });
+      }
 
-      if (!id) {
+      const loan = cur.rows[0];
+
+      if (norm(loan.status) !== "approved") {
+        await client.query("ROLLBACK");
         return res.status(400).json({
-          message:
-            "Invalid loan id",
+          message: "Only approved loans can be voided",
         });
       }
 
-      await client.query(
-        "BEGIN"
-      );
+      const balanceColumn = loanTypeToBalanceColumn(loan.loan_type);
+      const total = toNum(loan.total) || toNum(loan.amount);
 
-      const cur =
-        await client.query(
-          `
-          SELECT
-            id,
-            status,
-            employee_no,
-            total,
-            amount,
-            loan_type
-
-          FROM public.loan_requests
-
-          WHERE id = $1
-
-          FOR UPDATE
-          `,
-          [id]
-        );
-
-      if (
-        cur.rowCount === 0
-      ) {
-        await client.query(
-          "ROLLBACK"
-        );
-
-        return res.status(404).json({
-          message:
-            "Loan not found",
-        });
-      }
-
-      const loan =
-        cur.rows[0];
-
-      if (
-        norm(
-          loan.status
-        ) !== "approved"
-      ) {
-        await client.query(
-          "ROLLBACK"
-        );
-
-        return res.status(400).json({
-          message:
-            "Only approved loans can be voided",
-        });
-      }
-
-      const balanceColumn =
-        loanTypeToBalanceColumn(
-          loan.loan_type
-        );
-
-      const total =
-        toNum(
-          loan.total
-        ) ||
-        toNum(
-          loan.amount
-        );
-
-      /*
-        REVERSE STAFF BALANCE
-      */
-
-      if (
-        loan.employee_no &&
-        balanceColumn
-      ) {
-        await ensureBalanceRow(
-          client,
-          loan.employee_no
-        );
+      if (loan.employee_no && balanceColumn) {
+        await ensureBalanceRow(client, loan.employee_no);
 
         await client.query(
           `
           UPDATE public.staff_balances
-
           SET
-            ${balanceColumn} =
-              GREATEST(
-                COALESCE(${balanceColumn}, 0) - $1,
-                0
-              ),
-
-            updated_at =
-              NOW()
-
+            ${balanceColumn} = GREATEST(COALESCE(${balanceColumn}, 0) - $1, 0),
+            updated_at = NOW()
           WHERE employee_no = $2
           `,
-          [
-            total,
-            loan.employee_no,
-          ]
+          [total, loan.employee_no]
         );
       }
-
-      /*
-        VOID LOAN
-      */
 
       await client.query(
         `
         UPDATE public.loan_requests
-
         SET
           status = 'Voided',
-
           reason =
             CASE
               WHEN COALESCE(reason, '') = ''
               THEN $2
               ELSE reason || E'\n\n[VOID REASON]\n' || $2
             END
-
         WHERE id = $1
         `,
-        [
-          id,
-          reason ||
-            "Loan voided",
-        ]
+        [id, reason || "Loan voided"]
       );
 
-      await client.query(
-        "COMMIT"
-      );
-
+      await client.query("COMMIT");
       return res.json({
-        message:
-          "Loan successfully voided and removed from staff balances",
+        message: "Loan successfully voided and removed from staff balances",
       });
     } catch (err) {
       try {
-        await client.query(
-          "ROLLBACK"
-        );
+        await client.query("ROLLBACK");
       } catch {}
 
-      console.error(
-        "VOID LOAN ERROR:",
-        err
-      );
+      console.error("VOID LOAN ERROR:", err);
 
       return res.status(500).json({
-        message:
-          err.message ||
-          "Server error",
+        message: err.message || "Server error",
       });
     } finally {
       client.release();

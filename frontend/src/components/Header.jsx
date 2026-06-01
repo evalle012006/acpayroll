@@ -1,15 +1,6 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
-import {
-  FaUser,
-  FaCog,
-  FaSignOutAlt,
-  FaMoon,
-  FaSun,
-  FaBell,
-  FaCheck,
-  FaTrash,
-} from "react-icons/fa";
+import { FaUser, FaCog, FaSignOutAlt, FaMoon, FaSun, FaBell, FaCheck, FaTrash, } from "react-icons/fa";
 import { IoChatbubbleEllipses } from "react-icons/io5";
 import { BsMessenger } from "react-icons/bs";
 import { GoSidebarCollapse } from "react-icons/go";

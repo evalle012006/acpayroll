@@ -29,6 +29,7 @@ const STAGE_LABELS = {
   "assistant vice president": "Assistant Vice President",
   "vice president": "Vice President",
   admin: "Admin / Final Approval",
+  accounting: "Accounting / Final Upload",
 };
 
 const FINAL_APPROVER_ROLES = [
@@ -139,6 +140,7 @@ const getCurrentStage = (item) => {
 
   if (chain.includes(explicit)) return explicit;
   if (explicit === "admin") return "admin";
+  if (explicit === "accounting") return "accounting";
 
   for (const role of chain) {
     const status = norm(getChainStatus(item, role));
@@ -152,6 +154,9 @@ const isFinalApprover = (role) => FINAL_APPROVER_ROLES.includes(norm(role));
 
 const canUserActOnLoan = (item, role) => {
   const overall = norm(item?.status);
+    if (overall === "pending accounting") {
+    return false;
+  }
 
   if (overall === "approved" || overall === "rejected" || overall === "voided") {
     return false;
@@ -250,6 +255,11 @@ export default function LoanApprovalTab() {
     isPresident;
 
   const canVoidLoan = isAdmin || isIt;
+  const isPendingAccounting = (item) =>
+    norm(item?.status) === "pending accounting" ||
+    norm(item?.approval_stage) === "accounting";
+
+  const canUploadFinalLoanFile = isAdmin || isIt || isAccounting;
 
   const [loanRequests, setLoanRequests] = useState([]);
   const [staffList, setStaffList] = useState([]);
@@ -295,6 +305,7 @@ export default function LoanApprovalTab() {
     amount: "",
     term: "",
     interest: "",
+    per_month: "",
     reason: "",
     attachment: null,
   });
@@ -617,10 +628,15 @@ export default function LoanApprovalTab() {
     const interest = toNum(loanForm.interest);
     const term = Math.max(1, toNum(loanForm.term));
     const total = amount + (amount * interest) / 100;
-    const per_month = term ? total / term : total;
+    const per_month =
+      loanForm.loan_type === "Motorcycle Loan"
+        ? toNum(loanForm.per_month)
+        : term
+        ? total / term
+        : total;
 
     return { total, per_month };
-  }, [loanForm.amount, loanForm.interest, loanForm.term]);
+  }, [loanForm.amount, loanForm.interest, loanForm.term, loanForm.loan_type, loanForm.per_month]);
 
   const handleLoanEmployeeSelect = (staffId) => {
     const emp = staffList.find((s) => String(s.id) === String(staffId));
@@ -675,6 +691,7 @@ export default function LoanApprovalTab() {
       amount: "",
       term: "",
       interest: "",
+      per_month: "",
       reason: "",
       attachment: null,
     });
@@ -699,7 +716,12 @@ export default function LoanApprovalTab() {
     const interest = toNum(loanForm.interest);
     const term = Math.max(1, toNum(loanForm.term));
     const total = amount + (amount * interest) / 100;
-    const per_month = term ? total / term : total;
+    const per_month =
+      loanForm.loan_type === "Motorcycle Loan"
+        ? toNum(loanForm.per_month)
+        : term
+        ? total / term
+        : total;
 
     if (loanForm.loan_type === "Cash Advance") {
       if (amount < 1000 || amount > 5000) {
@@ -716,6 +738,11 @@ export default function LoanApprovalTab() {
         alert("Cash Advance interest must be 0%.");
         return;
       }
+    }
+
+    if (loanForm.loan_type === "Motorcycle Loan" && per_month <= 0) {
+      alert("Please enter the motorcycle loan monthly payment.");
+      return;
     }
 
     if (!loanForm.attachment) {
@@ -845,6 +872,55 @@ export default function LoanApprovalTab() {
       if (err?.response?.status === 401) return logout();
       if (err?.response?.status === 403) return alert("Access denied.");
       alert(err?.response?.data?.message || "Failed to update loan request.");
+    } finally {
+      setProcessingId("");
+    }
+  };
+
+  const uploadFinalApprovedLoanFile = async (item) => {
+    const id = item?.id;
+
+    if (!id) return alert("Loan record has no valid id.");
+
+    if (!approvalFiles[id]) {
+      alert("Please upload the final Accounting file first.");
+      return;
+    }
+
+    const ok = window.confirm(
+      "Upload final Accounting file and fully approve this loan?"
+    );
+
+    if (!ok) return;
+
+    try {
+      setProcessingId(`loan-${id}-final-upload`);
+
+      const formData = new FormData();
+      formData.append("attachment", approvalFiles[id]);
+
+      await api.post(`/loan-requests/${id}/approved-file`, formData, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+
+      alert("Final file uploaded. Loan is now fully approved.");
+
+      setApprovalFiles((prev) => {
+        const copy = { ...prev };
+        delete copy[id];
+        return copy;
+      });
+
+      setViewApprovalFile(null);
+      setShowLoanView(false);
+      setSelectedLoan(null);
+
+      await fetchLoan();
+    } catch (err) {
+      console.error("Final upload error:", err?.response?.data || err.message);
+      if (err?.response?.status === 401) return logout();
+      if (err?.response?.status === 403) return alert("Access denied.");
+      alert(err?.response?.data?.message || "Failed to upload final file.");
     } finally {
       setProcessingId("");
     }
@@ -1134,11 +1210,19 @@ export default function LoanApprovalTab() {
                           amount: "",
                           term: 1,
                           interest: 0,
+                          per_month: "",
+                        }));
+                      } else if (value === "Motorcycle Loan") {
+                        setLoanForm((p) => ({
+                          ...p,
+                          loan_type: value,
+                          per_month: p.per_month || "",
                         }));
                       } else {
                         setLoanForm((p) => ({
                           ...p,
                           loan_type: value,
+                          per_month: "",
                         }));
                       }
                     }}
@@ -1208,6 +1292,23 @@ export default function LoanApprovalTab() {
                   />
                 </div>
 
+                {loanForm.loan_type === "Motorcycle Loan" && (
+                  <div className="form-group">
+                    <label>Per Month</label>
+                    <input
+                      type="number"
+                      value={loanForm.per_month}
+                      onChange={(e) =>
+                        setLoanForm((p) => ({ ...p, per_month: e.target.value }))
+                      }
+                      min="1"
+                      step="0.01"
+                      placeholder="Enter monthly payment manually"
+                      required
+                    />
+                  </div>
+                )}
+
                 <div className="form-group">
                   <label>Interest (%)</label>
                   <input
@@ -1249,12 +1350,12 @@ export default function LoanApprovalTab() {
               <div className="preview-box">
                 <div>
                   <span>Total with Interest</span>
-                  <strong>₱ {loanPreview.total.toFixed(2)}</strong>
+                  <strong>₱ {fmtMoney(loanPreview.total)}</strong>
                 </div>
 
                 <div>
                   <span>Per Month</span>
-                  <strong>₱ {loanPreview.per_month.toFixed(2)}</strong>
+                  <strong>₱ {fmtMoney(loanPreview.per_month)}</strong>
                 </div>
               </div>
 
@@ -1415,6 +1516,41 @@ export default function LoanApprovalTab() {
                                 >
                                   View
                                 </button>
+
+                                {isPendingAccounting(item) && canUploadFinalLoanFile && (
+                                  <>
+                                    <label className="loan-upload-pill">
+                                      <input
+                                        type="file"
+                                        hidden
+                                        onChange={(e) =>
+                                          setApprovalFiles((prev) => ({
+                                            ...prev,
+                                            [item.id]: e.target.files?.[0] || null,
+                                          }))
+                                        }
+                                      />
+                                      📎 {approvalFiles[item.id]?.name ? "Change Final File" : "Upload Final File"}
+                                    </label>
+
+                                    {approvalFiles[item.id]?.name && (
+                                      <span className="loan-file-name" title={approvalFiles[item.id].name}>
+                                        {approvalFiles[item.id].name}
+                                      </span>
+                                    )}
+
+                                    <button
+                                      className="btn-success"
+                                      type="button"
+                                      onClick={() => uploadFinalApprovedLoanFile(item)}
+                                      disabled={processingId === `loan-${item.id}-final-upload`}
+                                    >
+                                      {processingId === `loan-${item.id}-final-upload`
+                                        ? "Uploading..."
+                                        : "Final Upload"}
+                                    </button>
+                                  </>
+                                )}
 
                                 {canAct && (
                                   <>
@@ -1673,6 +1809,7 @@ export default function LoanApprovalTab() {
 
                 {norm(selectedLoan.status) !== "approved" &&
                   norm(selectedLoan.status) !== "voided" &&
+                  !isPendingAccounting(selectedLoan) &&
                   canParticipateInLoanApproval &&
                   canUserActOnLoan(selectedLoan, role) && (
                     <div className="form-group full">
@@ -1701,6 +1838,26 @@ export default function LoanApprovalTab() {
                   </div>
                 )}
 
+                {isPendingAccounting(selectedLoan) && canUploadFinalLoanFile && (
+                  <div className="form-group full">
+                    <label>Upload Final Accounting File</label>
+                    <input
+                      type="file"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0] || null;
+                        setViewApprovalFile(file);
+                        setApprovalFiles((prev) => ({
+                          ...prev,
+                          [selectedLoan.id]: file,
+                        }));
+                      }}
+                    />
+                    <small style={{ opacity: 0.75 }}>
+                      Accounting uploads the final file. After this, the loan becomes Approved.
+                    </small>
+                  </div>
+                )}
+
                 <div className="form-group full">
                   <label>Reason</label>
                   <textarea value={selectedLoan.reason || "-"} readOnly />
@@ -1710,6 +1867,7 @@ export default function LoanApprovalTab() {
               <div className="modal-buttons">
                 {norm(selectedLoan.status) !== "approved" &&
                   norm(selectedLoan.status) !== "voided" &&
+                  !isPendingAccounting(selectedLoan) &&
                   canParticipateInLoanApproval &&
                   canUserActOnLoan(selectedLoan, role) && (
                     <>
@@ -1747,6 +1905,19 @@ export default function LoanApprovalTab() {
                     {processingId === `loan-${selectedLoan.id}-void`
                       ? "Voiding..."
                       : "Void Loan"}
+                  </button>
+                )}
+
+                {isPendingAccounting(selectedLoan) && canUploadFinalLoanFile && (
+                  <button
+                    className="btn-success"
+                    type="button"
+                    disabled={processingId === `loan-${selectedLoan.id}-final-upload`}
+                    onClick={() => uploadFinalApprovedLoanFile(selectedLoan)}
+                  >
+                    {processingId === `loan-${selectedLoan.id}-final-upload`
+                      ? "Uploading..."
+                      : "Upload Final File"}
                   </button>
                 )}
 
