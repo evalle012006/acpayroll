@@ -526,7 +526,7 @@ router.get(
         const r = await pool.query(
           `
           ${baseLeaveSelect}
-          WHERE LOWER(TRIM(COALESCE(s.division,''))) = LOWER(TRIM($1))
+          WHERE LOWER(TRIM(COALESCE(s.division, ''))) = LOWER(TRIM($1))
           ORDER BY lr.entry_date DESC NULLS LAST, lr.id DESC
           `,
           [getUserDivision(req)]

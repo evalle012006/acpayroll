@@ -131,7 +131,10 @@ export default function StaffProfileModal({
   const educationArr = useMemo(() => safeJsonArray(staff?.education), [staff?.education]);
   const employmentArr = useMemo(() => safeJsonArray(staff?.employment_history), [staff?.employment_history]);
   const beneficiariesArr = useMemo(() => safeJsonArray(staff?.beneficiaries), [staff?.beneficiaries]);
-  const thirteenthMonthData = useMemo(() => compute13thMonthBreakdown(staff), [staff]);
+  const thirteenthMonthData = useMemo(
+    () => compute13thMonthBreakdown(staff, promotionRows),
+    [staff, promotionRows]
+  );
 
   const Chip = ({ label, active, onClick }) => (
     <button type="button" className={`chip ${active ? "active" : ""}`} onClick={onClick}>{label}</button>
@@ -544,6 +547,7 @@ export default function StaffProfileModal({
 
     if (tab === "balances") {
       loadBalances();
+      loadPromotions();
       loadLoans();
       loadOpeningLoans();
       loadSapHistory();

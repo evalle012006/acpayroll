@@ -498,13 +498,60 @@ router.get(
           COALESCE(sb.special_advance, 0) AS special_advance,
           COALESCE(sb.cash_advance, 0) AS cash_advance,
           COALESCE(sb.motorcycle_loan, 0) AS motorcycle_loan,
-          COALESCE(sb.other_receivable, 0) AS other_receivable,
-          COALESCE(sb.staff_accounts_payable, 0) AS staff_accounts_payable,
+
+          COALESCE(orx.other_receivable, 0) AS other_receivable,
+          COALESCE(sapx.staff_accounts_payable, 0) AS staff_accounts_payable,
 
           sb.created_at,
           sb.updated_at
+
         FROM public.staff_balances sb
         LEFT JOIN public.staff s ON s.employee_no = sb.employee_no
+
+        LEFT JOIN (
+          SELECT
+            employee_no,
+            SUM(
+              GREATEST(
+                COALESCE(amount, 0) -
+                (
+                  GREATEST(
+                    (
+                      DATE_PART(
+                        'year',
+                        AGE(
+                          CURRENT_DATE,
+                          COALESCE(deduction_start_date, release_date, approved_at, created_at)
+                        )
+                      )::int * 12
+                    ) +
+                    DATE_PART(
+                      'month',
+                      AGE(
+                        CURRENT_DATE,
+                        COALESCE(deduction_start_date, release_date, approved_at, created_at)
+                      )
+                    )::int,
+                    0
+                  ) * COALESCE(per_month, 0)
+                ),
+                0
+              )
+            )::numeric(12,2) AS other_receivable
+          FROM public.other_receivables
+          WHERE LOWER(COALESCE(status, '')) = 'approved'
+          GROUP BY employee_no
+        ) orx ON orx.employee_no = sb.employee_no
+
+        LEFT JOIN (
+          SELECT
+            employee_no,
+            SUM(COALESCE(amount, 0))::numeric(12,2) AS staff_accounts_payable
+          FROM public.staff_accounts_payable
+          WHERE LOWER(COALESCE(status, '')) = 'approved'
+          GROUP BY employee_no
+        ) sapx ON sapx.employee_no = sb.employee_no
+
         WHERE sb.employee_no = $1
         LIMIT 1
         `,

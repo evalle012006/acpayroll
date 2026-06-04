@@ -8,6 +8,23 @@ const multer = require("multer");
 const { requireAuth } = require("../middlewares/authMiddleware");
 const { requirePermission } = require("../middlewares/permissionMiddleware");
 
+const {
+  isAdmin,
+  isIT,
+  isHrDepartment,
+  isAccountingDepartment,
+  isITDepartment,
+  isBranchManager,
+  isAreaManager,
+  isRegionalManager,
+  isAssistantVicePresident,
+  isVicePresident,
+  isSeniorVicePresident,
+  isPresident,
+  isTread,
+  isOperationVP,
+} = require("../utils/roleAccess");
+
 const toStr = (v) => String(v ?? "").trim();
 const norm = (v) => toStr(v).toLowerCase();
 
@@ -21,35 +38,66 @@ const toInt = (v) => {
   return Number.isFinite(n) ? Math.trunc(n) : null;
 };
 
-const roleLower = (req) => norm(req.user?.role);
-const deptLower = (req) => norm(req.user?.department);
-
-const isAdmin = (req) => roleLower(req) === "admin";
-const isIT = (req) => roleLower(req) === "it";
-
-const isHrDepartment = (req) =>
-  roleLower(req) === "hr" ||
-  deptLower(req) === "hr" ||
-  deptLower(req) === "hr department" ||
-  deptLower(req) === "human resources" ||
-  deptLower(req) === "human resources department";
-
-const isOperationVP = (req) =>
-  roleLower(req) === "vice president" &&
-  [
-    "operation",
-    "operations",
-    "operation department",
-    "operations department",
-  ].includes(deptLower(req));
-
 const canCreateSAP = (req) =>
-  isAdmin(req) || isIT(req) || isOperationVP(req) || isHrDepartment(req);
+  isAdmin(req) ||
+  isIT(req) ||
+  isHrDepartment(req) ||
+  isAccountingDepartment(req) ||
+  isOperationVP(req);
+
+const canViewSAP = (req) =>
+  isAdmin(req) ||
+  isIT(req) ||
+  isHrDepartment(req) ||
+  isAccountingDepartment(req) ||
+  isBranchManager(req) ||
+  isAreaManager(req) ||
+  isRegionalManager(req) ||
+  isAssistantVicePresident(req) ||
+  isVicePresident(req) ||
+  isSeniorVicePresident(req) ||
+  isPresident(req) ||
+  isTread(req);
+
+const canViewAllSAP = (req) =>
+  isAdmin(req) ||
+  isIT(req) ||
+  isHrDepartment(req) ||
+  isAccountingDepartment(req) ||
+  isVicePresident(req) ||
+  isSeniorVicePresident(req) ||
+  isPresident(req) ||
+  isTread(req);
 
 const canApproveSAP = (req) =>
-  isAdmin(req) || isIT(req) || isHrDepartment(req);
+  isHrDepartment(req) ||
+  isAccountingDepartment(req) ||
+  isSeniorVicePresident(req);
 
-const canViewSAP = (req) => canCreateSAP(req) || canApproveSAP(req);
+const canRejectSAP = (req) =>
+  isHrDepartment(req) ||
+  isAccountingDepartment(req) ||
+  isITDepartment(req) ||
+  isSeniorVicePresident(req);
+
+const canVoidSAP = (req) =>
+  isAccountingDepartment(req) ||
+  isHrDepartment(req) ||
+  isAdmin(req) ||
+  isIT(req);
+
+const canDeleteSAP = (req) =>
+  isAdmin(req) ||
+  isIT(req) ||
+  isITDepartment(req);
+
+const canBypassSAP = (req) => isAdmin(req) || isIT(req);
+
+const canUploadFinalFile = (req) =>
+  isHrDepartment(req) ||
+  isAccountingDepartment(req) ||
+  isAdmin(req) ||
+  isIT(req);
 
 const uploadDir = path.join(
   __dirname,
@@ -78,9 +126,70 @@ const upload = multer({
   limits: { fileSize: 50 * 1024 * 1024 },
 });
 
+function userBranchId(req) {
+  return toInt(req.user?.branch_id || req.user?.branchId);
+}
+
+function userArea(req) {
+  return norm(req.user?.area);
+}
+
+function userRegion(req) {
+  return norm(req.user?.region);
+}
+
+function userDivision(req) {
+  return norm(req.user?.division);
+}
+
+function buildViewScopeWhere(req, startIndex = 1) {
+  if (canViewAllSAP(req)) return { where: "", params: [] };
+
+  if (isBranchManager(req)) {
+    const branchId = userBranchId(req);
+    if (!branchId) return { where: " AND 1 = 0 ", params: [] };
+
+    return {
+      where: ` AND s.branch_id = $${startIndex}::int `,
+      params: [branchId],
+    };
+  }
+
+  if (isAreaManager(req)) {
+    const area = userArea(req);
+    if (!area) return { where: " AND 1 = 0 ", params: [] };
+
+    return {
+      where: ` AND LOWER(TRIM(COALESCE(s.area, ''))) = $${startIndex}::varchar `,
+      params: [area],
+    };
+  }
+
+  if (isRegionalManager(req)) {
+    const region = userRegion(req);
+    if (!region) return { where: " AND 1 = 0 ", params: [] };
+
+    return {
+      where: ` AND LOWER(TRIM(COALESCE(s.region, ''))) = $${startIndex}::varchar `,
+      params: [region],
+    };
+  }
+
+  if (isAssistantVicePresident(req)) {
+    const division = userDivision(req);
+    if (!division) return { where: " AND 1 = 0 ", params: [] };
+
+    return {
+      where: ` AND LOWER(TRIM(COALESCE(s.division, ''))) = $${startIndex}::varchar `,
+      params: [division],
+    };
+  }
+
+  return { where: " AND 1 = 0 ", params: [] };
+}
+
 async function staffIdFromEmployeeNo(client, employee_no) {
   const eno = toStr(employee_no);
-
   if (!eno) return { staffId: null, staff: null };
 
   const s = await client.query(
@@ -108,48 +217,6 @@ async function staffIdFromEmployeeNo(client, employee_no) {
   };
 }
 
-async function ensureBalanceRow(client, employeeNo) {
-  await client.query(
-    `
-    INSERT INTO public.staff_balances
-      (
-        employee_no,
-        fullname,
-        "position",
-        last_name,
-        first_name,
-        middle_name,
-        cbu,
-        cashbond,
-        utility,
-        salary_advance,
-        motorcycle_loan,
-        special_advance,
-        cash_advance,
-        other_receivable,
-        staff_accounts_payable,
-        created_at,
-        updated_at
-      )
-    SELECT
-      s.employee_no,
-      s.fullname,
-      s."position",
-      s.last_name,
-      s.first_name,
-      s.middle_name,
-      0, 0, 0,
-      0, 0, 0, 0,
-      0, 0,
-      NOW(), NOW()
-    FROM public.staff s
-    WHERE s.employee_no = $1
-    ON CONFLICT (employee_no) DO NOTHING
-    `,
-    [employeeNo]
-  );
-}
-
 function removeUploadedFile(filePathValue) {
   try {
     if (!filePathValue) return;
@@ -157,12 +224,31 @@ function removeUploadedFile(filePathValue) {
     const rel = String(filePathValue).replace(/^\/uploads\//, "");
     const abs = path.join(__dirname, "..", "uploads", rel);
 
-    if (fs.existsSync(abs)) {
-      fs.unlinkSync(abs);
-    }
+    if (fs.existsSync(abs)) fs.unlinkSync(abs);
   } catch (e) {
     console.error("DELETE OLD SAP FILE ERROR:", e.message);
   }
+}
+
+async function userCanAccessSapRecord(client, req, id) {
+  if (!canViewSAP(req)) return false;
+  if (canViewAllSAP(req)) return true;
+
+  const scope = buildViewScopeWhere(req, 2);
+
+  const r = await client.query(
+    `
+    SELECT sap.id
+    FROM public.staff_accounts_payable sap
+    LEFT JOIN public.staff s ON s.id = sap.employee_id
+    WHERE sap.id = $1::bigint
+    ${scope.where}
+    LIMIT 1
+    `,
+    [id, ...scope.params]
+  );
+
+  return r.rowCount > 0;
 }
 
 router.get(
@@ -175,6 +261,8 @@ router.get(
         return res.status(403).json({ message: "Access denied" });
       }
 
+      const scope = buildViewScopeWhere(req, 1);
+
       const r = await pool.query(
         `
         SELECT
@@ -183,10 +271,7 @@ router.get(
           sap.staff_name,
           sap.description,
           sap.amount,
-          sap.term,
-          sap.per_month,
-          sap.balance,
-          sap.payable_id,
+          sap.release_date,
           sap.status,
           sap.created_at,
           sap.created_by,
@@ -205,11 +290,20 @@ router.get(
           sap.approved_attachment_path,
           sap.approved_attachment_name,
           sap.approved_attachment_mime,
-          COALESCE(sap.employee_no, s.employee_no) AS employee_no
+          sap.branch,
+          sap.area,
+          sap.region,
+          sap.division,
+          sap.department,
+          COALESCE(sap.employee_no, s.employee_no) AS employee_no,
+          s.branch_id
         FROM public.staff_accounts_payable sap
         LEFT JOIN public.staff s ON s.id = sap.employee_id
+        WHERE 1 = 1
+        ${scope.where}
         ORDER BY sap.id DESC
-        `
+        `,
+        scope.params
       );
 
       return res.json(r.rows);
@@ -228,6 +322,10 @@ router.get(
     const client = await pool.connect();
 
     try {
+      if (!canViewSAP(req)) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
       const employeeNo = toStr(req.params.employeeNo);
 
       if (!employeeNo) {
@@ -240,16 +338,21 @@ router.get(
         return res.status(404).json({ message: "Staff not found" });
       }
 
+      const scope = buildViewScopeWhere(req, 3);
+
       const r = await client.query(
         `
         SELECT
           sap.*,
-          $1::varchar AS employee_no
+          COALESCE(sap.employee_no, s.employee_no, $1::varchar) AS employee_no,
+          s.branch_id
         FROM public.staff_accounts_payable sap
+        LEFT JOIN public.staff s ON s.id = sap.employee_id
         WHERE sap.employee_id = $2::int
+        ${scope.where}
         ORDER BY sap.id DESC
         `,
-        [employeeNo, staffId]
+        [employeeNo, staffId, ...scope.params]
       );
 
       return res.json(r.rows);
@@ -278,21 +381,22 @@ router.post(
       if (!canCreateSAP(req)) {
         return res.status(403).json({
           message:
-            "Only VP of Operation Department, HR Department, Admin, or IT can create SAP.",
+            "Only VP of Operation Department, HR Department, Accounting Department, Admin, or IT can create SAP.",
         });
       }
 
       const employee_no = toStr(req.body?.employee_no || req.body?.employeeNo);
       const staff_name = toStr(req.body?.staff_name || req.body?.staffName);
-      const description = toStr(req.body?.description);
 
+      const branch = toStr(req.body?.branch);
+      const area = toStr(req.body?.area);
+      const region = toStr(req.body?.region);
+      const division = toStr(req.body?.division);
+      const department = toStr(req.body?.department);
+
+      const description = toStr(req.body?.description);
       const amount = toNum(req.body?.amount);
-      const term = Math.max(1, toInt(req.body?.term) || 1);
-      const per_month = toNum(req.body?.per_month);
-      const balance =
-        req.body?.balance === "" || req.body?.balance == null
-          ? amount
-          : toNum(req.body?.balance);
+      const release_date = toStr(req.body?.release_date);
 
       if (!employee_no) {
         return res.status(400).json({ message: "employee_no is required" });
@@ -310,12 +414,8 @@ router.post(
         return res.status(400).json({ message: "amount is required" });
       }
 
-      if (term <= 0) {
-        return res.status(400).json({ message: "term is required" });
-      }
-
-      if (per_month <= 0) {
-        return res.status(400).json({ message: "per_month is required" });
+      if (!release_date) {
+        return res.status(400).json({ message: "release_date is required" });
       }
 
       await client.query("BEGIN");
@@ -338,11 +438,14 @@ router.post(
             employee_id,
             employee_no,
             staff_name,
+            branch,
+            area,
+            region,
+            division,
+            department,
             description,
             amount,
-            term,
-            per_month,
-            balance,
+            release_date,
             status,
             created_by,
             first_name,
@@ -357,19 +460,22 @@ router.post(
             $1::int,
             $2::varchar,
             $3::varchar,
-            $4::varchar,
-            $5::numeric,
-            $6::int,
-            $7::numeric,
-            $8::numeric,
+            $4::text,
+            $5::text,
+            $6::text,
+            $7::text,
+            $8::text,
+            $9::text,
+            $10::numeric,
+            $11::date,
             'Pending',
-            $9::int,
-            $10::varchar,
-            $11::varchar,
-            $12::varchar,
-            $13::text,
-            $14::text,
-            $15::text
+            $12::int,
+            $13::varchar,
+            $14::varchar,
+            $15::varchar,
+            $16::text,
+            $17::text,
+            $18::text
           )
         RETURNING *;
         `,
@@ -377,11 +483,14 @@ router.post(
           staffId,
           employee_no,
           staff_name,
+          branch,
+          area,
+          region,
+          division,
+          department,
           description,
           amount,
-          term,
-          per_month,
-          balance,
+          release_date,
           toInt(req.user?.id),
           staff?.first_name ?? null,
           staff?.last_name ?? null,
@@ -408,6 +517,61 @@ router.post(
   }
 );
 
+async function approveSapRecord(client, req, id, file) {
+  const cur = await client.query(
+    `
+    SELECT
+      id,
+      status,
+      approved_attachment_path
+    FROM public.staff_accounts_payable
+    WHERE id = $1::bigint
+    FOR UPDATE
+    `,
+    [id]
+  );
+
+  if (cur.rowCount === 0) {
+    return { status: 404, body: { message: "SAP record not found" } };
+  }
+
+  const row = cur.rows[0];
+
+  let approvedPath = row.approved_attachment_path || null;
+  let approvedName = null;
+  let approvedMime = null;
+
+  if (file) {
+    removeUploadedFile(row.approved_attachment_path);
+
+    approvedPath = `/uploads/staff-accounts-payable/${file.filename}`;
+    approvedName = file.originalname || null;
+    approvedMime = file.mimetype || null;
+  }
+
+  const upd = await client.query(
+    `
+    UPDATE public.staff_accounts_payable
+    SET
+      status = 'Approved',
+      approved_by = $1::int,
+      approved_at = NOW(),
+      rejected_by = NULL,
+      rejected_at = NULL,
+      rejection_reason = NULL,
+      approved_attachment_path = COALESCE($3::text, approved_attachment_path),
+      approved_attachment_name = COALESCE($4::text, approved_attachment_name),
+      approved_attachment_mime = COALESCE($5::text, approved_attachment_mime),
+      updated_at = NOW()
+    WHERE id = $2::bigint
+    RETURNING *;
+    `,
+    [toInt(req.user?.id), id, approvedPath, approvedName, approvedMime]
+  );
+
+  return { status: 200, body: upd.rows[0] };
+}
+
 router.put(
   "/staff-accounts-payable/:id",
   requireAuth,
@@ -418,17 +582,12 @@ router.put(
 
     try {
       const id = toInt(req.params.id);
-
-      if (!id) {
-        return res.status(400).json({ message: "Invalid id" });
-      }
+      if (!id) return res.status(400).json({ message: "Invalid id" });
 
       const status = toStr(req.body?.status);
       const reason = toStr(req.body?.reason);
 
-      if (!status) {
-        return res.status(400).json({ message: "status is required" });
-      }
+      if (!status) return res.status(400).json({ message: "status is required" });
 
       const sLower = status.toLowerCase();
 
@@ -438,13 +597,28 @@ router.put(
         });
       }
 
-      if (!canApproveSAP(req)) {
+      if (sLower === "approved" && !canApproveSAP(req)) {
         return res.status(403).json({
-          message: "Only HR Department, Admin, or IT can approve SAP.",
+          message:
+            "Only HR Department, Accounting Department, or Senior Vice President can approve SAP.",
         });
       }
 
-      if (sLower === "approved" && !req.file) {
+      if (sLower === "rejected" && !canRejectSAP(req)) {
+        return res.status(403).json({
+          message:
+            "Only HR Department, Accounting Department, IT Department, or Senior Vice President can reject SAP.",
+        });
+      }
+
+      if (sLower === "approved" && req.file && !canUploadFinalFile(req)) {
+        return res.status(403).json({
+          message:
+            "Only HR Department, Accounting Department, Admin, or IT can upload the final file.",
+        });
+      }
+
+      if (sLower === "approved" && !req.file && canUploadFinalFile(req)) {
         return res.status(400).json({
           message: "Approved attachment is required before approval",
         });
@@ -458,16 +632,21 @@ router.put(
 
       await client.query("BEGIN");
 
+      if (sLower === "approved") {
+        const result = await approveSapRecord(client, req, id, req.file);
+
+        if (result.status !== 200) {
+          await client.query("ROLLBACK");
+          return res.status(result.status).json(result.body);
+        }
+
+        await client.query("COMMIT");
+        return res.json(result.body);
+      }
+
       const cur = await client.query(
         `
-        SELECT
-          id,
-          employee_id,
-          employee_no,
-          status,
-          amount,
-          balance,
-          approved_attachment_path
+        SELECT id
         FROM public.staff_accounts_payable
         WHERE id = $1::bigint
         FOR UPDATE
@@ -480,101 +659,20 @@ router.put(
         return res.status(404).json({ message: "SAP record not found" });
       }
 
-      const prevStatus = toStr(cur.rows[0].status);
-      const employeeNo = toStr(cur.rows[0].employee_no);
-      const balToAdd = toNum(cur.rows[0].balance);
-      const amtFallback = toNum(cur.rows[0].amount);
-      const addValue = balToAdd > 0 ? balToAdd : amtFallback;
-      const userId = toInt(req.user?.id);
-      const finalStatus = sLower === "approved" ? "Approved" : "Rejected";
-
-      let approvedPath = cur.rows[0].approved_attachment_path || null;
-      let approvedName = null;
-      let approvedMime = null;
-
-      if (sLower === "approved" && req.file) {
-        removeUploadedFile(cur.rows[0].approved_attachment_path);
-
-        approvedPath = `/uploads/staff-accounts-payable/${req.file.filename}`;
-        approvedName = req.file.originalname || null;
-        approvedMime = req.file.mimetype || null;
-      }
-
       const upd = await client.query(
         `
         UPDATE public.staff_accounts_payable
         SET
-          status = $1::varchar,
-
-          approved_by = CASE
-            WHEN $1::varchar = 'Approved' THEN $2::int
-            ELSE approved_by
-          END,
-
-          approved_at = CASE
-            WHEN $1::varchar = 'Approved' THEN NOW()
-            ELSE approved_at
-          END,
-
-          rejected_by = CASE
-            WHEN $1::varchar = 'Rejected' THEN $2::int
-            ELSE rejected_by
-          END,
-
-          rejected_at = CASE
-            WHEN $1::varchar = 'Rejected' THEN NOW()
-            ELSE rejected_at
-          END,
-
-          rejection_reason = CASE
-            WHEN $1::varchar = 'Rejected' THEN $3::text
-            ELSE rejection_reason
-          END,
-
-          approved_attachment_path = CASE
-            WHEN $1::varchar = 'Approved' THEN $5::text
-            ELSE approved_attachment_path
-          END,
-
-          approved_attachment_name = CASE
-            WHEN $1::varchar = 'Approved' THEN $6::text
-            ELSE approved_attachment_name
-          END,
-
-          approved_attachment_mime = CASE
-            WHEN $1::varchar = 'Approved' THEN $7::text
-            ELSE approved_attachment_mime
-          END
-
-        WHERE id = $4::bigint
+          status = 'Rejected',
+          rejected_by = $1::int,
+          rejected_at = NOW(),
+          rejection_reason = $2::text,
+          updated_at = NOW()
+        WHERE id = $3::bigint
         RETURNING *;
         `,
-        [
-          finalStatus,
-          userId,
-          reason || null,
-          id,
-          approvedPath,
-          approvedName,
-          approvedMime,
-        ]
+        [toInt(req.user?.id), reason || null, id]
       );
-
-      if (prevStatus !== "Approved" && finalStatus === "Approved" && employeeNo) {
-        await ensureBalanceRow(client, employeeNo);
-
-        await client.query(
-          `
-          UPDATE public.staff_balances
-          SET
-            staff_accounts_payable =
-              COALESCE(staff_accounts_payable, 0) + $1::numeric,
-            updated_at = NOW()
-          WHERE employee_no = $2::varchar
-          `,
-          [addValue, employeeNo]
-        );
-      }
 
       await client.query("COMMIT");
 
@@ -592,24 +690,232 @@ router.put(
   }
 );
 
+router.put(
+  "/staff-accounts-payable/:id/bypass",
+  requireAuth,
+  requirePermission("staff_accounts_payable", "approve"),
+  upload.single("attachment"),
+  async (req, res) => {
+    const client = await pool.connect();
+
+    try {
+      const id = toInt(req.params.id);
+      if (!id) return res.status(400).json({ message: "Invalid id" });
+
+      if (!canBypassSAP(req)) {
+        return res.status(403).json({
+          message: "Only Admin or IT can bypass approval.",
+        });
+      }
+
+      if (!req.file) {
+        return res.status(400).json({
+          message: "Final approved attachment is required for bypass approval.",
+        });
+      }
+
+      await client.query("BEGIN");
+
+      const result = await approveSapRecord(client, req, id, req.file);
+
+      if (result.status !== 200) {
+        await client.query("ROLLBACK");
+        return res.status(result.status).json(result.body);
+      }
+
+      await client.query("COMMIT");
+
+      return res.json(result.body);
+    } catch (e) {
+      try {
+        await client.query("ROLLBACK");
+      } catch {}
+
+      console.error("PUT /api/staff-accounts-payable/:id/bypass ERROR:", e.message);
+      return res.status(500).json({ message: e?.message || "Server error" });
+    } finally {
+      client.release();
+    }
+  }
+);
+
+router.put(
+  "/staff-accounts-payable/:id/void",
+  requireAuth,
+  requirePermission("staff_accounts_payable", "approve"),
+  async (req, res) => {
+    const client = await pool.connect();
+
+    try {
+      const id = toInt(req.params.id);
+      const reason = toStr(req.body?.reason);
+
+      if (!id) return res.status(400).json({ message: "Invalid id" });
+
+      if (!canVoidSAP(req)) {
+        return res.status(403).json({
+          message: "Only Accounting Department, HR Department, Admin, or IT can void SAP.",
+        });
+      }
+
+      if (!reason) {
+        return res.status(400).json({ message: "Void reason is required." });
+      }
+
+      await client.query("BEGIN");
+
+      const cur = await client.query(
+        `
+        SELECT id, status
+        FROM public.staff_accounts_payable
+        WHERE id = $1::bigint
+        FOR UPDATE
+        `,
+        [id]
+      );
+
+      if (cur.rowCount === 0) {
+        await client.query("ROLLBACK");
+        return res.status(404).json({ message: "SAP record not found" });
+      }
+
+      if (toStr(cur.rows[0].status) !== "Approved") {
+        await client.query("ROLLBACK");
+        return res.status(400).json({
+          message: "Only Approved SAP records can be voided.",
+        });
+      }
+
+      const upd = await client.query(
+        `
+        UPDATE public.staff_accounts_payable
+        SET
+          status = 'Void',
+          rejected_by = $1::int,
+          rejected_at = NOW(),
+          rejection_reason = $2::text,
+          updated_at = NOW()
+        WHERE id = $3::bigint
+        RETURNING *;
+        `,
+        [toInt(req.user?.id), reason, id]
+      );
+
+      await client.query("COMMIT");
+
+      return res.json(upd.rows[0]);
+    } catch (e) {
+      try {
+        await client.query("ROLLBACK");
+      } catch {}
+
+      console.error("PUT /api/staff-accounts-payable/:id/void ERROR:", e.message);
+      return res.status(500).json({ message: e?.message || "Server error" });
+    } finally {
+      client.release();
+    }
+  }
+);
+
+router.delete(
+  "/staff-accounts-payable/:id",
+  requireAuth,
+  requirePermission("staff_accounts_payable", "delete"),
+  async (req, res) => {
+    const client = await pool.connect();
+
+    try {
+      const id = toInt(req.params.id);
+      if (!id) return res.status(400).json({ message: "Invalid id" });
+
+      if (!canDeleteSAP(req)) {
+        return res.status(403).json({
+          message: "Only Admin or IT Department can delete SAP.",
+        });
+      }
+
+      await client.query("BEGIN");
+
+      const cur = await client.query(
+        `
+        SELECT
+          id,
+          status,
+          attachment_path,
+          approved_attachment_path
+        FROM public.staff_accounts_payable
+        WHERE id = $1::bigint
+        FOR UPDATE
+        `,
+        [id]
+      );
+
+      if (cur.rowCount === 0) {
+        await client.query("ROLLBACK");
+        return res.status(404).json({ message: "SAP record not found" });
+      }
+
+      const row = cur.rows[0];
+      const status = norm(row.status);
+
+      if (!["rejected", "void"].includes(status)) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({
+          message: "Only Rejected or Void SAP records can be deleted.",
+        });
+      }
+
+      await client.query(
+        `
+        DELETE FROM public.staff_accounts_payable
+        WHERE id = $1::bigint
+        `,
+        [id]
+      );
+
+      removeUploadedFile(row.attachment_path);
+      removeUploadedFile(row.approved_attachment_path);
+
+      await client.query("COMMIT");
+
+      return res.json({ message: "SAP deleted successfully." });
+    } catch (e) {
+      try {
+        await client.query("ROLLBACK");
+      } catch {}
+
+      console.error("DELETE /api/staff-accounts-payable/:id ERROR:", e.message);
+      return res.status(500).json({ message: e?.message || "Server error" });
+    } finally {
+      client.release();
+    }
+  }
+);
+
 router.get(
   "/staff-accounts-payable/:id/download/:type",
   requireAuth,
   requirePermission("staff_accounts_payable", "view"),
   async (req, res) => {
+    const client = await pool.connect();
+
     try {
       const id = toInt(req.params.id);
       const type = norm(req.params.type);
 
-      if (!id) {
-        return res.status(400).json({ message: "Invalid id" });
-      }
+      if (!id) return res.status(400).json({ message: "Invalid id" });
 
       if (!["request", "approved"].includes(type)) {
         return res.status(400).json({ message: "Invalid file type" });
       }
 
-      const r = await pool.query(
+      const canAccess = await userCanAccessSapRecord(client, req, id);
+
+      if (!canAccess) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      const r = await client.query(
         `
         SELECT
           attachment_path,
@@ -650,6 +956,8 @@ router.get(
     } catch (e) {
       console.error("DOWNLOAD SAP FILE ERROR:", e.message);
       return res.status(500).json({ message: e?.message || "Server error" });
+    } finally {
+      client.release();
     }
   }
 );

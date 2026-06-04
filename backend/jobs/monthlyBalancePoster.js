@@ -174,7 +174,8 @@ async function postMonthlyBalances(monthLabel = getMonthLabel()) {
       const sapRows = await client.query(
         `
         SELECT
-          payable_id,
+          id,
+          COALESCE(payable_id, id) AS payable_id,
           employee_no,
           balance,
           per_month
@@ -200,10 +201,23 @@ async function postMonthlyBalances(monthLabel = getMonthLabel()) {
           UPDATE public.staff_accounts_payable
           SET
             balance = $1,
+            payable_id = COALESCE(payable_id, id),
             updated_at = NOW()
-          WHERE payable_id = $2
+          WHERE id = $2
           `,
-          [newBalance, sap.payable_id]
+          [newBalance, sap.id]
+        );
+
+        await client.query(
+          `
+          UPDATE public.staff_balances
+          SET
+            staff_accounts_payable =
+              GREATEST(COALESCE(staff_accounts_payable, 0) - $1::numeric, 0),
+            updated_at = NOW()
+          WHERE employee_no = $2
+          `,
+          [actualDeduction, sap.employee_no]
         );
 
         await client.query(

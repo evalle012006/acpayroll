@@ -287,17 +287,86 @@ const buildLiveSql = (whereSql = "") => `
     GROUP BY ob.staff_id
   ),
 
-  sap_remaining AS (
+  sap_payable AS (
     SELECT
       sap.employee_no,
-      SUM(COALESCE(sap.balance, sap.amount, 0))::numeric(12,2) AS staff_accounts_payable
+      SUM(COALESCE(sap.amount, 0))::numeric(12,2) AS staff_accounts_payable
     FROM public.staff_accounts_payable sap
     CROSS JOIN cutoff c
     WHERE
       sap.employee_no IS NOT NULL
       AND LOWER(COALESCE(sap.status, '')) = 'approved'
-      AND COALESCE(sap.approved_at, sap.created_at) <= c.month_end
+      AND COALESCE(sap.release_date, sap.approved_at, sap.created_at) <= c.month_end
     GROUP BY sap.employee_no
+  ),
+
+  other_receivable_amount AS (
+    SELECT
+      ore.employee_no,
+
+      SUM(
+        GREATEST(
+          COALESCE(ore.amount, 0) -
+          (
+            GREATEST(
+              (
+                DATE_PART(
+                  'year',
+                  AGE(
+                    (SELECT month_end FROM cutoff),
+                    COALESCE(
+                      ore.deduction_start_date,
+                      ore.release_date,
+                      ore.approved_at,
+                      ore.created_at
+                    )
+                  )
+                )::int * 12
+              ) +
+              DATE_PART(
+                'month',
+                AGE(
+                  (SELECT month_end FROM cutoff),
+                  COALESCE(
+                    ore.deduction_start_date,
+                    ore.release_date,
+                    ore.approved_at,
+                    ore.created_at
+                  )
+                )
+              )::int,
+              0
+            )
+            * COALESCE(ore.per_month, 0)
+          ),
+          0
+        )
+      )::numeric(12,2) AS other_receivable
+
+    FROM public.other_receivables ore
+    CROSS JOIN cutoff c
+    WHERE
+      ore.employee_no IS NOT NULL
+      AND LOWER(COALESCE(ore.status, '')) = 'approved'
+      AND COALESCE(
+        ore.deduction_start_date,
+        ore.release_date,
+        ore.approved_at,
+        ore.created_at
+      ) <= c.month_end
+
+    GROUP BY ore.employee_no
+  ),
+
+  monthly_posted_balances AS (
+    SELECT
+      employee_no,
+      SUM(COALESCE(cbu, 0))::numeric(12,2) AS cbu,
+      SUM(COALESCE(cashbond, 0))::numeric(12,2) AS cashbond,
+      SUM(COALESCE(utility, 0))::numeric(12,2) AS utility
+    FROM public.monthly_balance_postings
+    WHERE month_label <= TO_CHAR((SELECT month_end FROM cutoff), 'YYYY-MM')
+    GROUP BY employee_no
   )
 
   SELECT
@@ -311,9 +380,9 @@ const buildLiveSql = (whereSql = "") => `
     s.position,
     s.branch_id,
 
-    COALESCE(sb.cbu, 0) AS cbu,
-    COALESCE(sb.cashbond, 0) AS cashbond,
-    COALESCE(sb.utility, 0) AS utility,
+    COALESCE(mbp.cbu, 0) AS cbu,
+    COALESCE(mbp.cashbond, 0) AS cashbond,
+    COALESCE(mbp.utility, 0) AS utility,
 
     COALESCE(lr.salary_loan, 0) AS salary_loan,
     COALESCE(lr.salary_advance, 0) + COALESCE(olr.opening_salary_advance, 0) AS salary_advance,
@@ -321,8 +390,8 @@ const buildLiveSql = (whereSql = "") => `
     COALESCE(lr.special_advance, 0) + COALESCE(olr.opening_special_advance, 0) AS special_advance,
     COALESCE(lr.cash_advance, 0) + COALESCE(olr.opening_cash_advance, 0) AS cash_advance,
 
-    COALESCE(sb.other_receivable, 0) AS other_receivable,
-    COALESCE(sap.staff_accounts_payable, COALESCE(sb.staff_accounts_payable, 0), 0) AS staff_accounts_payable,
+    COALESCE(ore.other_receivable, 0) AS other_receivable,
+    COALESCE(sap.staff_accounts_payable, 0) AS staff_accounts_payable,
 
     (SELECT month_end FROM cutoff) AS as_of_date,
     NOW() AS created_at,
@@ -331,11 +400,15 @@ const buildLiveSql = (whereSql = "") => `
   FROM public.staff s
   LEFT JOIN public.staff_balances sb
     ON sb.employee_no = s.employee_no
+  LEFT JOIN monthly_posted_balances mbp
+    ON mbp.employee_no = s.employee_no
   LEFT JOIN loan_remaining lr
     ON lr.staff_id = s.id
   LEFT JOIN opening_loan_remaining olr
     ON olr.staff_id = s.id
-  LEFT JOIN sap_remaining sap
+  LEFT JOIN other_receivable_amount ore
+    ON ore.employee_no = s.employee_no
+  LEFT JOIN sap_payable sap
     ON sap.employee_no = s.employee_no
   ${whereSql}
   ORDER BY COALESCE(s.fullname, CONCAT_WS(' ', s.last_name, s.first_name, s.middle_name)) ASC
@@ -483,7 +556,6 @@ router.post(
           motorcycle_loan = GREATEST(0, motorcycle_loan - (motorcycle_loan / 12)),
           special_advance = GREATEST(0, special_advance - (special_advance / 12)),
           cash_advance = GREATEST(0, cash_advance - (cash_advance / 12)),
-          staff_accounts_payable = GREATEST(0, staff_accounts_payable - (staff_accounts_payable / 12)),
           updated_at = NOW()
         WHERE staff_id = $1
           AND snapshot_month = $2::date

@@ -44,6 +44,7 @@ const toStr = (v) => String(v ?? "").trim();
 const getUserBranchId = (req) => req.user?.branch_id ?? null;
 const getUserArea = (req) => toStr(req.user?.area);
 const getUserRegion = (req) => toStr(req.user?.region);
+const getUserDivision = (req) => toStr(req.user?.division);
 
 const uploadRoot = path.join(process.cwd(), "uploads");
 const suspensionUploadDir = path.join(uploadRoot, "suspension");
@@ -148,8 +149,8 @@ const canAccessStaffRecord = (req, staff) => {
   }
 
   if (isAssistantVicePresident(req)) {
-    const region = getUserRegion(req);
-    return !!region && toStr(staff.region).toLowerCase() === region.toLowerCase();
+    const division = getUserDivision(req);
+    return !!division && toStr(staff.division).toLowerCase() === division.toLowerCase();
   }
 
   return false;
@@ -174,8 +175,8 @@ const canMutatePendingOrder = (req, row) => {
   }
 
   if (isAssistantVicePresident(req)) {
-    const region = getUserRegion(req);
-    return !!region && toStr(row.region).toLowerCase() === region.toLowerCase();
+    const division = getUserDivision(req);
+    return !!division && toStr(row.division).toLowerCase() === division.toLowerCase();
   }
 
   if (isVicePresident(req) || isSeniorVicePresident(req) || isPresident(req)) {
@@ -272,7 +273,7 @@ router.get(
         return res.json(r.rows);
       }
 
-      if (isRegionalManager(req) || isAssistantVicePresident(req)) {
+      if (isRegionalManager(req)) {
         const region = getUserRegion(req);
         if (!region) return res.json([]);
 
@@ -281,10 +282,28 @@ router.get(
           SELECT so.*
           FROM public.suspension_orders so
           LEFT JOIN public.staff s ON s.id = so.employee_id
-          WHERE LOWER(TRIM(COALESCE(s.region, ''))) = LOWER(TRIM($1))
+          WHERE LOWER(TRIM(COALESCE(s.region, so.region, ''))) = LOWER(TRIM($1))
           ORDER BY so.id DESC
           `,
           [region]
+        );
+
+        return res.json(r.rows);
+      }
+
+      if (isAssistantVicePresident(req)) {
+        const division = getUserDivision(req);
+        if (!division) return res.json([]);
+
+        const r = await pool.query(
+          `
+          SELECT so.*
+          FROM public.suspension_orders so
+          LEFT JOIN public.staff s ON s.id = so.employee_id
+          WHERE LOWER(TRIM(COALESCE(s.division, so.division, ''))) = LOWER(TRIM($1))
+          ORDER BY so.id DESC
+          `,
+          [division]
         );
 
         return res.json(r.rows);
@@ -312,7 +331,7 @@ router.get(
 
       const s = await pool.query(
         `
-        SELECT id, branch_id, region, area
+        SELECT id, branch_id, region, area, division
         FROM public.staff
         WHERE id = $1
         `,
@@ -430,7 +449,8 @@ router.post(
           middle_name,
           branch_id,
           region,
-          area
+          area,
+          division
         FROM public.staff
         WHERE id = $1
         `,
@@ -522,6 +542,7 @@ router.post(
             middle_name,
             area,
             region,
+            division,
             branch_id
           )
         VALUES
@@ -529,7 +550,7 @@ router.post(
             $1, $2, $3, $4, $5, $6, $7::date, $8::date, $9, $10, $11, $12,
             $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23,
             NULL, NULL, NULL,
-            $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36
+            $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37
           )
         RETURNING *;
         `,
@@ -569,6 +590,7 @@ router.post(
           clean(staff.middle_name),
           clean(staff.area),
           clean(staff.region),
+          clean(staff.division),
           staff.branch_id || null,
         ]
       );
@@ -697,8 +719,9 @@ router.put(
           middle_name,
           branch_id,
           region,
-          area
-        FROM public.staff
+          area,
+          division
+          FROM public.staff
         WHERE id = $1
         `,
         [employee_id]
@@ -759,7 +782,8 @@ router.put(
           middle_name = $25,
           area = $26,
           region = $27,
-          branch_id = $28
+          division = $28,
+          branch_id = $29
         WHERE id = $1
         RETURNING *;
         `,
@@ -791,6 +815,7 @@ router.put(
           clean(staff.middle_name),
           clean(staff.area),
           clean(staff.region),
+          clean(staff.division),
           staff.branch_id || null,
         ]
       );

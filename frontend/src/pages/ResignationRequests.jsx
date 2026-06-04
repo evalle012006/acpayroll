@@ -90,6 +90,15 @@ export default function ResignationRequests() {
 
   const [uploadFiles, setUploadFiles] = useState({});
 
+  const [revokeRow, setRevokeRow] = useState(null);
+  const [revokeForm, setRevokeForm] = useState({
+    effective_date: "",
+    branch_id: "",
+    position: "",
+    remarks: "",
+    attachment: null,
+  });
+
   const [form, setForm] = useState({
     staff_id: "",
     employee_no: "",
@@ -174,7 +183,33 @@ export default function ResignationRequests() {
   }, [branches]);
 
   const searchableStaff = useMemo(() => {
-    return staffList
+    let scopedStaff = staffList || [];
+
+    if (isBranchManager) {
+      scopedStaff = scopedStaff.filter(
+        (s) => String(s.branch_id) === String(user?.branch_id)
+      );
+    }
+
+    if (isAreaManager) {
+      scopedStaff = scopedStaff.filter(
+        (s) => norm(s.area) === norm(user?.area)
+      );
+    }
+
+    if (isRegionalManager) {
+      scopedStaff = scopedStaff.filter(
+        (s) => norm(s.region) === norm(user?.region)
+      );
+    }
+
+    if (isAssistantVicePresident) {
+      scopedStaff = scopedStaff.filter(
+        (s) => norm(s.division) === norm(user?.division)
+      );
+    }
+
+    return scopedStaff
       .filter((s) => norm(s.status || "active") === "active")
       .map((s) => {
         const display = buildName(s);
@@ -197,7 +232,15 @@ export default function ResignationRequests() {
 
         return { ...s, _display: display, _searchBlob: searchBlob };
       });
-  }, [staffList, buildName]);
+    }, [
+    staffList,
+    buildName,
+    user,
+    isBranchManager,
+    isAreaManager,
+    isRegionalManager,
+    isAssistantVicePresident,
+  ]);
 
   const filteredEmployees = useMemo(() => {
     const q = norm(employeeSearch);
@@ -444,18 +487,59 @@ export default function ResignationRequests() {
     }
   };
 
-  const revokeRequest = async (row) => {
-    if (!window.confirm("Revoke this approved resignation? Staff will become Active again.")) {
-      return;
-    }
+  const openRevokeModal = (row) => {
+    setRevokeRow(row);
+    setRevokeForm({
+      effective_date: "",
+      branch_id: "",
+      department: "",
+      position: "",
+      remarks: "",
+      attachment: null,
+    });
+  };
+
+  const closeRevokeModal = () => {
+    setRevokeRow(null);
+    setRevokeForm({
+      effective_date: "",
+      branch_id: "",
+      position: "",
+      remarks: "",
+      attachment: null,
+    });
+  };
+
+  const submitRevokeRequest = async (e) => {
+    e.preventDefault();
+
+    if (!revokeRow?.id) return;
+    if (!revokeForm.effective_date) return alert("Effective date is required.");
+    if (!revokeForm.branch_id) return alert("Branch resume is required.");
+    if (!revokeForm.department) return alert("Department is required.");
+    if (!revokeForm.position) return alert("New position is required.");
+    if (!revokeForm.attachment) return alert("Revoke file is required.");
 
     try {
-      setProcessingId(`revoke-${row.id}`);
-      await api.put(`/resignation-requests/${row.id}/revoke`);
-      alert("Resignation revoked.");
+      setProcessingId(`revoke-${revokeRow.id}`);
+
+      const fd = new FormData();
+      fd.append("effective_date", revokeForm.effective_date);
+      fd.append("branch_id", revokeForm.branch_id);
+      fd.append("department", revokeForm.department);
+      fd.append("position", revokeForm.position);
+      fd.append("remarks", revokeForm.remarks || "");
+      fd.append("attachment", revokeForm.attachment);
+
+      await api.put(`/resignation-requests/${revokeRow.id}/revoke`, fd, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+
+      alert("Re-apply request submitted for approval.");
+      closeRevokeModal();
       await fetchAll();
     } catch (err) {
-      alert(err?.response?.data?.message || "Failed to revoke request.");
+      alert(err?.response?.data?.message || "Failed to submit revoke request.");
     } finally {
       setProcessingId("");
     }
@@ -859,7 +943,7 @@ export default function ResignationRequests() {
                             <button
                               className="btn-danger"
                               type="button"
-                              onClick={() => revokeRequest(row)}
+                              onClick={() => openRevokeModal(row)}
                               disabled={processingId === `revoke-${row.id}`}
                             >
                               {processingId === `revoke-${row.id}`
@@ -1162,6 +1246,152 @@ export default function ResignationRequests() {
                 </button>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {revokeRow && (
+        <div
+          className="modal-overlay"
+          onMouseDown={(e) =>
+            e.target.classList.contains("modal-overlay") && closeRevokeModal()
+          }
+        >
+          <div className="modal saas-modal" onMouseDown={(e) => e.stopPropagation()}>
+            <div className="modal-head">
+              <div>
+                <h3 className="modal-title">Re-Apply / Revoke Resignation</h3>
+                <p className="modal-subtitle">
+                  {revokeRow.employee_name || "-"} will be re-applied and transferred after approval.
+                </p>
+              </div>
+
+              <button className="modal-x" type="button" onClick={closeRevokeModal}>
+                ✕
+              </button>
+            </div>
+
+            <form className="modal-form" onSubmit={submitRevokeRequest}>
+              <div className="modal-grid">
+                <div className="form-group">
+                  <label>Employee No</label>
+                  <input value={revokeRow.employee_no || "-"} readOnly />
+                </div>
+
+                <div className="form-group">
+                  <label>Employee Name</label>
+                  <input value={revokeRow.employee_name || "-"} readOnly />
+                </div>
+
+                <div className="form-group">
+                  <label>Effective Date</label>
+                  <input
+                    type="date"
+                    value={revokeForm.effective_date}
+                    onChange={(e) =>
+                      setRevokeForm((p) => ({ ...p, effective_date: e.target.value }))
+                    }
+                    required
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label>Branch Resume</label>
+                  <select
+                    value={revokeForm.branch_id}
+                    onChange={(e) =>
+                      setRevokeForm((p) => ({ ...p, branch_id: e.target.value }))
+                    }
+                    required
+                  >
+                    <option value="">Select branch</option>
+                    {branches.map((b) => (
+                      <option key={b.id} value={b.id}>
+                        {b.code ? `${b.code} - ${b.name}` : b.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="form-group">
+                  <label>Department</label>
+                  <select
+                    value={revokeForm.department}
+                    onChange={(e) =>
+                      setRevokeForm((p) => ({ ...p, department: e.target.value }))
+                    }
+                    required
+                  >
+                    <option value="">Select department</option>
+                    <option value="OPERATION DEPARTMENT">OPERATION DEPARTMENT</option>
+                    <option value="IT DEPARTMENT">IT DEPARTMENT</option>
+                    <option value="HR DEPARTMENT">HR DEPARTMENT</option>
+                    <option value="ACCOUNTING DEPARTMENT">ACCOUNTING DEPARTMENT</option>
+                    <option value="AUDIT DEPARTMENT">AUDIT DEPARTMENT</option>
+                    <option value="TREAD DEPARTMENT">TREAD DEPARTMENT</option>
+                    <option value="PRODUCTION & LOGISTIC DEPARTMENT">
+                      PRODUCTION & LOGISTIC DEPARTMENT
+                    </option>
+                    <option value="OFFICE OF THE PRESIDENT">
+                      OFFICE OF THE PRESIDENT
+                    </option>
+                  </select>
+                </div>
+
+                <div className="form-group">
+                  <label>New Position</label>
+                  <input
+                    value={revokeForm.position}
+                    onChange={(e) =>
+                      setRevokeForm((p) => ({ ...p, position: e.target.value }))
+                    }
+                    placeholder="Enter new position"
+                    required
+                  />
+                </div>
+
+                <div className="form-group full">
+                  <label>Re-Apply File</label>
+                  <input
+                    type="file"
+                    onChange={(e) =>
+                      setRevokeForm((p) => ({
+                        ...p,
+                        attachment: e.target.files?.[0] || null,
+                      }))
+                    }
+                    required
+                  />
+                </div>
+
+                <div className="form-group full">
+                  <label>Remarks</label>
+                  <textarea
+                    value={revokeForm.remarks}
+                    onChange={(e) =>
+                      setRevokeForm((p) => ({ ...p, remarks: e.target.value }))
+                    }
+                    placeholder="Optional remarks..."
+                  />
+                </div>
+              </div>
+
+              <div className="modal-buttons">
+                <button className="btn-secondary" type="button" onClick={closeRevokeModal}>
+                  Cancel
+                </button>
+
+                <button
+                  className="btn-primary"
+                  type="submit"
+                  disabled={processingId === `revoke-${revokeRow.id}`}
+                >
+                  {processingId === `revoke-${revokeRow.id}`
+                    ? "Submitting..."
+                    : "Submit Re-Apply"}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

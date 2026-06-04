@@ -373,6 +373,56 @@ const PERMISSIONS = {
     ],
   },
 
+    /* =========================================================
+     OTHER RECEIVABLE
+  ========================================================= */
+
+  other_receivable: {
+    view: ALL_OPERATION_ROLES,
+
+    create: [
+      "admin",
+      "it",
+      "hr",
+      "accounting",
+      "vice president",
+    ],
+
+    approve: [
+      "admin",
+      "it",
+      "hr",
+      "accounting",
+      "senior vice president",
+    ],
+
+    reject: [
+      "admin",
+      "it",
+      "hr",
+      "accounting",
+      "senior vice president",
+    ],
+
+    void: [
+      "admin",
+      "it",
+      "hr",
+      "accounting",
+    ],
+
+    delete: ADMIN_ROLES,
+
+    bypass: ADMIN_ROLES,
+
+    upload_final_file: [
+      "admin",
+      "it",
+      "hr",
+      "accounting",
+    ],
+  },
+
   /* =========================================================
      STAFF LOAN OPENING BALANCE
   ========================================================= */

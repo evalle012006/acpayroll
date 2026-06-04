@@ -79,7 +79,7 @@ const APPROVAL_CHAIN = [
 const getApprovalChainByApplicantRole = (applicantRole) => {
   const role = norm(applicantRole);
 
-  if (role.includes("senior vice president")) return [];
+  if (role.includes("senior vice president")) {return ["HR", "Accounting"];}
   if (role.includes("vice president")) return ["Senior Vice President"];
   if (role.includes("assistant vice president")) return ["Vice President"];
 

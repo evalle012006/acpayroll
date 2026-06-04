@@ -64,29 +64,14 @@ export const MONTH_NAMES = [
   "July", "August", "September", "October", "November", "December",
 ];
 
-export const compute13thMonthBreakdown = (staff) => {
-  const basicSalary = toNum(staff?.salary);
-  const ecola = toNum(staff?.ecola);
-  const monthlyCompensation = basicSalary + ecola;
+export const compute13thMonthBreakdown = (staff, promotionRows = []) => {
+  const currentBasicSalary = toNum(staff?.salary);
+  const currentEcola = toNum(staff?.ecola);
 
   const startDateRaw = staff?.start_date;
   const now = new Date();
   const currentYear = now.getFullYear();
   const currentMonthIndex = now.getMonth();
-
-  if (!monthlyCompensation) {
-    return {
-      year: currentYear,
-      rows: MONTH_NAMES.map((month) => ({ month, amount: null, eligible: false, passed: false })),
-      totalCompensationEarned: 0,
-      thirteenthMonth: 0,
-      fourteenthMonth: 0,
-      fifteenthMonth: 0,
-      monthlyCompensation: 0,
-      basicSalary: 0,
-      ecola: 0,
-    };
-  }
 
   let startDate = null;
   if (startDateRaw) {
@@ -94,20 +79,93 @@ export const compute13thMonthBreakdown = (staff) => {
     if (!Number.isNaN(d.getTime())) startDate = d;
   }
 
+  const approvedPromotions = (promotionRows || [])
+    .filter((p) => norm(p.status || p.final_status) === "approved")
+    .filter((p) => p.effective_date)
+    .map((p) => ({
+      effectiveDate: new Date(p.effective_date),
+      oldSalary: toNum(p.old_salary),
+      newSalary: toNum(p.new_salary),
+      oldEcola: toNum(p.old_ecola),
+      newEcola: toNum(p.new_ecola),
+    }))
+    .filter((p) => !Number.isNaN(p.effectiveDate.getTime()))
+    .sort((a, b) => a.effectiveDate - b.effectiveDate);
+
+  const getMonthlyAmount = (monthIndex) => {
+    const monthStart = new Date(currentYear, monthIndex, 1);
+    const monthEnd = new Date(currentYear, monthIndex + 1, 0);
+    const daysInMonth = monthEnd.getDate();
+
+    let salary = currentBasicSalary;
+    let ecola = currentEcola;
+
+    const promotionInMonth = approvedPromotions.find(
+      (p) =>
+        p.effectiveDate.getFullYear() === currentYear &&
+        p.effectiveDate.getMonth() === monthIndex
+    );
+
+    const latestBeforeMonth = [...approvedPromotions]
+      .reverse()
+      .find((p) => p.effectiveDate < monthStart);
+
+    const firstAfterMonth = approvedPromotions.find(
+      (p) => p.effectiveDate > monthEnd
+    );
+
+    if (promotionInMonth) {
+      const effectiveDay = promotionInMonth.effectiveDate.getDate();
+
+      const oldDays = Math.max(0, effectiveDay - 1);
+      const newDays = daysInMonth - oldDays;
+
+      const oldMonthly =
+        promotionInMonth.oldSalary + promotionInMonth.oldEcola;
+      const newMonthly =
+        promotionInMonth.newSalary + promotionInMonth.newEcola;
+
+      return (oldMonthly / daysInMonth) * oldDays + (newMonthly / daysInMonth) * newDays;
+    }
+
+    if (latestBeforeMonth) {
+      salary = latestBeforeMonth.newSalary;
+      ecola = latestBeforeMonth.newEcola;
+    } else if (firstAfterMonth) {
+      salary = firstAfterMonth.oldSalary;
+      ecola = firstAfterMonth.oldEcola;
+    }
+
+    return salary + ecola;
+  };
+
   const rows = MONTH_NAMES.map((month, index) => {
     let eligible = true;
+
     if (startDate) {
       const startYear = startDate.getFullYear();
       const startMonth = startDate.getMonth();
+
       if (startYear > currentYear) eligible = false;
       else if (startYear === currentYear && index < startMonth) eligible = false;
     }
+
     const passed = index <= currentMonthIndex;
     const showValue = eligible && passed;
-    return { month, amount: showValue ? monthlyCompensation : null, eligible, passed };
+
+    return {
+      month,
+      amount: showValue ? getMonthlyAmount(index) : null,
+      eligible,
+      passed,
+    };
   });
 
-  const totalCompensationEarned = rows.reduce((sum, row) => sum + (row.amount != null ? row.amount : 0), 0);
+  const totalCompensationEarned = rows.reduce(
+    (sum, row) => sum + (row.amount != null ? row.amount : 0),
+    0
+  );
+
   const equivalent = totalCompensationEarned / 12;
 
   return {
@@ -117,9 +175,9 @@ export const compute13thMonthBreakdown = (staff) => {
     thirteenthMonth: equivalent,
     fourteenthMonth: equivalent,
     fifteenthMonth: equivalent,
-    monthlyCompensation,
-    basicSalary,
-    ecola,
+    monthlyCompensation: currentBasicSalary + currentEcola,
+    basicSalary: currentBasicSalary,
+    ecola: currentEcola,
   };
 };
 

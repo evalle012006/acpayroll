@@ -26,6 +26,7 @@ const {
 const STATUS_WAITING_HR_FILE = "Waiting HR File";
 const STATUS_APPROVED = "Approved";
 const STATUS_REJECTED = "Rejected";
+const STATUS_VOID = "Void";
 
 const OLD_STATUS_PENDING_VP = "Pending VP Approval";
 
@@ -313,6 +314,7 @@ router.post(
       const prev_branch_id = toInt(b.prev_branch_id);
       const to_branch_id = toInt(b.to_branch_id);
 
+      const department = toStr(b.department);
       const division = toStr(b.division);
       const area = toStr(b.area);
       const region = toStr(b.region);
@@ -331,7 +333,7 @@ router.post(
         return res.status(400).json({ message: "Branches required" });
       }
 
-      if (!division || !area || !region) {
+      if (!division || !area || !region || !department) {
         await client.query("ROLLBACK");
         return res.status(400).json({
           message: "Division, area, and region are required.",
@@ -415,6 +417,7 @@ router.post(
           area,
           region,
           division,
+          department,
           date_created,
           effective_date,
           details,
@@ -426,8 +429,9 @@ router.post(
           $1,$2,$3,
           $4,$5,$6,
           $7,$8,$9,
-          $10,$11,$12,$13::date,$14::date,$15,
-          $16,$17
+          $10,$11,$12,$13,
+          $14::date,$15::date,$16,
+          $17,$18
         )
         RETURNING *
         `,
@@ -444,6 +448,7 @@ router.post(
           area,
           region,
           division,
+          department,
           date_created,
           effective_date,
           details,
@@ -691,14 +696,16 @@ router.post(
           branch_id = $1,
           area = $2,
           region = $3,
-          division = $4
-        WHERE id = $5
+          division = $4,
+          department = $5
+        WHERE id = $6
         `,
         [
           updatedOrder.to_branch_id,
           updatedOrder.area,
           updatedOrder.region,
           updatedOrder.division,
+          updatedOrder.department,
           updatedOrder.employee_id,
         ]
       );
@@ -788,6 +795,86 @@ router.get(
         "GET /api/transfer-staff-orders/files/:fileId/download ERROR:",
         e.message
       );
+      return res.status(500).json({ message: e.message || "Server error" });
+    }
+  }
+);
+
+router.put(
+  "/transfer-staff-orders/:id/void",
+  requireAuth,
+  requirePermission("transfer_staff_order", "void"),
+  async (req, res) => {
+    try {
+      if (!(isAdmin(req) || isIT(req) || isHr(req) || isAccounting(req))) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      const id = toInt(req.params.id);
+      const reason = toStr(req.body?.reason);
+
+      if (!id) return res.status(400).json({ message: "Invalid id" });
+      if (!reason) return res.status(400).json({ message: "Void reason is required" });
+
+      const r = await pool.query(
+        `
+        UPDATE public.transfer_staff_orders
+        SET
+          status = 'Void',
+          voided_by = $2,
+          voided_at = NOW(),
+          void_reason = $3
+        WHERE id = $1
+          AND status IN ('Approved', 'Rejected')
+        RETURNING *
+        `,
+        [id, req.user?.id ?? null, reason]
+      );
+
+      if (r.rowCount === 0) {
+        return res.status(400).json({ message: "Order not found or cannot be voided." });
+      }
+
+      return res.json(r.rows[0]);
+    } catch (e) {
+      console.error("VOID TRANSFER ERROR:", e.message);
+      return res.status(500).json({ message: e.message || "Server error" });
+    }
+  }
+);
+
+router.delete(
+  "/transfer-staff-orders/:id",
+  requireAuth,
+  requirePermission("transfer_staff_order", "delete"),
+  async (req, res) => {
+    try {
+      if (!(isAdmin(req) || isIT(req))) {
+        return res.status(403).json({ message: "Only Admin or IT can delete." });
+      }
+
+      const id = toInt(req.params.id);
+      if (!id) return res.status(400).json({ message: "Invalid id" });
+
+      const r = await pool.query(
+        `
+        DELETE FROM public.transfer_staff_orders
+        WHERE id = $1
+          AND status IN ('Rejected', 'Void')
+        RETURNING *
+        `,
+        [id]
+      );
+
+      if (r.rowCount === 0) {
+        return res.status(400).json({
+          message: "Only Rejected or Void transfer orders can be deleted.",
+        });
+      }
+
+      return res.json({ message: "Transfer order deleted successfully." });
+    } catch (e) {
+      console.error("DELETE TRANSFER ERROR:", e.message);
       return res.status(500).json({ message: e.message || "Server error" });
     }
   }

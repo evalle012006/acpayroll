@@ -673,3 +673,33 @@
   flex-wrap: wrap;
 }
 
+.sap-back-btn {
+  border: 1px solid var(--border-color, #d1d5db);
+  background: var(--card-bg, #ffffff);
+  color: var(--text-color, #111827);
+  padding: 9px 16px;
+  border-radius: 10px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: 0.2s ease;
+}
+
+.sap-back-btn:hover {
+  background: var(--hover-bg, #f3f4f6);
+  transform: translateY(-1px);
+}
+
+/* Dark mode */
+body.dark .sap-back-btn,
+.dark .sap-back-btn,
+[data-theme="dark"] .sap-back-btn {
+  background: #111827;
+  color: #f9fafb;
+  border-color: #374151;
+}
+
+body.dark .sap-back-btn:hover,
+.dark .sap-back-btn:hover,
+[data-theme="dark"] .sap-back-btn:hover {
+  background: #1f2937;
+}

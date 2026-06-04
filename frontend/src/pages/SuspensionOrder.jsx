@@ -295,6 +295,12 @@ export default function SuspensionOrder() {
       scopedStaff = staff.filter((s) => norm(s.area) === norm(user?.area));
     }
 
+    if (isAssistantVicePresident) {
+      scopedStaff = staff.filter(
+        (s) => norm(s.division) === norm(user?.division)
+      );
+    }
+
     const q = norm(employeeSearch);
 
     if (!q) return scopedStaff.slice(0, 20);
@@ -321,7 +327,14 @@ export default function SuspensionOrder() {
         return haystack.includes(q);
       })
       .slice(0, 20);
-  }, [employeeSearch, staff, user, isBranchManager, isAreaManager]);
+        }, [
+        employeeSearch,
+        staff,
+        user,
+        isBranchManager,
+        isAreaManager,
+        isAssistantVicePresident,
+      ]);
 
   const badgeClass = (status) => {
     const s = norm(status || "Pending");

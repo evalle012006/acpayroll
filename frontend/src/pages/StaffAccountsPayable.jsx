@@ -10,7 +10,7 @@ export default function StaffAccountsPayable() {
     <div className="approval-page">
       <div className="approval-page-header">
         <div>
-          <h2 className="approval-title">Other Receivables</h2>
+          <h2 className="approval-title">Staff Accounts Payable</h2>
           <p className="approval-subtitle">
             Create and manage staff accounts payable records.
           </p>
@@ -19,7 +19,7 @@ export default function StaffAccountsPayable() {
         <div className="approval-header-actions">
           <button
             type="button"
-            className="btn-secondary"
+            className="sap-back-btn"
             onClick={() => navigate(-1)}
           >
             ← Back
@@ -29,5 +29,5 @@ export default function StaffAccountsPayable() {
 
       <SAPApprovalTab embedded />
     </div>
-  );
+  );  
 }

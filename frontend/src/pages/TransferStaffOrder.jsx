@@ -111,9 +111,9 @@ export default function TransferStaffOrder() {
 
   const [error, setError] = useState("");
 
-  const [dateCreated, setDateCreated] = useState(() =>
-    new Date().toISOString().slice(0, 10)
-  );
+  const [dateCreated, setDateCreated] = useState(() => new Date().toISOString().slice(0, 10));
+
+  const [department, setDepartment] = useState("");
   const [division, setDivision] = useState("");
   const [area, setArea] = useState("");
   const [region, setRegion] = useState("");
@@ -424,6 +424,7 @@ export default function TransferStaffOrder() {
 
   const resetForm = () => {
     setDateCreated(new Date().toISOString().slice(0, 10));
+    setDepartment("");
     setDivision("");
     setArea("");
     setRegion("");
@@ -491,6 +492,7 @@ export default function TransferStaffOrder() {
         setArea(toStr(branch.area));
         setRegion(toStr(branch.region));
         setDivision(toStr(branch.division));
+        setDepartment(toStr(s.department));
       }
     }
   };
@@ -516,6 +518,7 @@ export default function TransferStaffOrder() {
     if (!division) return setError("Division required.");
     if (!area) return setError("Area required.");
     if (!region) return setError("Region required.");
+    if (!department) return setError("Department required.");
     if (!dateCreated) return setError("Date Created required.");
     if (!effectiveDate) return setError("Effective date required.");
     if (!details) return setError("Details required.");
@@ -535,6 +538,7 @@ export default function TransferStaffOrder() {
       area,
       region,
       division,
+      department,
       date_created: dateCreated,
       effective_date: effectiveDate,
       details,
@@ -625,6 +629,39 @@ export default function TransferStaffOrder() {
       );
     } finally {
       setActionLoading(false);
+    }
+  };
+
+  const voidOrder = async (order) => {
+    const reason = prompt("Enter void reason:");
+    if (!reason?.trim()) return;
+
+    try {
+      await api.put(`/transfer-staff-orders/${order.id}/void`, {
+        reason: reason.trim(),
+      });
+
+      fetchOrders();
+      setShowViewModal(false);
+    } catch (err) {
+      setFilesError(
+        err?.response?.data?.message || "Failed to void transfer order."
+      );
+    }
+  };
+
+  const deleteOrder = async (order) => {
+    if (!window.confirm("Delete this transfer order?")) return;
+
+    try {
+      await api.delete(`/transfer-staff-orders/${order.id}`);
+
+      fetchOrders();
+      setShowViewModal(false);
+    } catch (err) {
+      setFilesError(
+        err?.response?.data?.message || "Failed to delete transfer order."
+      );
     }
   };
 
@@ -1252,6 +1289,15 @@ export default function TransferStaffOrder() {
                     </datalist>
                   </div>
 
+                  <div className="field">
+                    <label>Department</label>
+                    <input
+                      value={department}
+                      onChange={(e) => setDepartment(e.target.value)}
+                      placeholder="Department"
+                    />
+                  </div>
+
                   <div className="field full">
                     <label>Details</label>
                     <textarea
@@ -1509,7 +1555,30 @@ export default function TransferStaffOrder() {
                   Reject
                 </button>
               ) : null}
+
+              {["Approved", "Rejected"].includes(selectedOrder.status) &&
+              (isAdmin || isIT || isHR) ? (
+                <button
+                  className="btn-secondary"
+                  type="button"
+                  onClick={() => voidOrder(selectedOrder)}
+                >
+                  Void
+                </button>
+              ) : null}
+
+              {["Rejected", "Void"].includes(selectedOrder.status) &&
+              (isAdmin || isIT) ? (
+                <button
+                  className="btn-secondary"
+                  type="button"
+                  onClick={() => deleteOrder(selectedOrder)}
+                >
+                  Delete
+                </button>
+              ) : null}
             </div>
+
           </div>
         </div>
       )}

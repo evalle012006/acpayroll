@@ -267,18 +267,52 @@ export default function LeaveTransactions() {
   }, [leaveForm.start_date, leaveForm.end_date, isIndefiniteLeave]);
 
   const filteredEmployees = useMemo(() => {
+    let scopedStaff = staffList || [];
+
+    if (isBranchManager) {
+      scopedStaff = scopedStaff.filter(
+        (s) => String(s.branch_id) === String(user?.branch_id)
+      );
+    }
+
+    if (isAreaManager) {
+      scopedStaff = scopedStaff.filter(
+        (s) => String(s.area || "").toLowerCase() === String(user?.area || "").toLowerCase()
+      );
+    }
+
+    if (isRegionalManager) {
+      scopedStaff = scopedStaff.filter(
+        (s) => String(s.region || "").toLowerCase() === String(user?.region || "").toLowerCase()
+      );
+    }
+
+    if (isAssistantVicePresident) {
+      scopedStaff = scopedStaff.filter(
+        (s) => String(s.division || "").toLowerCase() === String(user?.division || "").toLowerCase()
+      );
+    }
+
     const q = employeeSearch.toLowerCase();
 
-    if (!q) return staffList.slice(0, 30);
+    if (!q) return scopedStaff.slice(0, 30);
 
-    return (staffList || [])
+    return scopedStaff
       .filter((s) => {
         const name = String(s.fullname || "").toLowerCase();
         const empNo = String(s.employee_no || "").toLowerCase();
         return name.includes(q) || empNo.includes(q);
       })
       .slice(0, 30);
-  }, [staffList, employeeSearch]);
+  }, [
+    staffList,
+    employeeSearch,
+    user,
+    isBranchManager,
+    isAreaManager,
+    isRegionalManager,
+    isAssistantVicePresident,
+  ]);
 
   const handleLeaveEmployeeSelect = (employeeId) => {
     const emp = staffList.find((s) => String(s.id) === String(employeeId));

@@ -44,6 +44,7 @@ const cbuWithdrawRoutes = require("./routes/cbuWithdrawRoutes");
 const boardResolutionRoutes = require("./routes/boardResolutionRoutes");
 const rolePermissionsRoutes = require("./routes/rolePermissionsRoutes");
 const awolReportsRoutes = require("./routes/awolReportsRoutes");
+const otherReceivableRoutes = require("./routes/otherReceivableRoutes");
 const { startMonthlyBalancePoster } = require("./jobs/monthlyBalancePoster");
 
 const app = express();
@@ -103,6 +104,7 @@ app.use("/api", cbuWithdrawRoutes);
 app.use("/api", boardResolutionRoutes);
 app.use("/api", rolePermissionsRoutes);
 app.use("/api", awolReportsRoutes);
+app.use("/api", otherReceivableRoutes);
 
 app.get("/test", (_req, res) => {
   res.send("Backend is working!");

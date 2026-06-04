@@ -126,7 +126,15 @@ const getInitialApprovalStage = (applicantRole, department) => {
 };
 
 const getApprovalChain = (applicantRole, department) => {
-  if (isBackOfficeDepartment(department)) return ["assistant vice president"];
+  const dept = norm(department);
+
+  if (dept === "audit" || dept === "audit department") {
+    return ["assistant vice president", "senior vice president"];
+  }
+
+  if (isBackOfficeDepartment(department)) {
+    return ["assistant vice president"];
+  }
 
   const role = norm(applicantRole);
 
@@ -321,6 +329,11 @@ const loanSelectFields = `
   lr.interest,
   lr.total,
   lr.per_month,
+
+  lr.approved_amount,
+  lr.approved_total,
+  lr.approved_per_month,
+
   lr.status,
   lr.approved_at,
   lr.disbursement_date,
@@ -339,6 +352,7 @@ const loanSelectFields = `
   lr.regional_manager_status,
   lr.assistant_vice_president_status,
   lr.vice_president_status,
+  lr.senior_vice_president_status,
   lr.admin_status,
 
   COALESCE(s.fullname, '') AS staff_name,
@@ -627,6 +641,7 @@ router.post(
             regional_manager_status,
             assistant_vice_president_status,
             vice_president_status,
+            senior_vice_president_status,
             admin_status,
             approved_at,
             disbursement_date,
@@ -652,6 +667,7 @@ router.post(
             'Pending',
             $11::varchar,
             $12::varchar,
+            'Pending',
             'Pending',
             'Pending',
             'Pending',
@@ -862,6 +878,7 @@ router.put(
         "regional manager": "regional_manager_status",
         "assistant vice president": "assistant_vice_president_status",
         "vice president": "vice_president_status",
+        "senior vice president": "senior_vice_president_status",
         admin: "admin_status",
       };
 
@@ -951,8 +968,7 @@ router.put(
   }
 );
 
-router.post(
-  "/loan-requests/:id/approved-file",
+router.post("/loan-requests/:id/approved-file",
   requireAuth,
   requirePermission("loan_request", "upload_approved"),
   upload.single("attachment"),
@@ -990,7 +1006,22 @@ router.post(
 
       const loan = cur.rows[0];
 
-      if (toStr(loan.status) !== "Pending Accounting") {
+      const approvedAmount = toNum(req.body?.approved_amount);
+      const approvedTotal = toNum(req.body?.approved_total) || approvedAmount;
+      const approvedPerMonth = toNum(req.body?.approved_per_month);
+
+      if (approvedAmount <= 0) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({
+          message: "Final approved amount is required",
+        });
+      }
+
+      if (
+        toStr(loan.status) !== "Pending Accounting" &&
+        !canFinalApprove(req) &&
+        !isIT(req)
+      ) {
         await client.query("ROLLBACK");
         return res.status(400).json({
           message: "Loan must be Pending Accounting first",
@@ -1006,9 +1037,14 @@ router.post(
         UPDATE public.loan_requests
         SET
           status = 'Approved',
+          approval_stage = 'completed',
           admin_status = 'Approved',
           approved_at = CURRENT_DATE,
           disbursement_date = CURRENT_DATE,
+
+          approved_amount = $5,
+          approved_total = $6,
+          approved_per_month = $7,
 
           attachment_path = $2,
           attachment_name = $3,
@@ -1019,11 +1055,25 @@ router.post(
           approved_attachment_mime = $4
         WHERE id = $1
         `,
-        [id, finalPath, finalName, finalMime]
+        [
+          id,
+          finalPath,
+          finalName,
+          finalMime,
+          approvedAmount,
+          approvedTotal,
+          approvedPerMonth,
+        ]
       );
 
       const employeeNo = loan.employee_no;
-      const total = toNum(loan.total) || toNum(loan.amount);
+
+      const total =
+        approvedTotal ||
+        approvedAmount ||
+        toNum(loan.total) ||
+        toNum(loan.amount);
+
       const balanceColumn = loanTypeToBalanceColumn(loan.loan_type);
 
       if (employeeNo && balanceColumn) {
@@ -1088,6 +1138,8 @@ router.put(
           id,
           status,
           employee_no,
+          approved_total,
+          approved_amount,
           total,
           amount,
           loan_type
@@ -1113,7 +1165,11 @@ router.put(
       }
 
       const balanceColumn = loanTypeToBalanceColumn(loan.loan_type);
-      const total = toNum(loan.total) || toNum(loan.amount);
+      const total =
+        toNum(loan.approved_total) ||
+        toNum(loan.approved_amount) ||
+        toNum(loan.total) ||
+        toNum(loan.amount);
 
       if (loan.employee_no && balanceColumn) {
         await ensureBalanceRow(client, loan.employee_no);
