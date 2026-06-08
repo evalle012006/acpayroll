@@ -19,104 +19,151 @@ const toNum = (v) => {
   return Number.isFinite(n) ? n : 0;
 };
 
-const WAITING_FINAL_FILE = "Waiting Final File Upload";
+const ACCOUNTING_FINAL = "Accounting Department";
 
 const getUserRole = (req) => norm(req.user?.role);
 const getUserDepartment = (req) =>
   norm(req.user?.department || req.user?.department_name);
 
 const isAdmin = (req) => getUserRole(req) === "admin";
-const isIT = (req) => getUserRole(req) === "it";
-const isHR = (req) => getUserRole(req) === "hr";
-const isAccounting = (req) => getUserRole(req) === "accounting";
-const isVicePresident = (req) => getUserRole(req) === "vice president";
-const isSeniorVicePresident = (req) =>
-  getUserRole(req) === "senior vice president";
+const isAccounting = (req) =>
+  getUserRole(req) === "accounting" ||
+  getUserDepartment(req) === "accounting department";
+const isHR = (req) =>
+  getUserRole(req) === "hr" || getUserDepartment(req) === "hr department";
+const isIT = (req) =>
+  getUserRole(req) === "it" || getUserDepartment(req) === "it department";
+const isSVP = (req) => getUserRole(req) === "senior vice president";
 
-const isITDepartmentUser = (req) => {
-  const dept = getUserDepartment(req);
-  return dept === "it department" || dept === "information technology";
-};
+const canBypassApproval = (req) =>
+  isAdmin(req) || isIT(req) || isAccounting(req) || isHR(req) || isSVP(req);
 
-const canPowerAction = (req) =>
-  isAdmin(req) ||
-  isIT(req) ||
-  isITDepartmentUser(req) ||
-  isHR(req) ||
-  isAccounting(req) ||
-  isSeniorVicePresident(req);
-
-const canBypassApproval = canPowerAction;
+const canVoid = (req) => isAdmin(req) || isAccounting(req) || isHR(req);
+const canDelete = canVoid;
 
 const isOperationDepartment = (department) => {
-  const dept = norm(department);
+  const d = norm(department);
   return (
-    dept === "operation department" ||
-    dept === "operations department" ||
-    dept === "operation" ||
-    dept === "operations"
+    d === "operation department" ||
+    d === "operations department" ||
+    d === "operation" ||
+    d === "operations"
   );
 };
 
-const canFinalUpload = (req, department) => {
-  if (canPowerAction(req)) return true;
+const isAuditDepartment = (department) => norm(department) === "audit department";
 
-  if (isOperationDepartment(department)) {
-    return isVicePresident(req);
-  }
-
-  return false;
+const isBackOfficeDepartment = (department) => {
+  const d = norm(department);
+  return [
+    "it department",
+    "hr department",
+    "accounting department",
+    "tread department",
+    "office of the president",
+    "production and logistic department",
+    "production & logistic department",
+  ].includes(d);
 };
 
-const APPROVAL_CHAIN = [
-  "Branch Manager",
-  "Area Manager",
-  "Regional Manager",
-  "Assistant Vice President",
-  "Vice President",
-];
+const hasRole = (position, roleName) => norm(position).includes(norm(roleName));
 
-const getApprovalChainByApplicantRole = (applicantRole) => {
-  const role = norm(applicantRole);
+const isBranchManagerPos = (position) =>
+  hasRole(position, "branch manager") || hasRole(position, "acting branch manager");
 
-  if (role.includes("senior vice president")) {return ["HR", "Accounting"];}
-  if (role.includes("vice president")) return ["Senior Vice President"];
-  if (role.includes("assistant vice president")) return ["Vice President"];
+const isAreaManagerPos = (position) =>
+  hasRole(position, "area manager") || hasRole(position, "acting area manager");
 
-  if (role.includes("regional manager")) {
-    return ["Assistant Vice President", "Vice President"];
+const isRegionalManagerPos = (position) =>
+  hasRole(position, "regional manager") ||
+  hasRole(position, "acting regional manager");
+
+const isAVPPos = (position) => hasRole(position, "assistant vice president");
+const isVPPos = (position) =>
+  hasRole(position, "vice president") && !hasRole(position, "senior vice president");
+const isSVPPos = (position) => hasRole(position, "senior vice president");
+
+const uniq = (arr) => {
+  const out = [];
+  for (const x of arr) {
+    if (x && !out.some((y) => norm(y) === norm(x))) out.push(x);
   }
+  return out;
+};
 
-  if (role.includes("area manager") || role.includes("acting area manager")) {
-    return ["Regional Manager", "Assistant Vice President", "Vice President"];
-  }
+const getRawApprovalChain = (department, position) => {
+  const dept = norm(department);
+  const pos = norm(position);
 
-  if (role.includes("branch manager")) {
+  if (isOperationDepartment(dept)) {
+    if (isSVPPos(pos)) return [ACCOUNTING_FINAL];
+    if (isVPPos(pos)) return ["Senior Vice President", ACCOUNTING_FINAL];
+    if (isAVPPos(pos)) return ["Vice President", ACCOUNTING_FINAL];
+    if (isRegionalManagerPos(pos)) {
+      return ["Assistant Vice President", "Vice President", ACCOUNTING_FINAL];
+    }
+    if (isAreaManagerPos(pos)) {
+      return [
+        "Regional Manager",
+        "Assistant Vice President",
+        "Vice President",
+        ACCOUNTING_FINAL,
+      ];
+    }
+    if (isBranchManagerPos(pos)) {
+      return [
+        "Area Manager",
+        "Regional Manager",
+        "Assistant Vice President",
+        "Vice President",
+        ACCOUNTING_FINAL,
+      ];
+    }
+
     return [
+      "Branch Manager",
       "Area Manager",
       "Regional Manager",
       "Assistant Vice President",
       "Vice President",
+      ACCOUNTING_FINAL,
     ];
   }
 
-  return APPROVAL_CHAIN;
-};
+  if (isAuditDepartment(dept)) {
+    if (isSVPPos(pos)) return [ACCOUNTING_FINAL];
+    if (isVPPos(pos)) return ["Senior Vice President", ACCOUNTING_FINAL];
+    if (isAVPPos(pos)) {
+      return ["Vice President", "Senior Vice President", ACCOUNTING_FINAL];
+    }
 
-const initialStage = (applicantRole) => {
-  const chain = getApprovalChainByApplicantRole(applicantRole);
-  return chain[0] || WAITING_FINAL_FILE;
-};
+    return [
+      "Assistant Vice President",
+      "Vice President",
+      "Senior Vice President",
+      ACCOUNTING_FINAL,
+    ];
+  }
 
-const nextStage = (stage, applicantRole) => {
-  const chain = getApprovalChainByApplicantRole(applicantRole);
-  const current = norm(stage);
-  const index = chain.findIndex((x) => norm(x) === current);
+  if (isBackOfficeDepartment(dept)) {
+    if (isSVPPos(pos)) return [ACCOUNTING_FINAL];
+    if (isVPPos(pos)) return ["Senior Vice President", ACCOUNTING_FINAL];
+    if (isAVPPos(pos)) {
+      return ["Vice President", "Senior Vice President", ACCOUNTING_FINAL];
+    }
 
-  if (index < 0) return chain[0] || WAITING_FINAL_FILE;
-  if (index >= chain.length - 1) return "Approved";
+    return ["Assistant Vice President", "Senior Vice President", ACCOUNTING_FINAL];
+  }
 
-  return chain[index + 1];
+  return [
+    "Branch Manager",
+    "Area Manager",
+    "Regional Manager",
+    "Assistant Vice President",
+    "Vice President",
+    "Senior Vice President",
+    ACCOUNTING_FINAL,
+  ];
 };
 
 const stageColumn = (stage) => {
@@ -128,15 +175,15 @@ const stageColumn = (stage) => {
   if (s === "assistant vice president") return "avp_status";
   if (s === "vice president") return "vp_status";
   if (s === "senior vice president") return "svp_status";
+  if (s === norm(ACCOUNTING_FINAL)) return "final_status";
 
   return null;
 };
 
-const canApproveCurrentStage = (req, stage) => {
+const roleMatchesStage = (req, stage) => {
   const role = getUserRole(req);
+  const dept = getUserDepartment(req);
   const s = norm(stage);
-
-  if (canBypassApproval(req)) return true;
 
   if (s === "branch manager") return role === "branch manager";
   if (s === "area manager") return role === "area manager";
@@ -144,21 +191,147 @@ const canApproveCurrentStage = (req, stage) => {
   if (s === "assistant vice president") return role === "assistant vice president";
   if (s === "vice president") return role === "vice president";
   if (s === "senior vice president") return role === "senior vice president";
+  if (s === norm(ACCOUNTING_FINAL)) {
+    return role === "accounting" || dept === "accounting department";
+  }
 
   return false;
 };
 
-const chainTextByApplicantRole = (role) => {
-  const chain = getApprovalChainByApplicantRole(role);
-  return chain.length ? chain.join(" → ") : WAITING_FINAL_FILE;
-};
+const canApproveCurrentStage = (req, stage) =>
+  roleMatchesStage(req, stage) || canBypassApproval(req);
+
+async function getUserColumns(client) {
+  const table = await client.query(`
+    SELECT to_regclass('public.users') AS users_table
+  `);
+
+  if (!table.rows[0]?.users_table) return [];
+
+  const cols = await client.query(`
+    SELECT column_name
+    FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name = 'users'
+  `);
+
+  return cols.rows.map((r) => r.column_name);
+}
+
+async function hasApproverAccount(client, stage, staff) {
+  if (norm(stage) === norm(ACCOUNTING_FINAL)) return true;
+
+  const cols = await getUserColumns(client);
+  if (!cols.includes("role")) return true;
+
+  const where = [`LOWER(TRIM(COALESCE(role, ''))) = $1`];
+  const params = [norm(stage)];
+
+  if (cols.includes("status")) {
+    where.push(`LOWER(TRIM(COALESCE(status, 'active'))) <> 'inactive'`);
+  }
+
+  if (isOperationDepartment(staff.department)) {
+    if (norm(stage) === "branch manager" && cols.includes("branch_id")) {
+      params.push(staff.branch_id || null);
+      where.push(`branch_id = $${params.length}`);
+    }
+
+    if (norm(stage) === "area manager" && cols.includes("area")) {
+      params.push(norm(staff.area));
+      where.push(`LOWER(TRIM(COALESCE(area, ''))) = $${params.length}`);
+    }
+
+    if (norm(stage) === "regional manager" && cols.includes("region")) {
+      params.push(norm(staff.region));
+      where.push(`LOWER(TRIM(COALESCE(region, ''))) = $${params.length}`);
+    }
+
+    if (norm(stage) === "assistant vice president" && cols.includes("division")) {
+      params.push(norm(staff.division));
+      where.push(`LOWER(TRIM(COALESCE(division, ''))) = $${params.length}`);
+    }
+
+    if (norm(stage) === "vice president" && cols.includes("department")) {
+      params.push("operation department");
+      where.push(`LOWER(TRIM(COALESCE(department, ''))) IN ($${params.length}, 'operations department')`);
+    }
+  } else if (cols.includes("department")) {
+    if (
+      ["assistant vice president", "vice president", "senior vice president"].includes(
+        norm(stage)
+      )
+    ) {
+      params.push(norm(staff.department));
+      where.push(`LOWER(TRIM(COALESCE(department, ''))) = $${params.length}`);
+    }
+  }
+
+  try {
+    const r = await client.query(
+      `
+      SELECT id
+      FROM public.users
+      WHERE ${where.join(" AND ")}
+      LIMIT 1
+      `,
+      params
+    );
+
+    return r.rowCount > 0;
+  } catch {
+    return true;
+  }
+}
+
+async function getApprovalChain(client, staff) {
+  const raw = uniq(getRawApprovalChain(staff.department, staff.position));
+  const final = [];
+
+  for (const stage of raw) {
+    if (norm(stage) === norm(ACCOUNTING_FINAL)) {
+      final.push(stage);
+      continue;
+    }
+
+    const exists = await hasApproverAccount(client, stage, staff);
+    if (exists) final.push(stage);
+  }
+
+  return final.length ? final : [ACCOUNTING_FINAL];
+}
+
+const chainText = (chain) => chain.join(" → ");
+
+async function getInitialStage(client, staff) {
+  const chain = await getApprovalChain(client, staff);
+  return chain[0] || ACCOUNTING_FINAL;
+}
+
+async function getNextStage(client, staff, currentStage) {
+  const chain = await getApprovalChain(client, staff);
+  const idx = chain.findIndex((x) => norm(x) === norm(currentStage));
+
+  if (idx < 0) return chain[0] || ACCOUNTING_FINAL;
+  if (idx >= chain.length - 1) return "Approved";
+
+  return chain[idx + 1];
+}
 
 async function getStaffById(employeeId, client = db) {
   const r = await client.query(
     `
-    SELECT id, employee_no, department, position
-    FROM public.staff
-    WHERE id = $1
+    SELECT
+      s.id,
+      s.employee_no,
+      s.department,
+      s.position,
+      s.branch_id,
+      s.area,
+      s.region,
+      s.division
+    FROM public.staff s
+    WHERE s.id = $1
     LIMIT 1
     `,
     [employeeId]
@@ -219,6 +392,7 @@ async function finalizeCbuWithdrawal({ client, row, staff, fileKey, fileName }) 
         attachment_name = $2,
         approved_attachment_path = $1,
         approved_attachment_name = $2,
+        final_status = 'Approved',
         updated_at = NOW()
     WHERE id = $3
     RETURNING *
@@ -233,9 +407,41 @@ router.get(
   "/cbu-withdrawals",
   requireAuth,
   requirePermission("cbu_withdrawal", "view"),
-  async (_req, res) => {
+  async (req, res) => {
     try {
-      const result = await db.query(`
+      const params = [];
+      let where = "";
+
+      const role = getUserRole(req);
+      const dept = getUserDepartment(req);
+
+      if (isOperationDepartment(dept)) {
+       if (role === "branch manager") {
+          params.push(req.user?.branch_id || null);
+
+          where = `
+            WHERE LOWER(TRIM(COALESCE(b.code, ''))) =
+                  LOWER(TRIM($${params.length}))
+          `;
+        } else if (role === "area manager") {
+          params.push(norm(req.user?.area));
+          where = `WHERE LOWER(TRIM(COALESCE(s.area, ''))) = $${params.length}`;
+        } else if (role === "regional manager") {
+          params.push(norm(req.user?.region));
+          where = `WHERE LOWER(TRIM(COALESCE(s.region, ''))) = $${params.length}`;
+        } else if (role === "assistant vice president") {
+          params.push(norm(req.user?.division));
+          where = `WHERE LOWER(TRIM(COALESCE(s.division, ''))) = $${params.length}`;
+        } else if (role === "vice president") {
+          where = `
+            WHERE LOWER(TRIM(COALESCE(s.department, ''))) IN
+              ('operation department', 'operations department', 'operation', 'operations')
+          `;
+        }
+      }
+
+      const result = await db.query(
+        `
         SELECT
           cw.*,
           s.employee_no,
@@ -257,8 +463,11 @@ router.get(
         LEFT JOIN public.staff s ON s.id = cw.employee_id
         LEFT JOIN public.branches b ON b.id = s.branch_id
         LEFT JOIN public.staff_balances sb ON sb.employee_no = s.employee_no
+        ${where}
         ORDER BY cw.id DESC
-      `);
+        `,
+        params
+      );
 
       return res.json(result.rows);
     } catch (err) {
@@ -274,43 +483,36 @@ router.post(
   requirePermission("cbu_withdrawal", "create"),
   uploadToTemp,
   async (req, res) => {
+    const client = await db.connect();
+
     try {
       const employeeId = toNum(req.body?.employee_id);
       const amount = toNum(req.body?.amount);
       const reason = clean(req.body?.reason);
       const disbursementDate = clean(req.body?.disbursement_date) || null;
 
-      if (!employeeId) {
-        return res.status(400).json({ message: "Employee is required" });
-      }
-
+      if (!employeeId) return res.status(400).json({ message: "Employee is required" });
       if (!amount || amount <= 0) {
         return res.status(400).json({ message: "Valid amount is required" });
       }
-
-      if (!reason) {
-        return res.status(400).json({ message: "Reason is required" });
-      }
-
+      if (!reason) return res.status(400).json({ message: "Reason is required" });
       if (!req.file?.key) {
         return res.status(400).json({ message: "Request file is required" });
       }
 
-      const staff = await getStaffById(employeeId);
+      await client.query("BEGIN");
 
+      const staff = await getStaffById(employeeId, client);
       if (!staff) {
+        await client.query("ROLLBACK");
         return res.status(404).json({ message: "Staff record not found" });
       }
 
       const employeeNo = clean(staff.employee_no);
-      const applicantRole = clean(staff.position || req.user?.role);
-      const startStage = initialStage(applicantRole);
-      const startStatus =
-        norm(startStage) === norm(WAITING_FINAL_FILE)
-          ? WAITING_FINAL_FILE
-          : "Pending";
+      const chain = await getApprovalChain(client, staff);
+      const startStage = chain[0] || ACCOUNTING_FINAL;
 
-      const balanceRes = await db.query(
+      const balanceRes = await client.query(
         `
         SELECT COALESCE(cbu, 0) AS cbu
         FROM public.staff_balances
@@ -321,10 +523,12 @@ router.post(
       );
 
       if (balanceRes.rowCount === 0) {
+        await client.query("ROLLBACK");
         return res.status(404).json({ message: "Balance not found" });
       }
 
       if (toNum(balanceRes.rows[0].cbu) < amount) {
+        await client.query("ROLLBACK");
         return res.status(400).json({
           message: `Insufficient CBU balance. Current balance is ${balanceRes.rows[0].cbu}.`,
         });
@@ -339,7 +543,7 @@ router.post(
 
       const attachmentName = req.file.originalname || null;
 
-      const result = await db.query(
+      const result = await client.query(
         `
         INSERT INTO public.cbu_withdrawals (
           employee_id,
@@ -353,14 +557,13 @@ router.post(
           created_at,
           updated_at
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), NOW())
+        VALUES ($1, $2, $3, 'Pending', $4, $5, $6, $7, NOW(), NOW())
         RETURNING *
         `,
         [
           employeeId,
           amount,
           reason,
-          startStatus,
           startStage,
           disbursementDate,
           attachmentPath,
@@ -368,13 +571,18 @@ router.post(
         ]
       );
 
+      await client.query("COMMIT");
+
       return res.status(201).json({
         ...result.rows[0],
-        approval_chain: chainTextByApplicantRole(applicantRole),
+        approval_chain: chainText(chain),
       });
     } catch (err) {
+      await client.query("ROLLBACK");
       console.error("CREATE CBU ERROR:", err.message);
       return res.status(500).json({ message: err.message });
+    } finally {
+      client.release();
     }
   }
 );
@@ -388,9 +596,7 @@ router.get(
       const id = toNum(req.params.id);
       const type = norm(req.params.type);
 
-      if (!id) {
-        return res.status(400).json({ message: "Invalid withdrawal id" });
-      }
+      if (!id) return res.status(400).json({ message: "Invalid withdrawal id" });
 
       if (!["request", "approved", "latest"].includes(type)) {
         return res.status(400).json({ message: "Invalid file type" });
@@ -416,13 +622,9 @@ router.get(
         key = row.approved_attachment_path || row.attachment_path;
       }
 
-      if (type === "request") {
-        key = row.attachment_path;
-      }
+      if (type === "request") key = row.attachment_path;
 
-      if (!key) {
-        return res.status(404).json({ message: "File not found" });
-      }
+      if (!key) return res.status(404).json({ message: "File not found" });
 
       const url = await getSignedDownloadUrl(key);
       return res.json({ url });
@@ -456,9 +658,7 @@ router.put(
 
       const rejectionReason = clean(req.body?.rejection_reason);
 
-      if (!id) {
-        return res.status(400).json({ message: "Invalid withdrawal id" });
-      }
+      if (!id) return res.status(400).json({ message: "Invalid withdrawal id" });
 
       if (!["Approved", "Rejected", "Void"].includes(status)) {
         return res.status(400).json({ message: "Invalid status" });
@@ -499,7 +699,7 @@ router.put(
         return res.status(404).json({ message: "Staff record not found" });
       }
 
-      if (["approved", "rejected", "void"].includes(norm(row.status))) {
+      if (["rejected", "void"].includes(norm(row.status))) {
         await client.query("ROLLBACK");
         return res.status(400).json({
           message: `This withdrawal is already ${norm(row.status)}.`,
@@ -507,21 +707,22 @@ router.put(
       }
 
       if (status === "Void") {
-        if (!canPowerAction(req)) {
+        if (!canVoid(req)) {
           await client.query("ROLLBACK");
           return res.status(403).json({
-            message: "Only Admin, IT, HR, Accounting, or SVP can void CBU withdrawal.",
+            message:
+              "Only Admin, HR Department, or Accounting Department can void CBU withdrawal.",
           });
         }
 
-        const updated = await client.query(
+        await client.query(
           `
           UPDATE public.cbu_withdrawals
-          SET status = 'Void',
-              approval_stage = 'Void',
-              updated_at = NOW()
+          SET
+            status = 'Void',
+            approval_stage = 'Void',
+            updated_at = NOW()
           WHERE id = $1
-          RETURNING *
           `,
           [id]
         );
@@ -530,21 +731,11 @@ router.put(
 
         return res.json({
           message: "CBU withdrawal voided successfully.",
-          data: updated.rows[0],
         });
       }
 
-      if (norm(row.status) === norm(WAITING_FINAL_FILE)) {
-        await client.query("ROLLBACK");
-        return res.status(400).json({
-          message: isOperationDepartment(staff.department)
-            ? "This withdrawal already passed chain approval. Vice President or bypass approver must upload final file."
-            : "This withdrawal already passed chain approval. HR/Accounting/Admin/IT/SVP must upload final file.",
-        });
-      }
-
-      const applicantRole = clean(staff.position || "");
-      const currentStage = clean(row.approval_stage) || initialStage(applicantRole);
+      const currentStage =
+        clean(row.approval_stage) || (await getInitialStage(client, staff));
       const col = stageColumn(currentStage);
 
       if (!canApproveCurrentStage(req, currentStage)) {
@@ -553,9 +744,8 @@ router.put(
       }
 
       if (status === "Rejected") {
-        if (col) {
-          await client.query(
-            `
+        const updateSql = col
+          ? `
             UPDATE public.cbu_withdrawals
             SET ${col} = 'Rejected',
                 status = 'Rejected',
@@ -563,25 +753,25 @@ router.put(
                 rejected_at = NOW(),
                 updated_at = NOW()
             WHERE id = $2
-            `,
-            [rejectionReason, id]
-          );
-        } else {
-          await client.query(
-            `
+            RETURNING *
+          `
+          : `
             UPDATE public.cbu_withdrawals
             SET status = 'Rejected',
                 rejection_reason = $1,
                 rejected_at = NOW(),
                 updated_at = NOW()
             WHERE id = $2
-            `,
-            [rejectionReason, id]
-          );
-        }
+            RETURNING *
+          `;
+
+        const rejected = await client.query(updateSql, [rejectionReason, id]);
 
         await client.query("COMMIT");
-        return res.json({ message: "CBU withdrawal rejected successfully" });
+        return res.json({
+          message: "CBU withdrawal rejected successfully.",
+          data: rejected.rows[0],
+        });
       }
 
       const latestFileKey = await moveFromTemp(
@@ -593,56 +783,7 @@ router.put(
 
       const latestFileName = req.file.originalname || null;
 
-      if (col) {
-        await client.query(
-          `
-          UPDATE public.cbu_withdrawals
-          SET ${col} = 'Approved',
-              updated_at = NOW()
-          WHERE id = $1
-          `,
-          [id]
-        );
-      }
-
-      const next = canBypassApproval(req)
-        ? "Approved"
-        : nextStage(currentStage, applicantRole);
-
-      if (next !== "Approved") {
-        const waitingFinal = norm(next) === norm(WAITING_FINAL_FILE);
-
-        const updated = await client.query(
-          `
-          UPDATE public.cbu_withdrawals
-          SET status = $1,
-              approval_stage = $2,
-              attachment_path = $3,
-              attachment_name = $4,
-              updated_at = NOW()
-          WHERE id = $5
-          RETURNING *
-          `,
-          [
-            waitingFinal ? WAITING_FINAL_FILE : "Pending",
-            next,
-            latestFileKey,
-            latestFileName,
-            id,
-          ]
-        );
-
-        await client.query("COMMIT");
-
-        return res.json({
-          message: waitingFinal
-            ? "Waiting final upload."
-            : `CBU withdrawal approved and signed file uploaded. Next stage: ${next}`,
-          data: updated.rows[0],
-        });
-      }
-
-      if (canFinalUpload(req, staff.department)) {
+      if (norm(currentStage) === norm(ACCOUNTING_FINAL)) {
         const finalized = await finalizeCbuWithdrawal({
           client,
           row,
@@ -659,7 +800,43 @@ router.put(
         await client.query("COMMIT");
 
         return res.json({
-          message: "CBU withdrawal fully approved.",
+          message: "Accounting final approval completed. CBU balance deducted.",
+          data: finalized.data,
+        });
+      }
+
+      if (col) {
+        await client.query(
+          `
+          UPDATE public.cbu_withdrawals
+          SET ${col} = 'Approved',
+              updated_at = NOW()
+          WHERE id = $1
+          `,
+          [id]
+        );
+      }
+
+      const next = await getNextStage(client, staff, currentStage);
+
+      if (norm(next) === "approved") {
+        const finalized = await finalizeCbuWithdrawal({
+          client,
+          row,
+          staff,
+          fileKey: latestFileKey,
+          fileName: latestFileName,
+        });
+
+        if (finalized.error) {
+          await client.query("ROLLBACK");
+          return res.status(finalized.errorStatus).json(finalized.error);
+        }
+
+        await client.query("COMMIT");
+
+        return res.json({
+          message: "CBU withdrawal fully approved. CBU balance deducted.",
           data: finalized.data,
         });
       }
@@ -667,7 +844,7 @@ router.put(
       const updated = await client.query(
         `
         UPDATE public.cbu_withdrawals
-        SET status = $1,
+        SET status = 'Pending',
             approval_stage = $1,
             attachment_path = $2,
             attachment_name = $3,
@@ -675,13 +852,13 @@ router.put(
         WHERE id = $4
         RETURNING *
         `,
-        [WAITING_FINAL_FILE, latestFileKey, latestFileName, id]
+        [next, latestFileKey, latestFileName, id]
       );
 
       await client.query("COMMIT");
 
       return res.json({
-        message: "Chain approval completed. Waiting final file upload.",
+        message: `CBU withdrawal approved and signed file uploaded. Next stage: ${next}`,
         data: updated.rows[0],
       });
     } catch (err) {
@@ -707,10 +884,7 @@ router.post(
     try {
       const id = toNum(req.params.id);
 
-      if (!id) {
-        return res.status(400).json({ message: "Invalid withdrawal id" });
-      }
-
+      if (!id) return res.status(400).json({ message: "Invalid withdrawal id" });
       if (!req.file?.key) {
         return res.status(400).json({ message: "No file uploaded" });
       }
@@ -740,29 +914,17 @@ router.post(
         return res.status(404).json({ message: "Staff record not found" });
       }
 
-      if (["approved", "rejected", "void"].includes(norm(row.status))) {
+      if (norm(row.approval_stage) !== norm(ACCOUNTING_FINAL)) {
         await client.query("ROLLBACK");
         return res.status(400).json({
-          message: `This withdrawal is already ${norm(row.status)}.`,
+          message: "Final upload is only allowed during Accounting Department stage.",
         });
       }
 
-      if (!canFinalUpload(req, staff.department)) {
+      if (!canApproveCurrentStage(req, ACCOUNTING_FINAL)) {
         await client.query("ROLLBACK");
         return res.status(403).json({
-          message: isOperationDepartment(staff.department)
-            ? "Only Vice President or bypass approver can upload final file."
-            : "Only HR, Accounting, Admin, IT, or SVP can upload final file.",
-        });
-      }
-
-      if (
-        norm(row.status) !== norm(WAITING_FINAL_FILE) &&
-        !canBypassApproval(req)
-      ) {
-        await client.query("ROLLBACK");
-        return res.status(400).json({
-          message: "Final file can only be uploaded after chain approval is completed.",
+          message: "Only Accounting Department or bypass approver can upload final file.",
         });
       }
 
@@ -791,7 +953,7 @@ router.post(
       await client.query("COMMIT");
 
       return res.json({
-        message: "Final approved file uploaded. CBU withdrawal fully approved.",
+        message: "Accounting final approved file uploaded. CBU withdrawal fully approved.",
         data: finalized.data,
       });
     } catch (err) {
@@ -812,13 +974,11 @@ router.delete(
     try {
       const id = toNum(req.params.id);
 
-      if (!id) {
-        return res.status(400).json({ message: "Invalid withdrawal id" });
-      }
+      if (!id) return res.status(400).json({ message: "Invalid withdrawal id" });
 
-      if (!canPowerAction(req)) {
+      if (!canDelete(req)) {
         return res.status(403).json({
-          message: "Only Admin, IT, HR, Accounting, or SVP can delete CBU withdrawal.",
+          message: "Only Admin, HR Department, or Accounting Department can delete CBU withdrawal.",
         });
       }
 
@@ -835,9 +995,9 @@ router.delete(
         return res.status(404).json({ message: "CBU withdrawal not found" });
       }
 
-      if (norm(check.rows[0].status) === "approved") {
+      if (!["rejected", "void"].includes(norm(check.rows[0].status))) {
         return res.status(400).json({
-          message: "Approved withdrawal cannot be deleted. Use void instead.",
+          message: "Delete is only allowed when the CBU withdrawal is Rejected or Void.",
         });
       }
 

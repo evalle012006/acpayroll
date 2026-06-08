@@ -505,8 +505,6 @@ export default function ExitStaffOrders() {
     if (!canDelete) return alert("Access denied.");
     if (!o?.id) return;
 
-    if (String(o.status || "").toLowerCase() === "approved") return;
-
     const ok = window.confirm(
       `Delete this Exit Staff Order?\n\nOrder: ${o.order_no || o.id}\nEmployee: ${
         o.employee_name
@@ -764,16 +762,12 @@ export default function ExitStaffOrders() {
                               className="po-mini-btn icon-only"
                               type="button"
                               onClick={() => del(o)}
-                              disabled={approved || deletingId === o.id}
-                              title={
-                                approved
-                                  ? "Approved records cannot be deleted"
-                                  : "Delete"
-                              }
+                              disabled={deletingId === o.id}
+                              title="Delete"
                               style={{
                                 marginLeft: 8,
-                                opacity: approved || deletingId === o.id ? 0.5 : 1,
-                                cursor: approved ? "not-allowed" : "pointer",
+                                opacity: deletingId === o.id ? 0.5 : 1,
+                                cursor: "pointer",
                               }}
                             >
                               {deletingId === o.id ? "..." : <FaTrash />}

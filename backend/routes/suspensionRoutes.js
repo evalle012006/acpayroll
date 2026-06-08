@@ -46,6 +46,15 @@ const getUserArea = (req) => toStr(req.user?.area);
 const getUserRegion = (req) => toStr(req.user?.region);
 const getUserDivision = (req) => toStr(req.user?.division);
 
+const isAccountingDepartmentUser = (req) =>
+  String(
+    req.user?.department ||
+    req.user?.department_name ||
+    ""
+  )
+    .toLowerCase()
+    .includes("accounting");
+
 const uploadRoot = path.join(process.cwd(), "uploads");
 const suspensionUploadDir = path.join(uploadRoot, "suspension");
 
@@ -125,6 +134,7 @@ const canAccessStaffRecord = (req, staff) => {
     isIT(req) ||
     isHr(req) ||
     isAccounting(req) ||
+    isAccountingDepartmentUser(req) ||
     isTread(req) ||
     isVicePresident(req) ||
     isSeniorVicePresident(req) ||
@@ -157,7 +167,13 @@ const canAccessStaffRecord = (req, staff) => {
 };
 
 const canMutatePendingOrder = (req, row) => {
-  if (isAdmin(req) || isIT(req) || isHr(req) || isAccounting(req)) return true;
+  if (
+    isAdmin(req) ||
+    isIT(req) ||
+    isHr(req) ||
+    isAccounting(req) ||
+    isAccountingDepartmentUser(req)
+  ) return true;
 
   if (isBranchManager(req)) {
     const bid = toInt(getUserBranchId(req));
@@ -192,10 +208,18 @@ const canDownloadRequestFile = (req) =>
   isAdmin(req) ||
   isIT(req) ||
   isHr(req) ||
-  isAccounting(req);
+  isAccounting(req) ||
+  isAccountingDepartmentUser(req);
 
 const canDownloadApprovedFile = (req, row) => {
-  if (isAdmin(req) || isIT(req) || isHr(req) || isAccounting(req)) return true;
+  if (
+    isAdmin(req) ||
+    isIT(req) ||
+    isHr(req) ||
+    isAccounting(req) ||
+    isAccountingDepartmentUser(req)
+  ) return true;
+
   if (isRegionalManager(req)) return true;
   if (isAssistantVicePresident(req)) return true;
 
@@ -210,7 +234,11 @@ const canDownloadApprovedFile = (req, row) => {
 };
 
 const canUploadApprovedFile = (req) =>
-  isAdmin(req) || isIT(req) || isHr(req) || isAccounting(req);
+  isAdmin(req) ||
+  isIT(req) ||
+  isHr(req) ||
+  isAccounting(req) ||
+  isAccountingDepartmentUser(req);
 
 router.get(
   "/suspension-orders",
@@ -223,6 +251,7 @@ router.get(
         isIT(req) ||
         isHr(req) ||
         isAccounting(req) ||
+        isAccountingDepartmentUser(req) ||
         isTread(req) ||
         isVicePresident(req) ||
         isSeniorVicePresident(req) ||
@@ -1143,7 +1172,13 @@ router.put(
           `,
           [id, approverId, STAGE_ADMIN, LABELS[STAGE_ADMIN]]
         );
-      } else if (isAdmin(req) || isIT(req) || isHr(req) || isAccounting(req)) {
+      } else if (
+          isAdmin(req) ||
+          isIT(req) ||
+          isHr(req) ||
+          isAccounting(req) ||
+          isAccountingDepartmentUser(req)
+        ) {
         if (currentStage !== STAGE_ADMIN) {
           return res.status(400).json({
             message: "This order is not pending Admin/HR/Accounting approval",
@@ -1230,7 +1265,13 @@ router.put(
       }
 
       if (
-        (isAdmin(req) || isIT(req) || isHr(req) || isAccounting(req)) &&
+        (
+          isAdmin(req) ||
+          isIT(req) ||
+          isHr(req) ||
+          isAccounting(req) ||
+          isAccountingDepartmentUser(req)
+        ) &&
         currentStage === STAGE_ADMIN
       ) {
         allowed = true;

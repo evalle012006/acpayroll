@@ -485,33 +485,34 @@
    PREVIEW BOX
 ================================= */
 
-.preview-box {
-  margin-top: 14px;
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
+.loan-schedule-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 12px;
 }
 
-.preview-box > div {
-  background: var(--panel-2);
-  border: 1px solid var(--border);
-  border-radius: 14px;
-  padding: 12px 14px;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.preview-box span {
+.loan-schedule-table th {
+  background: var(--table-header);
+  color: #fff;
+  padding: 10px;
+  text-align: left;
   font-size: 12px;
-  color: var(--muted);
-  font-weight: 700;
+  font-weight: 900;
 }
 
-.preview-box strong {
-  font-size: 16px;
-  color: var(--text);
+.loan-schedule-table td {
+  padding: 10px;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+}
+
+.loan-schedule-table tr:last-child td {
   font-weight: 900;
+  background: rgba(59, 130, 246, 0.08);
+}
+
+.loan-schedule-table tbody tr:hover {
+  background: var(--row-hover);
 }
 
 /* ===============================
@@ -702,4 +703,61 @@ body.dark .sap-back-btn:hover,
 .dark .sap-back-btn:hover,
 [data-theme="dark"] .sap-back-btn:hover {
   background: #1f2937;
+}
+
+.loan-final-box {
+  display: grid;
+  gap: 16px;
+  margin-top: 10px;
+}
+
+.loan-final-field {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.loan-final-field label {
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 900;
+}
+
+.loan-final-field small {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.loan-money-input {
+  display: flex;
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--panel);
+  overflow: hidden;
+}
+
+.loan-money-input span {
+  width: 48px;
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--panel-2);
+  color: var(--text);
+  font-weight: 900;
+  border-right: 1px solid var(--border);
+}
+
+.loan-money-input input {
+  border: none !important;
+  border-radius: 0 !important;
+  flex: 1;
+}
+
+.loan-final-field input:focus,
+.loan-money-input:focus-within {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 25%, transparent);
 }

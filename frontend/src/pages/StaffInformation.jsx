@@ -32,6 +32,20 @@ export default function StaffInformation() {
   const user = useMemo(() => readUser(), []);
   const role = useMemo(() => norm(user?.role), [user]);
 
+    const userDepartment = useMemo(
+      () =>
+        norm(
+          user?.department ||
+            user?.department_name ||
+            user?.user_department ||
+            user?.departmentName ||
+            user?.dept
+        ),
+      [user]
+    );
+
+  const isAccountingDepartmentUser = userDepartment.includes("accounting");
+
   const params = new URLSearchParams(window.location.search);
   const selectedStaffId = params.get("id");
   const selectedTab = params.get("tab");
@@ -57,7 +71,7 @@ export default function StaffInformation() {
     role === "it" ||
     role === "hr" ||
     role === "tread" ||
-    role === "accounting";
+    isAccountingDepartmentUser;
 
   const [staff, setStaff] = useState([]);
   const [branches, setBranches] = useState([]);
@@ -447,6 +461,7 @@ export default function StaffInformation() {
       return false;
       }
 
+      if (!isAccountingDepartmentUser) {
       if (role === "branch manager") {
         if (!sameBranch(staffBranch, userBranch)) return false;
       }
@@ -454,6 +469,7 @@ export default function StaffInformation() {
       if (role === "area manager" && staffArea !== userArea) return false;
       if (role === "regional manager" && staffRegion !== userRegion) return false;
       if (role === "assistant vice president" && staffDivision !== userDivision) return false;
+    }
 
       const st = String(s.status || "Active");
       if (statusFilter !== "All" && st !== statusFilter) return false;
@@ -491,7 +507,7 @@ export default function StaffInformation() {
 
       return hay.includes(q);
     });
-  }, [staff, search, statusFilter, role, user, sameBranch, findBranch]);
+  }, [staff, search, statusFilter, role, user, sameBranch, findBranch, isAccountingDepartmentUser]);
 
   const totalPages = Math.max(1, Math.ceil(filteredStaff.length / pageSize));
 

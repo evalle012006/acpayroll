@@ -74,14 +74,47 @@ const parseChain = (item) => {
   return [];
 };
 
-const canBypass = (role) =>
-  ["admin", "it"].includes(norm(role));
+const canBypass = (role, department = "") =>
+  ["admin", "it"].includes(norm(role)) ||
+  (
+    norm(department).includes("accounting") &&
+    [
+      "branch manager",
+      "area manager",
+      "regional manager",
+      "assistant vice president",
+      "vice president",
+      "senior vice president",
+    ].includes(norm(role))
+  );
 
-const canFinalUpload = (role) =>
-  ["admin", "it", "accounting", "hr"].includes(norm(role));
+const canFinalUpload = (role, department = "") =>
+  ["admin", "it", "accounting", "hr"].includes(norm(role)) ||
+  (
+    norm(department).includes("accounting") &&
+    [
+      "branch manager",
+      "area manager",
+      "regional manager",
+      "assistant vice president",
+      "vice president",
+      "senior vice president",
+    ].includes(norm(role))
+  );
 
-const canVoid = (role) =>
-  ["admin", "it"].includes(norm(role));
+const canVoid = (role, department = "") =>
+  ["admin", "it"].includes(norm(role)) ||
+  (
+    norm(department).includes("accounting") &&
+    [
+      "branch manager",
+      "area manager",
+      "regional manager",
+      "assistant vice president",
+      "vice president",
+      "senior vice president",
+    ].includes(norm(role))
+  );
 
 const getCurrentStage = (item) => {
   const explicit = norm(item?.approval_stage);
@@ -107,7 +140,7 @@ const getCurrentStage = (item) => {
   return chain[0] || "";
 };
 
-const canApprove = (item, role) => {
+const canApprove = (item, role, department = "") => {
   const status = norm(item?.status);
 
   if (
@@ -119,16 +152,14 @@ const canApprove = (item, role) => {
     return false;
   }
 
-  if (canBypass(role)) {
-    return true;
-  }
+  if (canBypass(role, department)) return true;
 
   return getCurrentStage(item) === norm(role);
 };
 
-const canUploadFinal = (item, role) =>
+const canUploadFinal = (item, role, department = "") =>
   norm(item?.status) === norm(WAITING_FINAL_FILE) &&
-  canFinalUpload(role);
+  canFinalUpload(role, department);
 
 const badgeClass = (status) => {
   const s = norm(status);
@@ -152,12 +183,35 @@ export default function ReimbursementApprovalTab() {
 
   const role = norm(user?.role);
 
+  const department = norm(
+  user?.department ||
+    user?.department_name ||
+    user?.user_department ||
+    user?.departmentName ||
+    user?.dept
+);
+
+const isAccountingDepartment = department.includes("accounting");
+
+const isAccountingDeptManager =
+  isAccountingDepartment &&
+  [
+    "branch manager",
+    "area manager",
+    "regional manager",
+    "assistant vice president",
+    "vice president",
+    "senior vice president",
+  ].includes(role);
+
   const canCreate =
+    isAccountingDeptManager ||
     [
       "admin",
       "it",
       "accounting",
       "hr",
+      "branch manager",
       "area manager",
       "regional manager",
       "assistant vice president",
@@ -613,7 +667,7 @@ export default function ReimbursementApprovalTab() {
       return alert("Please upload the signed reimbursement file before approving.");
     }
 
-    if (action === "void" && !canVoid(role)) {
+    if (action === "void" && !canVoid(role, department)) {
       return alert("Only Admin/IT can void reimbursement.");
     }
 
@@ -697,7 +751,7 @@ export default function ReimbursementApprovalTab() {
       return alert("Please upload the final approved file first.");
     }
 
-    if (!canFinalUpload(role)) {
+    if (!canFinalUpload(role, department)) {
       return alert("Only Admin/IT/Accounting/HR can upload final file.");
     }
 
@@ -1272,7 +1326,7 @@ export default function ReimbursementApprovalTab() {
                   )}
                 </div>
 
-                {canApprove(selected, role) ? (
+                {canApprove(selected, role, department) ? (
                   <div className="form-group full">
                     <label>Upload Signed File Before Approving</label>
 
@@ -1304,7 +1358,7 @@ export default function ReimbursementApprovalTab() {
                   </div>
                 ) : null}
 
-                {canUploadFinal(selected, role) ? (
+                {canUploadFinal(selected, role, department) ? (
                   <div className="form-group full">
                     <label>Upload Final Approved File</label>
 
@@ -1353,7 +1407,7 @@ export default function ReimbursementApprovalTab() {
               </div>
 
               <div className="modal-buttons">
-                {canApprove(selected, role) ? (
+                {canApprove(selected, role, department) ? (
                   <>
                     <button
                       className="btn-success"
@@ -1365,7 +1419,7 @@ export default function ReimbursementApprovalTab() {
                     >
                       {processingId === `reimbursement-${selected.id}-approve`
                         ? "Approving..."
-                        : canBypass(role)
+                        : canBypass(role, department)
                         ? "Bypass Approve"
                         : "Upload + Approve"}
                     </button>
@@ -1385,7 +1439,7 @@ export default function ReimbursementApprovalTab() {
                   </>
                 ) : null}
 
-                {canUploadFinal(selected, role) ? (
+                {canUploadFinal(selected, role, department) ? (
                   <button
                     className="btn-success"
                     type="button"
@@ -1400,7 +1454,7 @@ export default function ReimbursementApprovalTab() {
                   </button>
                 ) : null}
 
-                {canVoid(role) &&
+                {canVoid(role, department) &&
                 !["void", "rejected"].includes(norm(selected.status)) ? (
                   <button
                     className="btn-danger"

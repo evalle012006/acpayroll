@@ -958,7 +958,7 @@ router.put(
 
       const existing = await client.query(
         `
-        SELECT id, employee_no, status
+        SELECT *
         FROM public.staff
         WHERE id = $1
         FOR UPDATE
@@ -972,6 +972,26 @@ router.put(
       }
 
       const body = req.body || {};
+
+      const old = existing.rows[0];
+
+      const keep = (key) =>
+        body[key] === undefined || body[key] === null || body[key] === ""
+          ? old[key]
+          : body[key];
+
+      const bodyWithOld = {
+        ...old,
+        ...body,
+      };
+
+      for (const key of Object.keys(old)) {
+        if (body[key] === undefined || body[key] === null || body[key] === "") {
+          bodyWithOld[key] = old[key];
+        }
+      }
+
+      Object.assign(body, bodyWithOld);
 
       const last_name = toStr(body.last_name);
       const first_name = toStr(body.first_name);

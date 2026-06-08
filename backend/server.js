@@ -31,6 +31,7 @@ const logisticRoutes = require("./routes/logisticRoutes");
 const pendingStaffRoutes = require("./routes/pendingStaffRoutes");
 const notificationRoutes = require("./routes/notificationRoutes");
 const chatRoutes = require("./routes/chatRoutes");
+const apiRoutes = require("./routes/apiRoutes");
 
 const transportationHistoryRoutes = require("./routes/transportationHistoryRoutes");
 const salaryHistoryRoutes = require("./routes/salaryHistoryRoutes");
@@ -105,6 +106,7 @@ app.use("/api", boardResolutionRoutes);
 app.use("/api", rolePermissionsRoutes);
 app.use("/api", awolReportsRoutes);
 app.use("/api", otherReceivableRoutes);
+app.use("/api", apiRoutes);
 
 app.get("/test", (_req, res) => {
   res.send("Backend is working!");

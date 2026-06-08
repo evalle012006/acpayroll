@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 const pool = require("../db");
 const { requireAuth, requireRole } = require("../middlewares/authMiddleware");
+const { getUserPermissionMap } = require("../middlewares/permissionMiddleware");
 
 const multer = require("multer");
 const path = require("path");
@@ -99,6 +100,27 @@ const uploadAttachment = multer({
 /* ===========================================================
    BRANCHES
    =========================================================== */
+router.get("/me/permissions", requireAuth, async (req, res) => {
+  try {
+    const data = await getUserPermissionMap(req.user);
+
+    return res.json({
+      role: req.user?.role || "",
+      department:
+        req.user?.department ||
+        req.user?.department_name ||
+        req.user?.user_department ||
+        req.user?.departmentName ||
+        req.user?.dept ||
+        "",
+      ...data,
+    });
+  } catch (e) {
+    console.error("GET /api/me/permissions ERROR:", e.message);
+    return res.status(500).json({ message: "Failed to load permissions" });
+  }
+});
+
 router.get("/branches", requireAuth, async (req, res) => {
   try {
     if (isAdmin(req)) {

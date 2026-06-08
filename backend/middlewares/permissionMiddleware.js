@@ -23,7 +23,12 @@ const hasPermission = async (
     const role = normalize(user?.role);
 
     const department = String(
-      user?.department || ""
+      user?.department ||
+        user?.department_name ||
+        user?.user_department ||
+        user?.departmentName ||
+        user?.dept ||
+        ""
     ).trim();
 
     if (!role) {
@@ -48,7 +53,7 @@ const hasPermission = async (
       SELECT allowed
       FROM public.role_permissions
       WHERE LOWER(role) = LOWER($1)
-        AND LOWER(COALESCE(department, '')) = LOWER($2)
+        AND LOWER(TRIM(COALESCE(department, ''))) = LOWER(TRIM($2))
         AND module_name = $3
         AND action_name = $4
       LIMIT 1
@@ -143,7 +148,74 @@ const requirePermission = (
   };
 };
 
+const getUserPermissionMap = async (user) => {
+  const role = normalize(user?.role);
+
+  const department = String(
+    user?.department ||
+      user?.department_name ||
+      user?.user_department ||
+      user?.departmentName ||
+      user?.dept ||
+      ""
+  ).trim();
+
+  if (!role) {
+    return {
+      is_super_user: false,
+      permissions: {},
+    };
+  }
+
+  if (SUPER_USERS.includes(role)) {
+    return {
+      is_super_user: true,
+      permissions: {},
+    };
+  }
+
+  const r = await pool.query(
+    `
+    SELECT module_name, action_name, allowed, department
+    FROM public.role_permissions
+    WHERE LOWER(role) = LOWER($1)
+      AND (
+        LOWER(TRIM(COALESCE(department, ''))) = LOWER(TRIM($2))
+        OR department IS NULL
+        OR TRIM(department) = ''
+      )
+    ORDER BY
+      CASE
+        WHEN department IS NULL OR TRIM(department) = '' THEN 0
+        ELSE 1
+      END ASC,
+      id ASC
+    `,
+    [role, department]
+  );
+
+  console.log("ROLE =", role);
+  console.log("DEPARTMENT =", department);
+  console.log("ROWS =", r.rows);
+
+  const permissions = {};
+
+  for (const row of r.rows) {
+    if (!permissions[row.module_name]) {
+      permissions[row.module_name] = {};
+    }
+
+    permissions[row.module_name][row.action_name] = Boolean(row.allowed);
+  }
+
+  return {
+    is_super_user: false,
+    permissions,
+  };
+};
+
 module.exports = {
   requirePermission,
   hasPermission,
+  getUserPermissionMap,
 };

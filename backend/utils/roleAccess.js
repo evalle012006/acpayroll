@@ -2,7 +2,14 @@ const normalizeRole = (value) => String(value ?? "").trim().toLowerCase();
 
 const getRole = (req) => normalizeRole(req.user?.role);
 
-const getDepartment = (req) => normalizeRole(req.user?.department);
+const getDepartment = (req) =>
+  normalizeRole(
+    req.user?.department ||
+      req.user?.department_name ||
+      req.user?.user_department ||
+      req.user?.departmentName ||
+      req.user?.dept
+  );
 
 const hasAnyRole = (req, roles = []) => {
   const role = getRole(req);

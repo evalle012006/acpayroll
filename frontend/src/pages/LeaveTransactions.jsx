@@ -61,7 +61,17 @@ export default function LeaveTransactions() {
   const user = useMemo(() => readUser(), []);
   const role = String(user?.role || "").trim().toLowerCase();
 
-  const isAdmin = ["admin", "it"].includes(role);
+  const department = String(user?.department || "").trim().toLowerCase();
+
+  const isHrDepartmentUser =
+    department === "hr" ||
+    department === "hr department" ||
+    department === "human resources" ||
+    department === "human resources department";
+
+  const isAdmin = role === "admin";
+  const isAdminOrIT = ["admin", "it"].includes(role);
+
   const isIT = role === "it";
   const isHr = role === "hr";
   const isAccounting = role === "accounting";
@@ -75,10 +85,10 @@ export default function LeaveTransactions() {
   const isPresident = role === "president";
 
   const canBypassLeaveApproval =
-    isAdmin || isIT || isHr || isAccounting || isSeniorVicePresident;
+    isAdminOrIT || isAccounting || isHrDepartmentUser;
 
   const canCreateLeave =
-    isAdmin ||
+    isAdminOrIT ||
     isHr ||
     isAccounting ||
     isTread ||
@@ -91,7 +101,7 @@ export default function LeaveTransactions() {
     isPresident;
 
   const canViewRequestFile =
-    isAdmin ||
+    isAdminOrIT ||
     isHr ||
     isAccounting ||
     isTread ||
@@ -104,7 +114,7 @@ export default function LeaveTransactions() {
     isPresident;
 
   const canViewApprovedFile =
-    isAdmin ||
+    isAdminOrIT ||
     isHr ||
     isAccounting ||
     isBranchManager ||
@@ -249,30 +259,33 @@ export default function LeaveTransactions() {
   }, []);
 
   useEffect(() => {
-    if (isIndefiniteLeave) {
-      setLeaveForm((prev) => ({
-        ...prev,
-        start_date: "",
-        end_date: "",
-        total_no_of_days: "",
-      }));
-
-      return;
-    }
+    if (!isIndefiniteLeave) return;
 
     setLeaveForm((prev) => ({
       ...prev,
-      total_no_of_days: diffDaysInclusive(prev.start_date, prev.end_date),
+      start_date: "",
+      end_date: "",
+      total_no_of_days: "",
     }));
-  }, [leaveForm.start_date, leaveForm.end_date, isIndefiniteLeave]);
+  }, [isIndefiniteLeave]);
 
   const filteredEmployees = useMemo(() => {
     let scopedStaff = staffList || [];
 
     if (isBranchManager) {
-      scopedStaff = scopedStaff.filter(
-        (s) => String(s.branch_id) === String(user?.branch_id)
-      );
+      const userBranch = String(user?.branch_id || user?.branch || user?.branch_code || "").trim().toLowerCase();
+
+      scopedStaff = scopedStaff.filter((s) => {
+        const staffBranchId = String(s.branch_id || "").trim().toLowerCase();
+        const staffBranchCode = String(s.branch_code || "").trim().toLowerCase();
+        const staffBranchName = String(s.branch_name || s.branch || "").trim().toLowerCase();
+
+        return (
+          staffBranchId === userBranch ||
+          staffBranchCode === userBranch ||
+          staffBranchName === userBranch
+        );
+      });
     }
 
     if (isAreaManager) {
@@ -418,10 +431,11 @@ export default function LeaveTransactions() {
         return alert("Start date must be on or before end date.");
       }
 
-      const requestedDays = diffDaysInclusive(
-        leaveForm.start_date,
-        leaveForm.end_date
-      );
+      const requestedDays = toNum(leaveForm.total_no_of_days);
+
+      if (requestedDays <= 0) {
+        return alert("Enter total number of days.");
+      }
       const remainingLeave = getLeaveRemaining();
 
       if (remainingLeave <= 0) {
@@ -473,21 +487,23 @@ export default function LeaveTransactions() {
 
   const canApproveThisRow = (item) => {
     const status = String(item.status || "").trim();
+    const itemDepartment = String(item.department || "").trim().toLowerCase();
 
-    if (canBypassLeaveApproval && status.includes("Pending")) return true;
+    if (!status.includes("Pending")) return false;
 
-    if (status === "Pending Branch Manager") return isBranchManager;
+    if (status === "Pending HR") {
+      return isHrDepartmentUser;
+    }
+
+    if (canBypassLeaveApproval) return true;
+
+    if (itemDepartment !== department) return false;
+
     if (status === "Pending Area Manager") return isAreaManager;
     if (status === "Pending Regional Manager") return isRegionalManager;
     if (status === "Pending Assistant Vice President") return isAssistantVicePresident;
     if (status === "Pending Vice President") return isVicePresident;
-    if (status === "Pending Senior Vice President") {
-      return isSeniorVicePresident || isPresident;
-    }
-
-    if (status === "Pending Admin") {
-      return isAdmin || isIT || isHr || isAccounting || isSeniorVicePresident;
-    }
+    if (status === "Pending Senior Vice President") return isSeniorVicePresident;
 
     return false;
   };
@@ -635,8 +651,8 @@ export default function LeaveTransactions() {
         return "Waiting VP";
       case "Pending Senior Vice President":
         return "Waiting SVP";
-      case "Pending Admin":
-        return "Waiting HR/Admin/IT/Accounting";
+      case "Pending HR":
+        return "Waiting HR Department";
       case "Voided":
         return "Voided";
       default:
@@ -932,6 +948,7 @@ export default function LeaveTransactions() {
                   const status = String(item.status || "").trim();
                   const approved = status === "Approved";
                   const rejected = status === "Rejected";
+                  const voided = status === "Voided";
                   const pending = status.includes("Pending");
                   const canApprove = canApproveThisRow(item);
 
@@ -944,7 +961,10 @@ export default function LeaveTransactions() {
                       <td>{item.transaction_code || item.id}</td>
 
                       <td className="td-strong">
-                        {item.staff_name || `Employee #${item.employee_id}` || "-"}
+                        <div>{item.staff_name || `Employee #${item.employee_id}` || "-"}</div>
+                        <div className="leave-sub-info">Emp No: {item.employee_no || "-"}</div>
+                        <div className="leave-sub-info">Branch: {item.branch_id || "-"}</div>
+                        <div className="leave-sub-info">Position: {item.position || "-"}</div>
                       </td>
 
                       <td>{item.leave_type}</td>
@@ -1034,7 +1054,7 @@ export default function LeaveTransactions() {
                             </button>
                           ) : null}
 
-                          {isAdmin && rejected ? (
+                          {isAdmin && (rejected || voided) ? (
                             <button
                               className="btn-danger"
                               type="button"
@@ -1248,12 +1268,21 @@ export default function LeaveTransactions() {
                   <label>Total No. of Days</label>
 
                   <input
+                    type="number"
+                    min="0"
+                    step="0.5"
                     value={isIndefiniteLeave ? "" : leaveForm.total_no_of_days}
-                    readOnly
+                    disabled={isIndefiniteLeave}
+                    onChange={(e) =>
+                      setLeaveForm((p) => ({
+                        ...p,
+                        total_no_of_days: e.target.value,
+                      }))
+                    }
                     placeholder={
                       isIndefiniteLeave
                         ? "N/A for indefinite leave"
-                        : "Auto-calculated"
+                        : "Enter total days"
                     }
                   />
                 </div>

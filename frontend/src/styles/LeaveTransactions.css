@@ -541,3 +541,10 @@
   background: #ef4444;
   color: #ffffff;
 }
+
+.leave-sub-info {
+  margin-top: 3px;
+  font-size: 11px;
+  opacity: 0.75;
+  font-weight: 500;
+}

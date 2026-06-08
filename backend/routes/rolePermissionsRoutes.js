@@ -7,8 +7,7 @@ const { requirePermission } = require("../middlewares/permissionMiddleware");
 const norm = (v) => String(v ?? "").trim().toLowerCase();
 const toStr = (v) => String(v ?? "").trim();
 
-router.get(
-  "/role-permissions",
+router.get("/role-permissions",
   requireAuth,
   requirePermission("permissions", "view"),
   async (_req, res) => {

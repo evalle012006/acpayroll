@@ -32,6 +32,18 @@ const toDateOrNull = (v) => {
 |--------------------------------------------------------------------------
 */
 
+const getUserDepartment = (req) =>
+  norm(
+    req.user?.department ||
+      req.user?.department_name ||
+      req.user?.user_department ||
+      req.user?.departmentName ||
+      req.user?.dept
+  );
+
+const isAccountingDepartmentUser = (req) =>
+  getUserDepartment(req).includes("accounting");
+
 const getRole = (req) =>
   norm(
     req.user?.role ||
@@ -46,6 +58,7 @@ const hasAnyRole = (req, roles = []) => {
 };
 
 const hasFullAccess = (req) =>
+  isAccountingDepartmentUser(req) ||
   hasAnyRole(req, [
     "admin",
     "it",
@@ -136,12 +149,6 @@ async function branchMatches(client, req, staff) {
   return branchRes.rowCount > 0;
 }
 
-/*
-|--------------------------------------------------------------------------
-| STAFF ACCESS CHECK
-|--------------------------------------------------------------------------
-*/
-
 async function canAccessStaffById(client, req, staffId) {
   const id = toInt(staffId);
 
@@ -200,12 +207,6 @@ async function canAccessStaffById(client, req, staffId) {
   return false;
 }
 
-/*
-|--------------------------------------------------------------------------
-| NORMALIZE PAYLOAD
-|--------------------------------------------------------------------------
-*/
-
 function normalizePayload(body = {}) {
   const original_amount = toNum(body.original_amount);
   const interest = toNum(body.interest);
@@ -254,12 +255,6 @@ function normalizePayload(body = {}) {
     remarks: toStr(body.remarks) || null,
   };
 }
-
-/*
-|--------------------------------------------------------------------------
-| GET STAFF LOAN OPENING BALANCES
-|--------------------------------------------------------------------------
-*/
 
 router.get(
   "/staff-loan-opening-balances/staff/:staffId",
@@ -315,12 +310,6 @@ router.get(
     }
   }
 );
-
-/*
-|--------------------------------------------------------------------------
-| CREATE
-|--------------------------------------------------------------------------
-*/
 
 router.post(
   "/staff-loan-opening-balances",
@@ -454,12 +443,6 @@ router.post(
   }
 );
 
-/*
-|--------------------------------------------------------------------------
-| UPDATE
-|--------------------------------------------------------------------------
-*/
-
 router.put(
   "/staff-loan-opening-balances/:id",
   requireAuth,
@@ -576,12 +559,6 @@ router.put(
     }
   }
 );
-
-/*
-|--------------------------------------------------------------------------
-| DELETE
-|--------------------------------------------------------------------------
-*/
 
 router.delete(
   "/staff-loan-opening-balances/:id",

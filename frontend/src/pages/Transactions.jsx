@@ -289,7 +289,94 @@ export default function Transactions() {
   },
   ];
 
-  const filteredCards = cards.filter((c) => c.roles.includes(role));
+  const department = norm(
+  user?.department ||
+    user?.department_name ||
+    user?.user_department ||
+    user?.departmentName ||
+    user?.dept
+);
+
+const ROLE_GROUP = [
+  "branch manager",
+  "area manager",
+  "regional manager",
+  "assistant vice president",
+  "vice president",
+  "senior vice president",
+];
+
+const isRoleGroup = ROLE_GROUP.includes(role);
+
+const isBackOfficeFullDept =
+  department.includes("hr") ||
+  department.includes("accounting") ||
+  department.includes("audit") ||
+  department.includes("it") ||
+  department.includes("tread") ||
+  department.includes("office of the president");
+
+const isProductionLogisticDept =
+  department.includes("production") && department.includes("logistic");
+
+const isOperationDept = department.includes("operation");
+
+const allowedTransactionPaths = () => {
+  if (isAdmin || role === "it") return cards.map((c) => c.path);
+
+  if (isRoleGroup && isBackOfficeFullDept) {
+    return cards.map((c) => c.path);
+  }
+
+  if (isRoleGroup && isProductionLogisticDept) {
+    return [
+      "/transactions/transfer",
+      "/transactions/leave",
+      "/transactions/promotion",
+      "/transactions/demotion",
+      "/transactions/suspension",
+      "/transactions/soa",
+      "/transactions/resignation",
+      "/transactions/sbf",
+      "/transactions/regularization",
+      "/transactions/staff-accounts-payable",
+      "/transactions/other-receivable",
+      "/transactions/staff-report",
+    ];
+  }
+
+  if (isRoleGroup && isOperationDept) {
+    if (role === "senior vice president") {
+      return [
+        "/transactions/transfer",
+        "/transactions/leave",
+        "/transactions/promotion",
+        "/transactions/demotion",
+        "/transactions/deployment",
+        "/transactions/suspension",
+        "/transactions/soa",
+        "/transactions/exit",
+        "/transactions/resignation",
+        "/transactions/sbf",
+        "/transactions/regularization",
+        "/transactions/staff-accounts-payable",
+        "/transactions/other-receivable",
+        "/transactions/board-resolution",
+        "/transactions/staff-report",
+      ];
+    }
+
+    return cards
+      .filter((c) => c.title !== "Deployment Order" && c.title !== "Exit Staff")
+      .map((c) => c.path);
+  }
+
+  return cards.filter((c) => c.roles.includes(role)).map((c) => c.path);
+};
+
+const filteredCards = cards.filter((c) =>
+  allowedTransactionPaths().includes(c.path)
+);
 
   return (
     <div className="transactions-page">

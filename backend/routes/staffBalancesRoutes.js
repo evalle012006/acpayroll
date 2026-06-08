@@ -32,6 +32,17 @@ const getUserBranchCode = (req) => toStr(req.user?.branch_id);
 const getUserArea = (req) => toStr(req.user?.area);
 const getUserRegion = (req) => toStr(req.user?.region);
 const getUserDivision = (req) => toStr(req.user?.division);
+const getUserDepartment = (req) =>
+  toStr(
+    req.user?.department ||
+      req.user?.department_name ||
+      req.user?.user_department ||
+      req.user?.departmentName ||
+      req.user?.dept
+  ).toLowerCase();
+
+const isAccountingDepartmentUser = (req) =>
+  getUserDepartment(req).includes("accounting");
 
 function isTopLevelViewer(req) {
   return (
@@ -39,6 +50,7 @@ function isTopLevelViewer(req) {
     isIT(req) ||
     isHr(req) ||
     isAccounting(req) ||
+    isAccountingDepartmentUser(req) ||
     isTread(req) ||
     isVicePresident(req) ||
     isSeniorVicePresident(req) ||
@@ -388,6 +400,26 @@ router.put(
 
       await ensureBalanceRow(client, employeeNo);
 
+      const existingBal = await client.query(
+        `
+        SELECT *
+        FROM public.staff_balances
+        WHERE employee_no = $1
+        LIMIT 1
+        `,
+        [employeeNo]
+      );
+
+      const oldBal = existingBal.rows[0] || {};
+
+      const keepNum = (key) => {
+        const v = req.body?.[key];
+        if (v === undefined || v === null || v === "") {
+          return toNum(oldBal[key]);
+        }
+        return toNum(v);
+      };
+
       await client.query(
         `
         UPDATE public.staff_balances
@@ -405,15 +437,15 @@ router.put(
         WHERE employee_no = $10
         `,
         [
-          toNum(req.body?.cbu),
-          toNum(req.body?.cashbond),
-          toNum(req.body?.utility),
-          toNum(req.body?.salary_advance),
-          toNum(req.body?.special_advance),
-          toNum(req.body?.cash_advance),
-          toNum(req.body?.motorcycle_loan),
-          toNum(req.body?.other_receivable),
-          toNum(req.body?.staff_accounts_payable),
+          keepNum("cbu"),
+          keepNum("cashbond"),
+          keepNum("utility"),
+          keepNum("salary_advance"),
+          keepNum("special_advance"),
+          keepNum("cash_advance"),
+          keepNum("motorcycle_loan"),
+          keepNum("other_receivable"),
+          keepNum("staff_accounts_payable"),
           employeeNo,
         ]
       );

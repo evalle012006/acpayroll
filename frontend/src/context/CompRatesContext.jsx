@@ -1,9 +1,26 @@
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useState, } from "react";
+import React, {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import api from "../api/axiosClient";
 
 const toNum = (v) => {
   const n = Number(v ?? 0);
   return Number.isFinite(n) ? n : 0;
+};
+
+const norm = (v) => String(v ?? "").trim().toLowerCase();
+
+const readUser = () => {
+  try {
+    return JSON.parse(localStorage.getItem("user") || "null");
+  } catch {
+    return null;
+  }
 };
 
 const hasAuth = () => {
@@ -17,6 +34,37 @@ const isPublicPath = () => {
   return p === "/login" || p === "/" || p === "/forgot-password";
 };
 
+const canFetchCompRates = () => {
+  const user = readUser();
+  const role = norm(user?.role);
+  const dept = norm(
+    user?.department ||
+      user?.department_name ||
+      user?.user_department ||
+      user?.departmentName ||
+      user?.dept
+  );
+
+  return (
+    role === "admin" ||
+    role === "it" ||
+    role === "hr" ||
+    role === "accounting" ||
+    role === "tread" ||
+    role === "branch manager" ||
+    role === "area manager" ||
+    role === "regional manager" ||
+    role === "assistant vice president" ||
+    role === "vice president" ||
+    role === "senior vice president" ||
+    role === "president" ||
+    dept.includes("accounting") ||
+    dept.includes("hr") ||
+    dept.includes("it") ||
+    dept.includes("operation")
+  );
+};
+
 const CompRatesContext = createContext(null);
 
 export const CompRatesProvider = ({ children }) => {
@@ -25,7 +73,7 @@ export const CompRatesProvider = ({ children }) => {
   const [error, setError] = useState("");
 
   const refresh = useCallback(async () => {
-    if (!hasAuth() || isPublicPath()) {
+    if (!hasAuth() || isPublicPath() || !canFetchCompRates()) {
       setRates([]);
       setLoading(false);
       setError("");
@@ -79,6 +127,7 @@ export const CompRatesProvider = ({ children }) => {
   const getCompByPosition = useCallback(
     (position) => {
       const row = ratesByPosition.get(String(position || "")) || null;
+
       return {
         salary: toNum(row?.salary),
         ecola: toNum(row?.ecola),
@@ -109,6 +158,10 @@ export const CompRatesProvider = ({ children }) => {
 
 export const useCompRates = () => {
   const ctx = useContext(CompRatesContext);
-  if (!ctx) throw new Error("useCompRates must be used inside <CompRatesProvider>");
+
+  if (!ctx) {
+    throw new Error("useCompRates must be used inside <CompRatesProvider>");
+  }
+
   return ctx;
 };

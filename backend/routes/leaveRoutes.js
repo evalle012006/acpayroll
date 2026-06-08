@@ -13,7 +13,8 @@ const norm = (v) => toStr(v).toLowerCase();
 
 const roleLower = (req) => norm(req.user?.role);
 
-const isAdmin = (req) => ["admin", "it"].includes(roleLower(req));
+const isAdmin = (req) => roleLower(req) === "admin";
+const isAdminOrIT = (req) => ["admin", "it"].includes(roleLower(req));
 const isIT = (req) => roleLower(req) === "it";
 const isHr = (req) => roleLower(req) === "hr";
 const isAccounting = (req) => roleLower(req) === "accounting";
@@ -46,14 +47,18 @@ const OPERATION_DEPARTMENTS = [
 const isOperationDepartment = (department) =>
   OPERATION_DEPARTMENTS.includes(norm(department));
 
-const isFinalApprover = (req) =>
-  isAdmin(req) ||
-  isIT(req) ||
-  isHr(req) ||
-  isAccounting(req) ||
-  isSeniorVicePresident(req);
+const isHrDepartmentUser = (req) => {
+  const d = norm(req.user?.department);
+  return d === "hr" || d === "hr department" || d === "human resources" || d === "human resources department";
+};
 
-const canUploadApprovedLeave = (req) => isFinalApprover(req);
+const isBypassApprover = (req) =>
+  isAdminOrIT(req) || isAccounting(req) || isHrDepartmentUser(req);
+
+const isFinalApprover = (req) => isHrDepartmentUser(req);
+
+const canUploadApprovedLeave = (req) =>
+  isAdminOrIT(req) || isAccounting(req) || isHrDepartmentUser(req);
 
 const departmentCanViewOwnDepartment = (department) => {
   const d = norm(department);
@@ -223,38 +228,234 @@ const isSeniorVicePresidentPosition = (position) => {
   return pos === "senior vice president" || pos === "svp";
 };
 
-const getInitialStatusByDepartment = (req, staff) => {
+const sameDepartment = (a, b) => {
+  return norm(a) === norm(b);
+};
+
+const ROLE_ALIASES = {
+  area_manager: ["area manager", "acting area manager"],
+  regional_manager: ["regional manager", "acting regional manager"],
+  assistant_vice_president: ["assistant vice president", "avp"],
+  vice_president: ["vice president", "vp"],
+  senior_vice_president: ["senior vice president", "svp"],
+};
+
+const STATUS_TO_ROLE_KEY = {
+  "Pending Area Manager": "area_manager",
+  "Pending Regional Manager": "regional_manager",
+  "Pending Assistant Vice President": "assistant_vice_president",
+  "Pending Vice President": "vice_president",
+  "Pending Senior Vice President": "senior_vice_president",
+};
+
+const ROLE_KEY_TO_STATUS = {
+  area_manager: "Pending Area Manager",
+  regional_manager: "Pending Regional Manager",
+  assistant_vice_president: "Pending Assistant Vice President",
+  vice_president: "Pending Vice President",
+  senior_vice_president: "Pending Senior Vice President",
+};
+
+/*
+  Skip rule:
+  If the next approver role does not exist inside the SAME department,
+  skip to the next role.
+
+  Example:
+  IT Department has Area Manager but no Regional Manager.
+  Flow:
+  Area Manager -> Assistant Vice President -> Vice President -> HR
+*/
+const approverRoleExistsInDepartment = async (roleKey, department) => {
+  const dept = toStr(department);
+  const roles = ROLE_ALIASES[roleKey] || [];
+
+  if (!dept || roles.length === 0) return false;
+
+  const rolePlaceholders = roles.map((_, idx) => `$${idx + 2}`).join(",");
+
+  const r = await pool.query(
+    `
+    SELECT id
+    FROM public.users
+    WHERE LOWER(TRIM(COALESCE(department,''))) = LOWER(TRIM($1))
+      AND LOWER(TRIM(COALESCE(role,''))) IN (${rolePlaceholders})
+    LIMIT 1
+    `,
+    [dept, ...roles]
+  );
+
+  return r.rowCount > 0;
+};
+
+const getNextStatusByDepartmentChain = async (department, roleKeys) => {
+  for (const roleKey of roleKeys) {
+    const exists = await approverRoleExistsInDepartment(roleKey, department);
+
+    if (exists) {
+      return ROLE_KEY_TO_STATUS[roleKey];
+    }
+  }
+
+  return "Pending HR";
+};
+
+/*
+  Initial status depends on the creator role.
+
+  Branch Manager / lower:
+    Area Manager -> Regional Manager -> AVP -> VP -> HR
+
+  Area Manager:
+    Regional Manager -> AVP -> VP -> HR
+
+  Regional Manager:
+    AVP -> VP -> HR
+
+  AVP:
+    VP -> HR
+
+  VP:
+    SVP -> HR
+
+  SVP:
+    HR
+*/
+const getInitialStatusByDepartment = async (req, staff) => {
   const department = toStr(staff?.department);
   const position = toStr(staff?.position);
-  const userDepartment = getUserDepartment(req) || department;
 
-  if (
-    isOperationDepartment(userDepartment || department) &&
-    (isVicePresident(req) ||
-      isSeniorVicePresident(req) ||
-      isVicePresidentPosition(position) ||
-      isSeniorVicePresidentPosition(position))
-  ) {
-    return "Pending Admin";
+  if (isSeniorVicePresident(req) || isSeniorVicePresidentPosition(position)) {
+    return "Pending HR";
   }
 
-  if (isOperationDepartment(department)) {
-    if (isBranchManager(req)) return "Pending Area Manager";
-    if (isAreaManager(req)) return "Pending Regional Manager";
-    if (isRegionalManager(req)) return "Pending Assistant Vice President";
-    if (isAssistantVicePresident(req)) return "Pending Vice President";
-    if (isVicePresident(req)) return "Pending Admin";
-    if (isSeniorVicePresident(req)) return "Pending Admin";
-    return "Pending Branch Manager";
+  if (isVicePresident(req) || isVicePresidentPosition(position)) {
+    return await getNextStatusByDepartmentChain(department, [
+      "senior_vice_president",
+    ]);
   }
 
-  const dept = norm(department);
-
-  if (dept === "it" || dept === "it department") {
-    return "Pending Assistant Vice President";
+  if (isAssistantVicePresident(req)) {
+    return await getNextStatusByDepartmentChain(department, [
+      "vice_president",
+    ]);
   }
 
-  return "Pending Senior Vice President";
+  if (isRegionalManager(req)) {
+    return await getNextStatusByDepartmentChain(department, [
+      "assistant_vice_president",
+      "vice_president",
+    ]);
+  }
+
+  if (isAreaManager(req)) {
+    return await getNextStatusByDepartmentChain(department, [
+      "regional_manager",
+      "assistant_vice_president",
+      "vice_president",
+    ]);
+  }
+
+  return await getNextStatusByDepartmentChain(department, [
+    "area_manager",
+    "regional_manager",
+    "assistant_vice_president",
+    "vice_president",
+  ]);
+};
+
+const getNextStatusAfterApproval = async (currentStatus, row) => {
+  const department = toStr(row.department);
+
+  if (currentStatus === "Pending Branch Manager") {
+    return await getNextStatusByDepartmentChain(department, [
+      "area_manager",
+      "regional_manager",
+      "assistant_vice_president",
+      "vice_president",
+    ]);
+  }
+
+  if (currentStatus === "Pending Area Manager") {
+    return await getNextStatusByDepartmentChain(department, [
+      "regional_manager",
+      "assistant_vice_president",
+      "vice_president",
+    ]);
+  }
+
+  if (currentStatus === "Pending Regional Manager") {
+    return await getNextStatusByDepartmentChain(department, [
+      "assistant_vice_president",
+      "vice_president",
+    ]);
+  }
+
+  if (currentStatus === "Pending Assistant Vice President") {
+    return await getNextStatusByDepartmentChain(department, [
+      "vice_president",
+    ]);
+  }
+
+  if (currentStatus === "Pending Vice President") {
+    const position = norm(row.position);
+
+    if (isOperationDepartment(department) && isVicePresidentPosition(position)) {
+      return await getNextStatusByDepartmentChain(department, [
+        "senior_vice_president",
+      ]);
+    }
+
+    return "Pending HR";
+  }
+
+  if (currentStatus === "Pending Senior Vice President") {
+    return "Pending HR";
+  }
+
+  return "Pending HR";
+};
+
+const isCurrentStageApprover = (req, row) => {
+  const status = toStr(row.status);
+  const requestDepartment = toStr(row.department);
+  const userDepartment = getUserDepartment(req);
+
+  if (isBypassApprover(req) || isPresident(req)) return true;
+
+  if (status === "Pending Area Manager") {
+    return isAreaManager(req) && sameDepartment(userDepartment, requestDepartment);
+  }
+
+  if (status === "Pending Regional Manager") {
+    return (
+      isRegionalManager(req) && sameDepartment(userDepartment, requestDepartment)
+    );
+  }
+
+  if (status === "Pending Assistant Vice President") {
+    return (
+      isAssistantVicePresident(req) &&
+      sameDepartment(userDepartment, requestDepartment)
+    );
+  }
+
+  if (status === "Pending Vice President") {
+    return isVicePresident(req) && sameDepartment(userDepartment, requestDepartment);
+  }
+
+  if (status === "Pending Senior Vice President") {
+    return (
+      isSeniorVicePresident(req) &&
+      sameDepartment(userDepartment, requestDepartment)
+    );
+  }
+
+  if (status === "Pending HR") {
+    return isHrDepartmentUser(req);
+  }
+
+  return false;
 };
 
 const canActOnLeave = async (req, leaveId) => {
@@ -268,7 +469,8 @@ const canActOnLeave = async (req, leaveId) => {
       s.branch_id,
       s.region,
       s.division,
-      s.department
+      s.department,
+      s.position
     FROM public.leave_requests lr
     JOIN public.staff s ON s.id = lr.employee_id
     WHERE lr.id = $1
@@ -292,89 +494,27 @@ const canActOnLeave = async (req, leaveId) => {
     };
   }
 
-  if (status === "Pending Branch Manager") {
-    if (!isBranchManager(req) && !isFinalApprover(req) && !isPresident(req)) {
-      return { ok: false, code: 403, message: "Only branch manager can act on this stage" };
-    }
-    return { ok: true, row };
-  }
-
-  if (status === "Pending Area Manager") {
-    if (!isAreaManager(req) && !isFinalApprover(req) && !isPresident(req)) {
-      return { ok: false, code: 403, message: "Only area manager can act on this stage" };
-    }
-
-    if (isAreaManager(req) && norm(row.area) !== norm(getUserArea(req))) {
-      return { ok: false, code: 403, message: "Access denied" };
-    }
-
-    return { ok: true, row };
-  }
-
-  if (status === "Pending Regional Manager") {
-    if (!isRegionalManager(req) && !isFinalApprover(req) && !isPresident(req)) {
-      return { ok: false, code: 403, message: "Only regional manager can act on this stage" };
-    }
-
-    if (isRegionalManager(req) && norm(row.region) !== norm(getUserRegion(req))) {
-      return { ok: false, code: 403, message: "Access denied" };
-    }
-
-    return { ok: true, row };
-  }
-
-  if (status === "Pending Assistant Vice President") {
-    if (!isAssistantVicePresident(req) && !isFinalApprover(req) && !isPresident(req)) {
+  if (status === "Pending HR") {
+    if (!isHrDepartmentUser(req)) {
       return {
         ok: false,
         code: 403,
-        message: "Only assistant vice president can act on this stage",
-      };
-    }
-
-    if (
-      isAssistantVicePresident(req) &&
-      norm(row.division) !== norm(getUserDivision(req))
-    ) {
-      return { ok: false, code: 403, message: "Access denied" };
-    }
-
-    return { ok: true, row };
-  }
-
-  if (status === "Pending Vice President") {
-    if (!isVicePresident(req) && !isFinalApprover(req) && !isPresident(req)) {
-      return { ok: false, code: 403, message: "Only vice president can act on this stage" };
-    }
-
-    return { ok: true, row };
-  }
-
-  if (status === "Pending Senior Vice President") {
-    if (!isSeniorVicePresident(req) && !isPresident(req) && !isFinalApprover(req)) {
-      return {
-        ok: false,
-        code: 403,
-        message: "Only senior vice president can act on this stage",
+        message: "Only HR Department can final approve this leave",
       };
     }
 
     return { ok: true, row };
   }
 
-  if (status === "Pending Admin") {
-    if (!isFinalApprover(req)) {
-      return {
-        ok: false,
-        code: 403,
-        message: "Only admin/hr/accounting/it/svp can act on this stage",
-      };
-    }
-
-    return { ok: true, row };
+  if (!isCurrentStageApprover(req, row)) {
+    return {
+      ok: false,
+      code: 403,
+      message: "You are not allowed to approve this leave request stage.",
+    };
   }
 
-  return { ok: false, code: 400, message: "Unsupported leave status" };
+  return { ok: true, row };
 };
 
 const deleteOldApprovedAttachments = async (client, leaveId) => {
@@ -452,6 +592,8 @@ router.get(
   async (req, res) => {
     try {
       if (
+        isAdminOrIT(req) ||
+        isAccounting(req) ||
         isFinalApprover(req) ||
         isVicePresident(req) ||
         isSeniorVicePresident(req) ||
@@ -592,7 +734,7 @@ router.post(
 
       const leaveSeq = Number(seqRes.rows[0].n);
       const transaction_code = `LV-${String(leaveSeq).padStart(7, "0")}`;
-      const status = getInitialStatusByDepartment(req, staff);
+      const status = await getInitialStatusByDepartment(req, staff);
 
       const insertRes = await client.query(
         `
@@ -791,89 +933,109 @@ router.put(
       let sql = "";
       let params = [id, req.user?.id ?? null];
 
-      if (isFinalApprover(req)) {
-        sql = `
-          UPDATE public.leave_requests
-          SET
-            status = 'Approved',
-            admin_approved_by = $2,
-            admin_approved_at = NOW()
-          WHERE id = $1
-        `;
-      } else if (currentStatus === "Pending Branch Manager") {
-        sql = `
-          UPDATE public.leave_requests
-          SET status = 'Pending Area Manager'
-          WHERE id = $1
-        `;
-        params = [id];
-      } else if (currentStatus === "Pending Area Manager") {
-        sql = `
-          UPDATE public.leave_requests
-          SET
-            status = 'Pending Regional Manager',
-            area_approved_by = $2,
-            area_approved_at = NOW()
-          WHERE id = $1
-        `;
-      } else if (currentStatus === "Pending Regional Manager") {
-        sql = `
-          UPDATE public.leave_requests
-          SET
-            status = 'Pending Assistant Vice President',
-            regional_approved_by = $2,
-            regional_approved_at = NOW()
-          WHERE id = $1
-        `;
-      } else if (currentStatus === "Pending Assistant Vice President") {
-        const dept = norm(access.row.department);
+            if (currentStatus === "Pending HR") {
+              if (!isHrDepartmentUser(req)) {
+                await client.query("ROLLBACK");
+                return res.status(403).json({
+                  message: "Only HR Department can final approve leave.",
+                });
+              }
 
-        if (dept === "it" || dept === "it department") {
-          sql = `
-            UPDATE public.leave_requests
-            SET
-              status = 'Approved',
-              division_approved_by = $2,
-              division_approved_at = NOW()
-            WHERE id = $1
-          `;
-        } else {
-          sql = `
-            UPDATE public.leave_requests
-            SET
-              status = 'Pending Vice President',
-              division_approved_by = $2,
-              division_approved_at = NOW()
-            WHERE id = $1
-          `;
-        }
-      } else if (currentStatus === "Pending Vice President") {
-        sql = `
-          UPDATE public.leave_requests
-          SET status = 'Pending Admin'
-          WHERE id = $1
-        `;
-        params = [id];
-      } else if (currentStatus === "Pending Senior Vice President") {
-        sql = `
-          UPDATE public.leave_requests
-          SET status = 'Pending Admin'
-          WHERE id = $1
-        `;
-        params = [id];
-      } else if (currentStatus === "Pending Admin") {
-        sql = `
-          UPDATE public.leave_requests
-          SET
-            status = 'Approved',
-            admin_approved_by = $2,
-            admin_approved_at = NOW()
-          WHERE id = $1
-        `;
-      } else {
-        await client.query("ROLLBACK");
-        return res.status(400).json({ message: "Invalid current status for approval" });
-      }
+              sql = `
+                UPDATE public.leave_requests
+                SET
+                  status = 'Approved',
+                  admin_approved_by = $2,
+                  admin_approved_at = NOW()
+                WHERE id = $1
+              `;
+              params = [id, req.user?.id ?? null];
+            } else if (currentStatus === "Pending Branch Manager") {
+              const nextStatus = await getNextStatusAfterApproval(
+                currentStatus,
+                access.row
+              );
+
+              sql = `
+                UPDATE public.leave_requests
+                SET status = $2
+                WHERE id = $1
+              `;
+              params = [id, nextStatus];
+            } else if (currentStatus === "Pending Area Manager") {
+              const nextStatus = await getNextStatusAfterApproval(
+                currentStatus,
+                access.row
+              );
+
+              sql = `
+                UPDATE public.leave_requests
+                SET
+                  status = $3,
+                  area_approved_by = $2,
+                  area_approved_at = NOW()
+                WHERE id = $1
+              `;
+              params = [id, req.user?.id ?? null, nextStatus];
+            } else if (currentStatus === "Pending Regional Manager") {
+              const nextStatus = await getNextStatusAfterApproval(
+                currentStatus,
+                access.row
+              );
+
+              sql = `
+                UPDATE public.leave_requests
+                SET
+                  status = $3,
+                  regional_approved_by = $2,
+                  regional_approved_at = NOW()
+                WHERE id = $1
+              `;
+              params = [id, req.user?.id ?? null, nextStatus];
+            } else if (currentStatus === "Pending Assistant Vice President") {
+              const nextStatus = await getNextStatusAfterApproval(
+                currentStatus,
+                access.row
+              );
+
+              sql = `
+                UPDATE public.leave_requests
+                SET
+                  status = $3,
+                  division_approved_by = $2,
+                  division_approved_at = NOW()
+                WHERE id = $1
+              `;
+              params = [id, req.user?.id ?? null, nextStatus];
+            } else if (currentStatus === "Pending Vice President") {
+              const nextStatus = await getNextStatusAfterApproval(
+                currentStatus,
+                access.row
+              );
+
+              sql = `
+                UPDATE public.leave_requests
+                SET
+                  status = $3,
+                  admin_approved_by = $2,
+                  admin_approved_at = NOW()
+                WHERE id = $1
+              `;
+              params = [id, req.user?.id ?? null, nextStatus];
+            } else if (currentStatus === "Pending Senior Vice President") {
+              sql = `
+                UPDATE public.leave_requests
+                SET
+                  status = 'Pending HR',
+                  admin_approved_by = $2,
+                  admin_approved_at = NOW()
+                WHERE id = $1
+              `;
+              params = [id, req.user?.id ?? null];
+            } else {
+              await client.query("ROLLBACK");
+              return res.status(400).json({ message: "Invalid current status for approval" });
+            }
 
       await client.query(sql, params);
       await client.query("COMMIT");
@@ -899,9 +1061,9 @@ router.put(
   requirePermission("leave_request", "delete"),
   async (req, res) => {
     try {
-      if (!isAdmin(req) && !isIT(req)) {
+      if (!isAdmin(req)) {
         return res.status(403).json({
-          message: "Only Admin/IT can void approved leave.",
+          message: "Only Admin can void approved leave.",
         });
       }
 
@@ -943,9 +1105,9 @@ router.delete(
     const client = await pool.connect();
 
     try {
-      if (!isAdmin(req) && !isIT(req)) {
+      if (!isAdmin(req)) {
         return res.status(403).json({
-          message: "Only Admin/IT can delete rejected leave.",
+          message: "Only Admin can delete rejected or voided leave.",
         });
       }
 
@@ -967,7 +1129,7 @@ router.delete(
         return res.status(404).json({ message: "Leave request not found." });
       }
 
-      if (toStr(chk.rows[0].status) !== "Rejected") {
+      if (!["Rejected", "Voided"].includes(toStr(chk.rows[0].status))) {
         await client.query("ROLLBACK");
         return res.status(400).json({
           message: "Only rejected leave can be deleted.",

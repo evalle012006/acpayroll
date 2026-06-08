@@ -30,6 +30,16 @@ const readUser = () => {
 
 const norm = (v) => String(v ?? "").trim().toLowerCase();
 
+const getDepartment = (user) =>
+  String(
+    user?.department ||
+      user?.department_name ||
+      user?.user_department ||
+      user?.departmentName ||
+      user?.dept ||
+      ""
+  ).trim();
+
 const countPending = (rows) =>
   (Array.isArray(rows) ? rows : []).filter(
     (x) => norm(x?.status) === "pending"
@@ -37,23 +47,213 @@ const countPending = (rows) =>
 
 const Sidebar = ({ collapsed }) => {
   const { pathname } = useLocation();
+
   const user = readUser();
   const role = norm(user?.role);
+  const userDepartment = getDepartment(user) || "No Department";
 
-  const userDepartment =
-    String(user?.department || "").trim() ||
-    String(user?.department_name || "").trim() ||
-    "No Department";
+  const ROLE_GROUP = [
+    "branch manager",
+    "area manager",
+    "regional manager",
+    "assistant vice president",
+    "vice president",
+    "senior vice president",
+  ];
+
+  const dept = norm(userDepartment);
+
+  const isRoleGroup = ROLE_GROUP.includes(role);
+
+  const isBackOfficeFullDept =
+    dept.includes("hr") ||
+    dept.includes("audit") ||
+    dept.includes("accounting") ||
+    dept.includes("tread") ||
+    dept.includes("office of the president");
+
+  const isITDept = dept.includes("it");
+
+  const isProductionLogisticDept =
+    dept.includes("production") && dept.includes("logistic");
+
+  const isOperationDept = dept.includes("operation");
+
+  const allowedSidebar = () => {
+    if (!isRoleGroup) return null;
+
+    if (isITDept) {
+      return [
+        "/dashboard",
+        "/departments",
+        "/staff-information",
+        "/schedule-balances",
+        "/opening-loan-balances",
+        "/transactions",
+        "/approval",
+        "/branches",
+        "/salary",
+        "/reports",
+        "/exit-staff",
+        "/system-update",
+        "/permissions",
+        "/users",
+      ];
+    }
+
+    if (isBackOfficeFullDept) {
+      return [
+        "/dashboard",
+        "/departments",
+        "/staff-information",
+        "/schedule-balances",
+        "/opening-loan-balances",
+        "/transactions",
+        "/approval",
+        "/branches",
+        "/salary",
+        "/reports",
+        "/exit-staff",
+        "/system-update",
+      ];
+    }
+
+    if (isProductionLogisticDept) {
+      return [
+        "/dashboard",
+        "/departments",
+        "/staff-information",
+        "/schedule-balances",
+        "/transactions",
+        "/approval",
+      ];
+    }
+
+    if (isOperationDept) {
+      if (role === "branch manager") {
+        return [
+          "/dashboard",
+          "/staff-information",
+          "/schedule-balances",
+          "/transactions",
+          "/approval",
+          "/branches",
+        ];
+      }
+
+      if (role === "area manager" || role === "regional manager") {
+        return [
+          "/dashboard",
+          "/staff-information",
+          "/schedule-balances",
+          "/transactions",
+          "/approval",
+          "/branches",
+          "/reports",
+        ];
+      }
+
+      if (role === "assistant vice president") {
+        return [
+          "/dashboard",
+          "/departments",
+          "/staff-information",
+          "/schedule-balances",
+          "/transactions",
+          "/approval",
+          "/branches",
+          "/reports",
+        ];
+      }
+
+      if (role === "vice president") {
+        return [
+          "/dashboard",
+          "/departments",
+          "/staff-information",
+          "/schedule-balances",
+          "/opening-loan-balances",
+          "/transactions",
+          "/approval",
+          "/branches",
+          "/salary",
+          "/reports",
+        ];
+      }
+
+      if (role === "senior vice president") {
+        return [
+          "/dashboard",
+          "/departments",
+          "/staff-information",
+          "/schedule-balances",
+          "/opening-loan-balances",
+          "/transactions",
+          "/approval",
+          "/branches",
+          "/salary",
+          "/reports",
+          "/exit-staff",
+          "/system-update",
+        ];
+      }
+    }
+
+    return null;
+  };
 
   const [reportPending, setReportPending] = useState(0);
+  const [permissionMap, setPermissionMap] = useState({});
+  const [isSuperUser, setIsSuperUser] = useState(false);
+
+  const can = (moduleName, actionName = "view") => {
+    if (isSuperUser) return true;
+    return Boolean(permissionMap?.[moduleName]?.[actionName]);
+  };
+
+  useEffect(() => {
+    const loadPermissions = async () => {
+      try {
+        const res = await api.get("/me/permissions");
+        setPermissionMap(res.data?.permissions || {});
+        setIsSuperUser(Boolean(res.data?.is_super_user));
+      } catch {
+        setPermissionMap({});
+        setIsSuperUser(false);
+      }
+    };
+
+    loadPermissions();
+
+    const onAuthChanged = () => loadPermissions();
+    window.addEventListener("auth-changed", onAuthChanged);
+    window.addEventListener("storage", onAuthChanged);
+
+    return () => {
+      window.removeEventListener("auth-changed", onAuthChanged);
+      window.removeEventListener("storage", onAuthChanged);
+    };
+  }, []);
 
   useEffect(() => {
     const loadPending = async () => {
       try {
+        const leaveReq = can("leave_request", "view")
+          ? api.get("/leave-requests").catch(() => ({ data: [] }))
+          : Promise.resolve({ data: [] });
+
+        const loanReq = can("loan_request", "view")
+          ? api.get("/loan-requests").catch(() => ({ data: [] }))
+          : Promise.resolve({ data: [] });
+
+        const sbfReq = can("sbf_order", "view")
+          ? api.get("/sbf-orders").catch(() => ({ data: [] }))
+          : Promise.resolve({ data: [] });
+
         const [leaveRes, loanRes, sbfRes] = await Promise.all([
-          api.get("/leave-requests").catch(() => ({ data: [] })),
-          api.get("/loan-requests").catch(() => ({ data: [] })),
-          api.get("/sbf-orders").catch(() => ({ data: [] })),
+          leaveReq,
+          loanReq,
+          sbfReq,
         ]);
 
         const total =
@@ -68,9 +268,10 @@ const Sidebar = ({ collapsed }) => {
     };
 
     loadPending();
+
     const timer = setInterval(loadPending, 15000);
     return () => clearInterval(timer);
-  }, []);
+  }, [permissionMap, isSuperUser]);
 
   const navItems = useMemo(() => {
     const items = [
@@ -78,240 +279,111 @@ const Sidebar = ({ collapsed }) => {
         to: "/dashboard",
         label: "Dashboard",
         icon: MdDashboard,
-        roles: [
-          "admin",
-          "it",
-          "hr",
-          "accounting",
-          "tread",
-          "branch manager",
-          "area manager",
-          "regional manager",
-          "assistant vice president",
-          "vice president",
-          "senior vice president",
-          "president",
-        ],
+        module: "dashboard",
       },
       {
         to: "/departments",
         label: "Department",
         icon: FaBuilding,
-        roles: [
-          "admin",
-          "it",
-          "hr",
-          "accounting",
-          "tread",
-          "vice president",
-          "senior vice president",
-          "president",
-        ],
+        module: "department",
       },
       {
         to: "/staff-information",
         label: "Staff Information",
         icon: FaIdBadge,
-        roles: [
-          "admin",
-          "it",
-          "hr",
-          "accounting",
-          "tread",
-          "branch manager",
-          "area manager",
-          "regional manager",
-          "assistant vice president",
-          "vice president",
-          "senior vice president",
-          "president",
-        ],
+        module: "staff",
       },
       {
         to: "/schedule-balances",
         label: "Schedule of Balances",
         icon: HiOutlineClipboardList,
-        roles: [
-          "admin",
-          "it",
-          "hr",
-          "accounting",
-          "branch manager",
-          "area manager",
-          "regional manager",
-          "assistant vice president",
-          "vice president",
-          "senior vice president",
-          "president",
-        ],
+        module: "schedule_balances",
       },
       {
         to: "/opening-loan-balances",
         label: "Opening Loan Balances",
         icon: PiHandCoinsBold,
-        roles: [
-          "admin",
-          "it",
-          "hr",
-          "accounting",
-          "branch manager",
-          "area manager",
-          "regional manager",
-          "assistant vice president",
-          "vice president",
-          "senior vice president",
-        ],
+        module: "staff_loan_opening_balance",
       },
       {
         to: "/transactions",
         label: "HRIS Transactions",
         icon: FaExchangeAlt,
-        roles: [
-          "admin",
-          "it",
-          "hr",
-          "accounting",
-          "tread",
-          "branch manager",
-          "area manager",
-          "regional manager",
-          "assistant vice president",
-          "vice president",
-          "senior vice president",
-          "president",
-        ],
+        module: "hris_transactions",
       },
       {
         to: "/approval",
         label: "Finance Approval",
         icon: AiOutlineCheckCircle,
-        roles: [
-          "admin",
-          "it",
-          "hr",
-          "accounting",
-          "tread",
-          "branch manager",
-          "area manager",
-          "regional manager",
-          "assistant vice president",
-          "vice president",
-          "senior vice president",
-          "president",
-        ],
+        anyModule: ["loan_request", "cbu_withdrawal", "reimbursement_request"],
       },
       {
         to: "/branches",
         label: "Branch Payroll",
         icon: TbGitBranch,
-        roles: [
-          "admin",
-          "it",
-          "hr",
-          "accounting",
-          "branch manager",
-          "area manager",
-          "regional manager",
-          "assistant vice president",
-          "vice president",
-          "senior vice president",
-          "president",
-        ],
+        module: "branch",
       },
       {
         to: "/logistic",
         label: "Logistic",
         icon: BiPackage,
-        roles: [
-          "admin",
-          "it",
-          "hr",
-          "accounting",
-          "tread",
-          "area manager",
-          "regional manager",
-          "assistant vice president",
-          "vice president",
-          "senior vice president",
-          "president",
-        ],
+        module: "logistic",
       },
       {
         to: "/salary",
         label: "Payslip",
         icon: BsCash,
-        roles: [
-          "admin",
-          "it",
-          "hr",
-          "accounting",
-          "assistant vice president",
-          "vice president",
-          "senior vice president",
-          "president",
-        ],
+        module: "payslip",
       },
       {
         to: "/reports",
         label: "Requests",
         icon: LuFiles,
-        roles: [
-          "admin",
-          "it",
-          "hr",
-          "accounting",
-          "tread",
-          "vice president",
-          "senior vice president",
-          "president",
-        ],
+        module: "report",
         badge: reportPending > 0 ? reportPending : null,
       },
       {
         to: "/exit-staff",
         label: "Exit Staff",
         icon: RxExit,
-        roles: [
-          "admin",
-          "it",
-          "hr",
-          "accounting",
-          "vice president",
-          "senior vice president",
-          "president",
-        ],
+        anyModule: ["exit_staff_order", "resignation_request"],
       },
       {
         to: "/system-update",
         label: "System Update",
         icon: FiSettings,
-        roles: [
-          "admin",
-          "it",
-          "hr",
-          "accounting",
-          "assistant vice president",
-          "vice president",
-          "senior vice president",
-          "president",
-        ],
+        module: "system_update",
       },
       {
         to: "/permissions",
         label: "Permissions",
         icon: SiOpenaccess,
-        roles: ["admin", "it"],
+        module: "permissions",
       },
       {
         to: "/users",
         label: "Users",
         icon: FaUserGroup,
-        roles: ["admin", "it", "president"],
+        module: "users",
       },
     ];
 
-    return items.filter((x) => !x.roles || x.roles.includes(role));
-  }, [role, reportPending]);
+    return items.filter((item) => {
+      if (isSuperUser) return true;
+
+      const allowed = allowedSidebar();
+
+      if (allowed) {
+        return allowed.includes(item.to);
+      }
+
+      if (item.anyModule) {
+        return item.anyModule.some((m) => can(m, "view"));
+      }
+
+      return can(item.module, "view");
+    });
+  }, [permissionMap, isSuperUser, reportPending, role, userDepartment]);
 
   const isPathActive = (basePath) =>
     pathname === basePath || pathname.startsWith(basePath + "/");
@@ -325,6 +397,7 @@ const Sidebar = ({ collapsed }) => {
           <div className="brand-text">
             <div className="brand-title">AmberCash PH</div>
             <div className="brand-subtitle">{userDepartment}</div>
+
             {user?.role && (
               <div className="brand-role">Role: {String(user.role)}</div>
             )}
@@ -343,7 +416,9 @@ const Sidebar = ({ collapsed }) => {
             <NavLink
               key={item.to}
               to={item.to}
-              className={() => `sidebar-link ${forcedActive ? "active" : ""}`}
+              className={() =>
+                `sidebar-link ${forcedActive ? "active" : ""}`
+              }
               title={collapsed ? item.label : undefined}
             >
               <span className="sidebar-icon">

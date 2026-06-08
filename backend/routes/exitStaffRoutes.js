@@ -45,7 +45,30 @@ const isTopManagement = (req) =>
   isSeniorVicePresident(req) ||
   isPresident(req);
 
-const getUserBranchId = (req) => req.user?.branch_id ?? null;
+const getUserBranchId = (req) => {
+  const raw =
+    req.user?.branch_id ??
+    req.user?.branchId ??
+    req.user?.branch_code ??
+    req.user?.branchCode ??
+    null;
+
+  const n = Number(raw);
+
+  if (Number.isFinite(n)) {
+    return Math.trunc(n);
+  }
+
+  return null;
+};
+
+const getUserBranchCode = (req) =>
+  clean(
+    req.user?.branch_code ??
+      req.user?.branchCode ??
+      req.user?.branch_id ??
+      ""
+  );
 
 const normalizeExitType = (v) => {
   const s = norm(v);
@@ -136,10 +159,17 @@ router.get(
 
       if (isBranchManager(req)) {
         const bid = getUserBranchId(req);
-        if (!bid) return res.json([]);
+        const bcode = getUserBranchCode(req);
 
-        params.push(bid);
-        sql += ` AND s.branch_id = $${params.length}`;
+        if (bid) {
+          params.push(bid);
+          sql += ` AND s.branch_id = $${params.length}`;
+        } else if (bcode) {
+          params.push(bcode);
+          sql += ` AND b.code = $${params.length}`;
+        } else {
+          return res.json([]);
+        }
       }
 
       sql += `
@@ -178,19 +208,37 @@ router.get(
 
       if (isBranchManager(req)) {
         const bid = getUserBranchId(req);
-        if (!bid) return res.json([]);
+        const bcode = getUserBranchCode(req);
 
-        const r = await pool.query(
-          `
-          SELECT *
-          FROM public.exit_staff_orders
-          WHERE branch_id = $1
-          ORDER BY id DESC
-          `,
-          [bid]
-        );
+        if (bid) {
+          const r = await pool.query(
+            `
+            SELECT *
+            FROM public.exit_staff_orders
+            WHERE branch_id = $1
+            ORDER BY id DESC
+            `,
+            [bid]
+          );
 
-        return res.json(r.rows);
+          return res.json(r.rows);
+        }
+
+        if (bcode) {
+          const r = await pool.query(
+            `
+            SELECT *
+            FROM public.exit_staff_orders
+            WHERE branch_code = $1
+            ORDER BY id DESC
+            `,
+            [bcode]
+          );
+
+          return res.json(r.rows);
+        }
+
+        return res.json([]);
       }
 
       return res.status(403).json({ message: "Access denied" });
@@ -625,8 +673,7 @@ router.put(
   }
 );
 
-router.put(
-  "/exit-staff/:id/reapply",
+router.put("/exit-staff/:id/reapply",
   requireAuth,
   requirePermission("exit_staff_order", "approve"),
   async (req, res) => {
@@ -708,7 +755,6 @@ router.put(
         `
        UPDATE public.exit_staff_orders
         SET
-          status = 'Re-Applied',
           remarks = TRIM(COALESCE(remarks, '') || E'\nRe-applied on ' || $2::text)
         WHERE employee_no = $1
           AND LOWER(TRIM(COALESCE(status, ''))) = 'approved'
@@ -787,8 +833,7 @@ router.put(
   }
 );
 
-router.delete(
-  "/exit-staff-orders/:id",
+router.delete("/exit-staff-orders/:id",
   requireAuth,
   requirePermission("exit_staff_order", "delete"),
   async (req, res) => {
@@ -810,9 +855,39 @@ router.delete(
         return res.status(404).json({ message: "Order not found" });
       }
 
-      if (norm(check.rows[0].status) === "approved") {
-        return res.status(400).json({ message: "Approved orders cannot be deleted" });
-      }
+      const orderStatus = norm(check.rows[0].status);
+
+        if (
+          !["approved", "rejected", "pending"].includes(orderStatus)
+        ) {
+          return res.status(400).json({
+            message: "Invalid status"
+          });
+        }
+
+        const order = await pool.query(
+          `
+          SELECT employee_no
+          FROM public.exit_staff_orders
+          WHERE id = $1
+          `,
+          [id]
+        );
+
+        if (order.rowCount > 0 && orderStatus === "approved") {
+          await pool.query(
+            `
+            UPDATE public.staff
+            SET
+              status = 'Active',
+              exit_type = NULL,
+              exit_date = NULL,
+              exit_remarks = NULL
+            WHERE employee_no = $1
+            `,
+            [order.rows[0].employee_no]
+          );
+        }
 
       await pool.query(
         `

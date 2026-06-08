@@ -25,7 +25,7 @@
  * │ Query Parameters:                                                       │
  * │   page    (int)    Page number. Default: 1                              │
  * │   limit   (int)    Records per page. Default: 50. Max: 200              │
- * │   status  (string) Filter by status. Values: "Active" | "Inactive"     │
+ * │   status  (string) Filter by status. Values: "Active" | "Inactive"      │
  * │   branch  (int)    Filter by branch_id                                  │
  * │                                                                         │
  * │ Examples:                                                               │
@@ -38,8 +38,8 @@
  * │ Sample Response:                                                        │
  * │ {                                                                       │
  * │   "meta": {                                                             │
- * │     "page": 1, "limit": 50, "total": 2,                                │
- * │     "total_pages": 1, "has_next": false, "has_prev": false             │
+ * │     "page": 1, "limit": 50, "total": 2,                                 │
+ * │     "total_pages": 1, "has_next": false, "has_prev": false              │
  * │   },                                                                    │
  * │   "data": [                                                             │
  * │     {                                                                   │
@@ -93,7 +93,7 @@
  * │   ]                                                                     │
  * │ }                                                                       │
  * └─────────────────────────────────────────────────────────────────────────┘
- *
+ *  
  * ┌─────────────────────────────────────────────────────────────────────────┐
  * │ 2. SINGLE STAFF                                                         │
  * │    GET /api/webhook/staff/:ref                                          │
