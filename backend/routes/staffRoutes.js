@@ -72,7 +72,10 @@ const buildFullname = ({ last_name, first_name, middle_name, fullname }) => {
 };
 
 const getUserArea = (req) => toStr(req.user?.area);
-const getUserBranchCode = (req) => toStr(req.user?.branch_id);
+
+const getUserBranchCode = (req) =>
+  toStr(req.user?.branch_code || req.user?.branch || req.user?.branch_id);
+
 const getUserDivision = (req) => toStr(req.user?.division);
 const getUserRegion = (req) => toStr(req.user?.region);
 const getUserDepartment = (req) => toStr(req.user?.department);
@@ -92,11 +95,14 @@ const isFullStaffAccess = async (req) => {
   return (
     isAdmin(req) ||
     isIT(req) ||
+
     department === "it department" ||
     department === "hr department" ||
     department === "accounting department" ||
     department === "tread department" ||
     department === "audit department" ||
+    department === "office of the president" ||
+
     isSeniorVicePresident(req) ||
     isPresident(req) ||
     canViewAll(req)
@@ -194,18 +200,21 @@ const STAFF_REMARKS_SQL = `
   END AS remarks
 `;
 
-async function getBranchIdFromCode(branchCode) {
-  const code = toStr(branchCode);
-  if (!code) return null;
+async function getBranchIdFromCode(branchValue) {
+  const value = toStr(branchValue);
+  if (!value) return null;
+
+  if (/^\d+$/.test(value)) return Number(value);
 
   const r = await pool.query(
     `
     SELECT id
     FROM public.branches
     WHERE LOWER(TRIM(code)) = LOWER(TRIM($1))
+       OR LOWER(TRIM(name)) = LOWER(TRIM($1))
     LIMIT 1
     `,
-    [code]
+    [value]
   );
 
   if (r.rowCount === 0) return null;
@@ -232,6 +241,17 @@ async function canAccessStaffById(client, req, staffId) {
 
   const row = r.rows[0];
 
+  const userDepartment = getUserDepartment(req);
+
+    if (
+      userDepartment.toLowerCase() === "production & logistic department" ||
+      userDepartment.toLowerCase() === "production and logistic department"
+    ) {
+      return (
+        toStr(row.department).toLowerCase() === userDepartment.toLowerCase()
+      );
+    }
+
   if (isBranchManager(req)) {
     const branchCode = getUserBranchCode(req);
     const bid = await getBranchIdFromCode(branchCode);
@@ -252,11 +272,29 @@ async function canAccessStaffById(client, req, staffId) {
     const department = getUserDepartment(req);
     const division = getUserDivision(req);
 
-    if (department && toStr(row.department).toLowerCase() === department.toLowerCase()) {
+    if (
+      department.toLowerCase() ===
+      "production & logistic department"
+    ) {
+      return (
+        toStr(row.department).toLowerCase() ===
+        department.toLowerCase()
+      );
+    }
+
+    if (
+      department &&
+      toStr(row.department).toLowerCase() ===
+        department.toLowerCase()
+    ) {
       return true;
     }
 
-    if (division && toStr(row.division).toLowerCase() === division.toLowerCase()) {
+    if (
+      division &&
+      toStr(row.division).toLowerCase() ===
+        division.toLowerCase()
+    ) {
       return true;
     }
 
@@ -548,6 +586,30 @@ router.get(
 
         return res.json(r.rows);
       }
+
+      const userDepartment = getUserDepartment(req);
+
+        if (
+          userDepartment.toLowerCase() === "production & logistic department" ||
+          userDepartment.toLowerCase() === "production and logistic department"
+        ) {
+          const r = await pool.query(
+            `
+            SELECT
+              s.*,
+              ${STAFF_REMARKS_SQL},
+              b.name AS branch_name,
+              b.code AS branch_code
+            FROM public.staff s
+            LEFT JOIN public.branches b ON b.id = s.branch_id
+            WHERE LOWER(TRIM(COALESCE(s.department,''))) = LOWER(TRIM($1))
+            ORDER BY s.id DESC
+            `,
+            [userDepartment]
+          );
+
+          return res.json(r.rows);
+        }
 
       if (isBranchManager(req)) {
         const branchCode = getUserBranchCode(req);

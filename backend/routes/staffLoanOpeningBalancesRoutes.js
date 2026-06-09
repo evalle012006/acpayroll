@@ -44,6 +44,21 @@ const getUserDepartment = (req) =>
 const isAccountingDepartmentUser = (req) =>
   getUserDepartment(req).includes("accounting");
 
+const isHrDepartmentUser = (req) =>
+  getUserDepartment(req).includes("hr");
+
+const isITDepartmentUser = (req) =>
+  getUserDepartment(req).includes("it");
+
+const isAuditDepartmentUser = (req) =>
+  getUserDepartment(req).includes("audit");
+
+const isTreadDepartmentUser = (req) =>
+  getUserDepartment(req).includes("tread");
+
+const isOfficePresidentDepartmentUser = (req) =>
+  getUserDepartment(req).includes("office of the president");
+
 const getRole = (req) =>
   norm(
     req.user?.role ||
@@ -58,7 +73,12 @@ const hasAnyRole = (req, roles = []) => {
 };
 
 const hasFullAccess = (req) =>
+  isHrDepartmentUser(req) ||
+  isITDepartmentUser(req) ||
   isAccountingDepartmentUser(req) ||
+  isAuditDepartmentUser(req) ||
+  isTreadDepartmentUser(req) ||
+  isOfficePresidentDepartmentUser(req) ||
   hasAnyRole(req, [
     "admin",
     "it",

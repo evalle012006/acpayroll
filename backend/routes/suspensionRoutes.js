@@ -46,6 +46,15 @@ const getUserArea = (req) => toStr(req.user?.area);
 const getUserRegion = (req) => toStr(req.user?.region);
 const getUserDivision = (req) => toStr(req.user?.division);
 
+const isHrDepartmentUser = (req) =>
+  String(
+    req.user?.department ||
+    req.user?.department_name ||
+    ""
+  )
+    .toLowerCase()
+    .includes("hr");
+
 const isAccountingDepartmentUser = (req) =>
   String(
     req.user?.department ||
@@ -133,6 +142,7 @@ const canAccessStaffRecord = (req, staff) => {
     isAdmin(req) ||
     isIT(req) ||
     isHr(req) ||
+    isHrDepartmentUser(req) ||
     isAccounting(req) ||
     isAccountingDepartmentUser(req) ||
     isTread(req) ||
@@ -171,6 +181,7 @@ const canMutatePendingOrder = (req, row) => {
     isAdmin(req) ||
     isIT(req) ||
     isHr(req) ||
+    isHrDepartmentUser(req) ||
     isAccounting(req) ||
     isAccountingDepartmentUser(req)
   ) return true;
@@ -208,6 +219,7 @@ const canDownloadRequestFile = (req) =>
   isAdmin(req) ||
   isIT(req) ||
   isHr(req) ||
+  isHrDepartmentUser(req) ||
   isAccounting(req) ||
   isAccountingDepartmentUser(req);
 
@@ -216,6 +228,7 @@ const canDownloadApprovedFile = (req, row) => {
     isAdmin(req) ||
     isIT(req) ||
     isHr(req) ||
+    isHrDepartmentUser(req) ||
     isAccounting(req) ||
     isAccountingDepartmentUser(req)
   ) return true;
@@ -237,6 +250,7 @@ const canUploadApprovedFile = (req) =>
   isAdmin(req) ||
   isIT(req) ||
   isHr(req) ||
+  isHrDepartmentUser(req) ||
   isAccounting(req) ||
   isAccountingDepartmentUser(req);
 
@@ -250,6 +264,7 @@ router.get(
         isAdmin(req) ||
         isIT(req) ||
         isHr(req) ||
+        isHrDepartmentUser(req) ||
         isAccounting(req) ||
         isAccountingDepartmentUser(req) ||
         isTread(req) ||
@@ -514,7 +529,14 @@ router.post(
       let avpStatus = "Pending";
       let adminStatus = "Pending";
 
-      if (isAdmin(req) || isIT(req) || isHr(req) || isAccounting(req)) {
+      if (
+        isAdmin(req) ||
+        isIT(req) ||
+        isHr(req) ||
+        isHrDepartmentUser(req) ||
+        isAccounting(req) ||
+        isAccountingDepartmentUser(req)
+      ) {
         initialStage = STAGE_ADMIN;
       } else if (
         isAssistantVicePresident(req) ||

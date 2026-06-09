@@ -325,37 +325,12 @@ function AppShell() {
           </ProtectedRoute>
         }
       />
-
-      <Route
-        path="/transportation/:id"
-        element={
-          <Page module="transportation_history">
-            <Transportation />
-          </Page>
-        }
-      />
-
+      <Route path="/transportation/:id" element={<Page module="transportation_history"><Transportation /></Page>}/>
       <Route path="/schedule-balances" element={<Page module="schedule_balance"><ScheduleBalances /></Page>}/>
       <Route path="/opening-loan-balances" element={<Page module="staff_loan_opening_balance"><OpeningLoanBalances /></Page>}/>
       <Route path="/approval" element={<Page anyModule={["loan_request", "cbu_withdrawal", "reimbursement_request",]}><Approval /></Page>}/>
-      <Route
-        path="/branches"
-        element={
-          <Page module="branch">
-            <Branches />
-          </Page>
-        }
-      />
-
-      <Route
-        path="/departments"
-        element={
-          <Page module="department">
-            <Departments />
-          </Page>
-        }
-      />
-
+      <Route path="/branches" element={<Page module="branch"><Branches /></Page>}/>
+      <Route path="/departments" element={<Page module="department"><Departments /></Page>}/>
       <Route
         path="/bonus/:branchId"
         element={

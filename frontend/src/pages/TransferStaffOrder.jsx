@@ -81,9 +81,17 @@ export default function TransferStaffOrder() {
   const isVP = role === "vice president";
   const isSVP = role === "senior vice president";
 
-  const canCreate = isAdmin || isIT || isHR || isBM || isAM || isRM || isAVP;
-  const canHRUpload = isAdmin || isIT || isHR || isSVP;
-  const canReject = isAdmin || isIT || isHR || isSVP;
+  const userDepartment = norm(user?.department);
+
+  const isHRDepartment =
+    userDepartment === "hr" ||
+    userDepartment === "hr department" ||
+    userDepartment === "human resources" ||
+    userDepartment === "human resources department";
+
+  const canCreate = true;
+  const canHRUpload = isAdmin || isHRDepartment;
+  const canReject = isAdmin || isHRDepartment;
 
   const userBranchId = String(user?.branch_id || "");
   const userArea = norm(user?.area);
@@ -164,7 +172,23 @@ export default function TransferStaffOrder() {
       }
 
       if (role === "branch manager") {
-        return String(s?.branch_id || "") === userBranchId;
+        const myBranch = String(
+          user?.branch_id || user?.branch_code || user?.branch || ""
+        )
+          .trim()
+          .toLowerCase();
+
+        const staffBranchId = String(s?.branch_id || "").trim().toLowerCase();
+        const staffBranchCode = String(s?.branch_code || "").trim().toLowerCase();
+        const staffBranchName = String(s?.branch_name || s?.branch || "")
+          .trim()
+          .toLowerCase();
+
+        return (
+          staffBranchId === myBranch ||
+          staffBranchCode === myBranch ||
+          staffBranchName === myBranch
+        );
       }
 
       if (role === "area manager") {
@@ -201,7 +225,17 @@ export default function TransferStaffOrder() {
       }
 
       if (role === "branch manager") {
-        return String(b?.id || "") === userBranchId;
+        const myBranch = String(
+          user?.branch_id || user?.branch_code || user?.branch || ""
+        )
+          .trim()
+          .toLowerCase();
+
+        return (
+          String(b?.id || "").trim().toLowerCase() === myBranch ||
+          String(b?.code || "").trim().toLowerCase() === myBranch ||
+          String(b?.name || "").trim().toLowerCase() === myBranch
+        );
       }
 
       if (role === "area manager") {
@@ -783,8 +817,7 @@ export default function TransferStaffOrder() {
         <div>
           <h2 className="order-title">Transfer Staff</h2>
           <p className="order-subtitle">
-            BM / AM / RM / AVP create. HR uploads final file before approval.
-            Admin and IT can bypass by uploading the final approved file.
+            All departments can create transfer Staff Order and after creating wait for the HR to upload the Approved File.
           </p>
         </div>
 
@@ -1496,9 +1529,7 @@ export default function TransferStaffOrder() {
                   <div style={{ marginTop: 14 }}>
                     <div className="field">
                       <label>
-                        {isAdmin || isIT
-                          ? "Final Approved File"
-                          : "HR Final Approved File"}
+                        {isAdmin ? "Final Approved File" : "HR Final Approved File"}
                       </label>
                       <input
                         type="file"
@@ -1515,7 +1546,7 @@ export default function TransferStaffOrder() {
                     >
                       {actionLoading
                         ? "Uploading..."
-                        : isAdmin || isIT
+                        : isAdmin
                         ? "Upload Final File & Bypass Approve"
                         : "Upload Final File & Approve"}
                     </button>
@@ -1556,8 +1587,7 @@ export default function TransferStaffOrder() {
                 </button>
               ) : null}
 
-              {["Approved", "Rejected"].includes(selectedOrder.status) &&
-              (isAdmin || isIT || isHR) ? (
+              {selectedOrder.status === "Approved" && (isAdmin || isHRDepartment) ? (
                 <button
                   className="btn-secondary"
                   type="button"
@@ -1567,8 +1597,7 @@ export default function TransferStaffOrder() {
                 </button>
               ) : null}
 
-              {["Rejected", "Void"].includes(selectedOrder.status) &&
-              (isAdmin || isIT) ? (
+              {["Rejected", "Void"].includes(selectedOrder.status) && isAdmin ? (
                 <button
                   className="btn-secondary"
                   type="button"

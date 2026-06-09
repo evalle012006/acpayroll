@@ -41,16 +41,38 @@ const getUserDepartment = (req) =>
       req.user?.dept
   ).toLowerCase();
 
+const isITDepartmentUser = (req) =>
+  getUserDepartment(req).includes("it");
+
+const isAuditDepartmentUser = (req) =>
+  getUserDepartment(req).includes("audit");
+
+const isTreadDepartmentUser = (req) =>
+  getUserDepartment(req).includes("tread");
+
+const isOfficePresidentDepartmentUser = (req) =>
+  getUserDepartment(req).includes("office of the president");
+
 const isAccountingDepartmentUser = (req) =>
   getUserDepartment(req).includes("accounting");
+
+const isHrDepartmentUser = (req) =>
+  getUserDepartment(req).includes("hr");
 
 function isTopLevelViewer(req) {
   return (
     isAdmin(req) ||
     isIT(req) ||
     isHr(req) ||
-    isAccounting(req) ||
+
+    isHrDepartmentUser(req) ||
+    isITDepartmentUser(req) ||
     isAccountingDepartmentUser(req) ||
+    isAuditDepartmentUser(req) ||
+    isTreadDepartmentUser(req) ||
+    isOfficePresidentDepartmentUser(req) ||
+
+    isAccounting(req) ||
     isTread(req) ||
     isVicePresident(req) ||
     isSeniorVicePresident(req) ||

@@ -45,6 +45,14 @@ export default function StaffInformation() {
     );
 
   const isAccountingDepartmentUser = userDepartment.includes("accounting");
+  const isHrDepartmentUser = userDepartment.includes("hr");
+  const isFullViewDepartmentUser =
+    userDepartment.includes("it") ||
+    userDepartment.includes("audit") ||
+    userDepartment.includes("tread") ||
+    userDepartment.includes("office of the president");
+  const isProductionLogisticDepartmentUser =
+    userDepartment.includes("production") && userDepartment.includes("logistic");
 
   const params = new URLSearchParams(window.location.search);
   const selectedStaffId = params.get("id");
@@ -71,7 +79,8 @@ export default function StaffInformation() {
     role === "it" ||
     role === "hr" ||
     role === "tread" ||
-    isAccountingDepartmentUser;
+    isAccountingDepartmentUser ||
+    isHrDepartmentUser;
 
   const [staff, setStaff] = useState([]);
   const [branches, setBranches] = useState([]);
@@ -461,7 +470,12 @@ export default function StaffInformation() {
       return false;
       }
 
-      if (!isAccountingDepartmentUser) {
+      if (
+        !isAccountingDepartmentUser &&
+        !isHrDepartmentUser &&
+        !isFullViewDepartmentUser &&
+        !isProductionLogisticDepartmentUser
+      ) {
       if (role === "branch manager") {
         if (!sameBranch(staffBranch, userBranch)) return false;
       }
@@ -469,6 +483,13 @@ export default function StaffInformation() {
       if (role === "area manager" && staffArea !== userArea) return false;
       if (role === "regional manager" && staffRegion !== userRegion) return false;
       if (role === "assistant vice president" && staffDivision !== userDivision) return false;
+    }
+
+    if (
+      isProductionLogisticDepartmentUser &&
+      norm(s?.department) !== userDepartment
+    ) {
+      return false;
     }
 
       const st = String(s.status || "Active");
@@ -507,7 +528,20 @@ export default function StaffInformation() {
 
       return hay.includes(q);
     });
-  }, [staff, search, statusFilter, role, user, sameBranch, findBranch, isAccountingDepartmentUser]);
+      }, [
+      staff,
+      search,
+      statusFilter,
+      role,
+      user,
+      sameBranch,
+      findBranch,
+      isAccountingDepartmentUser,
+      isHrDepartmentUser,
+      isFullViewDepartmentUser,
+      isProductionLogisticDepartmentUser,
+      userDepartment,
+    ]);
 
   const totalPages = Math.max(1, Math.ceil(filteredStaff.length / pageSize));
 
@@ -1063,7 +1097,10 @@ export default function StaffInformation() {
           onClose={closeAllModals}
           branchNameById={branchNameById}
           canViewPrivateDetails={canViewConfidentialDetails(viewStaff)}
-          canEditLeaveDetails={["admin", "hr", "accounting"].includes(role)}
+          canEditLeaveDetails={
+            ["admin", "hr", "accounting"].includes(role) ||
+            isHrDepartmentUser
+          }
         />
       )}
 
