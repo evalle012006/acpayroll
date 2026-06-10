@@ -1479,8 +1479,6 @@ router.post(
         });
       }
 
-      await client.query("BEGIN");
-
       const cur = await client.query(
         `
         SELECT
@@ -1488,9 +1486,10 @@ router.post(
           s.position,
           s.department
         FROM public.loan_requests lr
-        LEFT JOIN public.staff s ON s.id = lr.staff_id
+        LEFT JOIN public.staff s
+          ON s.id = lr.staff_id
         WHERE lr.id = $1
-        FOR UPDATE
+        FOR UPDATE OF lr
         `,
         [id]
       );

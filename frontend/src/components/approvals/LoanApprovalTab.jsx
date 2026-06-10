@@ -1755,7 +1755,16 @@ export default function LoanApprovalTab() {
 
                                     <button
                                       className="btn-success"
-                                      onClick={() => updateLoanStatus(item, "approve")}
+                                      onClick={() => {
+                                        if (
+                                          norm(item.status) === "pending vice president final file" ||
+                                          getCurrentStage(item) === ACCOUNTING_FINAL
+                                        ) {
+                                          uploadFinalApprovedLoanFile(item);
+                                        } else {
+                                          updateLoanStatus(item, "approve");
+                                        }
+                                      }}
                                       type="button"
                                       disabled={processingId === `loan-${item.id}-approve`}
                                     >

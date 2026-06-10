@@ -1,0 +1,6 @@
+BEGIN;
+
+ALTER TABLE public.suspension_orders
+ADD COLUMN IF NOT EXISTS division VARCHAR(255);
+
+COMMIT;

@@ -1,3 +1,4 @@
+// promotionOrderRoutes.js
 const express = require("express");
 const router = express.Router();
 const pool = require("../db");
@@ -29,7 +30,14 @@ const toStr = (v) => String(v ?? "").trim();
 const norm = (v) => toStr(v).toLowerCase();
 
 const roleLower = (req) => norm(req.user?.role);
-const deptLower = (req) => norm(req.user?.department);
+const deptLower = (req) =>
+  norm(
+    req.user?.department ||
+      req.user?.department_name ||
+      req.user?.user_department ||
+      req.user?.departmentName ||
+      req.user?.dept
+  );
 
 const isAdmin = (req) => roleLower(req) === "admin";
 const isIT = (req) => roleLower(req) === "it";
@@ -39,15 +47,10 @@ const isTread = (req) => roleLower(req) === "tread";
 const isBranchManager = (req) => roleLower(req) === "branch manager";
 const isAreaManager = (req) => roleLower(req) === "area manager";
 const isRegionalManager = (req) => roleLower(req) === "regional manager";
-const isAssistantVicePresident = (req) =>
-  roleLower(req) === "assistant vice president";
+const isAssistantVicePresident = (req) => roleLower(req) === "assistant vice president";
 const isVicePresident = (req) => roleLower(req) === "vice president";
-const isSeniorVicePresident = (req) =>
-  roleLower(req) === "senior vice president";
+const isSeniorVicePresident = (req) => roleLower(req) === "senior vice president";
 const isPresident = (req) => roleLower(req) === "president";
-
-const isFinalPowerUser = (req) =>
-  isAdmin(req) || isIT(req) || isHr(req) || isAccounting(req) || isSeniorVicePresident(req);
 
 const isHrDepartmentUser = (req) =>
   isHr(req) ||
@@ -72,18 +75,53 @@ const isAccountingDepartmentUser = (req) =>
   deptLower(req) === "accounting" ||
   deptLower(req) === "accounting department";
 
+const isFinalPowerUser = (req) =>
+  isAdmin(req) || isIT(req) || isHrDepartmentUser(req) || isAccountingDepartmentUser(req);
+
+const canBypassApproval = (req) => isAdmin(req) || isSeniorVicePresident(req);
+
+const canDeletePromotion = (req) => isAdmin(req);
+
 const OPERATION_DEPTS = [
   "operation",
   "operations",
   "operation department",
   "operations department",
-  "payroll",
 ];
 
-const isOperationDepartment = (department) =>
-  OPERATION_DEPTS.includes(norm(department));
+const PRODUCTION_DEPTS = [
+  "production & logistic",
+  "production & logistic department",
+  "production and logistic",
+  "production and logistic department",
+  "logistic & production",
+  "logistic & production department",
+  "logistic and production",
+  "logistic and production department",
+];
 
-const isDepartment = (department, names = []) => names.includes(norm(department));
+const isOperationDepartment = (department) => OPERATION_DEPTS.includes(norm(department));
+const isProductionDepartment = (department) => PRODUCTION_DEPTS.includes(norm(department));
+
+const isBackOfficeFullViewDept = (dept) => {
+  const d = norm(dept);
+  return (
+    d === "it department" ||
+    d === "it" ||
+    d === "audit department" ||
+    d === "audit" ||
+    d === "hr department" ||
+    d === "hr" ||
+    d === "human resources" ||
+    d === "human resources department" ||
+    d === "accounting department" ||
+    d === "accounting" ||
+    d === "tread department" ||
+    d === "tread" ||
+    d === "office of the president" ||
+    isProductionDepartment(d)
+  );
+};
 
 const getUserArea = (req) => toStr(req.user?.area);
 const getUserRegion = (req) => toStr(req.user?.region);
@@ -127,243 +165,200 @@ const STAGE_COLUMN = {
   final: "final_status",
 };
 
-const normalizePosition = (position) => {
-  return norm(position)
+const normalizePosition = (position) =>
+  norm(position)
     .replace(/^acting\s+/i, "")
     .replace(/\(acting\)/gi, "")
     .replace(/acting/gi, "")
     .replace(/[_-]/g, " ")
     .replace(/\s+/g, " ")
     .trim();
-};
 
-const isActingPosition = (position) => {
-  return /\bacting\b/i.test(String(position || ""));
-};
-
-const positionRank = (position) => {
+const getBaseChainByPosition = (position) => {
   const p = normalizePosition(position);
 
-  const ranks = {
-    "loan officer": 1,
-    "branch manager": 2,
-    "area manager": 3,
-    "regional manager": 4,
-    "assistant vice president": 5,
-    "vice president": 6,
-    "senior vice president": 7,
-    president: 8,
-  };
+  if (p.includes("senior vice president")) return [];
+  if (p.includes("vice president")) return ["senior vice president"];
+  if (p.includes("assistant vice president")) return ["vice president", "senior vice president"];
+  if (p.includes("regional manager")) return ["assistant vice president", "vice president"];
+  if (p.includes("area manager")) return ["regional manager", "assistant vice president", "vice president"];
+  if (p.includes("branch manager")) return ["area manager", "regional manager", "assistant vice president", "vice president"];
 
-  let rank = ranks[p] || 0;
-
-  if (isActingPosition(position)) {
-    rank -= 0.5;
-  }
-
-  return rank;
+  return ["branch manager", "area manager", "regional manager", "assistant vice president", "vice president"];
 };
 
-const isHigherPosition = (approverPosition, targetPosition) => {
-  return (  
-    positionRank(approverPosition) >
-    positionRank(targetPosition)
+const getRawPromotionChain = (department, oldPosition) => {
+  const base = getBaseChainByPosition(oldPosition);
+
+  if (isOperationDepartment(department)) {
+    return [...base, "tread", "final"];
+  }
+
+  return [...base, "final"];
+};
+
+async function getTableColumns(client, tableName) {
+  const r = await client.query(
+    `
+    SELECT column_name
+    FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name = $1
+    `,
+    [tableName]
   );
-};
 
-const getOperationStartStage = (oldPosition, newPosition = "") => {
-  const newPos = normalizePosition(newPosition);
-  const oldPos = normalizePosition(oldPosition);
+  return r.rows.map((x) => x.column_name);
+}
 
-  if (newPos.includes("branch manager")) {
-    return "area manager";
+async function hasApproverAccount(client, stage, staff) {
+  const s = norm(stage);
+
+  if (s === "final") return true;
+  if (s === "tread") {
+    const r = await client.query(
+      `
+      SELECT id
+      FROM public.users
+      WHERE LOWER(TRIM(COALESCE(department,''))) LIKE '%tread%'
+         OR LOWER(TRIM(COALESCE(role,''))) = 'tread'
+      LIMIT 1
+      `
+    );
+    return r.rowCount > 0;
+  }
+
+  const cols = await getTableColumns(client, "users");
+  if (!cols.includes("role")) return true;
+
+  const where = [`LOWER(TRIM(COALESCE(role,''))) = $1`];
+  const params = [s];
+
+  if (cols.includes("status")) {
+    where.push(`LOWER(TRIM(COALESCE(status,'active'))) <> 'inactive'`);
+  }
+
+  if (s === "branch manager" && cols.includes("branch_id")) {
+    params.push(String(staff.branch_id || ""));
+    where.push(`COALESCE(branch_id::text,'') = $${params.length}`);
+  }
+
+  if (s === "area manager" && cols.includes("area")) {
+    params.push(norm(staff.area));
+    where.push(`LOWER(TRIM(COALESCE(area,''))) = $${params.length}`);
+  }
+
+  if (s === "regional manager" && cols.includes("region")) {
+    params.push(norm(staff.region));
+    where.push(`LOWER(TRIM(COALESCE(region,''))) = $${params.length}`);
   }
 
   if (
-    newPos.includes("area manager") ||
-    newPos.includes("regional manager")
+    ["assistant vice president", "vice president", "senior vice president"].includes(s) &&
+    cols.includes("department")
   ) {
-    return "assistant vice president";
+    params.push(norm(staff.department));
+    where.push(`LOWER(TRIM(COALESCE(department,''))) = $${params.length}`);
   }
 
-  if (newPos.includes("assistant vice president")) {
-    return "vice president";
+  try {
+    const r = await client.query(
+      `
+      SELECT id
+      FROM public.users
+      WHERE ${where.join(" AND ")}
+      LIMIT 1
+      `,
+      params
+    );
+
+    return r.rowCount > 0;
+  } catch {
+    return true;
+  }
+}
+
+async function getPromotionChain(client, staff) {
+  const raw = getRawPromotionChain(staff.department, staff.position);
+  const chain = [];
+
+  for (const stage of raw) {
+    const exists = await hasApproverAccount(client, stage, staff);
+    if (exists) chain.push(stage);
   }
 
-  if (newPos.includes("vice president")) {
-    return "tread";
-  }
+  return chain.length ? chain : ["final"];
+}
 
-  if (oldPos.includes("branch manager")) return "regional manager";
-  if (oldPos.includes("area manager")) return "regional manager";
-  if (oldPos.includes("regional manager")) return "assistant vice president";
-  if (oldPos.includes("assistant vice president")) return "vice president";
-  if (oldPos.includes("vice president")) return "tread";
+async function getInitialApprovalStage(client, staff) {
+  const chain = await getPromotionChain(client, staff);
+  return chain[0] || "final";
+}
 
-  return "area manager";
-};
+async function getNextApprovalStage(client, staff, currentStage) {
+  const chain = await getPromotionChain(client, staff);
+  const idx = chain.findIndex((x) => norm(x) === norm(currentStage));
 
-const getOperationChain = (oldPosition, newPosition = "") => {
-  const full = [
-    "area manager",
-    "regional manager",
-    "assistant vice president",
-    "vice president",
-    "tread",
-    "final",
-  ];
+  if (idx < 0) return chain[0] || "final";
+  if (idx >= chain.length - 1) return "approved";
 
-  const start = getOperationStartStage(oldPosition, newPosition);
-  const idx = full.indexOf(start);
-
-  return idx >= 0 ? full.slice(idx) : full;
-};
-
-const getPromotionChain = (department, oldPosition, newPosition = "") => {
-  const dept = norm(department);
-
-  if (isOperationDepartment(dept)) {
-    return getOperationChain(oldPosition, newPosition);
-  }
-
-  if (isDepartment(dept, ["it", "it department"])) {
-    return ["assistant vice president", "final"];
-  }
-
-  if (isDepartment(dept, ["accounting", "accounting department"])) {
-    return ["senior vice president", "final"];
-  }
-
-  if (
-    isDepartment(dept, [
-      "hr",
-      "hr department",
-      "human resources",
-      "human resources department",
-    ])
-  ) {
-    return ["senior vice president", "final"];
-  }
-
-  if (isDepartment(dept, ["office of the president"])) {
-    return ["assistant vice president", "final"];
-  }
-
-  if (
-    isDepartment(dept, [
-      "tread",
-      "tread department",
-      "treadt department",
-    ])
-  ) {
-    return ["assistant vice president", "final"];
-  }
-
-  if (
-    isDepartment(dept, [
-      "production & logistic",
-      "production & logistic department",
-      "production and logistic",
-      "production and logistic department",
-    ])
-  ) {
-    return ["assistant vice president", "final"];
-  }
-
-  if (isDepartment(dept, ["audit", "audit department"])) {
-    return ["senior vice president", "final"];
-  }
-
-  return ["final"];
-};
-
-const getInitialApprovalStage = (department, oldPosition, newPosition = "") =>
-  getPromotionChain(department, oldPosition, newPosition)[0];
+  return chain[idx + 1];
+}
 
 const canCreatePromotionForStaff = (req, staffRow) => {
-  if (isFinalPowerUser(req)) return true;
+  if (isAdmin(req) || isIT(req)) return true;
 
-  const dept = norm(staffRow.department);
-  const oldPos = normalizePosition(staffRow.position);
+  const roleAllowed =
+    isBranchManager(req) ||
+    isAreaManager(req) ||
+    isRegionalManager(req) ||
+    isAssistantVicePresident(req) ||
+    isVicePresident(req) ||
+    isSeniorVicePresident(req);
 
-  if (isOperationDepartment(dept)) {
-    if (
-      isBranchManager(req) ||
-      isAreaManager(req) ||
-      isRegionalManager(req) ||
-      isAssistantVicePresident(req) ||
-      isVicePresident(req)
-    ) {
-      return true;
-    }
-  }
+  if (!roleAllowed) return false;
 
-  if (isDepartment(dept, ["it", "it department"])) {
-    return isITDepartmentUser(req);
-  }
+  const userDept = deptLower(req);
+  const staffDept = norm(staffRow.department);
 
-  if (isDepartment(dept, ["accounting", "accounting department"])) {
-    return isAccountingDepartmentUser(req);
-  }
+  if (isBackOfficeFullViewDept(userDept)) return true;
 
-  if (
-    isDepartment(dept, [
-      "hr",
-      "hr department",
-      "human resources",
-      "human resources department",
-    ])
-  ) {
-    return isHrDepartmentUser(req);
-  }
-
-  if (isDepartment(dept, ["office of the president"])) {
-    return isAssistantVicePresident(req);
-  }
-
-  if (
-    isDepartment(dept, [
-      "tread",
-      "tread department",
-      "treadt department",
-    ])
-  ) {
-    return isRegionalManager(req) || isAssistantVicePresident(req);
-  }
-
-  if (
-    isDepartment(dept, [
-      "production & logistic",
-      "production & logistic department",
-      "production and logistic",
-      "production and logistic department",
-    ])
-  ) {
-    return isITDepartmentUser(req);
-  }
-
-  if (isDepartment(dept, ["audit", "audit department"])) {
-    return isRegionalManager(req);
+  if (isOperationDepartment(userDept) && isOperationDepartment(staffDept)) {
+    return true;
   }
 
   return false;
 };
 
-const canRoleActAtStage = (req, stage, department = "") => {
-  const dept = norm(department);
+const canViewAllPromotionOrders = (req) => {
+  if (isAdmin(req) || isIT(req)) return true;
+  if (isBackOfficeFullViewDept(deptLower(req))) return true;
+  if (isSeniorVicePresident(req) || isPresident(req)) return true;
+  return false;
+};
 
-  if (isFinalPowerUser(req)) return true;
+const canRoleActAtStage = (req, stage) => {
+  const s = norm(stage);
 
-  if (stage === "area manager") return isAreaManager(req);
-  if (stage === "regional manager") return isRegionalManager(req);
-  if (stage === "assistant vice president") return isAssistantVicePresident(req);
-  if (stage === "vice president") return isVicePresident(req);
-  if (stage === "senior vice president") return isSeniorVicePresident(req);
-  if (stage === "tread") return isTreadDepartmentUser(req);
+  if (canBypassApproval(req)) return true;
 
-  if (stage === "final") return isFinalPowerUser(req);
+  if (s === "branch manager") return isBranchManager(req);
+  if (s === "area manager") return isAreaManager(req);
+  if (s === "regional manager") return isRegionalManager(req);
+  if (s === "assistant vice president") return isAssistantVicePresident(req);
+  if (s === "vice president") return isVicePresident(req);
+  if (s === "senior vice president") return isSeniorVicePresident(req);
+  if (s === "tread") return isTreadDepartmentUser(req);
+  if (s === "final") return isHrDepartmentUser(req) || isAdmin(req) || isIT(req);
 
   return false;
+};
+
+const canDownloadApprovedFile = (req, order) => {
+  if (isAdmin(req) || isIT(req) || isHrDepartmentUser(req) || canViewAllPromotionOrders(req)) return true;
+
+  const status = norm(order?.status);
+  return status === "approved";
 };
 
 const uploadDir = path.join(__dirname, "..", "uploads", "promotion-orders");
@@ -389,6 +384,17 @@ const upload = multer({
   storage,
   limits: { fileSize: 50 * 1024 * 1024 },
 });
+
+function removeStoredFile(storedPath) {
+  try {
+    if (!storedPath) return;
+    const cleanPath = String(storedPath).replace(/^\/+/, "");
+    const fullPath = path.join(process.cwd(), cleanPath);
+    if (fs.existsSync(fullPath)) fs.unlinkSync(fullPath);
+  } catch (e) {
+    console.error("removeStoredFile ERROR:", e.message);
+  }
+}
 
 async function generateOrderNo(client, prefix) {
   const now = new Date();
@@ -425,9 +431,7 @@ async function generateOrderNo(client, prefix) {
     [prefix, year, month]
   );
 
-  return `${prefix}-${year}-${String(month).padStart(2, "0")}-${String(
-    nextVal
-  ).padStart(4, "0")}`;
+  return `${prefix}-${year}-${String(month).padStart(2, "0")}-${String(nextVal).padStart(4, "0")}`;
 }
 
 router.get(
@@ -436,18 +440,24 @@ router.get(
   requirePermission("promotion_order", "view"),
   async (req, res) => {
     try {
-      if (
-        isFinalPowerUser(req) ||
-        isTreadDepartmentUser(req) ||
-        isAssistantVicePresident(req) ||
-        isVicePresident(req) ||
-        isSeniorVicePresident(req) ||
-        isPresident(req)
-      ) {
+      if (canViewAllPromotionOrders(req)) {
         const r = await pool.query(`
           SELECT *
           FROM public.promotion_orders
           ORDER BY created_at DESC
+        `);
+
+        return res.json(r.rows);
+      }
+
+      if (isVicePresident(req) && isOperationDepartment(deptLower(req))) {
+        const r = await pool.query(`
+          SELECT po.*
+          FROM public.promotion_orders po
+          JOIN public.staff s ON s.id = po.employee_id
+          WHERE LOWER(TRIM(COALESCE(s.department,''))) IN
+            ('operation','operations','operation department','operations department')
+          ORDER BY po.created_at DESC
         `);
 
         return res.json(r.rows);
@@ -480,7 +490,7 @@ router.get(
           SELECT po.*
           FROM public.promotion_orders po
           JOIN public.staff s ON s.id = po.employee_id
-          WHERE LOWER(TRIM(COALESCE(s.area, ''))) = LOWER(TRIM($1))
+          WHERE LOWER(TRIM(COALESCE(s.area,''))) = LOWER(TRIM($1))
              OR po.approval_stage = 'area manager'
           ORDER BY po.created_at DESC
           `,
@@ -499,11 +509,30 @@ router.get(
           SELECT po.*
           FROM public.promotion_orders po
           JOIN public.staff s ON s.id = po.employee_id
-          WHERE LOWER(TRIM(COALESCE(s.region, ''))) = LOWER(TRIM($1))
+          WHERE LOWER(TRIM(COALESCE(s.region,''))) = LOWER(TRIM($1))
              OR po.approval_stage = 'regional manager'
           ORDER BY po.created_at DESC
           `,
           [region]
+        );
+
+        return res.json(r.rows);
+      }
+
+      if (isAssistantVicePresident(req)) {
+        const division = getUserDivision(req);
+        if (!division) return res.json([]);
+
+        const r = await pool.query(
+          `
+          SELECT po.*
+          FROM public.promotion_orders po
+          JOIN public.staff s ON s.id = po.employee_id
+          WHERE LOWER(TRIM(COALESCE(s.division,''))) = LOWER(TRIM($1))
+             OR po.approval_stage = 'assistant vice president'
+          ORDER BY po.created_at DESC
+          `,
+          [division]
         );
 
         return res.json(r.rows);
@@ -526,9 +555,7 @@ router.get(
       const staffId = toInt(req.params.staffId);
 
       if (!staffId) {
-        return res.status(400).json({
-          message: "Invalid staff id",
-        });
+        return res.status(400).json({ message: "Invalid staff id" });
       }
 
       const r = await pool.query(
@@ -543,14 +570,8 @@ router.get(
 
       return res.json(r.rows);
     } catch (e) {
-      console.error(
-        "GET /api/promotion-orders/staff/:staffId ERROR:",
-        e
-      );
-
-      return res.status(500).json({
-        message: "Failed to load promotion history",
-      });
+      console.error("GET /api/promotion-orders/staff/:staffId ERROR:", e);
+      return res.status(500).json({ message: "Failed to load promotion history" });
     }
   }
 );
@@ -607,9 +628,7 @@ router.post(
 
       if (!req.file) {
         await client.query("ROLLBACK");
-        return res.status(400).json({
-          message: "Promotion request file is required",
-        });
+        return res.status(400).json({ message: "Promotion request file is required" });
       }
 
       const staffRes = await client.query(
@@ -617,6 +636,7 @@ router.post(
         SELECT
           id,
           fullname,
+          employee_no,
           branch_id,
           area,
           region,
@@ -657,16 +677,18 @@ router.post(
         });
       }
 
+      const staffForChain = {
+        ...staffRow,
+        department,
+        position: currentPosition,
+      };
+
       const attachment_path = `/uploads/promotion-orders/${req.file.filename}`;
       const attachment_name = req.file.originalname || null;
       const attachment_mime = req.file.mimetype || null;
 
       const applicantRole = roleLower(req);
-      const approvalStage = getInitialApprovalStage(
-        department,
-        currentPosition,
-        new_position
-      );
+      const approvalStage = await getInitialApprovalStage(client, staffForChain);
       const orderNo = await generateOrderNo(client, "PRO");
 
       const ins = await client.query(
@@ -819,24 +841,37 @@ router.put(
 
       const order = cur.rows[0];
 
-      if (norm(order.status) === "approved" || norm(order.status) === "rejected") {
+      if (["approved", "rejected", "voided"].includes(norm(order.status))) {
         await client.query("ROLLBACK");
         return res.status(400).json({ message: "Order already finalized" });
       }
 
-      const department = toStr(order.department);
-      const chain = getPromotionChain(
-        department,
-        order.old_position,
-        order.new_position
+      const staffRes = await client.query(
+        `
+        SELECT id, branch_id, area, region, division, department, position
+        FROM public.staff
+        WHERE id = $1
+        LIMIT 1
+        `,
+        [order.employee_id]
       );
-      let currentStage = norm(order.approval_stage);
 
-      if (!chain.includes(currentStage)) {
-        currentStage = chain[0];
-      }
+      const staff = staffRes.rows[0] || {
+        id: order.employee_id,
+        branch_id: order.prev_branch_id,
+        area: order.area,
+        region: order.region,
+        division: order.division,
+        department: order.department,
+        position: order.old_position,
+      };
 
-      if (!canRoleActAtStage(req, currentStage, department)) {
+      staff.department = order.department || staff.department;
+      staff.position = order.old_position || staff.position;
+
+      let currentStage = norm(order.approval_stage) || (await getInitialApprovalStage(client, staff));
+
+      if (!canRoleActAtStage(req, currentStage)) {
         await client.query("ROLLBACK");
         return res.status(403).json({ message: "Not your approval stage" });
       }
@@ -845,26 +880,38 @@ router.put(
       const latestName = req.file.originalname || null;
       const latestMime = req.file.mimetype || null;
 
-      if (isFinalPowerUser(req)) {
+      const column = STAGE_COLUMN[currentStage];
+
+      if (!column) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({ message: "Invalid approval stage" });
+      }
+
+      if (currentStage === "final") {
+        if (!isHrDepartmentUser(req) && !isAdmin(req) && !isIT(req)) {
+          await client.query("ROLLBACK");
+          return res.status(403).json({ message: "Only HR Department can final approve and upload." });
+        }
+
         await client.query(
           `
           UPDATE public.promotion_orders
           SET
-            status='Approved',
-            final_status='Approved',
-            approved_by=$2,
-            approved_at=NOW(),
-            rejected_by=NULL,
-            rejected_at=NULL,
-            rejection_reason=NULL,
-            approval_stage=NULL,
-            attachment_path=$3,
-            attachment_name=$4,
-            attachment_mime=$5,
-            approved_attachment_path=$3,
-            approved_attachment_name=$4,
-            approved_attachment_mime=$5
-          WHERE id=$1
+            status = 'Approved',
+            ${column} = 'Approved',
+            approved_by = $2,
+            approved_at = NOW(),
+            rejected_by = NULL,
+            rejected_at = NULL,
+            rejection_reason = NULL,
+            approval_stage = NULL,
+            attachment_path = $3,
+            attachment_name = $4,
+            attachment_mime = $5,
+            approved_attachment_path = $3,
+            approved_attachment_name = $4,
+            approved_attachment_mime = $5
+          WHERE id = $1
           `,
           [id, req.user?.id ?? null, latestPath, latestName, latestMime]
         );
@@ -890,44 +937,42 @@ router.put(
 
         await client.query("COMMIT");
 
-        return res.json({
-          message: "Promotion finalized and staff updated.",
-        });
+        if (order.attachment_path && order.attachment_path !== latestPath) {
+          removeStoredFile(order.attachment_path);
+        }
+
+        return res.json({ message: "Promotion finalized by HR and staff updated." });
       }
 
-      const column = STAGE_COLUMN[currentStage];
-
-      if (!column) {
-        await client.query("ROLLBACK");
-        return res.status(400).json({ message: "Invalid approval stage" });
-      }
-
-      const currentIndex = chain.indexOf(currentStage);
-      const nextStage = chain[currentIndex + 1] || "final";
+      const nextStage = await getNextApprovalStage(client, staff, currentStage);
 
       await client.query(
         `
         UPDATE public.promotion_orders
         SET
-          ${column}='Approved',
-          approval_stage=$2,
-          rejected_by=NULL,
-          rejected_at=NULL,
-          rejection_reason=NULL,
-          attachment_path=$3,
-          attachment_name=$4,
-          attachment_mime=$5
-        WHERE id=$1
+          ${column} = 'Approved',
+          approval_stage = $2,
+          rejected_by = NULL,
+          rejected_at = NULL,
+          rejection_reason = NULL,
+          attachment_path = $3,
+          attachment_name = $4,
+          attachment_mime = $5
+        WHERE id = $1
         `,
         [id, nextStage, latestPath, latestName, latestMime]
       );
 
       await client.query("COMMIT");
 
+      if (order.attachment_path && order.attachment_path !== latestPath) {
+        removeStoredFile(order.attachment_path);
+      }
+
       return res.json({
         message:
           nextStage === "final"
-            ? "Promotion recommended. Waiting for HR/Accounting/IT/Admin final upload."
+            ? "Promotion approved. Waiting for HR Department final approval and upload."
             : `Promotion approved. Moved to ${nextStage}.`,
       });
     } catch (e) {
@@ -980,24 +1025,14 @@ router.put(
 
       const order = cur.rows[0];
 
-      if (norm(order.status) === "approved" || norm(order.status) === "rejected") {
+      if (["approved", "rejected", "voided"].includes(norm(order.status))) {
         await client.query("ROLLBACK");
         return res.status(400).json({ message: "Order already finalized" });
       }
 
-      const department = toStr(order.department);
-      const chain = getPromotionChain(
-        department,
-        order.old_position,
-        order.new_position
-      );
-      let currentStage = norm(order.approval_stage);
+      const currentStage = norm(order.approval_stage);
 
-      if (!chain.includes(currentStage)) {
-        currentStage = chain[0];
-      }
-
-      if (!canRoleActAtStage(req, currentStage, department)) {
+      if (!canRoleActAtStage(req, currentStage)) {
         await client.query("ROLLBACK");
         return res.status(403).json({ message: "Not your approval stage" });
       }
@@ -1008,20 +1043,20 @@ router.put(
         `
         UPDATE public.promotion_orders
         SET
-          status='Rejected',
-          ${column}='Rejected',
-          rejected_by=$2,
-          rejected_at=NOW(),
-          rejection_reason=$3,
-          approved_by=NULL,
-          approved_at=NULL
-        WHERE id=$1
+          status = 'Rejected',
+          ${column} = 'Rejected',
+          rejected_by = $2,
+          rejected_at = NOW(),
+          rejection_reason = $3,
+          approved_by = NULL,
+          approved_at = NULL
+        WHERE id = $1
         `,
         [id, req.user?.id ?? null, reason]
       );
 
       await client.query("COMMIT");
-      return res.json({ message: "Promotion rejected" });
+      return res.json({ message: "Promotion rejected." });
     } catch (e) {
       await client.query("ROLLBACK");
       console.error("PUT /api/promotion-orders/:id/reject ERROR:", e);
@@ -1049,11 +1084,9 @@ router.put(
         return res.status(400).json({ message: "Invalid id" });
       }
 
-      if (!isFinalPowerUser(req)) {
+      if (!canDeletePromotion(req)) {
         await client.query("ROLLBACK");
-        return res.status(403).json({
-          message: "Only Admin, IT, HR, or Accounting can void approved promotion.",
-        });
+        return res.status(403).json({ message: "Only Admin can void approved promotion." });
       }
 
       const cur = await client.query(
@@ -1075,9 +1108,7 @@ router.put(
 
       if (norm(order.status) !== "approved") {
         await client.query("ROLLBACK");
-        return res.status(400).json({
-          message: "Only approved promotion can be voided.",
-        });
+        return res.status(400).json({ message: "Only approved promotion can be voided." });
       }
 
       await client.query(
@@ -1135,10 +1166,8 @@ router.delete(
 
       if (!id) return res.status(400).json({ message: "Invalid id" });
 
-      if (!isFinalPowerUser(req)) {
-        return res.status(403).json({
-          message: "Only Admin, IT, HR, or Accounting can delete promotion orders.",
-        });
+      if (!canDeletePromotion(req)) {
+        return res.status(403).json({ message: "Only Admin can delete promotion orders." });
       }
 
       const check = await pool.query(
@@ -1154,19 +1183,16 @@ router.delete(
         return res.status(404).json({ message: "Promotion order not found" });
       }
 
-      if (norm(check.rows[0].status) === "approved") {
-        return res.status(400).json({
-          message: "Approved promotion cannot be deleted. Use void instead.",
-        });
+      const status = norm(check.rows[0].status);
+
+      if (!["rejected", "voided"].includes(status)) {
+        return res.status(400).json({ message: "Only rejected or voided promotion orders can be deleted." });
       }
 
-      await pool.query(
-        `
-        DELETE FROM public.promotion_orders
-        WHERE id=$1
-        `,
-        [id]
-      );
+      await pool.query(`DELETE FROM public.promotion_orders WHERE id=$1`, [id]);
+
+      removeStoredFile(check.rows[0].attachment_path);
+      removeStoredFile(check.rows[0].approved_attachment_path);
 
       return res.json({ message: "Promotion deleted." });
     } catch (e) {
@@ -1193,12 +1219,7 @@ router.get(
 
       const r = await pool.query(
         `
-        SELECT
-          id,
-          attachment_path,
-          attachment_name,
-          approved_attachment_path,
-          approved_attachment_name
+        SELECT *
         FROM public.promotion_orders
         WHERE id = $1
         LIMIT 1
@@ -1212,26 +1233,47 @@ router.get(
 
       const row = r.rows[0];
 
-      let targetPath = row.attachment_path;
-      let targetName = row.attachment_name;
+      if ((type === "approved" || type === "latest") && !canDownloadApprovedFile(req, row)) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      let storedPath = row.attachment_path;
+      let storedName = row.attachment_name;
 
       if (type === "approved") {
-        targetPath = row.approved_attachment_path || row.attachment_path;
-        targetName = row.approved_attachment_name || row.attachment_name;
+        storedPath = row.approved_attachment_path;
+        storedName = row.approved_attachment_name;
       }
 
-      if (!targetPath) {
-        return res.status(404).json({ message: "No promotion file found" });
+      if (type === "latest") {
+        storedPath = row.approved_attachment_path || row.attachment_path;
+        storedName = row.approved_attachment_name || row.attachment_name;
       }
 
-      const rel = String(targetPath).replace(/^\/uploads\//, "");
-      const filePath = path.join(__dirname, "..", "uploads", rel);
-
-      if (!fs.existsSync(filePath)) {
-        return res.status(404).json({ message: "File not found" });
+      if (!storedPath) {
+        return res.status(404).json({ message: "No attachment found" });
       }
 
-      return res.download(filePath, targetName || path.basename(filePath));
+      const cleanPath = String(storedPath).replace(/^\/+/, "");
+      const fileNameOnly = path.basename(cleanPath);
+
+      const possiblePaths = [
+        path.isAbsolute(storedPath) ? storedPath : null,
+        path.join(__dirname, "..", cleanPath),
+        path.join(process.cwd(), cleanPath),
+        path.join(uploadDir, fileNameOnly),
+      ].filter(Boolean);
+
+      const filePath = possiblePaths.find((p) => fs.existsSync(p));
+
+      if (!filePath) {
+        return res.status(404).json({
+          message: "Stored file not found",
+          saved_path: storedPath,
+        });
+      }
+
+      return res.download(filePath, storedName || path.basename(filePath));
     } catch (e) {
       console.error("GET /api/promotion-orders/:id/download/:type ERROR:", e);
       return res.status(500).json({ message: e?.message || "Server error" });

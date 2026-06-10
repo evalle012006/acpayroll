@@ -217,47 +217,23 @@ export default function PromotionOrder() {
     isPresident;
 
   const canApproveStage = (o) => {
-  if (!o) return false;
+    if (!o || norm(o.status) !== "pending") return false;
 
-  if (
-    isAdmin ||
-    isIt ||
-    isHr ||
-    isAccounting ||
-    isSeniorVicePresident
-  )
-    return norm(o.status) === "pending";
+    const stage = norm(o.approval_stage);
 
-  const stage = norm(o.approval_stage);
+    if (isAdmin || isSeniorVicePresident) return true;
 
-  if (stage === "area manager")
-    return isAreaManager;
+    if (stage === "branch manager") return isBranchManager;
+    if (stage === "area manager") return isAreaManager;
+    if (stage === "regional manager") return isRegionalManager;
+    if (stage === "assistant vice president") return isAssistantVicePresident;
+    if (stage === "vice president") return isVicePresident;
+    if (stage === "senior vice president") return isSeniorVicePresident;
+    if (stage === "tread") return isTread;
+    if (stage === "final") return isHr || isAdmin || isIt;
 
-  if (stage === "regional manager")
-    return isRegionalManager;
-
-  if (stage === "assistant vice president")
-    return isAssistantVicePresident;
-
-  if (stage === "vice president")
-    return isVicePresident;
-
-  if (stage === "senior vice president")
-    return isSeniorVicePresident;
-
-  if (stage === "tread")
-    return isTread;
-
-  if (stage === "final")
-    return (
-      isAdmin ||
-      isIt ||
-      isHr ||
-      isAccounting
-    );
-
-  return false;
-};
+    return false;
+  };
 
   const [staff, setStaff] = useState([]);
   const [branches, setBranches] = useState([]);
@@ -675,8 +651,7 @@ export default function PromotionOrder() {
     }
   };
 
- const canPowerAction =
-    isAdmin || isIt || isHr || isAccounting || isSeniorVicePresident;
+ const canPowerAction = isAdmin;
     
   const voidPromotion = async (id) => {
     if (!window.confirm("Void this approved promotion? Staff will be reverted.")) return;
@@ -801,7 +776,7 @@ export default function PromotionOrder() {
     );
 
     if (stage === "final")
-      return "Final Upload + Approve";
+      return "HR Final Upload + Approve";
 
     if (stage === "tread")
       return "Upload + Recommend";
@@ -815,8 +790,7 @@ export default function PromotionOrder() {
         <div>
           <h2 className="po-title">Promotion Recommendation</h2>
           <p className="po-subtitle">
-            Operations: Area/Regional/AVP/VP → TREAD → HR/Accounting/IT/Admin final upload.
-            IT/TREAD/Production/Office: AVP → Final. HR/Accounting/Audit: SVP → Final.
+            Approval Chain: BM → AM → RM → AVP → VP → TREAD → HR Department.
           </p>
         </div>
 
@@ -983,7 +957,7 @@ export default function PromotionOrder() {
                                 Reject
                               </button>
 
-                              {canPowerAction && norm(o.status) !== "approved" && (
+                              {canPowerAction && ["rejected", "voided"].includes(norm(o.status)) && (
                                 <button
                                   className="po-mini-btn po-reject"
                                   type="button"
@@ -1097,17 +1071,7 @@ export default function PromotionOrder() {
               <div><strong>Old ECOLA</strong><span>{money(viewOrder.old_ecola)}</span></div>
               <div><strong>New ECOLA</strong><span>{money(viewOrder.new_ecola)}</span></div>
               <div><strong>Effective Date</strong><span>{fmtDate(viewOrder.effective_date)}</span></div>
-              <div><strong>Recommendation Flow</strong><span>{renderRecommendationFlow(viewOrder)}</span></div>
               <div><strong>Details / Remarks</strong><span>{viewOrder.details || "-"}</span></div>
-              <div><strong>Branch Manager Status</strong><span>{viewOrder.branch_manager_status || "-"}</span></div>
-              <div><strong>Area Manager Status</strong><span>{viewOrder.area_manager_status || "-"}</span></div>
-              <div><strong>Regional Manager Status</strong><span>{viewOrder.regional_manager_status || "-"}</span></div>
-              <div><strong>Assistant VP Status</strong><span>{viewOrder.assistant_vice_president_status || "-"}</span></div>
-              <div><strong>Vice President Status</strong><span>{viewOrder.vice_president_status || "-"}</span></div>
-              <div><strong>Senior VP Status</strong><span>{viewOrder.senior_vice_president_status || "-"}</span></div>
-              <div><strong>TREAD Status</strong><span>{viewOrder.tread_status || "-"}</span></div>
-              <div><strong>HR Status</strong><span>{viewOrder.hr_status || "-"}</span></div>
-              <div><strong>Final Status</strong><span>{viewOrder.final_status || "-"}</span></div>
 
               <div>
                 <strong>File</strong>
