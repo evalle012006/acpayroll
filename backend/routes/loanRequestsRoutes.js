@@ -471,15 +471,14 @@ function loanTypeToBalanceColumn(loanType) {
   return null;
 }
 
-async function hasExistingLoanBalance(client, employeeNo) {
+async function hasExistingLoanBalance(client, employeeNo, loanType) {
+  const balanceColumn = loanTypeToBalanceColumn(loanType);
+
+  if (!balanceColumn) return false;
+
   const r = await client.query(
     `
-    SELECT
-      COALESCE(salary_advance,0) AS salary_advance,
-      COALESCE(motorcycle_loan,0) AS motorcycle_loan,
-      COALESCE(special_advance,0) AS special_advance,
-      COALESCE(cash_advance,0) AS cash_advance,
-      COALESCE(NULLIF(pag_ibig_loan,'')::numeric,0) AS pag_ibig_loan
+    SELECT COALESCE(${balanceColumn},0) AS balance
     FROM public.staff_balances
     WHERE employee_no = $1
     LIMIT 1
@@ -489,15 +488,7 @@ async function hasExistingLoanBalance(client, employeeNo) {
 
   if (r.rowCount === 0) return false;
 
-  const b = r.rows[0];
-
-  return (
-    toNum(b.salary_advance) > 0 ||
-    toNum(b.motorcycle_loan) > 0 ||
-    toNum(b.special_advance) > 0 ||
-    toNum(b.cash_advance) > 0 ||
-    toNum(b.pag_ibig_loan) > 0
-  );
+  return toNum(r.rows[0].balance) > 0;
 }
 
 async function validateSalaryAdvance(client, employeeNo, amount) {
@@ -1040,11 +1031,29 @@ router.post(
 
       await ensureBalanceRow(client, staffRow.employee_no);
 
-      if (await hasExistingLoanBalance(client, staffRow.employee_no)) {
+      const existingPending = await client.query(
+        `
+        SELECT id
+        FROM public.loan_requests
+        WHERE employee_no = $1
+          AND LOWER(TRIM(COALESCE(loan_type,''))) = LOWER(TRIM($2))
+          AND LOWER(TRIM(COALESCE(status,''))) NOT IN ('approved','rejected','voided')
+        LIMIT 1
+        `,
+        [staffRow.employee_no, loan_type]
+      );
+
+      if (existingPending.rowCount > 0) {
         await client.query("ROLLBACK");
         return res.status(400).json({
-          message:
-            "This staff still has an existing loan balance. Fully paid loans are required before creating another loan.",
+          message: `This staff already has an active ${loan_type} request. Wait until it is approved, rejected, or voided.`,
+        });
+      }
+
+      if (await hasExistingLoanBalance(client, staffRow.employee_no, loan_type)) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({
+          message: `This staff still has an existing ${loan_type} balance. Fully paid ${loan_type} is required before creating another ${loan_type}.`,
         });
       }
 
@@ -1479,6 +1488,8 @@ router.post(
         });
       }
 
+      await client.query("BEGIN");
+
       const cur = await client.query(
         `
         SELECT
@@ -1486,8 +1497,7 @@ router.post(
           s.position,
           s.department
         FROM public.loan_requests lr
-        LEFT JOIN public.staff s
-          ON s.id = lr.staff_id
+        LEFT JOIN public.staff s ON s.id = lr.staff_id
         WHERE lr.id = $1
         FOR UPDATE OF lr
         `,
