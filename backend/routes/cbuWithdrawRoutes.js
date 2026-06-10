@@ -97,26 +97,29 @@ const getRawApprovalChain = (department, position) => {
 
   if (isOperationDepartment(dept)) {
     if (isSVPPos(pos)) return [ACCOUNTING_FINAL];
+
+    // If Vice President is the applicant:
+    // SVP approves, then Accounting final upload/approve
     if (isVPPos(pos)) return ["Senior Vice President", ACCOUNTING_FINAL];
-    if (isAVPPos(pos)) return ["Vice President", ACCOUNTING_FINAL];
+
+    // Normal Operation flow:
+    // Vice President is final uploader/approver
+    if (isAVPPos(pos)) return ["Vice President"];
+
     if (isRegionalManagerPos(pos)) {
-      return ["Assistant Vice President", "Vice President", ACCOUNTING_FINAL];
+      return ["Assistant Vice President", "Vice President"];
     }
+
     if (isAreaManagerPos(pos)) {
-      return [
-        "Regional Manager",
-        "Assistant Vice President",
-        "Vice President",
-        ACCOUNTING_FINAL,
-      ];
+      return ["Regional Manager", "Assistant Vice President", "Vice President"];
     }
+
     if (isBranchManagerPos(pos)) {
       return [
         "Area Manager",
         "Regional Manager",
         "Assistant Vice President",
         "Vice President",
-        ACCOUNTING_FINAL,
       ];
     }
 
@@ -126,7 +129,6 @@ const getRawApprovalChain = (department, position) => {
       "Regional Manager",
       "Assistant Vice President",
       "Vice President",
-      ACCOUNTING_FINAL,
     ];
   }
 
@@ -198,8 +200,13 @@ const roleMatchesStage = (req, stage) => {
   return false;
 };
 
-const canApproveCurrentStage = (req, stage) =>
-  roleMatchesStage(req, stage) || canBypassApproval(req);
+const canApproveCurrentStage = (req, stage) => {
+  if (norm(stage) === norm(ACCOUNTING_FINAL)) {
+    return roleMatchesStage(req, stage);
+  }
+
+  return roleMatchesStage(req, stage) || canBypassApproval(req);
+};
 
 async function getUserColumns(client) {
   const table = await client.query(`
@@ -715,6 +722,19 @@ router.put(
           });
         }
 
+        if (norm(row.status) === "approved") {
+          await client.query(
+            `
+            UPDATE public.staff_balances
+            SET
+              cbu = COALESCE(cbu, 0) + $1::numeric,
+              updated_at = NOW()
+            WHERE employee_no = $2
+            `,
+            [toNum(row.amount), staff.employee_no]
+          );
+        }
+
         await client.query(
           `
           UPDATE public.cbu_withdrawals
@@ -924,7 +944,7 @@ router.post(
       if (!canApproveCurrentStage(req, ACCOUNTING_FINAL)) {
         await client.query("ROLLBACK");
         return res.status(403).json({
-          message: "Only Accounting Department or bypass approver can upload final file.",
+          message: "Only Accounting Department can upload final file.",
         });
       }
 

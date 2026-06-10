@@ -125,21 +125,25 @@ const chainByDepartmentAndPosition = (department, position) => {
 
   if (isOperationDepartment(dept)) {
     if (isSvpPos(pos)) return [ACCOUNTING_FINAL];
+
     if (isVpPos(pos)) return ["Senior Vice President", ACCOUNTING_FINAL];
-    if (isAvpPos(pos)) return ["Vice President", ACCOUNTING_FINAL];
+
+    if (isAvpPos(pos)) return ["Vice President"];
+
     if (isRegionalManagerPos(pos)) {
-      return ["Assistant Vice President", "Vice President", ACCOUNTING_FINAL];
+      return ["Assistant Vice President", "Vice President"];
     }
+
     if (isAreaManagerPos(pos)) {
-      return ["Regional Manager", "Assistant Vice President", "Vice President", ACCOUNTING_FINAL];
+      return ["Regional Manager", "Assistant Vice President", "Vice President"];
     }
+
     if (isBranchManagerPos(pos)) {
       return [
         "Area Manager",
         "Regional Manager",
         "Assistant Vice President",
         "Vice President",
-        ACCOUNTING_FINAL,
       ];
     }
 
@@ -149,7 +153,6 @@ const chainByDepartmentAndPosition = (department, position) => {
       "Regional Manager",
       "Assistant Vice President",
       "Vice President",
-      ACCOUNTING_FINAL,
     ];
   }
 
@@ -192,6 +195,13 @@ const canApproveStage = (user, stage) => {
   const role = norm(user?.role);
   const dept = norm(user?.department || user?.department_name);
   const s = norm(stage);
+
+  if (s === norm(ACCOUNTING_FINAL)) {
+    return (
+      role === "accounting" ||
+      dept === "accounting department"
+    );
+  }
 
   if (canBypass(user)) return true;
 
@@ -735,7 +745,7 @@ export default function CBUWithdrawApprovalTab() {
             <div className="mini">
               {loading
                 ? "Loading CBU withdraw requests..."
-                : "Download latest file → upload signed file → approve. Final approval and upload is Accounting Department."}
+                : "Download latest file → upload signed file → approve. Vice President is the final approver for Operation Department requests."}
             </div>
           </div>
         </div>
