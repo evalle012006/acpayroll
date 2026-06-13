@@ -396,14 +396,29 @@ export default function StaffInformation() {
     }
   }, []);
 
+  const canLoadPositionRates =
+    role === "admin" ||
+    role === "it" ||
+    role === "hr" ||
+    role === "accounting" ||
+    isAccountingDepartmentUser ||
+    isHrDepartmentUser ||
+    userDepartment.includes("it") ||
+    userDepartment.includes("operation");
+
   const loadPositionRates = useCallback(async () => {
+    if (!canLoadPositionRates) {
+      setPositionRates([]);
+      return;
+    }
+
     try {
       const res = await api.get("/comp-rates");
       setPositionRates(Array.isArray(res.data) ? res.data : []);
     } catch {
       setPositionRates([]);
     }
-  }, []);
+  }, [canLoadPositionRates]);
 
   useEffect(() => {
     loadAll();

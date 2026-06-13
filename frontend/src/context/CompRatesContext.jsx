@@ -45,23 +45,33 @@ const canFetchCompRates = () => {
       user?.dept
   );
 
+  const isOperationDept = dept.includes("operation");
+  const isBackOfficeAllowed =
+    dept.includes("accounting") ||
+    dept.includes("hr") ||
+    dept.includes("it");
+
+  if (dept.includes("audit")) return false;
+
   return (
     role === "admin" ||
     role === "it" ||
     role === "hr" ||
     role === "accounting" ||
     role === "tread" ||
-    role === "branch manager" ||
-    role === "area manager" ||
-    role === "regional manager" ||
-    role === "assistant vice president" ||
-    role === "vice president" ||
-    role === "senior vice president" ||
-    role === "president" ||
-    dept.includes("accounting") ||
-    dept.includes("hr") ||
-    dept.includes("it") ||
-    dept.includes("operation")
+    isBackOfficeAllowed ||
+    (
+      isOperationDept &&
+      [
+        "branch manager",
+        "area manager",
+        "regional manager",
+        "assistant vice president",
+        "vice president",
+        "senior vice president",
+        "president",
+      ].includes(role)
+    )
   );
 };
 

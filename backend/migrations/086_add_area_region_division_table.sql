@@ -146,4 +146,23 @@ INSERT INTO role_permissions
     ON CONFLICT (role, COALESCE(department, ''), module_name, action_name)
     DO UPDATE SET allowed = EXCLUDED.allowed, updated_at = NOW();
 
+INSERT INTO role_permissions
+    (role, department, module_name, action_name, allowed, created_at, updated_at)
+    VALUES
+    ('assistant vice president', 'AUDIT DEPARTMENT', 'leave_request', 'view', true, NOW(), NOW()),
+    ('assistant vice president', 'AUDIT DEPARTMENT', 'promotion_order', 'view', true, NOW(), NOW()),
+    ('assistant vice president', 'AUDIT DEPARTMENT', 'transfer_staff_order', 'view', true, NOW(), NOW()),
+    ('assistant vice president', 'AUDIT DEPARTMENT', 'demotion_order', 'view', true, NOW(), NOW()),
+    ('assistant vice president', 'AUDIT DEPARTMENT', 'suspension_order', 'view', true, NOW(), NOW()),
+    ('assistant vice president', 'AUDIT DEPARTMENT', 'exit_staff_order', 'view', true, NOW(), NOW()),
+    ('assistant vice president', 'AUDIT DEPARTMENT', 'resignation_request', 'view', true, NOW(), NOW()),
+    ('assistant vice president', 'AUDIT DEPARTMENT', 'staff_report', 'view', true, NOW(), NOW());
+
+INSERT INTO role_permissions
+    (role, department, module_name, action_name, allowed, created_at, updated_at)
+    VALUES
+    ('assistant vice president', 'AUDIT DEPARTMENT', 'hris_transactions', 'view', true, NOW(), NOW())
+    ON CONFLICT (role, COALESCE(department, ''), module_name, action_name)
+    DO UPDATE SET allowed = EXCLUDED.allowed, updated_at = NOW();
+
 COMMIT;

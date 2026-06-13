@@ -12,6 +12,8 @@ const {
   isAccounting,
   isTread,
   isBranchManager,
+  isAreaManager,
+  isRegionalManager,
   isAssistantVicePresident,
   isVicePresident,
   isSeniorVicePresident,
@@ -40,6 +42,8 @@ const isTopManagement = (req) =>
   isHr(req) ||
   isAccounting(req) ||
   isTread(req) ||
+  isAreaManager(req) ||
+  isRegionalManager(req) ||
   isAssistantVicePresident(req) ||
   isVicePresident(req) ||
   isSeniorVicePresident(req) ||
