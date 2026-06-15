@@ -1620,11 +1620,11 @@ router.post(
       if (loan.employee_no && balanceColumn) {
         await ensureBalanceRow(client, loan.employee_no);
 
-        await client.query(
+       await client.query(
           `
           UPDATE public.staff_balances
           SET
-            ${balanceColumn} = COALESCE(${balanceColumn},0) + $1,
+            ${balanceColumn} = $1,
             updated_at = NOW()
           WHERE employee_no = $2
           `,

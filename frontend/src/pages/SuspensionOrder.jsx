@@ -65,6 +65,9 @@ export default function SuspensionOrder() {
   const isAreaManager = role === "area manager";
   const isRegionalManager = role === "regional manager";
   const isAssistantVicePresident = role === "assistant vice president";
+  const isVicePresident = role === "vice president";
+  const isSeniorVicePresident = role === "senior vice president";
+  const isPresident = role === "president";
 
   const canCreate =
     isOfficeOfThePresident ||
@@ -73,7 +76,10 @@ export default function SuspensionOrder() {
     isHr ||
     isAccounting ||
     isAreaManager ||
-    isAssistantVicePresident;
+    isAssistantVicePresident ||
+    isVicePresident ||
+    isSeniorVicePresident ||
+    isPresident;
 
   const canEditDelete =
     isAdmin ||
@@ -81,7 +87,10 @@ export default function SuspensionOrder() {
     isHr ||
     isAccounting ||
     isAreaManager ||
-    isAssistantVicePresident;
+    isAssistantVicePresident ||
+    isVicePresident ||
+    isSeniorVicePresident ||
+    isPresident;
 
   const canApproveStage = (order) => {
     const stage = norm(order?.approval_stage);
@@ -215,7 +224,10 @@ export default function SuspensionOrder() {
       isAccounting ||
       isTread ||
       isRegionalManager ||
-      isAssistantVicePresident
+      isAssistantVicePresident ||
+      isVicePresident ||
+      isSeniorVicePresident ||
+      isPresident
     ) {
       return orders;
     }

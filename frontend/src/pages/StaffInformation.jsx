@@ -147,10 +147,20 @@ export default function StaffInformation() {
   const branchNameById = useCallback(
     (id) => {
       if (id == null || id === "") return "";
+
       const b = findBranch(id);
-      return b ? b.name : String(id);
+
+      if (b?.name) {
+        return b.name;
+      }
+
+      const match = branches.find(
+        (x) => String(x.id) === String(id)
+      );
+
+      return match?.name || "";
     },
-    [findBranch]
+    [findBranch, branches]
   );
 
   const sameBranch = useCallback(
@@ -374,6 +384,9 @@ export default function StaffInformation() {
         api.get("/staff"),
         api.get("/branches"),
       ]);
+
+      console.log("BRANCHES", branchesRes.value?.data);
+      console.log("STAFF", staffRes.value?.data?.[0]);
 
       if (staffRes.status === "fulfilled") {
         setStaff(Array.isArray(staffRes.value.data) ? staffRes.value.data : []);

@@ -548,10 +548,10 @@ router.get(
           COALESCE(sb.cashbond, 0) AS cashbond,
           COALESCE(sb.utility, 0) AS utility,
 
-          COALESCE(sb.salary_advance, 0) AS salary_advance,
-          COALESCE(sb.special_advance, 0) AS special_advance,
-          COALESCE(sb.cash_advance, 0) AS cash_advance,
-          COALESCE(sb.motorcycle_loan, 0) AS motorcycle_loan,
+          COALESCE(loanx.salary_advance, COALESCE(sb.salary_advance, 0)) AS salary_advance,
+          COALESCE(loanx.special_advance, COALESCE(sb.special_advance, 0)) AS special_advance,
+          COALESCE(loanx.cash_advance, COALESCE(sb.cash_advance, 0)) AS cash_advance,
+          COALESCE(loanx.motorcycle_loan, COALESCE(sb.motorcycle_loan, 0)) AS motorcycle_loan,
 
           COALESCE(orx.other_receivable, 0) AS other_receivable,
           COALESCE(sapx.staff_accounts_payable, 0) AS staff_accounts_payable,
@@ -561,6 +561,87 @@ router.get(
 
         FROM public.staff_balances sb
         LEFT JOIN public.staff s ON s.employee_no = sb.employee_no
+
+        LEFT JOIN (
+        SELECT
+          lr.employee_no,
+
+          SUM(
+            CASE
+              WHEN LOWER(TRIM(lr.loan_type)) = 'salary advance'
+              THEN GREATEST(
+                COALESCE(lr.approved_total, lr.total, lr.amount, 0) -
+                (
+                  GREATEST(
+                    DATE_PART('year', AGE(CURRENT_DATE, COALESCE(lr.approved_at::date, CURRENT_DATE)))::int * 12 +
+                    DATE_PART('month', AGE(CURRENT_DATE, COALESCE(lr.approved_at::date, CURRENT_DATE)))::int,
+                    0
+                  ) * COALESCE(lr.approved_per_month, lr.per_month, 0)
+                ),
+                0
+              )
+              ELSE 0
+            END
+          )::numeric(12,2) AS salary_advance,
+
+          SUM(
+            CASE
+              WHEN LOWER(TRIM(lr.loan_type)) IN ('special advance','special loan')
+              THEN GREATEST(
+                COALESCE(lr.approved_total, lr.total, lr.amount, 0) -
+                (
+                  GREATEST(
+                    DATE_PART('year', AGE(CURRENT_DATE, COALESCE(lr.approved_at::date, CURRENT_DATE)))::int * 12 +
+                    DATE_PART('month', AGE(CURRENT_DATE, COALESCE(lr.approved_at::date, CURRENT_DATE)))::int,
+                    0
+                  ) * COALESCE(lr.approved_per_month, lr.per_month, 0)
+                ),
+                0
+              )
+              ELSE 0
+            END
+          )::numeric(12,2) AS special_advance,
+
+          SUM(
+            CASE
+              WHEN LOWER(TRIM(lr.loan_type)) IN ('cash advance','cash loan')
+              THEN GREATEST(
+                COALESCE(lr.approved_total, lr.total, lr.amount, 0) -
+                (
+                  GREATEST(
+                    DATE_PART('year', AGE(CURRENT_DATE, COALESCE(lr.approved_at::date, CURRENT_DATE)))::int * 12 +
+                    DATE_PART('month', AGE(CURRENT_DATE, COALESCE(lr.approved_at::date, CURRENT_DATE)))::int,
+                    0
+                  ) * COALESCE(lr.approved_per_month, lr.per_month, 0)
+                ),
+                0
+              )
+              ELSE 0
+            END
+          )::numeric(12,2) AS cash_advance,
+
+          SUM(
+            CASE
+              WHEN LOWER(TRIM(lr.loan_type)) = 'motorcycle loan'
+              THEN GREATEST(
+                COALESCE(lr.approved_total, lr.total, lr.amount, 0) -
+                (
+                  GREATEST(
+                    DATE_PART('year', AGE(CURRENT_DATE, COALESCE(lr.approved_at::date, CURRENT_DATE)))::int * 12 +
+                    DATE_PART('month', AGE(CURRENT_DATE, COALESCE(lr.approved_at::date, CURRENT_DATE)))::int,
+                    0
+                  ) * COALESCE(lr.approved_per_month, lr.per_month, 0)
+                ),
+                0
+              )
+              ELSE 0
+            END
+          )::numeric(12,2) AS motorcycle_loan
+
+        FROM public.loan_requests lr
+        WHERE LOWER(COALESCE(lr.status, '')) = 'approved'
+        GROUP BY lr.employee_no
+      ) loanx ON loanx.employee_no = sb.employee_no
 
         LEFT JOIN (
           SELECT
