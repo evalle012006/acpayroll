@@ -75,6 +75,7 @@ const canCreateDemotion = (req) =>
   isIT(req) ||
   isHr(req) ||
   isAccounting(req) ||
+  isPresident(req) ||
   isAreaManager(req) ||
   isRegionalManager(req) ||
   isAssistantVicePresident(req) ||

@@ -17,16 +17,53 @@ export default function SbfOrder() {
   const navigate = useNavigate();
   const user = useMemo(() => readUser(), []);
   const role = norm(user?.role);
+  const department = norm(user?.department);
 
-  const isAdmin = role === "admin";
-  const isIt = role === "it";
-  const isHr = role === "hr";
-  const isAccounting = role === "accounting";
-  const isBranchManager = role === "branch manager";
+const isAdmin = role === "admin";
+const isIt = role === "it";
+const isHr = role === "hr";
+const isAccounting = role === "accounting";
+const isBranchManager = role === "branch manager";
+const isAreaManager = role === "area manager";
+const isRegionalManager = role === "regional manager";
+const isAssistantVicePresident = role === "assistant vice president";
+const isVicePresident = role === "vice president";
+const isSeniorVicePresident = role === "senior vice president";
+const isPresident = role === "president";
 
-  const canView = isAdmin || isIt || isHr || isAccounting || isBranchManager;
-  const canCreate = isAdmin || isIt || isHr || isAccounting || isBranchManager;
-  const canApprove = isAdmin || isIt || isHr || isAccounting;
+const isOfficeOfPresident = department === "office of the president";
+const isOperationDepartment = department === "operation department";
+const isAuditDepartment = department === "audit department";
+const isItDepartment = department === "it department";
+const isTreadDepartment = department === "tread department";
+const isHrDepartment = department === "hr department";
+const isAccountingDepartment = department === "accounting department";
+
+  const canView =
+    isAdmin ||
+    isIt ||
+    isHr ||
+    isAccounting ||
+    isBranchManager ||
+    isPresident ||
+    isOfficeOfPresident;
+
+  const canCreate =
+    isAdmin ||
+    isIt ||
+    isHr ||
+    isAccounting ||
+    isBranchManager ||
+    isPresident ||
+    isOfficeOfPresident;
+
+  const canApprove =
+    isAdmin ||
+    isIt ||
+    isHr ||
+    isAccounting ||
+    isPresident ||
+    isOfficeOfPresident;
 
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("All");

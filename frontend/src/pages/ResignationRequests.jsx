@@ -40,6 +40,7 @@ export default function ResignationRequests() {
   const role = norm(user?.role);
 
   const isAdmin = ["admin", "it"].includes(role);
+  const isBranchManager = role === "branch manager";
   const isAreaManager = role === "area manager";
   const isRegionalManager = role === "regional manager";
   const isAssistantVicePresident = role === "assistant vice president";
@@ -48,7 +49,7 @@ export default function ResignationRequests() {
   const isTread = role === "tread";
   const isVicePresident = role === "vice president";
   const isSeniorVicePresident = role === "senior vice president";
-  const isBranchManager = role === "branch manager";
+  const isPresident = role === "president";
 
   const canCreate =
     isAdmin ||
@@ -60,7 +61,8 @@ export default function ResignationRequests() {
     isRegionalManager ||
     isAssistantVicePresident ||
     isVicePresident ||
-    isSeniorVicePresident;
+    isSeniorVicePresident ||
+    isPresident;
 
   const canFinalAction =
     isAdmin || isHr || isAccounting || isSeniorVicePresident;

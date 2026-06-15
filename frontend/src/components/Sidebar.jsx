@@ -72,7 +72,9 @@ const Sidebar = ({ collapsed }) => {
     dept.includes("tread") ||
     dept.includes("office of the president");
 
-  const isITDept = dept.includes("it");
+  const isITDept =
+    dept === "it department" ||
+    dept === "it";
 
   const isProductionLogisticDept =
     dept.includes("production") && dept.includes("logistic");
@@ -297,7 +299,7 @@ const Sidebar = ({ collapsed }) => {
         to: "/schedule-balances",
         label: "Schedule of Balances",
         icon: HiOutlineClipboardList,
-        module: "schedule_balances",
+        module: "schedule_balance",
       },
       {
         to: "/opening-loan-balances",
@@ -369,6 +371,22 @@ const Sidebar = ({ collapsed }) => {
     ];
 
     return items.filter((item) => {
+      if (item.to === "/users" || item.to === "/permissions") {
+        return role === "admin" || isITDept;
+      }
+
+      const isUserOrPermissionPage =
+        item.to === "/users" ||
+        item.to === "/permissions";
+
+      if (isUserOrPermissionPage) {
+        const isAdmin = role === "admin";
+
+        if (!(isAdmin || isITDept)) {
+          return false;
+        }
+      }
+
       if (isSuperUser) return true;
 
       const allowed = allowedSidebar();

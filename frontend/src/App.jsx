@@ -1,5 +1,18 @@
-import {BrowserRouter as Router, Routes, Route, Navigate, useNavigate,} from "react-router-dom";
-import { createContext, useContext, useEffect, useMemo, useState, } from "react"; import "./styles/layout.css";
+import {
+  BrowserRouter as Router,
+  Routes,
+  Route,
+  Navigate,
+  useNavigate,
+} from "react-router-dom";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
+import "./styles/layout.css";
 
 import Sidebar from "./components/Sidebar";
 import Header from "./components/Header";
@@ -70,8 +83,26 @@ const hasAuth = () => {
 
 const norm = (v) => String(v ?? "").trim().toLowerCase();
 
+const getUserDepartment = (user) =>
+  norm(
+    user?.department ||
+      user?.department_name ||
+      user?.user_department ||
+      user?.departmentName ||
+      user?.dept
+  );
+
+const isAdminOrITDepartment = () => {
+  const user = readUser();
+  const role = norm(user?.role);
+  const department = getUserDepartment(user);
+
+  return role === "admin" || department.includes("it");
+};
+
 const usePermissions = () => {
   const ctx = useContext(PermissionContext);
+
   if (!ctx) {
     return {
       loading: false,
@@ -82,6 +113,7 @@ const usePermissions = () => {
       refreshPermissions: () => {},
     };
   }
+
   return ctx;
 };
 
@@ -136,17 +168,17 @@ function PermissionProvider({ children }) {
     return modules.some((m) => can(m, actionName));
   };
 
-  const value = {
-    loading,
-    permissions,
-    isSuperUser,
-    can,
-    canAny,
-    refreshPermissions,
-  };
-
   return (
-    <PermissionContext.Provider value={value}>
+    <PermissionContext.Provider
+      value={{
+        loading,
+        permissions,
+        isSuperUser,
+        can,
+        canAny,
+        refreshPermissions,
+      }}
+    >
       {children}
     </PermissionContext.Provider>
   );
@@ -172,6 +204,16 @@ const ProtectedRoute = ({ module, anyModule, action = "view", children }) => {
     if (!can(module, action)) {
       return <Navigate to={fallbackPath()} replace />;
     }
+  }
+
+  return children;
+};
+
+const AdminITOnly = ({ children }) => {
+  if (!hasAuth()) return <Navigate to="/login" replace />;
+
+  if (!isAdminOrITDepartment()) {
+    return <Navigate to="/staff-information" replace />;
   }
 
   return children;
@@ -205,7 +247,7 @@ function AppShell() {
   const navigate = useNavigate();
   const { loading, can, canAny } = usePermissions();
 
-  const user = useMemo(() => readUser(), [authTick]);
+  useMemo(() => readUser(), [authTick]);
 
   useEffect(() => {
     const onAuthChanged = () => {
@@ -232,6 +274,7 @@ function AppShell() {
     if (can("dashboard", "view")) return "/dashboard";
     if (can("staff", "view")) return "/staff-information";
     if (can("schedule_balance", "view")) return "/schedule-balances";
+
     if (canAny(["loan_request", "cbu_withdrawal", "reimbursement_request"])) {
       return "/approval";
     }
@@ -325,12 +368,67 @@ function AppShell() {
           </ProtectedRoute>
         }
       />
-      <Route path="/transportation/:id" element={<Page module="transportation_history"><Transportation /></Page>}/>
-      <Route path="/schedule-balances" element={<Page module="schedule_balance"><ScheduleBalances /></Page>}/>
-      <Route path="/opening-loan-balances" element={<Page module="staff_loan_opening_balance"><OpeningLoanBalances /></Page>}/>
-      <Route path="/approval" element={<Page anyModule={["loan_request", "cbu_withdrawal", "reimbursement_request",]}><Approval /></Page>}/>
-      <Route path="/branches" element={<Page module="branch"><Branches /></Page>}/>
-      <Route path="/departments" element={<Page module="department"><Departments /></Page>}/>
+
+      <Route
+        path="/transportation/:id"
+        element={
+          <Page module="transportation_history">
+            <Transportation />
+          </Page>
+        }
+      />
+
+      <Route
+        path="/schedule-balances"
+        element={
+          <Page module="schedule_balance">
+            <ScheduleBalances />
+          </Page>
+        }
+      />
+
+      <Route
+        path="/opening-loan-balances"
+        element={
+          <Page module="staff_loan_opening_balance">
+            <OpeningLoanBalances />
+          </Page>
+        }
+      />
+
+      <Route
+        path="/approval"
+        element={
+          <Page
+            anyModule={[
+              "loan_request",
+              "cbu_withdrawal",
+              "reimbursement_request",
+            ]}
+          >
+            <Approval />
+          </Page>
+        }
+      />
+
+      <Route
+        path="/branches"
+        element={
+          <Page module="branch">
+            <Branches />
+          </Page>
+        }
+      />
+
+      <Route
+        path="/departments"
+        element={
+          <Page module="department">
+            <Departments />
+          </Page>
+        }
+      />
+
       <Route
         path="/bonus/:branchId"
         element={
@@ -397,18 +495,22 @@ function AppShell() {
       <Route
         path="/users"
         element={
-          <Page module="users">
-            <Users />
-          </Page>
+          <AdminITOnly>
+            <ProtectedLayout>
+              <Users />
+            </ProtectedLayout>
+          </AdminITOnly>
         }
       />
 
       <Route
         path="/permissions"
         element={
-          <Page module="permissions">
-            <Permissions />
-          </Page>
+          <AdminITOnly>
+            <ProtectedLayout>
+              <Permissions />
+            </ProtectedLayout>
+          </AdminITOnly>
         }
       />
 

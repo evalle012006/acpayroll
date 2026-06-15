@@ -204,7 +204,11 @@ const isAccountingDeptManager =
     "senior vice president",
   ].includes(role);
 
+  const isOfficeOfThePresident =
+    department === "office of the president";
+
   const canCreate =
+    isOfficeOfThePresident ||
     isAccountingDeptManager ||
     [
       "admin",
@@ -217,6 +221,7 @@ const isAccountingDeptManager =
       "assistant vice president",
       "vice president",
       "senior vice president",
+      "president",
     ].includes(role);
 
   const [rows, setRows] = useState([]);

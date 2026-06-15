@@ -422,8 +422,16 @@ router.get(
       const role = getUserRole(req);
       const dept = getUserDepartment(req);
 
-      if (isOperationDepartment(dept)) {
-       if (role === "branch manager") {
+      if (
+        role === "president" ||
+        isAdmin(req) ||
+        isIT(req) ||
+        isHR(req) ||
+        isAccounting(req)
+      ) {
+        where = "";
+      } else if (isOperationDepartment(dept)) {
+        if (role === "branch manager") {
           params.push(req.user?.branch_id || null);
 
           where = `

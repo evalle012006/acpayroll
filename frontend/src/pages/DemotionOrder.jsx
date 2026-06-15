@@ -154,6 +154,7 @@ export default function DemotionOrder() {
     isIt ||
     isHr ||
     isAccounting ||
+    isPresident ||
     isAreaManager ||
     isRegionalManager ||
     isAssistantVicePresident ||

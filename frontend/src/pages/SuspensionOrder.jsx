@@ -45,6 +45,17 @@ export default function SuspensionOrder() {
 
   const role = norm(user?.role);
 
+  const department = norm(
+    user?.department ||
+      user?.department_name ||
+      user?.departmentName ||
+      user?.user_department ||
+      user?.dept ||
+      ""
+  );
+
+  const isOfficeOfThePresident = department === "office of the president";
+
   const isAdmin = role === "admin";
   const isIt = role === "it";
   const isHr = role === "hr";
@@ -56,6 +67,7 @@ export default function SuspensionOrder() {
   const isAssistantVicePresident = role === "assistant vice president";
 
   const canCreate =
+    isOfficeOfThePresident ||
     isAdmin ||
     isIt ||
     isHr ||
@@ -196,6 +208,7 @@ export default function SuspensionOrder() {
 
   const visibleOrders = useMemo(() => {
     if (
+      isOfficeOfThePresident ||
       isAdmin ||
       isIt ||
       isHr ||

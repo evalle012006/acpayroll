@@ -46,6 +46,18 @@ const getUserArea = (req) => toStr(req.user?.area);
 const getUserRegion = (req) => toStr(req.user?.region);
 const getUserDivision = (req) => toStr(req.user?.division);
 
+const isOfficeOfThePresidentUser = (req) =>
+  String(
+    req.user?.department ||
+      req.user?.department_name ||
+      req.user?.departmentName ||
+      req.user?.user_department ||
+      req.user?.dept ||
+      ""
+  )
+    .toLowerCase()
+    .includes("office of the president");
+
 const isHrDepartmentUser = (req) =>
   String(
     req.user?.department ||
@@ -145,6 +157,7 @@ const canAccessStaffRecord = (req, staff) => {
     isHrDepartmentUser(req) ||
     isAccounting(req) ||
     isAccountingDepartmentUser(req) ||
+    isOfficeOfThePresidentUser(req) ||
     isTread(req) ||
     isVicePresident(req) ||
     isSeniorVicePresident(req) ||
@@ -267,6 +280,7 @@ router.get(
         isHrDepartmentUser(req) ||
         isAccounting(req) ||
         isAccountingDepartmentUser(req) ||
+        isOfficeOfThePresidentUser(req) ||
         isTread(req) ||
         isVicePresident(req) ||
         isSeniorVicePresident(req) ||

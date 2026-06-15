@@ -165,4 +165,62 @@ INSERT INTO role_permissions
     ON CONFLICT (role, COALESCE(department, ''), module_name, action_name)
     DO UPDATE SET allowed = EXCLUDED.allowed, updated_at = NOW();
 
+INSERT INTO role_permissions
+(role, department, module_name, action_name, allowed, created_at, updated_at)
+SELECT
+  'president',
+  'OFFICE OF THE PRESIDENT',
+  module_name,
+  'view',
+  true,
+  NOW(),
+  NOW()
+FROM (
+  VALUES
+    ('dashboard'),
+    ('department'),
+    ('staff'),
+    ('schedule_balance'),
+    ('staff_loan_opening_balance'),
+    ('hris_transactions'),
+    ('loan_request'),
+    ('cbu_withdrawal'),
+    ('reimbursement_request'),
+    ('branch'),
+    ('payslip'),
+    ('exit_staff_order'),
+    ('system_update'),
+    ('users'),
+    ('permissions')
+) AS m(module_name)
+ON CONFLICT (role, COALESCE(department, ''), module_name, action_name)
+DO UPDATE
+SET allowed = true,
+    updated_at = NOW();
+
+INSERT INTO role_permissions
+    (role, department, module_name, action_name, allowed, created_at, updated_at)
+    VALUES
+    ('branch manager', 'AUDIT DEPARTMENT', 'hris_transactions', 'view', true, NOW(), NOW())
+    ON CONFLICT (role, COALESCE(department, ''), module_name, action_name)
+    DO UPDATE
+    SET allowed = true,
+        updated_at = NOW();
+
+INSERT INTO role_permissions
+    (role, department, module_name, action_name, allowed, created_at, updated_at)
+    VALUES
+    ('branch manager', 'AUDIT DEPARTMENT', 'dashboard', 'view', true, NOW(), NOW())
+    ON CONFLICT (role, COALESCE(department, ''), module_name, action_name)
+    DO UPDATE
+    SET allowed = true,
+        updated_at = NOW();
+
+INSERT INTO role_permissions
+    (role, department, module_name, action_name, allowed, created_at, updated_at)
+    VALUES
+    ('president','OFFICE OF THE PRESIDENT','report','view',true,NOW(),NOW())
+    ON CONFLICT (role, COALESCE(department, ''), module_name, action_name)
+    DO UPDATE SET allowed = true, updated_at = NOW();
+
 COMMIT;

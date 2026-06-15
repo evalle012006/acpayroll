@@ -36,11 +36,13 @@ export default function ExitStaff() {
 
   const role = norm(user?.role);
 
+  const department = norm(user?.department);
+
   const canManageOrders =
     role === "admin" ||
     role === "it" ||
-    role === "hr" ||
-    role === "accounting";
+    department === "hr department" ||
+    department === "accounting department";
 
   const canEditLeaveDetails = ["admin", "hr", "accounting"].includes(role);
 

@@ -70,6 +70,15 @@ export default function StaffReport() {
   const user = useMemo(() => readUser(), []);
   const role = norm(user?.role);
 
+  const dept = norm(
+    user?.department ||
+      user?.department_name ||
+      user?.departmentName ||
+      user?.user_department ||
+      user?.dept ||
+      ""
+  );
+
   const isAdmin = role === "admin";
   const isIT = role === "it";
   const isHR = role === "hr";
@@ -79,8 +88,23 @@ export default function StaffReport() {
   const isRM = role === "regional manager";
   const isAVP = role === "assistant vice president";
   const isVP = role === "vice president";
+  const isSVP = role === "senior vice president";
+  const isPresident = role === "president";
 
-  const canCreate = isAdmin || isIT || isBM || isAM || isRM || isAVP || isVP;
+  const isOfficeOfThePresidentDept = dept === "office of the president";
+
+  const canCreate =
+    isAdmin ||
+    isIT ||
+    isBM ||
+    isAM ||
+    isRM ||
+    isAVP ||
+    isVP ||
+    isSVP ||
+    isPresident ||
+    isOfficeOfThePresidentDept;
+
   const canBypassApprove = isAdmin || isIT;
   const canFinalUpload = isAdmin || isIT || isHR || isAccounting;
   const canVoid = isAdmin || isIT || isHR || isAccounting;

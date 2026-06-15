@@ -43,11 +43,21 @@ const isTopManagement = (req) =>
   isSeniorVicePresident(req) ||
   isPresident(req);
 
+const isHrDepartment = (req) =>
+  String(req.user?.department || "")
+    .trim()
+    .toLowerCase() === "hr department";
+
+const isAccountingDepartment = (req) =>
+  String(req.user?.department || "")
+    .trim()
+    .toLowerCase() === "accounting department";
+
 const canViewAllDeployment = (req) =>
   isAdmin(req) ||
   isIT(req) ||
-  isHr(req) ||
-  isAccounting(req) ||
+  isHrDepartment(req) ||
+  isAccountingDepartment(req) ||
   isTread(req) ||
   isTopManagement(req);
 

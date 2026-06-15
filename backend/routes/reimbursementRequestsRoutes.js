@@ -231,6 +231,11 @@ const getApprovalChain = (staffDepartment, staffPosition) => {
 const canCreateReimbursement = (req, staffDepartment) => {
   const role = roleLower(req);
   const department = norm(staffDepartment);
+  const creatorDepartment = userDepartment(req);
+
+  if (creatorDepartment === "office of the president") {
+    return true;
+  }
 
   if (
     isAdmin(req) ||

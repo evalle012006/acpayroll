@@ -34,10 +34,11 @@ const isBranchManager = (req) => roleLower(req) === "branch manager";
 const isAreaManager = (req) => roleLower(req) === "area manager";
 const isRegionalManager = (req) => roleLower(req) === "regional manager";
 const isAssistantVicePresident = (req) =>
-  roleLower(req) === "assistant vice president";
+      roleLower(req) === "assistant vice president";
 const isVicePresident = (req) => roleLower(req) === "vice president";
 const isSeniorVicePresident = (req) =>
-  roleLower(req) === "senior vice president";
+      roleLower(req) === "senior vice president";
+const isPresident = (req) => roleLower(req) === "president";
 
 const isFinalApprover = (req) =>
   isAdmin(req) || isIT(req) || isHr(req) || isAccounting(req) || isSeniorVicePresident(req);
@@ -174,7 +175,8 @@ router.get(
         isAccounting(req) ||
         isTread(req) ||
         isVicePresident(req) ||
-        isSeniorVicePresident(req)
+        isSeniorVicePresident(req) ||
+        isPresident(req)
       ) {
         // full access
       } else if (isBranchManager(req)) {

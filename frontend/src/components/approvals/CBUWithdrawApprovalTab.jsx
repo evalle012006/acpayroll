@@ -238,6 +238,7 @@ export default function CBUWithdrawApprovalTab() {
     "assistant vice president",
     "vice president",
     "senior vice president",
+    "president",
   ].includes(role);
 
   const [rows, setRows] = useState([]);
