@@ -35,6 +35,11 @@ const toInt = (v) => {
 
 const toStr = (v) => String(v ?? "").trim();
 
+const isAccountingDepartmentUser = (req) =>
+  String(req.user?.department || "")
+    .trim()
+    .toUpperCase() === "ACCOUNTING DEPARTMENT";
+
 const canViewSettlements = (req) =>
   isAdmin(req) ||
   isIT(req) ||
@@ -115,6 +120,16 @@ router.get(
     try {
       if (!canViewSettlements(req)) {
         return res.status(403).json({ message: "Access denied" });
+      }
+
+      if (isAccountingDepartmentUser(req)) {
+        const r = await pool.query(`
+          SELECT *
+          FROM public.settlements
+          ORDER BY id DESC
+        `);
+
+        return res.json(r.rows);
       }
 
       if (isBranchManager(req)) {
@@ -204,6 +219,125 @@ router.get(
     } catch (e) {
       console.error("GET /api/settlements FULL ERROR:", e);
       return res.status(500).json({ message: e.message || "Server error" });
+    }
+  }
+);
+
+router.put(
+  "/settlements/:id",
+  requireAuth,
+  requirePermission("statement_of_account", "edit"),
+  upload.single("attachment"),
+  async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+
+      const attachment_path = req.file
+        ? `/uploads/settlements/${req.file.filename}`
+        : null;
+
+      const attachment_name = req.file
+        ? req.file.originalname
+        : null;
+
+      const attachment_mime = req.file
+        ? req.file.mimetype
+        : null;
+
+      const r = await pool.query(
+        `
+        UPDATE settlements
+        SET
+          description = $2,
+          cbu = $3,
+          cashbond = $4,
+          utility = $5,
+          thirteenth_month_pay = $6,
+          last_pay = $7,
+          separation_pay = $8,
+          cash_assistance = $9,
+          liabilities = $10,
+          total_benefits = $11,
+          net_settlement = $12,
+          settlement_branch_id = $13,
+          settlement_branch_code = $14,
+          settlement_branch_name = $15,
+          attachment_path = COALESCE($16, attachment_path),
+          attachment_name = COALESCE($17, attachment_name),
+          attachment_mime = COALESCE($18, attachment_mime)
+        WHERE id = $1
+        RETURNING *
+        `,
+        [
+          id,
+          req.body.description,
+          req.body.cbu,
+          req.body.cashbond,
+          req.body.utility,
+          req.body.thirteenth_month_pay,
+          req.body.last_pay,
+          req.body.separation_pay,
+          req.body.cash_assistance,
+          req.body.liabilities,
+          req.body.total_benefits,
+          req.body.net_settlement,
+          req.body.settlement_branch_id,
+          req.body.settlement_branch_code,
+          req.body.settlement_branch_name,
+          attachment_path,
+          attachment_name,
+          attachment_mime,
+        ]
+      );
+
+      if (!r.rowCount) {
+        return res.status(404).json({
+          message: "Settlement not found",
+        });
+      }
+
+      res.json(r.rows[0]);
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({
+        message: err.message,
+      });
+    }
+  }
+);
+
+router.put(
+  "/settlements/:id/void",
+  requireAuth,
+  requirePermission("statement_of_account", "delete"),
+  async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+
+      const r = await pool.query(
+        `
+        UPDATE settlements
+        SET status = 'VOID'
+        WHERE id = $1
+        RETURNING *
+        `,
+        [id]
+      );
+
+      if (!r.rowCount) {
+        return res.status(404).json({
+          message: "Settlement not found",
+        });
+      }
+
+      res.json({
+        message: "Settlement voided",
+      });
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({
+        message: err.message,
+      });
     }
   }
 );

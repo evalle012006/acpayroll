@@ -332,8 +332,17 @@ const canCreatePromotionForStaff = (req, staffRow) => {
 
 const canViewAllPromotionOrders = (req) => {
   if (isAdmin(req) || isIT(req)) return true;
+
   if (isBackOfficeFullViewDept(deptLower(req))) return true;
-  if (isSeniorVicePresident(req) || isPresident(req)) return true;
+
+  if (
+    isVicePresident(req) ||
+    isSeniorVicePresident(req) ||
+    isPresident(req)
+  ) {
+    return true;
+  }
+
   return false;
 };
 
@@ -355,9 +364,20 @@ const canRoleActAtStage = (req, stage) => {
 };
 
 const canDownloadApprovedFile = (req, order) => {
-  if (isAdmin(req) || isIT(req) || isHrDepartmentUser(req) || canViewAllPromotionOrders(req)) return true;
+  if (
+    isAdmin(req) ||
+    isIT(req) ||
+    isHrDepartmentUser(req) ||
+    isVicePresident(req) ||
+    isSeniorVicePresident(req) ||
+    isPresident(req) ||
+    canViewAllPromotionOrders(req)
+  ) {
+    return true;
+  }
 
   const status = norm(order?.status);
+
   return status === "approved";
 };
 

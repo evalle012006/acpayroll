@@ -423,4 +423,28 @@ INSERT INTO role_permissions
     allowed = true,
     updated_at = NOW();
 
+INSERT INTO role_permissions
+    (role, department, module_name, action_name, allowed, created_at, updated_at)
+    SELECT
+    r.role,
+    'AUDIT DEPARTMENT',
+    'hris_transactions',
+    'view',
+    true,
+    NOW(),
+    NOW()
+    FROM (
+    VALUES
+    ('branch manager'),
+    ('area manager'),
+    ('regional manager'),
+    ('assistant vice president'),
+    ('vice president'),
+    ('senior vice president')
+    ) r(role)
+    ON CONFLICT (role, COALESCE(department,''), module_name, action_name)
+    DO UPDATE SET
+    allowed = true,
+    updated_at = NOW();
+
 COMMIT;

@@ -28,6 +28,18 @@ export default function Soa() {
 
   const role = String(user?.role || "").trim().toLowerCase();
 
+  const department = String(
+    user?.department ||
+    user?.department_name ||
+    user?.user_department ||
+    user?.departmentName ||
+    user?.dept ||
+    ""
+  ).trim().toLowerCase();
+
+  const isAccountingDepartment = department.includes("accounting");
+  const isHrDepartment = department.includes("hr");
+
   const isAdmin = role === "admin";
   const isIt = role === "it";
   const isHr = role === "hr";
@@ -40,6 +52,13 @@ export default function Soa() {
   const isVicePresident = role === "vice president";
   const isSeniorVicePresident = role === "senior vice president";
   const isPresident = role === "president";
+
+  const canEdit =
+    isAdmin ||
+    isIt ||
+    isHr ||
+    isAccounting ||
+    isAccountingDepartment;
 
   const canView =
     isAdmin ||
@@ -55,7 +74,15 @@ export default function Soa() {
     isSeniorVicePresident ||
     isPresident;
 
-  const canCreate = isAdmin || isIt || isHr || isAccounting || isTread;
+  const canCreate =
+    isAdmin ||
+    isIt ||
+    isHr ||
+    isAccounting ||
+    isTread ||
+    isAccountingDepartment ||
+    isHrDepartment;
+
   const canDelete = isAdmin || isIt;
 
   const [staffList, setStaffList] = useState([]);
@@ -67,6 +94,7 @@ export default function Soa() {
 
   const [showCreate, setShowCreate] = useState(false);
   const [viewRow, setViewRow] = useState(null);
+  const [editingRow, setEditingRow] = useState(null);
 
   const [staffSearch, setStaffSearch] = useState("");
   const [branchSearch, setBranchSearch] = useState("");
@@ -300,7 +328,36 @@ export default function Soa() {
 
   const closeCreateModal = () => {
     setShowCreate(false);
+    setEditingRow(null);
     resetForm();
+  };
+
+  const openEditSettlement = (row) => {
+    setEditingRow(row);
+
+    setForm({
+      staff_id: row.staff_id || "",
+      prev_branch: row.prev_branch || "",
+      employee_no: row.employee_no || "",
+      employee_name: row.employee_name || "",
+
+      settlement_branch_id: row.settlement_branch_id || "",
+      settlement_branch_code: row.settlement_branch_code || "",
+      settlement_branch_name: row.settlement_branch_name || "",
+
+      cbu: row.cbu || "",
+      cashbond: row.cashbond || "",
+      utility: row.utility || "",
+      liabilities: row.liabilities || "",
+      thirteenth_month_pay: row.thirteenth_month_pay || "",
+      last_pay: row.last_pay || "",
+
+      separation_pay: row.separation_pay || "",
+      cash_assistance: row.cash_assistance || "",
+      description: row.description || "",
+    });
+
+    setShowCreate(true);
   };
 
   const onChange = (e) => {
@@ -429,11 +486,25 @@ export default function Soa() {
         formData.append("attachment", attachmentFile);
       }
 
-      await api.post("/settlements", formData, {
-        headers: { "Content-Type": "multipart/form-data" },
-      });
+      if (editingRow) {
+        await api.put(`/settlements/${editingRow.id}`, formData, {
+          headers: {
+            "Content-Type": "multipart/form-data",
+          },
+        });
+      } else {
+        await api.post("/settlements", formData, {
+          headers: {
+            "Content-Type": "multipart/form-data",
+          },
+        });
+      }
 
-      alert("Settlement saved.");
+      alert(
+        editingRow
+          ? "Settlement updated successfully."
+          : "Settlement saved successfully."
+      );
       closeCreateModal();
       await loadSettlements();
     } catch (err) {
@@ -643,6 +714,16 @@ export default function Soa() {
                         >
                           View
                         </button>
+
+                        {canEdit && (
+                          <button
+                            className="btn-secondary"
+                            type="button"
+                            onClick={() => openEditSettlement(r)}
+                          >
+                            Edit
+                          </button>
+                        )}
 
                         {canDelete && (
                           <button
