@@ -962,7 +962,11 @@ export default function StaffProfileModal({
               <tbody>
                 <tr><td><h2>Others</h2></td></tr>
                 <tr><td>Position</td><td>{staff.position || "-"}</td></tr>
-                <tr><td>Branch</td><td>{branchNameById(staff.branch_id) || "-"}</td></tr>
+                <tr><td>Branch</td><td>{branchNameById(staff.branch_id) ||
+                  staff.branch_name ||
+                  staff.branch ||
+                  staff.branch_code ||
+                  "-"}</td></tr>
                 <tr><td>Department</td><td>{staff.department || "-"}</td></tr>
                 <tr><td>Area</td><td>{staff.area || "-"}</td></tr>
                 <tr><td>Region</td><td>{staff.region || "-"}</td></tr>

@@ -963,7 +963,16 @@ export default function LeaveTransactions() {
                       <td className="td-strong">
                         <div>{item.staff_name || `Employee #${item.employee_id}` || "-"}</div>
                         <div className="leave-sub-info">Emp No: {item.employee_no || "-"}</div>
-                        <div className="leave-sub-info">Branch: {item.branch_id || "-"}</div>
+                        <div className="leave-sub-info">
+                          Branch: {
+                            item.branch_code && item.branch_name
+                              ? `${item.branch_code} (${item.branch_name})`
+                              : item.branch_name ||
+                                item.branch_code ||
+                                item.branch_id ||
+                                "-"
+                          }
+                        </div>
                         <div className="leave-sub-info">Position: {item.position || "-"}</div>
                       </td>
 

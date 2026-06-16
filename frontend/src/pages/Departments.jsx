@@ -36,6 +36,11 @@ export default function Departments() {
   const [deptStaff, setDeptStaff] = useState([]);
   const [loadingDeptStaff, setLoadingDeptStaff] = useState(false);
 
+  const [selectedDivision, setSelectedDivision] = useState(null);
+  const [selectedRegion, setSelectedRegion] = useState(null);
+  const [selectedArea, setSelectedArea] = useState(null);
+  const [selectedBranch, setSelectedBranch] = useState(null);
+
   const [divisionFilter, setDivisionFilter] = useState("All");
   const [regionFilter, setRegionFilter] = useState("All");
   const [areaFilter, setAreaFilter] = useState("All");
@@ -335,6 +340,10 @@ export default function Departments() {
   const closeView = () => {
     setViewDept(null);
     setDeptStaff([]);
+    setSelectedDivision(null);
+    setSelectedRegion(null);
+    setSelectedArea(null);
+    setSelectedBranch(null);
     resetViewFilters();
   };
 
@@ -426,6 +435,157 @@ export default function Departments() {
     );
   }, [departments, search]);
 
+  const departmentName = norm(viewDept?.name);
+
+  const isOperationDept = departmentName.includes("operation");
+  const isITDept = departmentName.includes("it");
+  const isHRDept = departmentName.includes("hr");
+  const isAccountingDept = departmentName.includes("accounting");
+  const isAuditDept = departmentName.includes("audit");
+  const isTreadDept = departmentName.includes("tread");
+  const isProductionDept =
+    departmentName.includes("production") ||
+    departmentName.includes("logistic");
+
+  const operationHeads = useMemo(() => {
+    const rank = {
+      "senior vice president": 1,
+      "vice president": 2,
+    };
+
+    return enrichedDeptStaff
+      .filter((s) =>
+        isPosition(s.position, ["Senior Vice President", "Vice President"])
+      )
+      .sort((a, b) => {
+        const aRank = rank[norm(a.position)] || 999;
+        const bRank = rank[norm(b.position)] || 999;
+        return aRank - bRank;
+      });
+  }, [enrichedDeptStaff]);
+
+  const divisionsList = useMemo(() => {
+    return uniqSorted(
+      enrichedDeptStaff
+        .map((s) => s._division)
+        .filter(
+          (d) =>
+            d &&
+            d !== "-" &&
+            norm(d) !== "unknown"
+        )
+    );
+  }, [enrichedDeptStaff]);
+
+  const regionsList = useMemo(() => {
+    return uniqSorted(enrichedDeptStaff.map((s) => s._region));
+  }, [enrichedDeptStaff]);
+
+  const areasList = useMemo(() => {
+    return uniqSorted(enrichedDeptStaff.map((s) => s._area));
+  }, [enrichedDeptStaff]);
+
+  const divisionManagers = useMemo(() => {
+    if (!selectedDivision) return [];
+
+    const rank = {
+      "assistant vice president": 1,
+      "acting assistant vice president": 2,
+    };
+
+    return enrichedDeptStaff
+      .filter(
+        (s) =>
+          s._division === selectedDivision &&
+          isPosition(s.position, [
+            "Assistant Vice President",
+            "Acting Assistant Vice President",
+          ])
+      )
+      .sort((a, b) => {
+        const aRank = rank[norm(a.position)] || 999;
+        const bRank = rank[norm(b.position)] || 999;
+        return aRank - bRank;
+      });
+  }, [enrichedDeptStaff, selectedDivision]);
+
+  const selectedDivisionRegions = useMemo(() => {
+    if (!selectedDivision) return [];
+    return uniqSorted(
+      enrichedDeptStaff
+        .filter((s) => s._division === selectedDivision)
+        .map((s) => s._region)
+    );
+  }, [enrichedDeptStaff, selectedDivision]);
+
+  const selectedDivisionStaff = useMemo(() => {
+    if (!selectedDivision) return [];
+    return enrichedDeptStaff.filter((s) => s._division === selectedDivision);
+  }, [enrichedDeptStaff, selectedDivision]);
+
+  const selectedRegionStaff = useMemo(() => {
+    if (!selectedRegion) return [];
+    return selectedDivisionStaff.filter((s) => s._region === selectedRegion);
+  }, [selectedDivisionStaff, selectedRegion]);
+
+  const selectedAreaStaff = useMemo(() => {
+    if (!selectedArea) return [];
+    return selectedRegionStaff.filter((s) => s._area === selectedArea);
+  }, [selectedRegionStaff, selectedArea]);
+
+  const selectedRegionManagers = useMemo(() => {
+    if (!selectedRegion) return [];
+
+    const rank = {
+      "regional manager": 1,
+      "acting regional manager": 2,
+    };
+
+    return selectedRegionStaff
+      .filter((s) =>
+        isPosition(s.position, ["Regional Manager", "Acting Regional Manager"])
+      )
+      .sort((a, b) => (rank[norm(a.position)] || 999) - (rank[norm(b.position)] || 999));
+  }, [selectedRegionStaff, selectedRegion]);
+
+  const selectedAreaManagers = useMemo(() => {
+    if (!selectedArea) return [];
+
+    const rank = {
+      "area manager": 1,
+      "acting area manager": 2,
+    };
+
+    return selectedAreaStaff
+      .filter((s) =>
+        isPosition(s.position, ["Area Manager", "Acting Area Manager"])
+      )
+      .sort((a, b) => (rank[norm(a.position)] || 999) - (rank[norm(b.position)] || 999));
+  }, [selectedAreaStaff, selectedArea]);
+
+  const selectedRegionAreas = useMemo(() => {
+    if (!selectedRegion) return [];
+    return uniqSorted(
+      selectedRegionStaff
+        .map((s) => s._area)
+        .filter((a) => a && a !== "-" && norm(a) !== "unknown")
+    );
+  }, [selectedRegionStaff, selectedRegion]);
+
+  const selectedAreaBranches = useMemo(() => {
+    if (!selectedArea) return [];
+    return uniqSorted(
+      selectedAreaStaff
+        .map((s) => s._branchLabel)
+        .filter((b) => b && b !== "-" && norm(b) !== "unknown")
+    );
+  }, [selectedAreaStaff, selectedArea]);
+
+  const selectedBranchStaff = useMemo(() => {
+    if (!selectedBranch) return [];
+    return selectedAreaStaff.filter((s) => s._branchLabel === selectedBranch);
+  }, [selectedAreaStaff, selectedBranch]);
+  
   return (
     <div className="staffinfo-page">
       <div className="staffinfo-header">
@@ -596,217 +756,440 @@ export default function Departments() {
       {viewDept && (
         <div className="modal-overlay" onMouseDown={closeView}>
           <div
-            className="modal staff-profile-modal"
+            className="modal staff-profile-modal dept-org-modal"
             onMouseDown={(e) => e.stopPropagation()}
-            style={{ maxWidth: 1180 }}
           >
             <div className="modal-head">
               <div>
-                <h3>Department: {viewDept.name}</h3>
+                <h3>{viewDept.name}</h3>
                 <div className="mini">
-                  Select Division, Region, Area, Branch, or Search to show staff hierarchy.
+                  Department hierarchy view
                 </div>
               </div>
+
               <button className="icon-btn" onClick={closeView} type="button">
                 ✕
               </button>
             </div>
 
-            <div className="modal-body" style={{ padding: 10 }}>
-              <div className="dept-view-search">
-                <input
-                  className="input"
-                  type="text"
-                  placeholder="Search employee no, name, position, division, region, area, or branch..."
-                  value={staffSearch}
-                  onChange={(e) => setStaffSearch(e.target.value)}
-                />
-              </div>
-
-              <div className="dept-view-filters-grid">
-                <div className="pill dept-view-pill">
-                  Showing: <strong>{filteredDeptStaff.length}</strong>
-                </div>
-
-                <div>
-                  <input
-                    className="input"
-                    list="dept-division-list"
-                    placeholder="Division: All"
-                    value={divisionFilter === "All" ? "" : divisionFilter}
-                    onChange={(e) => {
-                      const value = toStr(e.target.value) || "All";
-                      setDivisionFilter(value);
-                      setRegionFilter("All");
-                      setAreaFilter("All");
-                      setBranchFilter("All");
-                    }}
-                  />
-                  <datalist id="dept-division-list">
-                    {divisionOptions.filter((v) => v !== "All").map((v) => (
-                      <option key={`div-${v}`} value={v} />
-                    ))}
-                  </datalist>
-                </div>
-
-                <div>
-                  <input
-                    className="input"
-                    list="dept-region-list"
-                    placeholder="Region: All"
-                    value={regionFilter === "All" ? "" : regionFilter}
-                    onChange={(e) => {
-                      const value = toStr(e.target.value) || "All";
-                      setRegionFilter(value);
-                      setAreaFilter("All");
-                      setBranchFilter("All");
-                    }}
-                  />
-                  <datalist id="dept-region-list">
-                    {regionOptions.filter((v) => v !== "All").map((v) => (
-                      <option key={`reg-${v}`} value={v} />
-                    ))}
-                  </datalist>
-                </div>
-
-                <div>
-                  <input
-                    className="input"
-                    list="dept-area-list"
-                    placeholder="Area: All"
-                    value={areaFilter === "All" ? "" : areaFilter}
-                    onChange={(e) => {
-                      const value = toStr(e.target.value) || "All";
-                      setAreaFilter(value);
-                      setBranchFilter("All");
-                    }}
-                  />
-                  <datalist id="dept-area-list">
-                    {areaOptions.filter((v) => v !== "All").map((v) => (
-                      <option key={`area-${v}`} value={v} />
-                    ))}
-                  </datalist>
-                </div>
-
-                <div>
-                  <input
-                    className="input"
-                    list="dept-branch-list"
-                    placeholder="Branch: All"
-                    value={branchFilter === "All" ? "" : branchFilter}
-                    onChange={(e) => {
-                      const value = toStr(e.target.value) || "All";
-                      setBranchFilter(value);
-                    }}
-                  />
-                  <datalist id="dept-branch-list">
-                    {branchOptions.filter((v) => v !== "All").map((v) => (
-                      <option key={`br-${v}`} value={v} />
-                    ))}
-                  </datalist>
-                </div>
-
-                <div>
-                  <button className="btn btn-ghost" type="button" onClick={resetViewFilters}>
-                    Clear Filters
+            <div className="modal-body dept-org-body">
+              {loadingDeptStaff ? (
+                <div className="table-loading">Loading department hierarchy...</div>
+              ) : selectedBranch ? (
+                <>
+                  <button
+                    className="btn btn-ghost dept-back-btn"
+                    type="button"
+                    onClick={() => setSelectedBranch(null)}
+                  >
+                    ← Back to Area Details
                   </button>
-                </div>
-              </div>
 
-              {hasStaffFilter && (
-                <div className="card" style={{ padding: 12, marginBottom: 12 }}>
-                  <h4 style={{ margin: "0 0 10px" }}>In-Charge / Handled Areas</h4>
+                  <h2 className="dept-org-title">Branch Details</h2>
 
-                  {hierarchyRows.length === 0 ? (
-                    <div className="mini">
-                      No manager found for the selected filter. Check if staff position is Regional Manager,
-                      Acting Regional Manager, Area Manager, or Acting Area Manager.
-                    </div>
-                  ) : (
-                    <div style={{ display: "grid", gap: 10 }}>
-                      {hierarchyRows.map((row) => (
-                        <div
-                          key={`hier-${row.manager.id}`}
-                          style={{
-                            border: "1px solid rgba(255,255,255,0.12)",
-                            borderRadius: 12,
-                            padding: 12,
-                          }}
-                        >
-                          <div className="strong">
-                            {row.manager.fullname || "-"}{" "}
-                            <span className="mini">({row.title})</span>
-                          </div>
+                  <div className="dept-detail-card">
+                    <div className="dept-detail-label">Division</div>
+                    <div className="dept-detail-value">{selectedDivision}</div>
 
-                          <div className="mini" style={{ marginTop: 4 }}>
-                            Employee No: {row.manager.employee_no || "-"} • Division:{" "}
-                            {row.manager._division || "-"}
-                          </div>
+                    <div className="dept-detail-label">Region</div>
+                    <div className="dept-detail-value">{selectedRegion}</div>
 
-                          <div style={{ marginTop: 8 }}>
-                            <strong>Region handled:</strong>{" "}
-                            {row.handledRegions.length ? row.handledRegions.join(", ") : "-"}
-                          </div>
+                    <div className="dept-detail-label">Area</div>
+                    <div className="dept-detail-value">{selectedArea}</div>
 
-                          <div style={{ marginTop: 4 }}>
-                            <strong>Area handled:</strong>{" "}
-                            {row.handledAreas.length ? row.handledAreas.join(", ") : "-"}
-                          </div>
+                    <div className="dept-detail-label">Branch</div>
+                    <div className="dept-detail-value">{selectedBranch}</div>
+                  </div>
 
-                          <div style={{ marginTop: 4 }}>
-                            <strong>Branches handled:</strong>{" "}
-                            {row.handledBranches.length ? row.handledBranches.join(", ") : "-"}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
+                  <section className="dept-org-section">
+                    <h3>Staff</h3>
 
-              <div className="table-scroll">
-                {loadingDeptStaff ? (
-                  <div style={{ padding: 12 }}>Loading...</div>
-                ) : (
-                  <table className="saas-table">
-                    <thead>
-                      <tr>
-                        <th style={{ width: 140 }}>Employee No</th>
-                        <th>Name</th>
-                        <th style={{ width: 200 }}>Position</th>
-                        <th style={{ width: 160 }}>Division</th>
-                        <th style={{ width: 160 }}>Region</th>
-                        <th style={{ width: 160 }}>Area</th>
-                        <th style={{ width: 220 }}>Branch</th>
-                      </tr>
-                    </thead>
-
-                    <tbody>
-                      {filteredDeptStaff.length === 0 ? (
-                        <tr>
-                          <td colSpan={7}>
-                            {!hasStaffFilter
-                              ? "Please search or choose Division, Region, Area, or Branch to show staff."
-                              : "No staff found for this filter."}
-                          </td>
-                        </tr>
-                      ) : (
-                        filteredDeptStaff.map((s) => (
-                          <tr key={s.id}>
-                            <td className="mono">{s.employee_no || "-"}</td>
-                            <td className="strong">{s.fullname}</td>
-                            <td>{s.position || "-"}</td>
-                            <td>{s._division || "-"}</td>
-                            <td>{s._region || "-"}</td>
-                            <td>{s._area || "-"}</td>
-                            <td>{s._branchLabel || "-"}</td>
+                    <div className="table-scroll">
+                      <table className="saas-table">
+                        <thead>
+                          <tr>
+                            <th>Employee No</th>
+                            <th>Name</th>
+                            <th>Position</th>
+                            <th>Contact #</th>
+                            <th>Email</th>
                           </tr>
+                        </thead>
+
+                        <tbody>
+                          {selectedBranchStaff.length === 0 ? (
+                            <tr>
+                              <td colSpan={5}>No staff found inside this branch.</td>
+                            </tr>
+                          ) : (
+                            selectedBranchStaff.map((s) => (
+                              <tr key={s.id}>
+                                <td>{s.employee_no || "-"}</td>
+                                <td className="strong">{s.fullname || "-"}</td>
+                                <td>{s.position || "-"}</td>
+                                <td>{s.contact_no || s.phone || "-"}</td>
+                                <td>{s.email || "-"}</td>
+                              </tr>
+                            ))
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </section>
+                </>
+              ) : selectedArea ? (
+                <>
+                  <button
+                    className="btn btn-ghost dept-back-btn"
+                    type="button"
+                    onClick={() => setSelectedArea(null)}
+                  >
+                    ← Back to Region Details
+                  </button>
+
+                  <h2 className="dept-org-title">Area Details</h2>
+
+                  <div className="dept-detail-card">
+                    <div className="dept-detail-label">Division</div>
+                    <div className="dept-detail-value">{selectedDivision}</div>
+
+                    <div className="dept-detail-label">Region</div>
+                    <div className="dept-detail-value">{selectedRegion}</div>
+
+                    <div className="dept-detail-label">Area</div>
+                    <div className="dept-detail-value">{selectedArea}</div>
+                  </div>
+
+                  <section className="dept-org-section">
+                    <h3>Manager</h3>
+
+                    <div className="dept-person-table">
+                      <div className="dept-person-head">
+                        <span>Name</span>
+                        <span>Start Date</span>
+                        <span>Contact #</span>
+                        <span>Email</span>
+                        <span>Birth Date</span>
+                      </div>
+
+                      {selectedAreaManagers.length === 0 ? (
+                        <div className="dept-empty-row">No Area Manager found for this area.</div>
+                      ) : (
+                        selectedAreaManagers.map((s) => (
+                          <div className="dept-person-row" key={s.id}>
+                            <div className="dept-person-name">
+                              {avatarUrl(s) ? (
+                                <img src={avatarUrl(s)} alt="" />
+                              ) : (
+                                <div className="dept-avatar-fallback">
+                                  {toStr(s.fullname).charAt(0) || "?"}
+                                </div>
+                              )}
+
+                              <div>
+                                <strong>{s.fullname || "-"}</strong>
+                                <small>{s.position || "-"}</small>
+                              </div>
+                            </div>
+
+                            <div>{s.start_date || s.date_hired || "-"}</div>
+                            <div>{s.contact_no || s.phone || "-"}</div>
+                            <div>{s.email || "-"}</div>
+                            <div>{s.birth_date || "-"}</div>
+                          </div>
                         ))
                       )}
-                    </tbody>
-                  </table>
-                )}
-              </div>
+                    </div>
+                  </section>
+
+                  <section className="dept-org-section">
+                    <h3>Branches</h3>
+
+                    <div className="dept-simple-table">
+                      <div className="dept-simple-head">Name</div>
+
+                      {selectedAreaBranches.length === 0 ? (
+                        <div className="dept-empty-row">No branches found.</div>
+                      ) : (
+                        selectedAreaBranches.map((b) => (
+                          <button
+                            className="dept-simple-row dept-click-row"
+                            key={b}
+                            type="button"
+                            onClick={() => setSelectedBranch(b)}
+                          >
+                            {b}
+                          </button>
+                        ))
+                      )}
+                    </div>
+                  </section>
+                </>
+              ) : selectedRegion ? (
+                <>
+                  <button
+                    className="btn btn-ghost dept-back-btn"
+                    type="button"
+                    onClick={() => setSelectedRegion(null)}
+                  >
+                    ← Back to Division Details
+                  </button>
+
+                  <h2 className="dept-org-title">Region Details</h2>
+
+                  <div className="dept-detail-card">
+                    <div className="dept-detail-label">Division</div>
+                    <div className="dept-detail-value">{selectedDivision}</div>
+
+                    <div className="dept-detail-label">Region</div>
+                    <div className="dept-detail-value">{selectedRegion}</div>
+
+                    <div className="dept-detail-label">Type</div>
+                    <div className="dept-detail-value">Operation</div>
+                  </div>
+
+                  <section className="dept-org-section">
+                    <h3>Manager</h3>
+
+                    <div className="dept-person-table">
+                      <div className="dept-person-head">
+                        <span>Name</span>
+                        <span>Start Date</span>
+                        <span>Contact #</span>
+                        <span>Email</span>
+                        <span>Birth Date</span>
+                      </div>
+
+                      {selectedRegionManagers.length === 0 ? (
+                        <div className="dept-empty-row">No Regional Manager found for this region.</div>
+                      ) : (
+                        selectedRegionManagers.map((s) => (
+                          <div className="dept-person-row" key={s.id}>
+                            <div className="dept-person-name">
+                              {avatarUrl(s) ? (
+                                <img src={avatarUrl(s)} alt="" />
+                              ) : (
+                                <div className="dept-avatar-fallback">
+                                  {toStr(s.fullname).charAt(0) || "?"}
+                                </div>
+                              )}
+
+                              <div>
+                                <strong>{s.fullname || "-"}</strong>
+                                <small>{s.position || "-"}</small>
+                              </div>
+                            </div>
+
+                            <div>{s.start_date || s.date_hired || "-"}</div>
+                            <div>{s.contact_no || s.phone || "-"}</div>
+                            <div>{s.email || "-"}</div>
+                            <div>{s.birth_date || "-"}</div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </section>
+
+                  <section className="dept-org-section">
+                    <h3>Areas</h3>
+
+                    <div className="dept-simple-table">
+                      <div className="dept-simple-head">Name</div>
+
+                      {selectedRegionAreas.length === 0 ? (
+                        <div className="dept-empty-row">No areas found.</div>
+                      ) : (
+                        selectedRegionAreas.map((a) => (
+                          <button
+                            className="dept-simple-row dept-click-row"
+                            key={a}
+                            type="button"
+                            onClick={() => {
+                              setSelectedArea(a);
+                              setSelectedBranch(null);
+                            }}
+                          >
+                            {a}
+                          </button>
+                        ))
+                      )}
+                    </div>
+                  </section>
+                </>
+              ) : selectedDivision ? (
+                <>
+                  <button
+                    className="btn btn-ghost dept-back-btn"
+                    type="button"
+                    onClick={() => {
+                      setSelectedDivision(null);
+                      setSelectedRegion(null);
+                      setSelectedArea(null);
+                      setSelectedBranch(null);
+                    }}
+                  >
+                    ← Back to Operation Department
+                  </button>
+
+                  <h2 className="dept-org-title">Division Details</h2>
+
+                  <div className="dept-detail-card">
+                    <div className="dept-detail-label">Name</div>
+                    <div className="dept-detail-value">{selectedDivision}</div>
+
+                    <div className="dept-detail-label">Type</div>
+                    <div className="dept-detail-value">Operation</div>
+                  </div>
+
+                  <section className="dept-org-section">
+                    <h3>Manager</h3>
+
+                    <div className="dept-person-table">
+                      <div className="dept-person-head">
+                        <span>Name</span>
+                        <span>Start Date</span>
+                        <span>Contact #</span>
+                        <span>Email</span>
+                        <span>Birth Date</span>
+                      </div>
+
+                      {divisionManagers.length === 0 ? (
+                        <div className="dept-empty-row">
+                          No Assistant Vice President found for this division.
+                        </div>
+                      ) : (
+                        divisionManagers.map((s) => (
+                          <div className="dept-person-row" key={s.id}>
+                            <div className="dept-person-name">
+                              {avatarUrl(s) ? (
+                                <img src={avatarUrl(s)} alt="" />
+                              ) : (
+                                <div className="dept-avatar-fallback">
+                                  {toStr(s.fullname).charAt(0) || "?"}
+                                </div>
+                              )}
+
+                              <div>
+                                <strong>{s.fullname || "-"}</strong>
+                                <small>{s.position || "-"}</small>
+                              </div>
+                            </div>
+
+                            <div>{s.start_date || s.date_hired || "-"}</div>
+                            <div>{s.contact_no || s.phone || "-"}</div>
+                            <div>{s.email || "-"}</div>
+                            <div>{s.birth_date || "-"}</div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </section>
+
+                  <section className="dept-org-section">
+                    <h3>Regions</h3>
+
+                    <div className="dept-simple-table">
+                      <div className="dept-simple-head">Name</div>
+
+                      {selectedDivisionRegions.filter((r) => r && r !== "-" && norm(r) !== "unknown")
+                        .length === 0 ? (
+                        <div className="dept-empty-row">No regions found.</div>
+                      ) : (
+                        selectedDivisionRegions
+                          .filter((r) => r && r !== "-" && norm(r) !== "unknown")
+                          .map((r) => (
+                            <button
+                              className="dept-simple-row dept-click-row"
+                              key={r}
+                              type="button"
+                              onClick={() => {
+                                setSelectedRegion(r);
+                                setSelectedArea(null);
+                                setSelectedBranch(null);
+                              }}
+                            >
+                              {r}
+                            </button>
+                          ))
+                      )}
+                    </div>
+                  </section>
+                </>
+              ) : (
+                <>
+                  <section className="dept-org-section">
+                    <h3>Head of Department</h3>
+
+                    <div className="dept-person-table">
+                      <div className="dept-person-head">
+                        <span>Name</span>
+                        <span>Start Date</span>
+                        <span>Contact #</span>
+                        <span>Email</span>
+                        <span>Birth Date</span>
+                      </div>
+
+                      {operationHeads.length === 0 ? (
+                        <div className="dept-empty-row">
+                          No Senior Vice President or Vice President found.
+                        </div>
+                      ) : (
+                        operationHeads.map((s) => (
+                          <div className="dept-person-row" key={s.id}>
+                            <div className="dept-person-name">
+                              {avatarUrl(s) ? (
+                                <img src={avatarUrl(s)} alt="" />
+                              ) : (
+                                <div className="dept-avatar-fallback">
+                                  {toStr(s.fullname).charAt(0) || "?"}
+                                </div>
+                              )}
+
+                              <div>
+                                <strong>{s.fullname || "-"}</strong>
+                                <small>{s.position || "-"}</small>
+                              </div>
+                            </div>
+
+                            <div>{s.start_date || s.date_hired || "-"}</div>
+                            <div>{s.contact_no || s.phone || "-"}</div>
+                            <div>{s.email || "-"}</div>
+                            <div>{s.birth_date || "-"}</div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </section>
+
+                  <section className="dept-org-section">
+                    <h2 className="dept-blue-title">Divisions</h2>
+
+                    <div className="dept-simple-table">
+                      <div className="dept-simple-head">Name</div>
+
+                      {divisionsList.length === 0 ? (
+                        <div className="dept-empty-row">No divisions found.</div>
+                      ) : (
+                        divisionsList.map((d) => (
+                          <button
+                            className="dept-simple-row dept-click-row"
+                            key={d}
+                            type="button"
+                            onClick={() => {
+                              setSelectedDivision(d);
+                              setSelectedRegion(null);
+                              setSelectedArea(null);
+                              setSelectedBranch(null);
+                            }}
+                          >
+                            {d}
+                          </button>
+                        ))
+                      )}
+                    </div>
+                  </section>
+                </>
+              )}
             </div>
 
             <div className="modal-foot">

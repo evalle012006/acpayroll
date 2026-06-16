@@ -180,6 +180,8 @@ const baseLeaveSelect = `
     s.region,
     s.division,
     s.branch_id,
+    b.code AS branch_code,
+    b.name AS branch_name,
     s.department,
     s.position,
     s.photo_url,
@@ -198,6 +200,7 @@ const baseLeaveSelect = `
 
   FROM public.leave_requests lr
   LEFT JOIN public.staff s ON s.id = lr.employee_id
+  LEFT JOIN public.branches b ON b.id = s.branch_id
 
   LEFT JOIN LATERAL (
     SELECT file_name, file_path, file_mime, file_size, uploaded_by_role

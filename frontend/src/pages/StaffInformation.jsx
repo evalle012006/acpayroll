@@ -1046,7 +1046,13 @@ export default function StaffInformation() {
                           <td className="strong">{displayName(s)}</td>
                           <td>{s.position || "-"}</td>
                           <td>{s.department || "-"}</td>
-                          <td>{branchNameById(s.branch_id) || "-"}</td>
+                          <td>
+                            {branchNameById(s.branch_id) ||
+                              s.branch_name ||
+                              s.branch ||
+                              s.branch_code ||
+                              "-"}
+                          </td>
 
                           <td>
                             <span className={statusBadgeClass(s.status)}>
