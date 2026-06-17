@@ -45,11 +45,24 @@ export default function Deployment() {
   const isHrDepartment = department === "hr department";
   const isAccountingDepartment = department === "accounting department";
 
+  const isITDepartment = department === "it department";
+
+  const isITDepartmentManager =
+    isITDepartment &&
+    [
+      "branch manager",
+      "area manager",
+      "regional manager",
+      "assistant vice president",
+      "vice president",
+      "senior vice president",
+    ].includes(role);
+
   const canAddStaff =
-    isAdmin || isIt || isHrDepartment || isAccountingDepartment;
+    isAdmin || isIt || isHrDepartment || isAccountingDepartment || isITDepartmentManager;
 
   const canApprovePendingStaff =
-    isAdmin || isIt || isHrDepartment || isAccountingDepartment;
+    isAdmin || isIt || isHrDepartment || isAccountingDepartment || isITDepartmentManager;
 
   const [users, setUsers] = useState([]);
   const [branches, setBranches] = useState([]);
