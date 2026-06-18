@@ -38,12 +38,40 @@ const toInt = (v) => {
   return Number.isFinite(n) ? Math.trunc(n) : null;
 };
 
+const isITDepartmentManager = (req) => {
+  const dept = norm(
+    req.user?.department ||
+      req.user?.department_name ||
+      req.user?.departmentName ||
+      req.user?.user_department ||
+      req.user?.dept
+  );
+
+  const role = norm(req.user?.role || req.user?.position);
+
+  return (
+    dept === "it department" &&
+    [
+      "branch manager",
+      "acting branch manager",
+      "area manager",
+      "acting area manager",
+      "regional manager",
+      "acting regional manager",
+      "assistant vice president",
+      "vice president",
+      "senior vice president",
+    ].includes(role)
+  );
+};
+
 const canCreateOR = (req) =>
   isAdmin(req) ||
   isIT(req) ||
   isHrDepartment(req) ||
   isAccountingDepartment(req) ||
-  isOperationVP(req);
+  isOperationVP(req) ||
+  isITDepartmentManager(req);
 
 const canViewOR = (req) =>
   isAdmin(req) ||
@@ -57,7 +85,8 @@ const canViewOR = (req) =>
   isVicePresident(req) ||
   isSeniorVicePresident(req) ||
   isPresident(req) ||
-  isTread(req);
+  isTread(req) ||
+  isITDepartmentManager(req);
 
 const canViewAllOR = (req) =>
   isAdmin(req) ||
@@ -67,37 +96,46 @@ const canViewAllOR = (req) =>
   isVicePresident(req) ||
   isSeniorVicePresident(req) ||
   isPresident(req) ||
-  isTread(req);
+  isTread(req) ||
+  isITDepartmentManager(req);
 
 const canApproveOR = (req) =>
   isHrDepartment(req) ||
   isAccountingDepartment(req) ||
-  isSeniorVicePresident(req);
+  isSeniorVicePresident(req) ||
+  isITDepartmentManager(req);
 
 const canRejectOR = (req) =>
   isHrDepartment(req) ||
   isAccountingDepartment(req) ||
   isITDepartment(req) ||
-  isSeniorVicePresident(req);
+  isSeniorVicePresident(req) ||
+  isITDepartmentManager(req);
 
 const canVoidOR = (req) =>
   isAccountingDepartment(req) ||
   isHrDepartment(req) ||
   isAdmin(req) ||
-  isIT(req);
+  isIT(req) ||
+  isITDepartmentManager(req);
 
 const canDeleteOR = (req) =>
   isAdmin(req) ||
   isIT(req) ||
-  isITDepartment(req);
+  isITDepartment(req) ||
+  isITDepartmentManager(req);
 
-const canBypassOR = (req) => isAdmin(req) || isIT(req);
+const canBypassOR = (req) =>
+  isAdmin(req) ||
+  isIT(req) ||
+  isITDepartmentManager(req);
 
 const canUploadFinalFile = (req) =>
   isHrDepartment(req) ||
   isAccountingDepartment(req) ||
   isAdmin(req) ||
-  isIT(req);
+  isIT(req) ||
+  isITDepartmentManager(req);
 
 const uploadDir = path.join(__dirname, "..", "uploads", "other-receivables");
 

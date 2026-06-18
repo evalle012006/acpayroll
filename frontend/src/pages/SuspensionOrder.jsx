@@ -69,6 +69,19 @@ export default function SuspensionOrder() {
   const isSeniorVicePresident = role === "senior vice president";
   const isPresident = role === "president";
 
+  const isITDepartment = department === "it department";
+
+  const isITDepartmentManager =
+    isITDepartment &&
+    (
+      isBranchManager ||
+      isAreaManager ||
+      isRegionalManager ||
+      isAssistantVicePresident ||
+      isVicePresident ||
+      isSeniorVicePresident
+    );
+
   const canCreate =
     isOfficeOfThePresident ||
     isAdmin ||
@@ -76,10 +89,12 @@ export default function SuspensionOrder() {
     isHr ||
     isAccounting ||
     isAreaManager ||
+    isRegionalManager ||
     isAssistantVicePresident ||
     isVicePresident ||
     isSeniorVicePresident ||
-    isPresident;
+    isPresident ||
+    isITDepartmentManager;
 
   const canEditDelete =
     isAdmin ||
@@ -87,10 +102,12 @@ export default function SuspensionOrder() {
     isHr ||
     isAccounting ||
     isAreaManager ||
+    isRegionalManager ||
     isAssistantVicePresident ||
     isVicePresident ||
     isSeniorVicePresident ||
-    isPresident;
+    isPresident ||
+    isITDepartmentManager;
 
   const canApproveStage = (order) => {
     const stage = norm(order?.approval_stage);
@@ -111,9 +128,11 @@ export default function SuspensionOrder() {
     isAdmin ||
     isIt ||
     isHr ||
+    isITDepartmentManager ||
     isAccounting;
 
-  const canUploadApprovedFile = isAdmin || isIt || isHr || isAccounting;
+  const canUploadApprovedFile =
+    isAdmin || isIt || isHr || isAccounting || isITDepartmentManager;
 
   const canDownloadApprovedFile = (order) => {
     const approved = norm(order?.status) === "approved";
@@ -218,6 +237,7 @@ export default function SuspensionOrder() {
   const visibleOrders = useMemo(() => {
     if (
       isOfficeOfThePresident ||
+      isITDepartmentManager ||
       isAdmin ||
       isIt ||
       isHr ||

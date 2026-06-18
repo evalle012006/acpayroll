@@ -57,30 +57,65 @@ const upload = multer({
   limits: { fileSize: 50 * 1024 * 1024 },
 });
 
-const isTopManagement = (req) =>
-  isAdmin(req) ||
-  isIT(req) ||
-  isHr(req) ||
-  isAccounting(req) ||
-  isTread(req) ||
-  isVicePresident(req) ||
-  isSeniorVicePresident(req) ||
-  isPresident(req);
+const isTopManagement = (req) => {
+  const dept = norm(req.user?.department);
+
+  return (
+    isAdmin(req) ||
+    isIT(req) ||
+    isHr(req) ||
+    isAccounting(req) ||
+    isTread(req) ||
+    isVicePresident(req) ||
+    isSeniorVicePresident(req) ||
+    isPresident(req) ||
+
+    (
+      dept === "it department" &&
+      (
+        isBranchManager(req) ||
+        isAreaManager(req) ||
+        isRegionalManager(req) ||
+        isAssistantVicePresident(req) ||
+        isVicePresident(req) ||
+        isSeniorVicePresident(req)
+      )
+    )
+  );
+};
 
 const isFinalUploader = (req) =>
   isAdmin(req) || isIT(req) || isHr(req) || isAccounting(req) || isSeniorVicePresident(req);
 
-const canCreateDemotion = (req) =>
-  isAdmin(req) ||
-  isIT(req) ||
-  isHr(req) ||
-  isAccounting(req) ||
-  isPresident(req) ||
-  isAreaManager(req) ||
-  isRegionalManager(req) ||
-  isAssistantVicePresident(req) ||
-  isVicePresident(req) ||
-  isSeniorVicePresident(req);
+const canCreateDemotion = (req) => {
+  const dept = norm(req.user?.department);
+
+  return (
+    isAdmin(req) ||
+    isIT(req) ||
+    isHr(req) ||
+    isAccounting(req) ||
+    isPresident(req) ||
+
+    isAreaManager(req) ||
+    isRegionalManager(req) ||
+    isAssistantVicePresident(req) ||
+    isVicePresident(req) ||
+    isSeniorVicePresident(req) ||
+
+    (
+      dept === "it department" &&
+      (
+        isBranchManager(req) ||
+        isAreaManager(req) ||
+        isRegionalManager(req) ||
+        isAssistantVicePresident(req) ||
+        isVicePresident(req) ||
+        isSeniorVicePresident(req)
+      )
+    )
+  );
+};
 
 const getUserArea = (req) => toStr(req.user?.area);
 const getUserRegion = (req) => toStr(req.user?.region);
@@ -272,6 +307,8 @@ async function getStaffScope(client, staffId) {
 async function canAccessStaff(client, req, staffRow) {
   if (!staffRow) return false;
 
+  const dept = norm(req.user?.department);
+
   if (
     isAdmin(req) ||
     isIT(req) ||
@@ -280,7 +317,18 @@ async function canAccessStaff(client, req, staffRow) {
     isTread(req) ||
     isVicePresident(req) ||
     isSeniorVicePresident(req) ||
-    isPresident(req)
+    isPresident(req) ||
+    (
+      dept === "it department" &&
+      (
+        isBranchManager(req) ||
+        isAreaManager(req) ||
+        isRegionalManager(req) ||
+        isAssistantVicePresident(req) ||
+        isVicePresident(req) ||
+        isSeniorVicePresident(req)
+      )
+    )
   ) {
     return true;
   }

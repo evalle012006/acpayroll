@@ -74,13 +74,25 @@ export default function StaffInformation() {
     return role === "admin" || role === norm(s?.position) || role === norm(s?.role);
   };
 
+  const isITDepartmentManager =
+    userDepartment.includes("it") &&
+    [
+      "branch manager",
+      "area manager",
+      "regional manager",
+      "assistant vice president",
+      "vice president",
+      "senior vice president",
+    ].includes(role);
+
   const canEditStaff =
     role === "admin" ||
     role === "it" ||
     role === "hr" ||
     role === "tread" ||
     isAccountingDepartmentUser ||
-    isHrDepartmentUser;
+    isHrDepartmentUser ||
+    isITDepartmentManager;
 
   const [staff, setStaff] = useState([]);
   const [branches, setBranches] = useState([]);

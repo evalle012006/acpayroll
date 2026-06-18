@@ -149,6 +149,9 @@ export default function DemotionOrder() {
   const isSeniorVicePresident = role === "senior vice president";
   const isPresident = role === "president";
 
+  const isITDepartment =
+    department === "it department";
+
   const canCreate =
     isAdmin ||
     isIt ||
@@ -159,7 +162,18 @@ export default function DemotionOrder() {
     isRegionalManager ||
     isAssistantVicePresident ||
     isVicePresident ||
-    isSeniorVicePresident;
+    isSeniorVicePresident ||
+    (
+      isITDepartment &&
+      (
+        isBranchManager ||
+        isAreaManager ||
+        isRegionalManager ||
+        isAssistantVicePresident ||
+        isVicePresident ||
+        isSeniorVicePresident
+      )
+    );
 
   const canFinalUpload =
     isAdmin || isIt || isHr || isAccounting || isSeniorVicePresident;

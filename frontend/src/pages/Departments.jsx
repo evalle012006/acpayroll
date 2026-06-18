@@ -583,7 +583,30 @@ export default function Departments() {
 
   const selectedBranchStaff = useMemo(() => {
     if (!selectedBranch) return [];
-    return selectedAreaStaff.filter((s) => s._branchLabel === selectedBranch);
+
+    const branchStaff = selectedAreaStaff.filter(
+      (s) => s._branchLabel === selectedBranch
+    );
+
+    const managers = branchStaff.filter((s) =>
+      isPosition(s.position, [
+        "Branch Manager",
+        "Acting Branch Manager",
+      ])
+    );
+
+    const staff = branchStaff.filter(
+      (s) =>
+        !isPosition(s.position, [
+          "Branch Manager",
+          "Acting Branch Manager",
+        ])
+    );
+
+    return {
+      managers,
+      staff,
+    };
   }, [selectedAreaStaff, selectedBranch]);
   
   return (
@@ -802,6 +825,50 @@ export default function Departments() {
                   </div>
 
                   <section className="dept-org-section">
+                    <section className="dept-org-section">
+                      <h3>Branch Manager</h3>
+
+                      <div className="dept-person-table">
+                        <div className="dept-person-head">
+                          <span>Name</span>
+                          <span>Start Date</span>
+                          <span>Contact #</span>
+                          <span>Email</span>
+                          <span>Birth Date</span>
+                        </div>
+
+                        {selectedBranchStaff.managers.length === 0 ? (
+                          <div className="dept-empty-row">
+                            No Branch Manager found.
+                          </div>
+                        ) : (
+                          selectedBranchStaff.managers.map((s) => (
+                            <div className="dept-person-row" key={s.id}>
+                              <div className="dept-person-name">
+                                {avatarUrl(s) ? (
+                                  <img src={avatarUrl(s)} alt="" />
+                                ) : (
+                                  <div className="dept-avatar-fallback">
+                                    {toStr(s.fullname).charAt(0) || "?"}
+                                  </div>
+                                )}
+
+                                <div>
+                                  <strong>{s.fullname}</strong>
+                                  <small>{s.position}</small>
+                                </div>
+                              </div>
+
+                              <div>{s.start_date || s.date_hired || "-"}</div>
+                              <div>{s.contact_no || s.phone || "-"}</div>
+                              <div>{s.email || "-"}</div>
+                              <div>{s.birth_date || "-"}</div>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </section>
+
                     <h3>Staff</h3>
 
                     <div className="table-scroll">
@@ -817,12 +884,12 @@ export default function Departments() {
                         </thead>
 
                         <tbody>
-                          {selectedBranchStaff.length === 0 ? (
+                          {selectedBranchStaff.staff.length === 0 ? (
                             <tr>
                               <td colSpan={5}>No staff found inside this branch.</td>
                             </tr>
                           ) : (
-                            selectedBranchStaff.map((s) => (
+                            selectedBranchStaff.staff.map((s) => (
                               <tr key={s.id}>
                                 <td>{s.employee_no || "-"}</td>
                                 <td className="strong">{s.fullname || "-"}</td>

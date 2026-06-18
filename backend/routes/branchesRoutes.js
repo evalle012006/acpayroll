@@ -43,6 +43,25 @@ const isTopManagement = (req) =>
   isSeniorVicePresident(req) ||
   isPresident(req);
 
+  const isDepartmentManagement = (req) => {
+    const dept = String(req.user?.department || "").trim().toUpperCase();
+
+    const allowedDepartment =
+      dept === "HR DEPARTMENT" ||
+      dept === "ACCOUNTING DEPARTMENT" ||
+      dept === "IT DEPARTMENT";
+
+    const allowedRole =
+      isBranchManager(req) ||
+      isAreaManager(req) ||
+      isRegionalManager(req) ||
+      isAssistantVicePresident(req) ||
+      isVicePresident(req) ||
+      isSeniorVicePresident(req);
+
+    return allowedDepartment && allowedRole;
+  };
+
 const getUserBranchCode = (req) => toStr(req.user?.branch_id);
 const getUserArea = (req) => toStr(req.user?.area);
 const getUserRegion = (req) => toStr(req.user?.region);
@@ -54,7 +73,7 @@ router.get(
   requirePermission("branch", "view"),
   async (req, res) => {
     try {
-      if (isTopManagement(req)) {
+      if (isTopManagement(req) || isDepartmentManagement(req)) {
         const r = await pool.query(`
           SELECT id, code, name, area, region, division, address, latitude, longitude
           FROM public.branches
@@ -174,7 +193,7 @@ router.get(
 
       let r;
 
-      if (isTopManagement(req)) {
+      if (isTopManagement(req) || isDepartmentManagement(req)) {
         r = await pool.query(
           `
           SELECT id, code, name, area, region, division, address, latitude, longitude

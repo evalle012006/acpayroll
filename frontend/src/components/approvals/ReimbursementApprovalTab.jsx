@@ -192,7 +192,6 @@ export default function ReimbursementApprovalTab() {
 );
 
 const isAccountingDepartment = department.includes("accounting");
-
 const isAccountingDeptManager =
   isAccountingDepartment &&
   [
@@ -204,12 +203,24 @@ const isAccountingDeptManager =
     "senior vice president",
   ].includes(role);
 
-  const isOfficeOfThePresident =
-    department === "office of the president";
+const isITDepartment = department.includes("it");
+const isITDeptManager =
+  isITDepartment &&
+  [
+    "branch manager",
+    "acting branch manager",
+    "area manager",
+    "acting area manager",
+    "regional manager",
+    "acting regional manager",
+    "assistant vice president",
+    "vice president",
+    "senior vice president",
+  ].includes(role);
 
   const canCreate =
-    isOfficeOfThePresident ||
     isAccountingDeptManager ||
+    isITDeptManager ||
     [
       "admin",
       "it",
@@ -221,7 +232,6 @@ const isAccountingDeptManager =
       "assistant vice president",
       "vice president",
       "senior vice president",
-      "president",
     ].includes(role);
 
   const [rows, setRows] = useState([]);

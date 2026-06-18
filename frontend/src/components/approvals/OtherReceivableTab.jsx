@@ -64,18 +64,34 @@ export default function OtherReceivableTab() {
 
   const isBranchManager = role === "branch manager";
   const isAreaManager = role === "area manager" || role === "acting area manager";
-  const isRegionalManager =
-    role === "regional manager" || role === "acting regional manager";
+  const isRegionalManager = role === "regional manager" || role === "acting regional manager";
   const isAssistantVicePresident = role === "assistant vice president";
   const isVicePresident = role === "vice president";
   const isSeniorVicePresident = role === "senior vice president";
   const isPresident = role === "president";
   const isTread = role === "tread";
+  const isOperationVP = role === "vice president" && isOperationDepartment(department);
 
-  const isOperationVP =
-    role === "vice president" && isOperationDepartment(department);
+  const isITDepartment =
+    department === "it department";
 
-  const canCreateOR = isAdmin || isIT || isHr || isAccounting || isOperationVP;
+  const canCreateOR =
+    isAdmin ||
+    isIT ||
+    isHr ||
+    isAccounting ||
+    isOperationVP ||
+    (
+      isITDepartment &&
+      (
+        isBranchManager ||
+        isAreaManager ||
+        isRegionalManager ||
+        isAssistantVicePresident ||
+        isVicePresident ||
+        isSeniorVicePresident
+      )
+    );
 
   const canViewOR =
     isAdmin ||
@@ -91,11 +107,38 @@ export default function OtherReceivableTab() {
     isPresident ||
     isTread;
 
-  const canApproveOR = isHr || isAccounting || isSeniorVicePresident;
-  const canRejectOR = isHr || isAccounting || isIT || isSeniorVicePresident;
-  const canVoidOR = isAccounting || isHr || isAdmin || isIT;
-  const canDeleteOR =
-    isAdmin || isIT || department === "it" || department === "it department";
+  const isITManager =
+    isITDepartment &&
+    (
+      isBranchManager ||
+      isAreaManager ||
+      isRegionalManager ||
+      isAssistantVicePresident ||
+      isVicePresident ||
+      isSeniorVicePresident
+    );
+
+  const canApproveOR =
+    isHr ||
+    isAccounting ||
+    isSeniorVicePresident ||
+    isITManager;
+
+  const canRejectOR =
+    isHr ||
+    isAccounting ||
+    isIT ||
+    isSeniorVicePresident ||
+    isITManager;
+
+  const canVoidOR =
+    isAccounting ||
+    isHr ||
+    isAdmin ||
+    isIT ||
+    isITManager;
+
+  const canDeleteOR = isAdmin || isIT || department === "it" || department === "it department";
   const canBypassOR = isAdmin || isIT;
 
   const [rows, setRows] = useState([]);

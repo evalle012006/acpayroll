@@ -61,18 +61,42 @@ export default function RegularizationOrders() {
 
   const user = useMemo(() => readUser(), []);
   const role = norm(user?.role);
+  const department = norm(user?.department);
 
-  const canCreate = [
-    "admin",
-    "it",
-    "hr",
-    "accounting",
-    "vice president",
-    "senior vice president",
-    "president",
-  ].includes(role);
+  const isITDepartmentManager =
+    department === "it department" &&
+    [
+      "branch manager",
+      "acting branch manager",
+      "area manager",
+      "acting area manager",
+      "regional manager",
+      "acting regional manager",
+      "assistant vice president",
+      "vice president",
+      "senior vice president",
+    ].includes(role);
 
-  const canApprove = ["admin", "it", "hr", "accounting"].includes(role);
+  const canCreate =
+    isITDepartmentManager ||
+    [
+      "admin",
+      "it",
+      "hr",
+      "accounting",
+      "vice president",
+      "senior vice president",
+      "president",
+    ].includes(role);
+
+  const canApprove =
+    isITDepartmentManager ||
+    [
+      "admin",
+      "it",
+      "hr",
+      "accounting",
+    ].includes(role);
 
   const emptyForm = useMemo(
     () => ({

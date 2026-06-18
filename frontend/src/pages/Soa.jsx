@@ -52,12 +52,32 @@ export default function Soa() {
   const isVicePresident = role === "vice president";
   const isSeniorVicePresident = role === "senior vice president";
   const isPresident = role === "president";
+  
+  const isActingBranchManager = role === "acting branch manager";
+  const isActingAreaManager = role === "acting area manager";
+  const isActingRegionalManager = role === "acting regional manager";
+
+  const isITDepartment = department === "it department";
+  const isITDepartmentManager =
+    isITDepartment &&
+    (
+      isBranchManager ||
+      isActingBranchManager ||
+      isAreaManager ||
+      isActingAreaManager ||
+      isRegionalManager ||
+      isActingRegionalManager ||
+      isAssistantVicePresident ||
+      isVicePresident ||
+      isSeniorVicePresident
+    );
 
   const canEdit =
     isAdmin ||
     isIt ||
     isHr ||
     isAccounting ||
+    isITDepartmentManager ||
     isAccountingDepartment;
 
   const canView =
@@ -72,6 +92,7 @@ export default function Soa() {
     isAssistantVicePresident ||
     isVicePresident ||
     isSeniorVicePresident ||
+    isITDepartmentManager ||
     isPresident;
 
   const canCreate =
@@ -81,9 +102,13 @@ export default function Soa() {
     isAccounting ||
     isTread ||
     isAccountingDepartment ||
+    isITDepartmentManager ||
     isHrDepartment;
 
-  const canDelete = isAdmin || isIt;
+  const canDelete = 
+    isAdmin || 
+    isITDepartmentManager ||
+    isIt;
 
   const [staffList, setStaffList] = useState([]);
   const [branches, setBranches] = useState([]);

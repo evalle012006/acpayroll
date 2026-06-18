@@ -29,6 +29,24 @@ export default function BoardResolutionRequests() {
   const user = useMemo(() => readUser(), []);
   const role = norm(user?.role);
 
+  const department = norm(user?.department);
+
+  const isITDepartment = department === "it department";
+
+  const isITDepartmentManager =
+    isITDepartment &&
+    [
+      "branch manager",
+      "acting branch manager",
+      "area manager",
+      "acting area manager",
+      "regional manager",
+      "acting regional manager",
+      "assistant vice president",
+      "vice president",
+      "senior vice president",
+    ].includes(role);
+
   const isAdmin = ["admin", "it"].includes(role);
   const isHr = role === "hr";
   const isAccounting = role === "accounting";
@@ -41,7 +59,8 @@ export default function BoardResolutionRequests() {
   const canCreate =
     isRegionalManager ||
     isAssistantVicePresident ||
-    isAdmin;
+    isAdmin ||
+    isITDepartmentManager;
 
   const canViewPage =
     canCreate ||
@@ -50,7 +69,8 @@ export default function BoardResolutionRequests() {
     isAccounting ||
     isVp ||
     isSvp ||
-    isPresident;
+    isPresident ||
+    isITDepartmentManager;
 
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);

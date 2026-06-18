@@ -49,26 +49,46 @@ export default function ExitStaffOrders() {
   const user = useMemo(() => readUser(), []);
   const userRole = norm(user?.role);
 
-  const canCreate = [
-    "admin",
-    "hr",
-    "accounting",
+  const userDepartment = norm(user?.department);
+
+const isHRDepartmentManagement =
+  userDepartment === "hr department" &&
+  [
     "branch manager",
+    "acting branch manager",
+    "area manager",
+    "acting area manager",
+    "regional manager",
+    "acting regional manager",
     "assistant vice president",
     "vice president",
     "senior vice president",
-    "president",
   ].includes(userRole);
 
-  const canApprove = [
-    "admin",
-    "hr",
-    "accounting",
-    "assistant vice president",
-    "vice president",
-    "senior vice president",
-    "president",
-  ].includes(userRole);
+  const canCreate =
+    isHRDepartmentManagement ||
+    [
+      "admin",
+      "hr",
+      "accounting",
+      "branch manager",
+      "assistant vice president",
+      "vice president",
+      "senior vice president",
+      "president",
+    ].includes(userRole);
+
+  const canApprove =
+    isHRDepartmentManagement ||
+    [
+      "admin",
+      "hr",
+      "accounting",
+      "assistant vice president",
+      "vice president",
+      "senior vice president",
+      "president",
+    ].includes(userRole);
 
   const canDelete = ["admin", "hr", "accounting"].includes(userRole);
 

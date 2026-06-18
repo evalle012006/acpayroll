@@ -40,6 +40,36 @@ const isAccountingDepartmentUser = (req) =>
     .trim()
     .toUpperCase() === "ACCOUNTING DEPARTMENT";
 
+const isITDepartmentManager = (req) => {
+  const dept = String(
+    req.user?.department ||
+    req.user?.department_name ||
+    req.user?.departmentName ||
+    req.user?.user_department ||
+    req.user?.dept ||
+    ""
+  ).trim().toLowerCase();
+
+  const role = String(req.user?.role || req.user?.position || "")
+    .trim()
+    .toLowerCase();
+
+  return (
+    dept === "it department" &&
+    [
+      "branch manager",
+      "acting branch manager",
+      "area manager",
+      "acting area manager",
+      "regional manager",
+      "acting regional manager",
+      "assistant vice president",
+      "vice president",
+      "senior vice president",
+    ].includes(role)
+  );
+};
+
 const canViewSettlements = (req) =>
   isAdmin(req) ||
   isIT(req) ||
@@ -52,7 +82,8 @@ const canViewSettlements = (req) =>
   isAssistantVicePresident(req) ||
   isVicePresident(req) ||
   isSeniorVicePresident(req) ||
-  isPresident(req);
+  isPresident(req) ||
+  isITDepartmentManager(req);
 
 const getUserBranchCode = (req) => toStr(req.user?.branch_id);
 const getUserArea = (req) => toStr(req.user?.area);
@@ -122,7 +153,10 @@ router.get(
         return res.status(403).json({ message: "Access denied" });
       }
 
-      if (isAccountingDepartmentUser(req)) {
+      if (
+        isAccountingDepartmentUser(req) ||
+        isITDepartmentManager(req)
+    ) {
         const r = await pool.query(`
           SELECT *
           FROM public.settlements
@@ -563,27 +597,23 @@ router.get(
 
       const row = r.rows[0];
 
-      if (isBranchManager(req)) {
+      if (isITDepartmentManager(req)) {
+        // IT Department managers can download every settlement
+      } else if (isBranchManager(req)) {
         const branchCode = getUserBranchCode(req);
 
         if (toStr(row.settlement_branch_code).toLowerCase() !== branchCode.toLowerCase()) {
           return res.status(403).json({ message: "Access denied" });
         }
-      }
-
-      if (isAreaManager(req)) {
+      } else if (isAreaManager(req)) {
         if (toStr(row.area).toLowerCase() !== getUserArea(req).toLowerCase()) {
           return res.status(403).json({ message: "Access denied" });
         }
-      }
-
-      if (isRegionalManager(req)) {
+      } else if (isRegionalManager(req)) {
         if (toStr(row.region).toLowerCase() !== getUserRegion(req).toLowerCase()) {
           return res.status(403).json({ message: "Access denied" });
         }
-      }
-
-      if (isAssistantVicePresident(req)) {
+      } else if (isAssistantVicePresident(req)) {
         if (toStr(row.division).toLowerCase() !== getUserDivision(req).toLowerCase()) {
           return res.status(403).json({ message: "Access denied" });
         }

@@ -76,6 +76,29 @@ const isAccountingDepartmentUser = (req) =>
     .toLowerCase()
     .includes("accounting");
 
+const isITDepartmentManager = (req) => {
+  const dept = String(
+    req.user?.department ||
+      req.user?.department_name ||
+      req.user?.departmentName ||
+      req.user?.user_department ||
+      req.user?.dept ||
+      ""
+  ).toLowerCase();
+
+  return (
+    dept === "it department" &&
+    (
+      isBranchManager(req) ||
+      isAreaManager(req) ||
+      isRegionalManager(req) ||
+      isAssistantVicePresident(req) ||
+      isVicePresident(req) ||
+      isSeniorVicePresident(req)
+    )
+  );
+};
+
 const uploadRoot = path.join(process.cwd(), "uploads");
 const suspensionUploadDir = path.join(uploadRoot, "suspension");
 
@@ -158,6 +181,7 @@ const canAccessStaffRecord = (req, staff) => {
     isAccounting(req) ||
     isAccountingDepartmentUser(req) ||
     isOfficeOfThePresidentUser(req) ||
+    isITDepartmentManager(req) ||
     isTread(req) ||
     isVicePresident(req) ||
     isSeniorVicePresident(req) ||
@@ -196,6 +220,7 @@ const canMutatePendingOrder = (req, row) => {
     isHr(req) ||
     isHrDepartmentUser(req) ||
     isAccounting(req) ||
+    isITDepartmentManager(req) ||
     isAccountingDepartmentUser(req)
   ) return true;
 
@@ -234,6 +259,7 @@ const canDownloadRequestFile = (req) =>
   isHr(req) ||
   isHrDepartmentUser(req) ||
   isAccounting(req) ||
+  isITDepartmentManager(req) ||
   isAccountingDepartmentUser(req);
 
 const canDownloadApprovedFile = (req, row) => {
@@ -243,6 +269,7 @@ const canDownloadApprovedFile = (req, row) => {
     isHr(req) ||
     isHrDepartmentUser(req) ||
     isAccounting(req) ||
+    isITDepartmentManager(req) ||
     isAccountingDepartmentUser(req)
   ) return true;
 
@@ -265,6 +292,7 @@ const canUploadApprovedFile = (req) =>
   isHr(req) ||
   isHrDepartmentUser(req) ||
   isAccounting(req) ||
+  isITDepartmentManager(req) ||
   isAccountingDepartmentUser(req);
 
 router.get(
@@ -281,6 +309,7 @@ router.get(
         isAccounting(req) ||
         isAccountingDepartmentUser(req) ||
         isOfficeOfThePresidentUser(req) ||
+        isITDepartmentManager(req) ||
         isTread(req) ||
         isVicePresident(req) ||
         isSeniorVicePresident(req) ||

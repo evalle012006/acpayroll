@@ -47,6 +47,20 @@ const isAccountingDeptManager = (req) =>
     "senior vice president",
   ].includes(roleLower(req));
 
+const isITDeptManager = (req) =>
+  isITDepartment(userDepartment(req)) &&
+  [
+    "branch manager",
+    "acting branch manager",
+    "area manager",
+    "acting area manager",
+    "regional manager",
+    "acting regional manager",
+    "assistant vice president",
+    "vice president",
+    "senior vice president",
+  ].includes(roleLower(req));
+
 const isAdmin = (req) => roleLower(req) === "admin";
 const isIT = (req) => roleLower(req) === "it";
 const isHR = (req) => roleLower(req) === "hr";
@@ -64,14 +78,15 @@ const isSeniorVicePresident = (req) =>
 const isPresident = (req) => roleLower(req) === "president";
 
 const canBypassApproval = (req) =>
-  isAdmin(req) || isIT(req) || isAccountingDeptManager(req);
+  isAdmin(req) || isIT(req) || isAccountingDeptManager(req) || isITDeptManager(req);
 
 const canFinalUpload = (req) =>
   isHR(req) ||
   isAccounting(req) ||
   isAdmin(req) ||
   isIT(req) ||
-  isAccountingDeptManager(req);
+  isAccountingDeptManager(req) ||
+  isITDeptManager(req);
 
 const isOperationDepartment = (department) =>
   norm(department).includes("operation");
@@ -242,7 +257,8 @@ const canCreateReimbursement = (req, staffDepartment) => {
     isIT(req) ||
     isHR(req) ||
     isAccounting(req) ||
-    isAccountingDeptManager(req)
+    isAccountingDeptManager(req) ||
+    isITDeptManager(req)
   ) {
     return true;
   }
@@ -424,6 +440,7 @@ router.get(
         isHR(req) ||
         isAccounting(req) ||
         isAccountingDeptManager(req) ||
+        isITDeptManager(req) ||
         isTread(req) ||
         isVicePresident(req) ||
         isSeniorVicePresident(req) ||

@@ -61,12 +61,24 @@ export default function StaffProfileModal({
   const role = String(user?.role || "").trim().toLowerCase();
   const department = String(user?.department || "").trim().toLowerCase();
 
+  const isITDepartmentManager =
+    department === "it department" &&
+    [
+      "branch manager",
+      "area manager",
+      "regional manager",
+      "assistant vice president",
+      "vice president",
+      "senior vice president",
+    ].includes(role);
+
   const canManageAttachments =
     role === "admin" ||
     role === "it" ||
     department === "hr department" ||
     department === "accounting department" ||
-    department === "it department";
+    department === "it department" ||
+    isITDepartmentManager;
 
   const [balances, setBalances] = useState(null);
   const [loadingBal, setLoadingBal] = useState(false);

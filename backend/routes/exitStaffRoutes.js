@@ -49,6 +49,22 @@ const isTopManagement = (req) =>
   isSeniorVicePresident(req) ||
   isPresident(req);
 
+const isHRDepartmentManagement = (req) => {
+  const dept = String(req.user?.department || "").trim().toUpperCase();
+
+  return (
+    dept === "HR DEPARTMENT" &&
+    (
+      isBranchManager(req) ||
+      isAreaManager(req) ||
+      isRegionalManager(req) ||
+      isAssistantVicePresident(req) ||
+      isVicePresident(req) ||
+      isSeniorVicePresident(req)
+    )
+  );
+};
+
 const getUserBranchId = (req) => {
   const raw =
     req.user?.branch_id ??
@@ -127,7 +143,7 @@ router.get(
     try {
       await applyDueExitStaff();
 
-      if (!isTopManagement(req) && !isBranchManager(req)) {
+      if (!isTopManagement(req) && !isBranchManager(req) && !isHRDepartmentManagement(req)) {
         return res.status(403).json({ message: "Access denied" });
       }
 
@@ -161,7 +177,7 @@ router.get(
           AND LOWER(TRIM(COALESCE(s.exit_type, ''))) IN ('awol', 'resigned', 'terminated', 'deceased')
       `;
 
-      if (isBranchManager(req)) {
+      if (isBranchManager(req) && !isHRDepartmentManagement(req)) {
         const bid = getUserBranchId(req);
         const bcode = getUserBranchCode(req);
 
@@ -200,7 +216,7 @@ router.get(
     try {
       await applyDueExitStaff();
 
-      if (isTopManagement(req)) {
+      if (isTopManagement(req) || isHRDepartmentManagement(req)) {
         const r = await pool.query(`
           SELECT *
           FROM public.exit_staff_orders
@@ -210,7 +226,7 @@ router.get(
         return res.json(r.rows);
       }
 
-      if (isBranchManager(req)) {
+      if (isBranchManager(req) && !isHRDepartmentManagement(req)) {
         const bid = getUserBranchId(req);
         const bcode = getUserBranchCode(req);
 
@@ -340,17 +356,16 @@ router.post(
 
       const staff = s.rows[0];
 
-      if (isBranchManager(req)) {
-        const userBranchId = getUserBranchId(req);
+      if (isBranchManager(req) && !isHRDepartmentManagement(req)) {
+          const userBranchId = getUserBranchId(req);
 
-        if (!userBranchId || Number(userBranchId) !== Number(staff.branch_id)) {
-          await client.query("ROLLBACK");
-          return res.status(403).json({
-            message: "You can only create exit staff orders for your branch.",
-          });
-        }
+          if (!userBranchId || Number(userBranchId) !== Number(staff.branch_id)) {
+              await client.query("ROLLBACK");
+              return res.status(403).json({
+                  message: "You can only create exit staff orders for your branch.",
+              });
+          }
       }
-
       const prev_branch_id = staff.branch_id ? toInt(staff.branch_id) : null;
       let prev_branch_code = "";
       let prev_branch_name = "";
