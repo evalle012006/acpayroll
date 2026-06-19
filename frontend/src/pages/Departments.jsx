@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState, useCallback } from "react";
+import useStaffSignedUrls from "./StaffInformation/useStaffSignedUrls";
 import "../styles/Departments.css";
 import api from "../api/axiosClient";
 
@@ -55,11 +56,10 @@ export default function Departments() {
 
   const base = useMemo(() => getBase(), []);
 
+  const signedUrls = useStaffSignedUrls(deptStaff);
+
   const avatarUrl = (s) => {
-    const p = s?.photo_url;
-    if (!p) return "";
-    if (String(p).startsWith("http")) return p;
-    return `${base}${p}`;
+    return signedUrls[s.id] || "";
   };
 
   const branchLabel = (s) => {
@@ -414,7 +414,21 @@ export default function Departments() {
 
     try {
       const res = await api.get(`/departments/${d.id}/staff`);
-      setDeptStaff(Array.isArray(res.data) ? res.data : []);
+      const activeOnly = Array.isArray(res.data)
+      ? res.data.filter((s) => {
+          const status = norm(s.status);
+          const employmentStatus = norm(s.employment_status);
+          const remarks = norm(s.remarks);
+
+          return (
+            status !== "inactive" &&
+            employmentStatus !== "inactive" &&
+            !["resigned", "terminated", "awol", "deceased"].includes(remarks)
+          );
+        })
+      : [];
+
+    setDeptStaff(activeOnly);
     } catch (err) {
       setDeptStaff([]);
       alert(err?.response?.data?.message || "Failed to load staff for this department.");
@@ -608,6 +622,99 @@ export default function Departments() {
       staff,
     };
   }, [selectedAreaStaff, selectedBranch]);
+
+  const nonOperationHeads = useMemo(() => {
+    const rank = {
+      "senior vice president": 1,
+      "vice president": 2,
+      "assistant vice president": 3,
+    };
+
+    return enrichedDeptStaff
+      .filter((s) =>
+        isPosition(s.position, [
+          "Senior Vice President",
+          "Vice President",
+          "Assistant Vice President",
+        ])
+      )
+      .sort((a, b) => (rank[norm(a.position)] || 999) - (rank[norm(b.position)] || 999));
+  }, [enrichedDeptStaff]);
+
+  const nonOperationRegionalManagers = useMemo(() => {
+    return enrichedDeptStaff.filter((s) =>
+      isPosition(s.position, ["Regional Manager", "Acting Regional Manager"])
+    );
+  }, [enrichedDeptStaff]);
+
+  const nonOperationAreaManagers = useMemo(() => {
+    return enrichedDeptStaff.filter((s) =>
+      isPosition(s.position, ["Area Manager", "Acting Area Manager"])
+    );
+  }, [enrichedDeptStaff]);
+
+  const nonOperationBranchManagers = useMemo(() => {
+    return enrichedDeptStaff.filter((s) =>
+      isPosition(s.position, ["Branch Manager", "Acting Branch Manager"])
+    );
+  }, [enrichedDeptStaff]);
+
+  const nonOperationStaff = useMemo(() => {
+    return enrichedDeptStaff.filter(
+      (s) =>
+        !isPosition(s.position, [
+          "Senior Vice President",
+          "Vice President",
+          "Assistant Vice President",
+          "Regional Manager",
+          "Acting Regional Manager",
+          "Area Manager",
+          "Acting Area Manager",
+          "Branch Manager",
+          "Acting Branch Manager",
+        ])
+    );
+  }, [enrichedDeptStaff]);
+
+  const PersonTable = ({ rows, emptyText }) => (
+    <div className="dept-person-table">
+      <div className="dept-person-head">
+        <span>Name</span>
+        <span>Start Date</span>
+        <span>Contact #</span>
+        <span>Email</span>
+        <span>Birth Date</span>
+      </div>
+
+      {rows.length === 0 ? (
+        <div className="dept-empty-row">{emptyText}</div>
+      ) : (
+        rows.map((s) => (
+          <div className="dept-person-row" key={s.id}>
+            <div className="dept-person-name">
+              {avatarUrl(s) ? (
+                <img src={avatarUrl(s)} alt="" />
+              ) : (
+                <div className="dept-avatar-fallback">
+                  {toStr(s.fullname).charAt(0) || "?"}
+                </div>
+              )}
+
+              <div>
+                <strong>{s.fullname || "-"}</strong>
+                <small>{s.position || "-"}</small>
+              </div>
+            </div>
+
+            <div>{s.start_date || s.date_hired || "-"}</div>
+            <div>{s.contact_no || s.phone || "-"}</div>
+            <div>{s.email || "-"}</div>
+            <div>{s.birth_date || "-"}</div>
+          </div>
+        ))
+      )}
+    </div>
+  );
   
   return (
     <div className="staffinfo-page">
@@ -798,6 +905,63 @@ export default function Departments() {
             <div className="modal-body dept-org-body">
               {loadingDeptStaff ? (
                 <div className="table-loading">Loading department hierarchy...</div>
+              ) : !isOperationDept ? (
+                <>
+                  <section className="dept-org-section">
+                    <h3>Head of Department</h3>
+                    <PersonTable rows={nonOperationHeads} emptyText="No AVP, VP, or SVP found." />
+                  </section>
+
+                  <section className="dept-org-section">
+                    <h3>Regional Managers</h3>
+                    <PersonTable rows={nonOperationRegionalManagers} emptyText="No Regional Manager found." />
+                  </section>
+
+                  <section className="dept-org-section">
+                    <h3>Area Managers</h3>
+                    <PersonTable rows={nonOperationAreaManagers} emptyText="No Area Manager found." />
+                  </section>
+
+                  <section className="dept-org-section">
+                    <h3>Branch Managers</h3>
+                    <PersonTable rows={nonOperationBranchManagers} emptyText="No Branch Manager found." />
+                  </section>
+
+                  <section className="dept-org-section">
+                    <h3>Staff</h3>
+
+                    <div className="table-scroll">
+                      <table className="saas-table">
+                        <thead>
+                          <tr>
+                            <th>Employee No</th>
+                            <th>Name</th>
+                            <th>Position</th>
+                            <th>Contact #</th>
+                            <th>Email</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {nonOperationStaff.length === 0 ? (
+                            <tr>
+                              <td colSpan={5}>No staff found.</td>
+                            </tr>
+                          ) : (
+                            nonOperationStaff.map((s) => (
+                              <tr key={s.id}>
+                                <td>{s.employee_no || "-"}</td>
+                                <td className="strong">{s.fullname || "-"}</td>
+                                <td>{s.position || "-"}</td>
+                                <td>{s.contact_no || s.phone || "-"}</td>
+                                <td>{s.email || "-"}</td>
+                              </tr>
+                            ))
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </section>
+                </>
               ) : selectedBranch ? (
                 <>
                   <button
@@ -928,7 +1092,7 @@ export default function Departments() {
                   </div>
 
                   <section className="dept-org-section">
-                    <h3>Manager</h3>
+                    <h3>Head of Department</h3>
 
                     <div className="dept-person-table">
                       <div className="dept-person-head">
@@ -1016,7 +1180,7 @@ export default function Departments() {
                   </div>
 
                   <section className="dept-org-section">
-                    <h3>Manager</h3>
+                    <h3>Head of Department</h3>
 
                     <div className="dept-person-table">
                       <div className="dept-person-head">
@@ -1109,7 +1273,7 @@ export default function Departments() {
                   </div>
 
                   <section className="dept-org-section">
-                    <h3>Manager</h3>
+                    <h3>Head of Department</h3>
 
                     <div className="dept-person-table">
                       <div className="dept-person-head">

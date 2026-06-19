@@ -511,7 +511,7 @@ router.get(
         return res.json(r.rows);
       }
 
-      if (isBranchMaager(req)) {
+      if (isBranchManager(req)) {
         const bid = await getUserBranchId(req);
         if (!bid) return res.json([]);
 

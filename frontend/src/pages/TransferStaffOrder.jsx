@@ -104,6 +104,7 @@ export default function TransferStaffOrder() {
 
   const [search, setSearch] = useState("");
   const [appliedSearch, setAppliedSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("All");
 
   const [tablePage, setTablePage] = useState(1);
   const [tablePageSize, setTablePageSize] = useState(25);
@@ -321,10 +322,21 @@ export default function TransferStaffOrder() {
 
   const filteredOrders = useMemo(() => {
     const q = norm(appliedSearch);
-    if (!q) return orders;
 
-    return orders.filter((o) =>
-      [
+    return orders.filter((o) => {
+      const status = norm(o.status);
+
+      if (statusFilter === "Pending" && !status.includes("pending") && !status.includes("waiting")) {
+        return false;
+      }
+
+      if (statusFilter === "Approved" && status !== "approved") {
+        return false;
+      }
+
+      if (!q) return true;
+
+      return [
         o.order_no,
         o.employee_name,
         o.prev_branch_code,
@@ -341,9 +353,9 @@ export default function TransferStaffOrder() {
         .map(toStr)
         .join(" ")
         .toLowerCase()
-        .includes(q)
-    );
-  }, [orders, appliedSearch]);
+        .includes(q);
+    });
+  }, [orders, appliedSearch, statusFilter]);
 
   const totalPages = Math.max(1, Math.ceil(filteredOrders.length / tablePageSize));
 
@@ -845,6 +857,18 @@ export default function TransferStaffOrder() {
       ) : null}
 
       <div className="order-card">
+        <div className="filters" style={{ padding: 12 }}>
+          {["All", "Pending", "Approved"].map((s) => (
+            <button
+              key={s}
+              type="button"
+              className={`chip ${statusFilter === s ? "active" : ""}`}
+              onClick={() => setStatusFilter(s)}
+            >
+              {s}
+            </button>
+          ))}
+        </div>
         <div
           className="order-card-head"
           style={{

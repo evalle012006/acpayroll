@@ -241,6 +241,7 @@ export default function PromotionOrder() {
   const [positionRates, setPositionRates] = useState([]);
 
   const [orderSearch, setOrderSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("All");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
 
@@ -708,9 +709,17 @@ export default function PromotionOrder() {
   const filteredOrders = useMemo(() => {
     const q = norm(orderSearch);
 
-    if (!q) return orders;
-
     return orders.filter((o) => {
+      const status = norm(o.status);
+
+      if (statusFilter === "Pending" && status !== "pending") {
+        return false;
+      }
+
+      if (statusFilter === "Approved" && status !== "approved") {
+        return false;
+      }
+
       const hay = [
         o.order_no,
         o.employee_name,
@@ -727,9 +736,9 @@ export default function PromotionOrder() {
         .map(norm)
         .join(" ");
 
-      return hay.includes(q);
+      return !q || hay.includes(q);
     });
-  }, [orders, orderSearch, branchMap]);
+  }, [orders, orderSearch, branchMap, statusFilter]);
 
   const totalPages = Math.max(1, Math.ceil(filteredOrders.length / pageSize));
 
@@ -741,7 +750,7 @@ export default function PromotionOrder() {
 
   useEffect(() => {
     setPage(1);
-  }, [orderSearch, pageSize]);
+  }, [orderSearch, pageSize, statusFilter]);
 
   useEffect(() => {
     if (page > totalPages) setPage(totalPages);
@@ -812,6 +821,19 @@ export default function PromotionOrder() {
       </div>
 
       <div className="po-card">
+        <div className="po-status-tabs">
+          {["All", "Pending", "Approved"].map((s) => (
+            <button
+              key={s}
+              type="button"
+              className={`po-status-tab ${statusFilter === s ? "active" : ""}`}
+              onClick={() => setStatusFilter(s)}
+            >
+              {s}
+            </button>
+          ))}
+        </div>
+
         <div className="po-card-head">
           <div className="po-toolbar">
             <input

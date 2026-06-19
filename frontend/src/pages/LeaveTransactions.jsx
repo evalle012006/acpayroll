@@ -12,6 +12,8 @@ const leaveTypes = [
   "Emergency Leave",
   "Indefinite Leave",
   "Leave Without Pay",
+  "Pending",
+  "History",
 ];
 
 const LEAVE_CREDIT_MAP = {
@@ -198,7 +200,7 @@ export default function LeaveTransactions() {
     return m;
   }, [branches]);
 
-  const fetchLeave = useCallback(async () => {
+   const fetchLeave = useCallback(async () => {
     try {
       setLoadingList(true);
       const res = await api.get("/leave-requests");
@@ -599,10 +601,20 @@ export default function LeaveTransactions() {
     const q = String(search || "").trim().toLowerCase();
 
     return (leaveRequests || []).filter((x) => {
+      const statusText = String(x.status || "").toLowerCase();
+
       const matchType =
         selectedLeaveType === "All"
           ? true
-          : String(x.leave_type) === selectedLeaveType;
+          : selectedLeaveType === "Pending"
+          ? statusText.includes("pending")
+          : selectedLeaveType === "History"
+          ? ["approved", "rejected", "voided"].includes(statusText)
+          : selectedLeaveType === "Leave Without Pay"
+          ? x.leave_type === "Leave Without Pay" &&
+            statusText.includes("pending")
+          : x.leave_type === selectedLeaveType &&
+            statusText.includes("pending");
 
       const haystack = [
         x.transaction_code,

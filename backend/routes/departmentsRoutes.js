@@ -202,10 +202,10 @@ router.get(
             LEFT JOIN public.branches br
               ON br.id = s.branch_id
 
-            WHERE COALESCE(
-                    s.department,
-                    ''
-                  ) = $1
+            WHERE COALESCE(s.department, '') = $1
+
+              AND LOWER(TRIM(COALESCE(s.status, ''))) = 'active'
+              AND LOWER(TRIM(COALESCE(s.status, ''))) NOT IN ('inactive', 'resigned', 'terminated', 'awol', 'deceased')
 
             ORDER BY s.fullname ASC
             `,
@@ -257,12 +257,12 @@ router.get(
             LEFT JOIN public.branches br
               ON br.id = s.branch_id
 
-            WHERE COALESCE(
-                    s.department,
-                    ''
-                  ) = $1
+            WHERE COALESCE(s.department, '') = $1
 
               AND s.branch_id = $2
+
+              AND LOWER(TRIM(COALESCE(s.status, ''))) = 'active'
+              AND LOWER(TRIM(COALESCE(s.status, ''))) NOT IN ('inactive', 'resigned', 'terminated', 'awol', 'deceased')
 
             ORDER BY s.fullname ASC
             `,
@@ -304,10 +304,7 @@ router.get(
             LEFT JOIN public.branches br
               ON br.id = s.branch_id
 
-            WHERE COALESCE(
-                    s.department,
-                    ''
-                  ) = $1
+            WHERE COALESCE(s.department, '') = $1
 
               AND LOWER(
                     TRIM(
@@ -319,9 +316,12 @@ router.get(
                   ) =
                   LOWER(
                     TRIM($2)
-                  )
+                      )
 
-            ORDER BY s.fullname ASC
+                      AND LOWER(TRIM(COALESCE(s.status, ''))) = 'active'
+                      AND LOWER(TRIM(COALESCE(s.status, ''))) NOT IN ('inactive', 'resigned', 'terminated', 'awol', 'deceased')
+
+                  ORDER BY s.fullname ASC
             `,
             [
               depName,
@@ -363,10 +363,7 @@ router.get(
             LEFT JOIN public.branches br
               ON br.id = s.branch_id
 
-            WHERE COALESCE(
-                    s.department,
-                    ''
-                  ) = $1
+            WHERE COALESCE(s.department, '') = $1
 
               AND LOWER(
                     TRIM(
@@ -380,7 +377,10 @@ router.get(
                     TRIM($2)
                   )
 
-            ORDER BY s.fullname ASC
+                  AND LOWER(TRIM(COALESCE(s.status, ''))) = 'active'
+                  AND LOWER(TRIM(COALESCE(s.status, ''))) NOT IN ('inactive', 'resigned', 'terminated', 'awol', 'deceased')
+
+                  ORDER BY s.fullname ASC
             `,
             [
               depName,
@@ -424,10 +424,7 @@ router.get(
             LEFT JOIN public.branches br
               ON br.id = s.branch_id
 
-            WHERE COALESCE(
-                    s.department,
-                    ''
-                  ) = $1
+            WHERE COALESCE(s.department, '') = $1
 
               AND LOWER(
                     TRIM(
@@ -441,7 +438,10 @@ router.get(
                     TRIM($2)
                   )
 
-            ORDER BY s.fullname ASC
+                  AND LOWER(TRIM(COALESCE(s.status, ''))) = 'active'
+                  AND LOWER(TRIM(COALESCE(s.status, ''))) NOT IN ('inactive', 'resigned', 'terminated', 'awol', 'deceased')
+
+                  ORDER BY s.fullname ASC
             `,
             [
               depName,
@@ -742,22 +742,14 @@ router.delete(
           `
           SELECT id
           FROM public.staff
-          WHERE LOWER(
-                  TRIM(
-                    COALESCE(
-                      department,
-                      ''
-                    )
-                  )
-                ) = LOWER(
-                      TRIM(
-                        (
-                          SELECT name
-                          FROM public.departments
-                          WHERE id = $1
-                        )
-                      )
-                    )
+          WHERE LOWER(TRIM(COALESCE(department, ''))) =
+                LOWER(TRIM((
+                  SELECT name
+                  FROM public.departments
+                  WHERE id = $1
+                )))
+            AND LOWER(TRIM(COALESCE(status, ''))) = 'active'
+            AND LOWER(TRIM(COALESCE(status, ''))) NOT IN ('inactive', 'resigned', 'terminated', 'awol', 'deceased')
           LIMIT 1
           `,
           [id]

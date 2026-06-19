@@ -98,15 +98,14 @@
 }
 
 .po-table-wrap {
-  overflow: auto;
+  overflow-x: auto;
+  overflow-y: auto;
   max-height: calc(100vh - 230px);
 }
 
 .po-table {
   width: 100%;
-  min-width: 1450px;
-  border-collapse: separate;
-  border-spacing: 0;
+  min-width: 2200px;
 }
 
 .po-table th {
@@ -123,10 +122,10 @@
 }
 
 .po-table td {
-  padding: 13px;
+  padding: 20px 13px;
   border-bottom: 1px solid rgba(148, 163, 184, 0.18);
   color: #eef5ff;
-  vertical-align: middle;
+  vertical-align: top;
   font-size: 13px;
   font-weight: 750;
 }
@@ -143,8 +142,9 @@
 
 .po-table th:last-child,
 .po-table td:last-child {
-  width: 260px;
-  min-width: 260px;
+  width: 520px;
+  min-width: 520px;
+  vertical-align: top;
 }
 
 .po-empty {
@@ -200,15 +200,16 @@
 .po-file-actions {
   display: flex;
   gap: 8px;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
   align-items: center;
 }
 
 .po-action-stack {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
   align-items: flex-start;
+  min-width: 500px;
 }
 
 .po-mini-btn {
@@ -233,6 +234,7 @@
 }
 
 .po-upload-btn {
+  min-width: 140px;
   background: #0f172a;
   border-style: dashed;
 }
@@ -562,4 +564,42 @@
 .po-page-info {
   font-weight: 800;
   opacity: 0.85;
+}
+
+.po-status-tabs {
+  display: flex;
+  gap: 8px;
+  padding: 14px 16px 0;
+  flex-wrap: wrap;
+}
+
+.po-status-tab {
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  background: #111827;
+  color: #eef5ff;
+  border-radius: 999px;
+  padding: 8px 14px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.po-status-tab.active {
+  background: #4f46e5;
+  border-color: #818cf8;
+}
+
+.po-card {
+  max-width: 100%;
+}
+
+.po-table-wrap {
+  width: 100%;
+  overflow-x: scroll;
+  overflow-y: auto;
+}
+
+.po-table th:last-child,
+.po-table td:last-child {
+  width: 560px;
+  min-width: 560px;
 }
