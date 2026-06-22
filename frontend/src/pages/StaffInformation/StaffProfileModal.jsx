@@ -71,7 +71,7 @@ export default function StaffProfileModal({
       "vice president",
       "senior vice president",
     ].includes(role);
-
+4
   const canManageAttachments =
     role === "admin" ||
     role === "it" ||
@@ -593,8 +593,8 @@ export default function StaffProfileModal({
         items.push({
           _type: "LOAN", id: l.id, ref: l.transaction_code || l.employee_no || l.id, date,
           status: l.status || "Pending", title: l.loan_type || "Loan",
-          subtitle: `Amount: ₱ ${money(l.amount)} • Term: ${l.term || "-"} • Interest: ${Number(l.interest || 0)}%`,
-          extra: `Total: ₱ ${money(l.total)} • Per Month: ₱ ${money(l.per_month)}${extraDates ? ` • ${extraDates}` : ""}`,
+          subtitle: `Amount: ₱ ${money(l.approved_amount || l.amount)} • Term: ${l.approved_term || l.term || "-"} • Interest: ${Number(l.interest || 0)}%`,
+          extra: `Total: ₱ ${money(l.approved_total || l.total)} • Per Month: ₱ ${money(l.approved_per_month || l.per_month)}${extraDates ? ` • ${extraDates}` : ""}`,
           reason: l.reason || "", rejection_reason: l.rejection_reason || "",
         });
       }

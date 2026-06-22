@@ -118,7 +118,7 @@ const buildLiveSql = (whereSql = "") => `
         CASE
           WHEN LOWER(COALESCE(lr.loan_type, '')) = 'salary loan'
           THEN GREATEST(
-            COALESCE(lr.total, lr.amount, 0) -
+            COALESCE(lr.approved_total, lr.total, lr.approved_amount, lr.amount, 0) -
             (
               GREATEST(
                 (
@@ -132,7 +132,7 @@ const buildLiveSql = (whereSql = "") => `
                   AGE((SELECT month_end FROM cutoff), COALESCE(lr.disbursement_date, lr.approved_at))
                 )::int,
                 0
-              ) * COALESCE(lr.per_month, 0)
+              ) * COALESCE(lr.approved_per_month, lr.per_month, 0)
             ),
             0
           )
@@ -144,7 +144,7 @@ const buildLiveSql = (whereSql = "") => `
         CASE
           WHEN LOWER(COALESCE(lr.loan_type, '')) = 'salary advance'
           THEN GREATEST(
-            COALESCE(lr.total, lr.amount, 0) -
+            COALESCE(lr.approved_total, lr.total, lr.approved_amount, lr.amount, 0) -
             (
               GREATEST(
                 (
@@ -158,7 +158,7 @@ const buildLiveSql = (whereSql = "") => `
                   AGE((SELECT month_end FROM cutoff), COALESCE(lr.disbursement_date, lr.approved_at))
                 )::int,
                 0
-              ) * COALESCE(lr.per_month, 0)
+              ) * COALESCE(lr.approved_per_month, lr.per_month, 0)
             ),
             0
           )
@@ -170,7 +170,7 @@ const buildLiveSql = (whereSql = "") => `
         CASE
           WHEN LOWER(COALESCE(lr.loan_type, '')) = 'motorcycle loan'
           THEN GREATEST(
-            COALESCE(lr.total, lr.amount, 0) -
+            COALESCE(lr.approved_total, lr.total, lr.approved_amount, lr.amount, 0) -
             (
               GREATEST(
                 (
@@ -184,7 +184,7 @@ const buildLiveSql = (whereSql = "") => `
                   AGE((SELECT month_end FROM cutoff), COALESCE(lr.disbursement_date, lr.approved_at))
                 )::int,
                 0
-              ) * COALESCE(lr.per_month, 0)
+              ) * COALESCE(lr.approved_per_month, lr.per_month, 0)
             ),
             0
           )
@@ -196,7 +196,7 @@ const buildLiveSql = (whereSql = "") => `
         CASE
           WHEN LOWER(COALESCE(lr.loan_type, '')) IN ('special loan', 'special advance')
           THEN GREATEST(
-            COALESCE(lr.total, lr.amount, 0) -
+            COALESCE(lr.approved_total, lr.total, lr.approved_amount, lr.amount, 0) -
             (
               GREATEST(
                 (
@@ -210,7 +210,7 @@ const buildLiveSql = (whereSql = "") => `
                   AGE((SELECT month_end FROM cutoff), COALESCE(lr.disbursement_date, lr.approved_at))
                 )::int,
                 0
-              ) * COALESCE(lr.per_month, 0)
+              ) * COALESCE(lr.approved_per_month, lr.per_month, 0)
             ),
             0
           )
@@ -222,7 +222,7 @@ const buildLiveSql = (whereSql = "") => `
         CASE
           WHEN LOWER(COALESCE(lr.loan_type, '')) IN ('cash loan', 'cash advance')
           THEN GREATEST(
-            COALESCE(lr.total, lr.amount, 0) -
+            COALESCE(lr.approved_total, lr.total, lr.approved_amount, lr.amount, 0) -
             (
               GREATEST(
                 (
@@ -236,7 +236,7 @@ const buildLiveSql = (whereSql = "") => `
                   AGE((SELECT month_end FROM cutoff), COALESCE(lr.disbursement_date, lr.approved_at))
                 )::int,
                 0
-              ) * COALESCE(lr.per_month, 0)
+              ) * COALESCE(lr.approved_per_month, lr.per_month, 0)
             ),
             0
           )

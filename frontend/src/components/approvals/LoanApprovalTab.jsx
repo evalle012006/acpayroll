@@ -1157,11 +1157,20 @@ export default function LoanApprovalTab() {
     if (!id) return alert("Loan record has no valid id.");
     if (!approvalFiles[id]) return alert("Please upload the final file first.");
 
-    if (
-      norm(item.loan_type) === "motorcycle loan" &&
-      toNum(finalApprovalData[id]?.approved_amount) <= 0
-    ) {
-      return alert("Please enter the final approved amount.");
+    if (toNum(finalApprovalData[id]?.approved_amount) <= 0) {
+      return alert("Please enter the approved amount.");
+    }
+
+    if (toNum(finalApprovalData[id]?.approved_total) <= 0) {
+      return alert("Please enter the total amount with interest.");
+    }
+
+    if (toNum(finalApprovalData[id]?.approved_per_month) <= 0) {
+      return alert("Please enter the monthly deduction.");
+    }
+
+    if (toNum(finalApprovalData[id]?.approved_term) <= 0) {
+      return alert("Please enter the terms.");
     }
 
     if (!window.confirm("Upload final file and fully approve this loan?")) return;
@@ -1171,27 +1180,11 @@ export default function LoanApprovalTab() {
 
       const formData = new FormData();
       formData.append("attachment", approvalFiles[id]);
-      if (norm(item.loan_type) === "motorcycle loan") {
-        formData.append(
-          "approved_amount",
-          finalApprovalData[id]?.approved_amount || ""
-        );
-
-        formData.append(
-          "approved_total",
-          finalApprovalData[id]?.approved_total || ""
-        );
-
-        formData.append(
-          "approved_per_month",
-          finalApprovalData[id]?.approved_per_month || ""
-        );
-
-        formData.append(
-          "approved_term",
-          finalApprovalData[id]?.approved_term || item.term || ""
-        );
-      }
+        formData.append("approved_amount", finalApprovalData[id]?.approved_amount || "");
+        formData.append("approved_total", finalApprovalData[id]?.approved_total || "");
+        formData.append("approved_per_month", finalApprovalData[id]?.approved_per_month || "");
+        formData.append("approved_term", finalApprovalData[id]?.approved_term || "");
+      
 
       await api.post(`/loan-requests/${id}/approved-file`, formData, {
         headers: { "Content-Type": "multipart/form-data" },
@@ -1911,7 +1904,7 @@ export default function LoanApprovalTab() {
 
                 <div className="form-group">
                   <label>Amount</label>
-                  <input value={`₱ ${fmtMoney(selectedLoan.approved_amount || selectedLoan.amount)}`} readOnly />
+                  <input value={`₱ ${fmtMoney(toNum(selectedLoan.approved_amount) > 0 ? selectedLoan.approved_amount : selectedLoan.amount)}`} readOnly />
                 </div>
 
                 <div className="form-group">
@@ -1926,12 +1919,12 @@ export default function LoanApprovalTab() {
 
                 <div className="form-group">
                   <label>Per Month</label>
-                  <input value={`₱ ${fmtMoney(selectedLoan.approved_per_month || selectedLoan.per_month)}`} readOnly />
+                  <input value={`₱ ${fmtMoney(toNum(selectedLoan.approved_per_month) > 0 ? selectedLoan.approved_per_month : selectedLoan.per_month)}`} readOnly />
                 </div>
 
                 <div className="form-group">
                   <label>Total</label>
-                  <input value={`₱ ${fmtMoney(selectedLoan.approved_total || selectedLoan.total)}`} readOnly />
+                  <input value={`₱ ${fmtMoney(toNum(selectedLoan.approved_total) > 0 ? selectedLoan.approved_total : selectedLoan.total)}`} readOnly />
                 </div>
 
                   {norm(selectedLoan.status) === "approved" &&
@@ -1998,6 +1991,9 @@ export default function LoanApprovalTab() {
                 </div>
 
                 {getCurrentStage(selectedLoan) !== ACCOUNTING_FINAL &&
+                  norm(selectedLoan.approval_stage) !== "accounting" &&
+                  norm(selectedLoan.status) !== "pending accounting" &&
+                  norm(selectedLoan.status) !== "pending vice president final file" &&
                   norm(selectedLoan.status) !== "approved" &&
                   norm(selectedLoan.status) !== "voided" &&
                   canParticipateInLoanApproval &&
@@ -2027,7 +2023,8 @@ export default function LoanApprovalTab() {
 
                 {(
                   getCurrentStage(selectedLoan) === ACCOUNTING_FINAL ||
-                  getCurrentStage(selectedLoan) === "vice president" ||
+                  norm(selectedLoan.approval_stage) === "accounting" ||
+                  norm(selectedLoan.status) === "pending accounting" ||
                   norm(selectedLoan.status) === "pending vice president final file"
                 ) &&
                   canFinalUploadLoanFileUser(user, selectedLoan) &&
@@ -2035,7 +2032,6 @@ export default function LoanApprovalTab() {
                     <div className="form-group full">
                       <label>Upload Final File</label>
 
-                      {norm(selectedLoan.loan_type) === "motorcycle loan" && (
                         <>
                           <div className="loan-final-box">
                             <div className="loan-final-field">
@@ -2178,7 +2174,6 @@ export default function LoanApprovalTab() {
                             </div>
                           )}
                         </>
-                      )}
 
                       <input
                         type="file"
@@ -2250,11 +2245,9 @@ export default function LoanApprovalTab() {
 
                 {(
                   getCurrentStage(selectedLoan) === ACCOUNTING_FINAL ||
-                  getCurrentStage(selectedLoan) === "vice president" ||
                   norm(selectedLoan.status) === "pending accounting" ||
                   norm(selectedLoan.status) === "pending vice president final file" ||
-                  norm(selectedLoan.approval_stage) === "accounting" ||
-                  norm(selectedLoan.approval_stage) === "vice president"
+                  norm(selectedLoan.approval_stage) === "accounting"
                 ) &&
                   canFinalUploadLoanFileUser(user, selectedLoan) &&
                   norm(selectedLoan.status) !== "approved" && (

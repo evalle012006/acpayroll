@@ -292,7 +292,7 @@
   inset: 0;
   background: rgba(0, 0, 0, 0.55);
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
   padding: 18px;
   z-index: 9999;
@@ -302,10 +302,16 @@
 .po-modal {
   width: 100%;
   max-width: 920px;
+  max-height: 90vh;
+
+  display: flex;
+  flex-direction: column;
+
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: 18px;
   box-shadow: var(--shadow-soft);
+
   overflow: hidden;
 }
 
@@ -354,6 +360,10 @@
 
 .po-form {
   padding: 16px;
+
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .po-grid {
@@ -401,9 +411,13 @@
   display: flex;
   justify-content: flex-end;
   gap: 10px;
+
   padding-top: 14px;
-  border-top: 1px solid var(--border);
   margin-top: 14px;
+
+  border-top: 1px solid var(--border);
+
+  background: transparent;
 }
 
 .po-icon-btn {
@@ -435,10 +449,6 @@
   .po-field.full {
     grid-column: span 1;
   }
-
-  .po-modal {
-    max-width: 100%;
-  }
 }
 
 @media (max-width: 640px) {
@@ -465,13 +475,5 @@
 
   .po-mini-btn {
     padding: 7px 10px;
-  }
-
-  .po-modal-overlay {
-    padding: 10px;
-  }
-
-  .po-form {
-    padding: 14px;
   }
 }

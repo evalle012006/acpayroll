@@ -50,6 +50,7 @@ export default function BoardResolutionRequests() {
   const isAdmin = ["admin", "it"].includes(role);
   const isHr = role === "hr";
   const isAccounting = role === "accounting";
+  const isAreaManager = role === "area manager";
   const isRegionalManager = role === "regional manager";
   const isAssistantVicePresident = role === "assistant vice president";
   const isVp = role === "vice president";
@@ -57,6 +58,7 @@ export default function BoardResolutionRequests() {
   const isPresident = role === "president";
 
   const canCreate =
+    isAreaManager ||
     isRegionalManager ||
     isAssistantVicePresident ||
     isAdmin ||

@@ -24,7 +24,11 @@ const {
 const ACCOUNTING_FINAL = "accounting";
 
 const toNum = (v) => {
-  const n = Number(v ?? 0);
+  const cleaned = String(v ?? "")
+    .replace(/[₱,\s]/g, "")
+    .trim();
+
+  const n = Number(cleaned);
   return Number.isFinite(n) ? n : 0;
 };
 
@@ -683,6 +687,7 @@ const loanSelectFields = `
   lr.approved_amount,
   lr.approved_total,
   lr.approved_per_month,
+  lr.approved_term,
 
   lr.status,
   lr.approved_at,
@@ -920,6 +925,9 @@ router.post(
       const reason = toStr(req.body?.reason);
 
       let amount = toNum(req.body?.amount);
+        console.log("CREATE LOAN BODY:", req.body);
+        console.log("AMOUNT RECEIVED:", req.body?.amount, "PARSED:", amount);
+
       let term = Math.max(1, toInt(req.body?.term) || 1);
       let interest = 0;
       let per_month = 0;
@@ -1513,6 +1521,22 @@ router.post(
 
       const loan = cur.rows[0];
 
+      const finalStatus = norm(loan.status);
+
+      const finalStage = norm(loan.approval_stage);
+
+      if (
+        finalStatus !== "pending accounting" &&
+        finalStatus !== "pending vice president final file" &&
+        finalStage !== "accounting" &&
+        finalStage !== "vice president"
+      ) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({
+          message: "This loan is not yet ready for final upload.",
+        });
+      }
+
       if (
         !canFinalUploadLoanFile(req, loan.position, loan.department, loan.loan_type)
       ) {
@@ -1522,54 +1546,29 @@ router.post(
         });
       }
 
-      const isMotorcycleLoan = norm(loan.loan_type) === "motorcycle loan";
+      const approvedAmount = toNum(req.body?.approved_amount);
+      const approvedTotal = toNum(req.body?.approved_total);
+      const approvedPerMonth = toNum(req.body?.approved_per_month);
+      const approvedTerm = toNum(req.body?.approved_term);
 
-      let approvedAmount = isMotorcycleLoan
-        ? toNum(req.body?.approved_amount)
-        : toNum(loan.amount);
+      if (approvedAmount <= 0) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({ message: "Approved Amount is required." });
+      }
 
-      let approvedTotal = isMotorcycleLoan
-        ? toNum(req.body?.approved_total)
-        : toNum(loan.total);
+      if (approvedTotal <= 0) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({ message: "Total Amount with Interest is required." });
+      }
 
-      let approvedPerMonth = isMotorcycleLoan
-        ? toNum(req.body?.approved_per_month)
-        : toNum(loan.per_month);
+      if (approvedPerMonth <= 0) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({ message: "Monthly Deduction is required." });
+      }
 
-      const loanInterest = toNum(loan.interest);
-
-      if (isMotorcycleLoan) {
-        if (approvedAmount <= 0) {
-          await client.query("ROLLBACK");
-          return res.status(400).json({
-            message: "Final approved motorcycle loan amount is required",
-          });
-        }
-
-        if (!approvedTotal || approvedTotal <= 0) {
-          approvedTotal = approvedAmount + approvedAmount * (loanInterest / 100);
-        }
-
-        if (approvedPerMonth <= 0) {
-          await client.query("ROLLBACK");
-          return res.status(400).json({
-            message: "Final approved monthly payment is required",
-          });
-        }
-
-        if (String(req.body?.approved_per_month || "").includes(".")) {
-          await client.query("ROLLBACK");
-          return res.status(400).json({
-            message: "Motorcycle Loan monthly payment must not contain decimal values.",
-          });
-        }
-      } else {
-        if (approvedAmount <= 0 || approvedTotal <= 0 || approvedPerMonth <= 0) {
-          await client.query("ROLLBACK");
-          return res.status(400).json({
-            message: "Invalid original loan computation.",
-          });
-        }
+      if (approvedTerm <= 0) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({ message: "Terms is required." });
       }
 
       const finalPath = `/uploads/loans/${req.file.filename}`;
@@ -1589,6 +1588,7 @@ router.post(
           approved_amount = $5,
           approved_total = $6,
           approved_per_month = $7,
+          approved_term = $8,
 
           attachment_path = $2,
           attachment_name = $3,
@@ -1607,15 +1607,16 @@ router.post(
           approvedAmount,
           approvedTotal,
           approvedPerMonth,
+          approvedTerm,
         ]
       );
 
       const balanceColumn = loanTypeToBalanceColumn(loan.loan_type);
       const total =
-        approvedTotal ||
         approvedAmount ||
-        toNum(loan.total) ||
-        toNum(loan.amount);
+        approvedTotal ||
+        toNum(loan.amount) ||
+        toNum(loan.total);
 
       if (loan.employee_no && balanceColumn) {
         await ensureBalanceRow(client, loan.employee_no);
@@ -1719,10 +1720,10 @@ router.put(
       const balanceColumn = loanTypeToBalanceColumn(loan.loan_type);
 
       const total =
-        toNum(loan.approved_total) ||
         toNum(loan.approved_amount) ||
-        toNum(loan.total) ||
-        toNum(loan.amount);
+        toNum(loan.approved_total) ||
+        toNum(loan.amount) ||
+        toNum(loan.total);
 
       if (loan.employee_no && balanceColumn) {
         await ensureBalanceRow(client, loan.employee_no);
