@@ -93,9 +93,12 @@ export default function StaffReport() {
 
   const isOfficeOfThePresidentDept = dept === "office of the president";
 
+  const isHRDepartment = dept === "hr department";
+
   const canCreate =
     isAdmin ||
     isIT ||
+    isHRDepartment ||
     isBM ||
     isAM ||
     isRM ||

@@ -78,19 +78,30 @@ const dateLabelByReportType = (reportType) => {
   return "AWOL Date";
 };
 
+const isHRDepartmentUser = (req) =>
+  isHr(req) ||
+  [
+    "hr",
+    "hr department",
+    "human resources",
+    "human resources department",
+  ].includes(norm(req.user?.department));
+
 const canCreateReport = (req) =>
   isBranchManager(req) ||
   isAreaManager(req) ||
   isRegionalManager(req) ||
   isAssistantVicePresident(req) ||
   isVicePresident(req) ||
+  isSeniorVicePresident(req) ||
+  isHRDepartmentUser(req) ||
   isAdmin(req) ||
   isIT(req);
 
 const canViewAll = (req) =>
   isAdmin(req) ||
   isIT(req) ||
-  isHr(req) ||
+  isHRDepartmentUser(req) ||
   isAccounting(req) ||
   isTread(req) ||
   isVicePresident(req) ||
@@ -98,18 +109,18 @@ const canViewAll = (req) =>
   isPresident(req);
 
 const canUploadFinalFile = (req) =>
-  isHr(req) || isAccounting(req) || isAdmin(req) || isIT(req);
+  isHRDepartmentUser(req) || isAccounting(req) || isAdmin(req) || isIT(req);
 
 const canBypassApprove = (req) => isAdmin(req) || isIT(req);
 
-const canVoidReport = (req) => isHr(req) || isAccounting(req) || isAdmin(req) || isIT(req);
+const canVoidReport = (req) => isHRDepartmentUser(req) || isAccounting(req) || isAdmin(req) || isIT(req);
 
 const canRejectReport = (req) =>
   isAreaManager(req) ||
   isRegionalManager(req) ||
   isAssistantVicePresident(req) ||
   isVicePresident(req) ||
-  isHr(req) ||
+  isHRDepartmentUser(req) ||
   isAccounting(req) ||
   isAdmin(req) ||
   isIT(req);
@@ -135,13 +146,20 @@ const getInitialStatus = (req) => {
   if (isAssistantVicePresident(req)) return STATUS_VP;
   if (isVicePresident(req)) return STATUS_WAITING_FINAL;
 
-  if (isAdmin(req) || isIT(req)) return STATUS_WAITING_FINAL;
+  if (isSeniorVicePresident(req)) return STATUS_WAITING_FINAL;
+
+  if (isHRDepartmentUser(req)) return STATUS_WAITING_FINAL;
+
+  if (isAdmin(req) || isIT(req))
+    return STATUS_WAITING_FINAL;
 
   return STATUS_AREA;
 };
 
 const canAccessRow = (req, row) => {
   if (canViewAll(req)) return true;
+
+  if (isHRDepartmentUser(req)) return true;
 
   if (isBranchManager(req)) {
     const userBranchId = toInt(req.user?.branch_id);
@@ -173,6 +191,13 @@ const canAccessRow = (req, row) => {
 
 const canApproveCurrentStage = (req, row) => {
   if (canBypassApprove(req)) {
+    return {
+      allowed: true,
+      nextStatus: STATUS_WAITING_FINAL,
+    };
+  }
+
+  if (isHRDepartmentUser(req)) {
     return {
       allowed: true,
       nextStatus: STATUS_WAITING_FINAL,
@@ -299,7 +324,18 @@ router.get(
       let sql = "";
       let value = "";
 
-     if (isBranchManager(req)) {
+      if (isHRDepartmentUser(req)) {
+        const r = await pool.query(`
+          SELECT *,
+                COALESCE(report_type,'AWOL Report') AS report_type
+          FROM public.awol_reports
+          ORDER BY created_at DESC
+        `);
+
+        return res.json(r.rows);
+      }
+
+      if (isBranchManager(req)) {
         const userBranchId = toInt(req.user?.branch_id);
 
         if (userBranchId) {
@@ -321,7 +357,6 @@ router.get(
       } else {
         return res.status(403).json({ message: "Access denied" });
       }
-
       const r = await pool.query(
         `
         SELECT
@@ -491,7 +526,7 @@ router.post(
 
       const s = staff.rows[0];
 
-      if (isBranchManager(req)) {
+      if (!isHRDepartmentUser(req) && isBranchManager(req)) {
         const userBranchId = toInt(req.user?.branch_id);
 
         if (userBranchId) {
@@ -510,17 +545,17 @@ router.post(
         }
       }
 
-      if (isAreaManager(req) && norm(req.user?.area) !== norm(s.area)) {
+      if (!isHRDepartmentUser(req) && isAreaManager(req) && norm(req.user?.area) !== norm(s.area)) {
         await client.query("ROLLBACK");
         return res.status(403).json({ message: "Access denied" });
       }
 
-      if (isRegionalManager(req) && norm(req.user?.region) !== norm(s.region)) {
+      if (!isHRDepartmentUser(req) && isRegionalManager(req) && norm(req.user?.region) !== norm(s.region)) {
         await client.query("ROLLBACK");
         return res.status(403).json({ message: "Access denied" });
       }
 
-      if (isAssistantVicePresident(req) && norm(req.user?.division) !== norm(s.division)) {
+      if (!isHRDepartmentUser(req) && isAssistantVicePresident(req) && norm(req.user?.division) !== norm(s.division)) {
         await client.query("ROLLBACK");
         return res.status(403).json({ message: "Access denied" });
       }

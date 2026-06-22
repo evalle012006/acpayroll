@@ -9,14 +9,7 @@ import PersonalBalancesStep from "./StaffInformation/PersonalBalancesStep";
 import StaffProfileModal from "./StaffInformation/StaffProfileModal";
 import useStaffSignedUrls from "./StaffInformation/useStaffSignedUrls";
 
-import {
-  safeJsonArray,
-  toStr,
-  norm,
-  toNum,
-  displayName,
-  displayFormName,
-} from "./StaffInformation/staffInfoUtils";
+import {safeJsonArray, toStr, norm, toNum, displayName, displayFormName, } from "./StaffInformation/staffInfoUtils";
 
 import { FaEye, FaEdit } from "react-icons/fa";
 
@@ -496,19 +489,20 @@ export default function StaffInformation() {
       const staffStatus = norm(s?.status || "Active");
 
       if (
-      [
-      "branch manager",
-      "area manager",
-      "acting area manager",
-      "regional manager",
-      "acting regional manager",
-      "assistant vice president",
-      "vice president",
-      ].includes(role)
-      && staffStatus !== "active"
-      ) {
-      return false;
-      }
+        !isHrDepartmentUser &&
+          [
+            "branch manager",
+            "area manager",
+            "acting area manager",
+            "regional manager",
+            "acting regional manager",
+            "assistant vice president",
+            "vice president",
+          ].includes(role) &&
+          staffStatus !== "active"
+        ) {
+            return false;
+          }
 
       if (
         !isAccountingDepartmentUser &&

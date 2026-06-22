@@ -99,6 +99,29 @@ const isITDepartmentManager = (req) => {
   );
 };
 
+const isHRDepartmentManager = (req) => {
+  const dept = String(
+    req.user?.department ||
+    req.user?.department_name ||
+    req.user?.departmentName ||
+    req.user?.user_department ||
+    req.user?.dept ||
+    ""
+  ).toLowerCase();
+
+  return (
+    dept === "hr department" &&
+    (
+      isBranchManager(req) ||
+      isAreaManager(req) ||
+      isRegionalManager(req) ||
+      isAssistantVicePresident(req) ||
+      isVicePresident(req) ||
+      isSeniorVicePresident(req)
+    )
+  );
+};
+
 const uploadRoot = path.join(process.cwd(), "uploads");
 const suspensionUploadDir = path.join(uploadRoot, "suspension");
 
@@ -178,6 +201,7 @@ const canAccessStaffRecord = (req, staff) => {
     isIT(req) ||
     isHr(req) ||
     isHrDepartmentUser(req) ||
+    isHRDepartmentManager(req) ||
     isAccounting(req) ||
     isAccountingDepartmentUser(req) ||
     isOfficeOfThePresidentUser(req) ||
@@ -219,6 +243,7 @@ const canMutatePendingOrder = (req, row) => {
     isIT(req) ||
     isHr(req) ||
     isHrDepartmentUser(req) ||
+    isHRDepartmentManager(req) ||
     isAccounting(req) ||
     isITDepartmentManager(req) ||
     isAccountingDepartmentUser(req)
@@ -258,6 +283,7 @@ const canDownloadRequestFile = (req) =>
   isIT(req) ||
   isHr(req) ||
   isHrDepartmentUser(req) ||
+  isHRDepartmentManager(req) ||
   isAccounting(req) ||
   isITDepartmentManager(req) ||
   isAccountingDepartmentUser(req);
@@ -268,6 +294,7 @@ const canDownloadApprovedFile = (req, row) => {
     isIT(req) ||
     isHr(req) ||
     isHrDepartmentUser(req) ||
+    isHRDepartmentManager(req) ||
     isAccounting(req) ||
     isITDepartmentManager(req) ||
     isAccountingDepartmentUser(req)
@@ -291,6 +318,7 @@ const canUploadApprovedFile = (req) =>
   isIT(req) ||
   isHr(req) ||
   isHrDepartmentUser(req) ||
+  isHRDepartmentManager(req) ||
   isAccounting(req) ||
   isITDepartmentManager(req) ||
   isAccountingDepartmentUser(req);
@@ -306,6 +334,7 @@ router.get(
         isIT(req) ||
         isHr(req) ||
         isHrDepartmentUser(req) ||
+        isHRDepartmentManager(req) ||
         isAccounting(req) ||
         isAccountingDepartmentUser(req) ||
         isOfficeOfThePresidentUser(req) ||
@@ -577,6 +606,7 @@ router.post(
         isIT(req) ||
         isHr(req) ||
         isHrDepartmentUser(req) ||
+        isHRDepartmentManager(req) ||
         isAccounting(req) ||
         isAccountingDepartmentUser(req)
       ) {
@@ -1241,9 +1271,10 @@ router.put(
           isAdmin(req) ||
           isIT(req) ||
           isHr(req) ||
+          isHRDepartmentManager(req) ||
           isAccounting(req) ||
           isAccountingDepartmentUser(req)
-        ) {
+      ) {
         if (currentStage !== STAGE_ADMIN) {
           return res.status(400).json({
             message: "This order is not pending Admin/HR/Accounting approval",
@@ -1334,6 +1365,7 @@ router.put(
           isAdmin(req) ||
           isIT(req) ||
           isHr(req) ||
+          isHRDepartmentManager(req) ||
           isAccounting(req) ||
           isAccountingDepartmentUser(req)
         ) &&

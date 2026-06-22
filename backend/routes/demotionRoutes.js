@@ -60,10 +60,16 @@ const upload = multer({
 const isTopManagement = (req) => {
   const dept = norm(req.user?.department);
 
+  const isHRDepartment =
+    dept === "hr department" ||
+    dept === "human resources" ||
+    dept === "human resources department";
+
   return (
     isAdmin(req) ||
     isIT(req) ||
     isHr(req) ||
+    isHRDepartment ||
     isAccounting(req) ||
     isTread(req) ||
     isVicePresident(req) ||
@@ -84,16 +90,37 @@ const isTopManagement = (req) => {
   );
 };
 
-const isFinalUploader = (req) =>
-  isAdmin(req) || isIT(req) || isHr(req) || isAccounting(req) || isSeniorVicePresident(req);
-
-const canCreateDemotion = (req) => {
+const isFinalUploader = (req) => {
   const dept = norm(req.user?.department);
+
+  const isHRDepartment =
+    dept === "hr department" ||
+    dept === "human resources" ||
+    dept === "human resources department";
 
   return (
     isAdmin(req) ||
     isIT(req) ||
     isHr(req) ||
+    isHRDepartment ||
+    isAccounting(req) ||
+    isSeniorVicePresident(req)
+  );
+};
+
+const canCreateDemotion = (req) => {
+  const dept = norm(req.user?.department);
+
+  const isHRDepartment =
+    dept === "hr department" ||
+    dept === "human resources" ||
+    dept === "human resources department";
+
+  return (
+    isAdmin(req) ||
+    isIT(req) ||
+    isHr(req) ||
+    isHRDepartment ||
     isAccounting(req) ||
     isPresident(req) ||
 
@@ -273,7 +300,23 @@ function userCanActStage(req, stage) {
   if (s === "regional manager") return isRegionalManager(req);
   if (s === "assistant vice president") return isAssistantVicePresident(req);
   if (s === "vice president") return isVicePresident(req);
-  if (s === "admin") return isAdmin(req) || isIT(req) || isHr(req) || isAccounting(req);
+
+  if (s === "admin") {
+    const dept = norm(req.user?.department);
+
+    const isHRDepartment =
+      dept === "hr department" ||
+      dept === "human resources" ||
+      dept === "human resources department";
+
+    return (
+      isAdmin(req) ||
+      isIT(req) ||
+      isHr(req) ||
+      isHRDepartment ||
+      isAccounting(req)
+    );
+  }
 
   return false;
 }
@@ -312,7 +355,12 @@ async function canAccessStaff(client, req, staffRow) {
   if (
     isAdmin(req) ||
     isIT(req) ||
+
     isHr(req) ||
+      dept === "hr department" ||
+      dept === "human resources" ||
+      dept === "human resources department" ||
+    
     isAccounting(req) ||
     isTread(req) ||
     isVicePresident(req) ||

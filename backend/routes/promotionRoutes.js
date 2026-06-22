@@ -380,17 +380,20 @@ const canDownloadApprovedFile = (req, order) => {
     isAdmin(req) ||
     isIT(req) ||
     isHrDepartmentUser(req) ||
+    isAccountingDepartmentUser(req) ||
+    isTreadDepartmentUser(req) ||
+    isBranchManager(req) ||
+    isAreaManager(req) ||
+    isRegionalManager(req) ||
+    isAssistantVicePresident(req) ||
     isVicePresident(req) ||
     isSeniorVicePresident(req) ||
-    isPresident(req) ||
-    canViewAllPromotionOrders(req)
+    isPresident(req)
   ) {
     return true;
   }
 
-  const status = norm(order?.status);
-
-  return status === "approved";
+  return norm(order?.status) === "approved";
 };
 
 const uploadDir = path.join(__dirname, "..", "uploads", "promotion-orders");

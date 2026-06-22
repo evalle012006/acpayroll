@@ -79,6 +79,43 @@ export const compute13thMonthBreakdown = (staff, promotionRows = []) => {
     if (!Number.isNaN(d.getTime())) startDate = d;
   }
 
+  const stopDateRaw =
+    staff?.resignation_effective_date ||
+    staff?.resignation_date ||
+    staff?.awol_date ||
+    staff?.termination_date ||
+    staff?.exit_date ||
+    staff?.inactive_date;
+
+  let stopDate = null;
+  if (stopDateRaw) {
+    const d = new Date(stopDateRaw);
+    if (!Number.isNaN(d.getTime())) stopDate = d;
+  }
+
+  const maternityStartRaw =
+    staff?.maternity_start_date ||
+    staff?.maternity_leave_start ||
+    staff?.maternity_from;
+
+  const maternityEndRaw =
+    staff?.maternity_end_date ||
+    staff?.maternity_leave_end ||
+    staff?.maternity_to;
+
+  let maternityStart = null;
+  let maternityEnd = null;
+
+  if (maternityStartRaw) {
+    const d = new Date(maternityStartRaw);
+    if (!Number.isNaN(d.getTime())) maternityStart = d;
+  }
+
+  if (maternityEndRaw) {
+    const d = new Date(maternityEndRaw);
+    if (!Number.isNaN(d.getTime())) maternityEnd = d;
+  }
+
   const approvedPromotions = (promotionRows || [])
     .filter((p) => norm(p.status || p.final_status) === "approved")
     .filter((p) => p.effective_date)
@@ -116,7 +153,6 @@ export const compute13thMonthBreakdown = (staff, promotionRows = []) => {
 
     if (promotionInMonth) {
       const effectiveDay = promotionInMonth.effectiveDate.getDate();
-
       const oldDays = Math.max(0, effectiveDay - 1);
       const newDays = daysInMonth - oldDays;
 
@@ -140,6 +176,9 @@ export const compute13thMonthBreakdown = (staff, promotionRows = []) => {
   };
 
   const rows = MONTH_NAMES.map((month, index) => {
+    const monthStart = new Date(currentYear, index, 1);
+    const monthEnd = new Date(currentYear, index + 1, 0);
+
     let eligible = true;
 
     if (startDate) {
@@ -148,6 +187,19 @@ export const compute13thMonthBreakdown = (staff, promotionRows = []) => {
 
       if (startYear > currentYear) eligible = false;
       else if (startYear === currentYear && index < startMonth) eligible = false;
+    }
+
+    if (stopDate && monthStart > stopDate) {
+      eligible = false;
+    }
+
+    if (
+      maternityStart &&
+      maternityEnd &&
+      monthStart <= maternityEnd &&
+      monthEnd >= maternityStart
+    ) {
+      eligible = false;
     }
 
     const passed = index <= currentMonthIndex;

@@ -252,10 +252,22 @@ const getRawApprovalChain = (staff) => {
   }
 
   if (isAvpPos(pos)) {
-    return ["vice president", ACCOUNTING_FINAL];
+    return ["vice president", "senior vice president", ACCOUNTING_FINAL];
   }
 
-  return [ACCOUNTING_FINAL];
+  if (isRegionalManagerPos(pos)) {
+    return ["assistant vice president", "vice president", "senior vice president", ACCOUNTING_FINAL];
+  }
+
+  if (isAreaManagerPos(pos)) {
+    return ["regional manager", "assistant vice president", "vice president", "senior vice president", ACCOUNTING_FINAL];
+  }
+
+  if (isBranchManagerPos(pos)) {
+    return ["area manager", "regional manager", "assistant vice president", "vice president", "senior vice president", ACCOUNTING_FINAL];
+  }
+
+  return ["branch manager", "area manager", "regional manager", "assistant vice president", "vice president", "senior vice president", ACCOUNTING_FINAL];
 };
 
 const stageColumn = (stage) => {
@@ -315,51 +327,58 @@ async function hasApproverAccount(client, stage, staff) {
 
   if (s === ACCOUNTING_FINAL) return true;
 
-  const cols = await getTableColumns(client, "users");
-  if (!cols.includes("role")) return true;
+  const userCols = await getTableColumns(client, "users");
 
-  const where = [`LOWER(TRIM(COALESCE(role, ''))) = $1`];
-  const params = [s];
+  const checkUsers = async () => {
+    if (!userCols.includes("role")) return false;
 
-  if (cols.includes("status")) {
-    where.push(`LOWER(TRIM(COALESCE(status, 'active'))) <> 'inactive'`);
-  }
+    const where = [`LOWER(TRIM(COALESCE(role, ''))) = $1`];
+    const params = [s];
 
-  if (s === "branch manager" && cols.includes("branch_id")) {
-    params.push(String(staff.branch_id || ""));
-    where.push(`COALESCE(branch_id::text, '') = $${params.length}`);
-  }
+    if (userCols.includes("status")) {
+      where.push(`LOWER(TRIM(COALESCE(status, 'active'))) <> 'inactive'`);
+    }
 
-  if (s === "area manager" && cols.includes("area")) {
-    params.push(norm(staff.area));
-    where.push(`LOWER(TRIM(COALESCE(area, ''))) = $${params.length}`);
-  }
+    if (userCols.includes("department")) {
+      params.push(norm(staff.department));
+      where.push(`LOWER(TRIM(COALESCE(department, ''))) = $${params.length}`);
+    }
 
-  if (s === "regional manager" && cols.includes("region")) {
-    params.push(norm(staff.region));
-    where.push(`LOWER(TRIM(COALESCE(region, ''))) = $${params.length}`);
-  }
-
-  if (
-    ["assistant vice president", "vice president", "senior vice president"].includes(s) &&
-    cols.includes("department")
-  ) {
-    params.push(norm(staff.department));
-    where.push(`LOWER(TRIM(COALESCE(department, ''))) = $${params.length}`);
-  }
-
-  try {
     const r = await client.query(
-      `
-      SELECT id
-      FROM public.users
-      WHERE ${where.join(" AND ")}
-      LIMIT 1
-      `,
+      `SELECT id FROM public.users WHERE ${where.join(" AND ")} LIMIT 1`,
       params
     );
 
     return r.rowCount > 0;
+  };
+
+  const checkStaff = async () => {
+    const staffCols = await getTableColumns(client, "staff");
+
+    if (!staffCols.includes("position")) return false;
+
+    const where = [`LOWER(TRIM(COALESCE(position, ''))) = $1`];
+    const params = [s];
+
+    if (staffCols.includes("status")) {
+      where.push(`LOWER(TRIM(COALESCE(status, 'active'))) = 'active'`);
+    }
+
+    if (staffCols.includes("department")) {
+      params.push(norm(staff.department));
+      where.push(`LOWER(TRIM(COALESCE(department, ''))) = $${params.length}`);
+    }
+
+    const r = await client.query(
+      `SELECT id FROM public.staff WHERE ${where.join(" AND ")} LIMIT 1`,
+      params
+    );
+
+    return r.rowCount > 0;
+  };
+
+  try {
+    return (await checkUsers()) || (await checkStaff());
   } catch {
     return true;
   }

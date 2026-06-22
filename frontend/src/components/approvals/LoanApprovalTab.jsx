@@ -221,10 +221,22 @@ const getDynamicApprovalChain = (item) => {
   }
 
   if (isAvpPos(position)) {
-    return ["vice president", ACCOUNTING_FINAL];
+    return ["vice president", "senior vice president", ACCOUNTING_FINAL];
   }
 
-  return [ACCOUNTING_FINAL];
+  if (isRegionalManagerPos(position)) {
+    return ["assistant vice president", "vice president", "senior vice president", ACCOUNTING_FINAL];
+  }
+
+  if (isAreaManagerPos(position)) {
+    return ["regional manager", "assistant vice president", "vice president", "senior vice president", ACCOUNTING_FINAL];
+  }
+
+  if (isBranchManagerPos(position)) {
+    return ["area manager", "regional manager", "assistant vice president", "vice president", "senior vice president", ACCOUNTING_FINAL];
+  }
+
+  return ["branch manager", "area manager", "regional manager", "assistant vice president", "vice president", "senior vice president", ACCOUNTING_FINAL];
 };
 
 const getChainStatus = (item, role) => {

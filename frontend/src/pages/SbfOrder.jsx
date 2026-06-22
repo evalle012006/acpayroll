@@ -47,7 +47,19 @@ const isItDepartment = department === "it department";
     );
 
 const isTreadDepartment = department === "tread department";
+
 const isHrDepartment = department === "hr department";
+    const hrManager =
+      isHrDepartment &&
+      (
+        isBranchManager ||
+        isAreaManager ||
+        isRegionalManager ||
+        isAssistantVicePresident ||
+        isVicePresident ||
+        isSeniorVicePresident
+      );
+
 const isAccountingDepartment = department === "accounting department";
 
   const accountingManager =
@@ -69,7 +81,9 @@ const isAccountingDepartment = department === "accounting department";
     isPresident ||
     isOfficeOfPresident ||
     accountingManager ||
-    itManager;
+    itManager ||
+    hrManager;
+
 
   const canCreate =
     isAdmin ||
@@ -79,7 +93,8 @@ const isAccountingDepartment = department === "accounting department";
     isPresident ||
     isOfficeOfPresident ||
     accountingManager ||
-    itManager;
+    itManager ||
+    hrManager;
 
   const canApprove =
     isAdmin ||
@@ -89,7 +104,8 @@ const isAccountingDepartment = department === "accounting department";
     isPresident ||
     isOfficeOfPresident ||
     accountingManager ||
-    itManager;
+    itManager ||
+    hrManager;
 
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("All");

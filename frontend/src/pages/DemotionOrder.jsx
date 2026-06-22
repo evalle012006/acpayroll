@@ -152,17 +152,37 @@ export default function DemotionOrder() {
   const isITDepartment =
     department === "it department";
 
+  const isHRDepartment =
+  department === "hr department" ||
+  department === "human resources" ||
+  department === "human resources department";
+
   const canCreate =
     isAdmin ||
     isIt ||
     isHr ||
+    isHRDepartment ||
     isAccounting ||
     isPresident ||
+
     isAreaManager ||
     isRegionalManager ||
     isAssistantVicePresident ||
     isVicePresident ||
     isSeniorVicePresident ||
+
+    (
+      isHRDepartment &&
+      (
+        isBranchManager ||
+        isAreaManager ||
+        isRegionalManager ||
+        isAssistantVicePresident ||
+        isVicePresident ||
+        isSeniorVicePresident
+      )
+    ) ||
+
     (
       isITDepartment &&
       (
@@ -176,12 +196,18 @@ export default function DemotionOrder() {
     );
 
   const canFinalUpload =
-    isAdmin || isIt || isHr || isAccounting || isSeniorVicePresident;
+    isAdmin ||
+    isIt ||
+    isHr ||
+    isHRDepartment ||
+    isAccounting ||
+    isSeniorVicePresident;
 
   const canDownloadFile =
     isAdmin ||
     isIt ||
     isHr ||
+    isHRDepartment ||
     isAccounting ||
     isBranchManager ||
     isAreaManager ||
@@ -194,8 +220,17 @@ export default function DemotionOrder() {
   const canActOnStage = (order) => {
     const status = norm(order?.status);
 
-    if (status === "approved" || status === "rejected") return false;
-    if (isAdmin || isIt || isHr || isAccounting || isSeniorVicePresident) return true;
+      if (status === "approved" || status === "rejected") return false;
+      if (
+      isAdmin ||
+      isIt ||
+      isHr ||
+      isHRDepartment ||
+      isAccounting ||
+      isSeniorVicePresident
+  ) {
+      return true;
+  }
 
     const stage = getCurrentStage(order);
 

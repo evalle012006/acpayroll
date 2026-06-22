@@ -82,6 +82,20 @@ export default function SuspensionOrder() {
       isSeniorVicePresident
     );
 
+
+  const isHRDepartment = department === "hr department";
+
+  const isHRDepartmentManager =
+    isHRDepartment &&
+    (
+      isBranchManager ||
+      isAreaManager ||
+      isRegionalManager ||
+      isAssistantVicePresident ||
+      isVicePresident ||
+      isSeniorVicePresident
+    );
+    
   const canCreate =
     isOfficeOfThePresident ||
     isAdmin ||
@@ -94,7 +108,8 @@ export default function SuspensionOrder() {
     isVicePresident ||
     isSeniorVicePresident ||
     isPresident ||
-    isITDepartmentManager;
+    isITDepartmentManager ||
+    isHRDepartmentManager;
 
   const canEditDelete =
     isAdmin ||
@@ -107,7 +122,8 @@ export default function SuspensionOrder() {
     isVicePresident ||
     isSeniorVicePresident ||
     isPresident ||
-    isITDepartmentManager;
+    isITDepartmentManager ||
+    isHRDepartmentManager;
 
   const canApproveStage = (order) => {
     const stage = norm(order?.approval_stage);
@@ -115,7 +131,7 @@ export default function SuspensionOrder() {
     if (isAreaManager && stage === "area manager") return true;
     if (isRegionalManager && stage === "regional manager") return true;
     if (isAssistantVicePresident && stage === "assistant vice president") return true;
-    if ((isAdmin || isIt || isHr || isAccounting) && stage === "admin") return true;
+    if ((isAdmin || isIt || isHr || isAccounting || isHRDepartmentManager) && stage === "admin") return true;
 
     return false;
   };
@@ -129,15 +145,16 @@ export default function SuspensionOrder() {
     isIt ||
     isHr ||
     isITDepartmentManager ||
+    isHRDepartmentManager ||
     isAccounting;
 
   const canUploadApprovedFile =
-    isAdmin || isIt || isHr || isAccounting || isITDepartmentManager;
+    isAdmin || isIt || isHr || isAccounting || isITDepartmentManager || isHRDepartmentManager;
 
   const canDownloadApprovedFile = (order) => {
     const approved = norm(order?.status) === "approved";
 
-    if (isAdmin || isIt || isHr || isAccounting) return true;
+    if (isAdmin || isIt || isHr || isAccounting || isHRDepartmentManager) return true;
     if (isRegionalManager || isAssistantVicePresident) return true;
     if (isAreaManager && approved) return true;
     if (isBranchManager && approved) return true;
@@ -238,6 +255,7 @@ export default function SuspensionOrder() {
     if (
       isOfficeOfThePresident ||
       isITDepartmentManager ||
+      isHRDepartmentManager ||
       isAdmin ||
       isIt ||
       isHr ||
@@ -332,15 +350,15 @@ export default function SuspensionOrder() {
   const filteredStaff = useMemo(() => {
     let scopedStaff = staff;
 
-    if (isBranchManager) {
+    if (!isHRDepartmentManager && isBranchManager) {
       scopedStaff = staff.filter((s) => branchMatchesUser(s));
     }
 
-    if (isAreaManager) {
+    if (!isHRDepartmentManager && isAreaManager) {
       scopedStaff = staff.filter((s) => norm(s.area) === norm(user?.area));
     }
 
-    if (isAssistantVicePresident) {
+    if (!isHRDepartmentManager && isAssistantVicePresident) {
       scopedStaff = staff.filter(
         (s) => norm(s.division) === norm(user?.division)
       );
