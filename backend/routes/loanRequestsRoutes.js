@@ -159,6 +159,7 @@ const isAvpPos = (position) =>
 
 const isVpPos = (position) =>
   hasRole(position, "vice president") &&
+  !hasRole(position, "assistant vice president") &&
   !hasRole(position, "senior vice president");
 
 const isSvpPos = (position) =>
@@ -187,7 +188,10 @@ const isOperationAdvanceLoan = (loanType) =>
   ].includes(norm(loanType));
 
 const shouldVpFinalUpload = (staff, loanType) =>
-  isOperationDept(staff?.department) && isOperationAdvanceLoan(loanType);
+  isOperationDept(staff?.department) &&
+  isOperationAdvanceLoan(loanType) &&
+  !isVpPos(staff?.position) &&
+  !isSvpPos(staff?.position);
 
 const canFinalUploadLoanFile = (
   req,
@@ -197,7 +201,12 @@ const canFinalUploadLoanFile = (
 ) => {
   const isOperation = isOperationDept(applicantDepartment);
 
-  if (isOperation && isOperationAdvanceLoan(loanType)) {
+  if (
+    isOperation &&
+    isOperationAdvanceLoan(loanType) &&
+    !isVpPos(applicantPosition) &&
+    !isSvpPos(applicantPosition)
+  ) {
     return isOperationVicePresidentUser(req) || isAdmin(req) || isIT(req);
   }
 
@@ -216,7 +225,7 @@ const getRawApprovalChain = (staff) => {
 
   if (isOperation) {
     if (isSvpPos(pos)) return [ACCOUNTING_FINAL];
-    if (isVpPos(pos)) return ["senior vice president"];
+    if (isVpPos(pos)) return ["senior vice president", ACCOUNTING_FINAL];
     if (isAvpPos(pos)) return ["vice president"];
 
     if (isRegionalManagerPos(pos)) {
@@ -379,7 +388,7 @@ async function hasApproverAccount(client, stage, staff) {
 
   try {
     return (await checkUsers()) || (await checkStaff());
-  } catch {
+  } catch { 
     return true;
   }
 }
@@ -552,6 +561,7 @@ function buildLoanSchedule(totalAmount, monthlyAmount) {
     Math.round(toNum(totalAmount) * 100) / 100;
 
   let current = new Date();
+  current.setMonth(current.getMonth() + 1);
   current.setDate(26);
 
   while (remaining > 0) {
@@ -1565,10 +1575,26 @@ router.post(
         });
       }
 
-      const approvedAmount = toNum(req.body?.approved_amount);
-      const approvedTotal = toNum(req.body?.approved_total);
-      const approvedPerMonth = toNum(req.body?.approved_per_month);
-      const approvedTerm = toNum(req.body?.approved_term);
+      const isOperationNonMotorAdvance =
+        isOperationDept(loan.department) &&
+        isOperationAdvanceLoan(loan.loan_type) &&
+        norm(loan.loan_type) !== "motorcycle loan";
+
+      const approvedAmount = isOperationNonMotorAdvance
+        ? toNum(loan.amount)
+        : toNum(req.body?.approved_amount);
+
+      const approvedTotal = isOperationNonMotorAdvance
+        ? toNum(loan.total)
+        : toNum(req.body?.approved_total);
+
+      const approvedPerMonth = isOperationNonMotorAdvance
+        ? toNum(loan.per_month)
+        : toNum(req.body?.approved_per_month);
+
+      const approvedTerm = isOperationNonMotorAdvance
+        ? toNum(loan.term)
+        : toNum(req.body?.approved_term);
 
       if (approvedAmount <= 0) {
         await client.query("ROLLBACK");

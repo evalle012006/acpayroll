@@ -525,6 +525,7 @@ export default function Departments() {
 
   const selectedDivisionRegions = useMemo(() => {
     if (!selectedDivision) return [];
+    
     return uniqSorted(
       enrichedDeptStaff
         .filter((s) => s._division === selectedDivision)

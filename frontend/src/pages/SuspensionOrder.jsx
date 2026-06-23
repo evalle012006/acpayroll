@@ -128,10 +128,14 @@ export default function SuspensionOrder() {
   const canApproveStage = (order) => {
     const stage = norm(order?.approval_stage);
 
+    if (isHRDepartmentManager) {
+      return stage === "admin";
+    }
+
     if (isAreaManager && stage === "area manager") return true;
     if (isRegionalManager && stage === "regional manager") return true;
     if (isAssistantVicePresident && stage === "assistant vice president") return true;
-    if ((isAdmin || isIt || isHr || isAccounting || isHRDepartmentManager) && stage === "admin") return true;
+    if ((isAdmin || isIt || isHr || isAccounting) && stage === "admin") return true;
 
     return false;
   };

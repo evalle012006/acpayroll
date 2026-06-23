@@ -78,13 +78,28 @@ async function getBranchIdFromCode(branchCode) {
   return r.rows[0].id;
 }
 
+const norm = (v) => String(v ?? "").trim().toLowerCase();
+
+const getDept = (req) =>
+  norm(
+    req.user?.department ||
+    req.user?.department_name ||
+    req.user?.user_department ||
+    req.user?.departmentName ||
+    req.user?.dept
+  );
+
 function canViewAllDepartments(req) {
+  const dept = getDept(req);
+
   return (
     isAdmin(req) ||
     isIT(req) ||
     isHr(req) ||
     isAccounting(req) ||
     isTread(req) ||
+    dept === "tread department" ||
+    dept === "tread" ||
     isVicePresident(req) ||
     isSeniorVicePresident(req) ||
     isPresident(req)

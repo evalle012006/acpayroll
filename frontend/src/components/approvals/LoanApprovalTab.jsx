@@ -130,6 +130,7 @@ const isAvpPos = (position) => hasRole(position, "assistant vice president");
 
 const isVpPos = (position) =>
   hasRole(position, "vice president") &&
+  !hasRole(position, "assistant vice president") &&
   !hasRole(position, "senior vice president");
 
 const isSvpPos = (position) => hasRole(position, "senior vice president");
@@ -143,12 +144,25 @@ const isOperationAdvanceLoan = (loanType) =>
     "special loan",
   ].includes(norm(loanType));
 
+const needsFinalLoanInputs = (item) =>
+  !(
+    isOperationDept(item?.department) &&
+    isOperationAdvanceLoan(item?.loan_type) &&
+    norm(item?.loan_type) !== "motorcycle loan"
+  );
+
 const canFinalUploadLoanFileUser = (user, item) => {
   const operationLoan =
     isOperationDept(item?.department) &&
     isOperationAdvanceLoan(item?.loan_type);
 
-  if (operationLoan) {
+  const applicantPosition = getApplicantPosition(item);
+
+  if (
+    operationLoan &&
+    !isVpPos(applicantPosition) &&
+    !isSvpPos(applicantPosition)
+  ) {
     return (
       isVicePresidentUser(user) ||
       isAdminUser(user) ||
@@ -179,13 +193,25 @@ const isBackOfficeViewingDepartment = (department) =>
 const getApplicantPosition = (item) =>
   item?.position || item?.applicant_role || item?.staff_position || "";
 
+const getApplicantDepartment = (item) =>
+  item?.department ||
+  item?.staff_department ||
+  item?.employee_department ||
+  item?.applicant_department ||
+  item?.department_name ||
+  "";
+
 const getDynamicApprovalChain = (item) => {
   const position = getApplicantPosition(item);
-  const department = item?.department || "";
+  const department = getApplicantDepartment(item);
 
   if (isOperationDept(department)) {
     if (isSvpPos(position)) return [ACCOUNTING_FINAL];
-    if (isVpPos(position)) return ["senior vice president"];
+
+    if (isVpPos(position)) {
+      return ["senior vice president", ACCOUNTING_FINAL];
+    }
+
     if (isAvpPos(position)) return ["vice president"];
 
     if (isRegionalManagerPos(position)) {
@@ -317,6 +343,7 @@ const buildMonthlySchedule = (totalAmount, monthlyAmount, termMonths = 0) => {
   if (remaining <= 0 || monthly <= 0) return rows;
 
   const d = new Date();
+  d.setMonth(d.getMonth() + 1);
   d.setDate(26);
 
   for (let i = 1; i <= term; i++) {
@@ -1166,41 +1193,76 @@ export default function LoanApprovalTab() {
 
   const uploadFinalApprovedLoanFile = async (item) => {
     const id = item?.id;
-    if (!id) return alert("Loan record has no valid id.");
-    if (!approvalFiles[id]) return alert("Please upload the final file first.");
 
-    if (toNum(finalApprovalData[id]?.approved_amount) <= 0) {
+    if (!id) {
+      return alert("Loan record has no valid id.");
+    }
+
+    if (!approvalFiles[id]) {
+      return alert("Please upload the final file first.");
+    }
+
+    const needInputs = needsFinalLoanInputs(item);
+
+    if (needInputs && toNum(finalApprovalData[id]?.approved_amount) <= 0) {
       return alert("Please enter the approved amount.");
     }
 
-    if (toNum(finalApprovalData[id]?.approved_total) <= 0) {
+    if (needInputs && toNum(finalApprovalData[id]?.approved_total) <= 0) {
       return alert("Please enter the total amount with interest.");
     }
 
-    if (toNum(finalApprovalData[id]?.approved_per_month) <= 0) {
+    if (needInputs && toNum(finalApprovalData[id]?.approved_per_month) <= 0) {
       return alert("Please enter the monthly deduction.");
     }
 
-    if (toNum(finalApprovalData[id]?.approved_term) <= 0) {
+    if (needInputs && toNum(finalApprovalData[id]?.approved_term) <= 0) {
       return alert("Please enter the terms.");
     }
 
-    if (!window.confirm("Upload final file and fully approve this loan?")) return;
+    if (!window.confirm("Upload final file and fully approve this loan?")) {
+      return;
+    }
 
     try {
       setProcessingId(`loan-${id}-final-upload`);
 
       const formData = new FormData();
-      formData.append("attachment", approvalFiles[id]);
-        formData.append("approved_amount", finalApprovalData[id]?.approved_amount || "");
-        formData.append("approved_total", finalApprovalData[id]?.approved_total || "");
-        formData.append("approved_per_month", finalApprovalData[id]?.approved_per_month || "");
-        formData.append("approved_term", finalApprovalData[id]?.approved_term || "");
-      
 
-      await api.post(`/loan-requests/${id}/approved-file`, formData, {
-        headers: { "Content-Type": "multipart/form-data" },
-      });
+      formData.append("attachment", approvalFiles[id]);
+
+      // Only send these values for Motorcycle Loan
+      if (needInputs) {
+        formData.append(
+          "approved_amount",
+          finalApprovalData[id]?.approved_amount || ""
+        );
+
+        formData.append(
+          "approved_total",
+          finalApprovalData[id]?.approved_total || ""
+        );
+
+        formData.append(
+          "approved_per_month",
+          finalApprovalData[id]?.approved_per_month || ""
+        );
+
+        formData.append(
+          "approved_term",
+          finalApprovalData[id]?.approved_term || ""
+        );
+      }
+
+      await api.post(
+        `/loan-requests/${id}/approved-file`,
+        formData,
+        {
+          headers: {
+            "Content-Type": "multipart/form-data",
+          },
+        }
+      );
 
       alert("Final file uploaded. Loan is now fully approved.");
 
@@ -1213,12 +1275,26 @@ export default function LoanApprovalTab() {
       setViewApprovalFile(null);
       setShowLoanView(false);
       setSelectedLoan(null);
+
       await fetchLoan();
     } catch (err) {
-      console.error("Final upload error:", err?.response?.data || err.message);
-      if (err?.response?.status === 401) return logout();
-      if (err?.response?.status === 403) return alert("Access denied.");
-      alert(err?.response?.data?.message || "Failed to upload final file.");
+      console.error(
+        "Final upload error:",
+        err?.response?.data || err.message
+      );
+
+      if (err?.response?.status === 401) {
+        return logout();
+      }
+
+      if (err?.response?.status === 403) {
+        return alert("Access denied.");
+      }
+
+      alert(
+        err?.response?.data?.message ||
+          "Failed to upload final file."
+      );
     } finally {
       setProcessingId("");
     }
@@ -1681,8 +1757,27 @@ export default function LoanApprovalTab() {
                     ) : (
                       pagedLoan.map((item) => {
                         const currentStage = getCurrentStage(item);
+
+                        const vpFinalUpload =
+                          isOperationDept(item.department) &&
+                          isOperationAdvanceLoan(item.loan_type) &&
+                          currentStage === "vice president";
+
+                        const finalUploadStage =
+                          vpFinalUpload ||
+                          getCurrentStage(item) === ACCOUNTING_FINAL ||
+                          norm(item.status) === "pending accounting" ||
+                          norm(item.approval_stage) === "accounting";
+
                         const canAct =
-                          canParticipateInLoanApproval && canUserActOnLoan(item, user);
+                          !finalUploadStage &&
+                          canParticipateInLoanApproval &&
+                          canUserActOnLoan(item, user);
+
+                        const canFinalUpload =
+                          finalUploadStage &&
+                          canFinalUploadLoanFileUser(user, item) &&
+                          norm(item.status) !== "approved";
 
                         return (
                           <tr key={item.id}>
@@ -1762,7 +1857,8 @@ export default function LoanApprovalTab() {
                                       className="btn-success"
                                       onClick={() => {
                                         if (
-                                          norm(item.status) === "pending vice president final file" ||
+                                          vpFinalUpload ||
+                                          norm(item.status) === "pending accounting" ||
                                           getCurrentStage(item) === ACCOUNTING_FINAL
                                         ) {
                                           uploadFinalApprovedLoanFile(item);
@@ -1770,8 +1866,6 @@ export default function LoanApprovalTab() {
                                           updateLoanStatus(item, "approve");
                                         }
                                       }}
-                                      type="button"
-                                      disabled={processingId === `loan-${item.id}-approve`}
                                     >
                                       {processingId === `loan-${item.id}-approve` ? "Approving..." : "Submit"}
                                     </button>
@@ -1785,6 +1879,16 @@ export default function LoanApprovalTab() {
                                       {processingId === `loan-${item.id}-reject` ? "Rejecting..." : "Reject"}
                                     </button>
                                   </>
+                                )}
+
+                                {canFinalUpload && (
+                                  <button
+                                    className="btn-success"
+                                    type="button"
+                                    onClick={() => openLoanView(item)}
+                                  >
+                                    Final Upload
+                                  </button>
                                 )}
 
                                 {canVoidLoan && norm(item.status) === "approved" && (
@@ -2002,7 +2106,12 @@ export default function LoanApprovalTab() {
                   )}
                 </div>
 
-                {getCurrentStage(selectedLoan) !== ACCOUNTING_FINAL &&
+                {!(
+                  isOperationDept(selectedLoan.department) &&
+                  isOperationAdvanceLoan(selectedLoan.loan_type) &&
+                  getCurrentStage(selectedLoan) === "vice president"
+                ) &&
+                getCurrentStage(selectedLoan) !== ACCOUNTING_FINAL &&
                   norm(selectedLoan.approval_stage) !== "accounting" &&
                   norm(selectedLoan.status) !== "pending accounting" &&
                   norm(selectedLoan.status) !== "pending vice president final file" &&
@@ -2034,17 +2143,22 @@ export default function LoanApprovalTab() {
                 )}
 
                 {(
+                  (
+                    isOperationDept(selectedLoan.department) &&
+                    isOperationAdvanceLoan(selectedLoan.loan_type) &&
+                    getCurrentStage(selectedLoan) === "vice president"
+                  ) ||
                   getCurrentStage(selectedLoan) === ACCOUNTING_FINAL ||
                   norm(selectedLoan.approval_stage) === "accounting" ||
-                  norm(selectedLoan.status) === "pending accounting" ||
-                  norm(selectedLoan.status) === "pending vice president final file"
+                  norm(selectedLoan.status) === "pending accounting"
                 ) &&
                   canFinalUploadLoanFileUser(user, selectedLoan) &&
                   norm(selectedLoan.status) !== "approved" && (
                     <div className="form-group full">
                       <label>Upload Final File</label>
-
-                        <>
+                      
+                        {needsFinalLoanInputs(selectedLoan) && (  
+                          <>
                           <div className="loan-final-box">
                             <div className="loan-final-field">
                               <label>Approved Amount</label>
@@ -2185,8 +2299,9 @@ export default function LoanApprovalTab() {
                               </div>
                             </div>
                           )}
-                        </>
-
+                        </>   
+                        )}
+                        
                       <input
                         type="file"
                         onChange={(e) => {
@@ -2208,7 +2323,12 @@ export default function LoanApprovalTab() {
               </div>
 
               <div className="modal-buttons">
-                {getCurrentStage(selectedLoan) !== ACCOUNTING_FINAL &&
+                {!(
+                    isOperationDept(selectedLoan.department) &&
+                    isOperationAdvanceLoan(selectedLoan.loan_type) &&
+                    getCurrentStage(selectedLoan) === "vice president"
+                  ) &&
+                  getCurrentStage(selectedLoan) !== ACCOUNTING_FINAL &&
                   norm(selectedLoan.status) !== "pending accounting" &&
                   norm(selectedLoan.approval_stage) !== "accounting" &&
                   norm(selectedLoan.status) !== "approved" &&
@@ -2219,12 +2339,28 @@ export default function LoanApprovalTab() {
                       <button
                         className="btn-success"
                         type="button"
-                        disabled={processingId === `loan-${selectedLoan.id}-approve`}
-                        onClick={() => updateLoanStatus(selectedLoan, "approve")}
+                        disabled={
+                          processingId ===
+                          `loan-${selectedLoan.id}-final-upload`
+                        }
+                        onClick={() => {
+                          const vpFinalUpload =
+                            isOperationDept(selectedLoan.department) &&
+                            isOperationAdvanceLoan(selectedLoan.loan_type) &&
+                            getCurrentStage(selectedLoan) === "vice president";
+
+                          if (
+                            vpFinalUpload ||
+                            getCurrentStage(selectedLoan) === ACCOUNTING_FINAL ||
+                            norm(selectedLoan.status) === "pending accounting"
+                          ) {
+                            uploadFinalApprovedLoanFile(selectedLoan);
+                          } else {
+                            updateLoanStatus(selectedLoan, "approve");
+                          }
+                        }}
                       >
-                        {processingId === `loan-${selectedLoan.id}-approve`
-                          ? "Approving..."
-                          : "Upload + Approve"}
+                        Submit
                       </button>
 
                       <button
@@ -2256,9 +2392,13 @@ export default function LoanApprovalTab() {
                 )}
 
                 {(
+                  (
+                    isOperationDept(selectedLoan.department) &&
+                    isOperationAdvanceLoan(selectedLoan.loan_type) &&
+                    getCurrentStage(selectedLoan) === "vice president"
+                  ) ||
                   getCurrentStage(selectedLoan) === ACCOUNTING_FINAL ||
                   norm(selectedLoan.status) === "pending accounting" ||
-                  norm(selectedLoan.status) === "pending vice president final file" ||
                   norm(selectedLoan.approval_stage) === "accounting"
                 ) &&
                   canFinalUploadLoanFileUser(user, selectedLoan) &&

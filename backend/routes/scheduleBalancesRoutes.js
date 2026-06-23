@@ -115,7 +115,7 @@ const buildLiveSql = (whereSql = "") => `
       lr.staff_id,
 
       SUM(
-        CASE
+        CASE  
           WHEN LOWER(COALESCE(lr.loan_type, '')) = 'salary loan'
           THEN GREATEST(
             COALESCE(lr.approved_total, lr.total, lr.approved_amount, lr.amount, 0) -
@@ -380,9 +380,9 @@ const buildLiveSql = (whereSql = "") => `
     s.position,
     s.branch_id,
 
-    COALESCE(mbp.cbu, 0) AS cbu,
-    COALESCE(mbp.cashbond, 0) AS cashbond,
-    COALESCE(mbp.utility, 0) AS utility,
+    COALESCE(sb.cbu, mbp.cbu, 0) AS cbu,
+    COALESCE(sb.cashbond, mbp.cashbond, 0) AS cashbond,
+    COALESCE(sb.utility, mbp.utility, 0) AS utility,
 
     COALESCE(lr.salary_loan, 0) AS salary_loan,
     COALESCE(lr.salary_advance, 0) + COALESCE(olr.opening_salary_advance, 0) AS salary_advance,

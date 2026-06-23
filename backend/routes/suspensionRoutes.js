@@ -1194,7 +1194,7 @@ router.put(
 
       let result;
 
-      if (isAreaManager(req)) {
+      if (isAreaManager(req) && !isHRDepartmentManager(req)) {
         if (currentStage !== STAGE_AREA) {
           return res.status(400).json({
             message: "This order is not pending Area Manager approval",
