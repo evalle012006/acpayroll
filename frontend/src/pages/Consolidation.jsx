@@ -75,13 +75,32 @@ const getMonthlyRate = (row, historyRows, year, monthKey) => {
   const monthNum = Number(monthKey);
 
   if (year === nowYear && monthNum > currentMonth) {
-    return {
-      salary: null,
-      ecola: null,
-    };
+    return { salary: null, ecola: null };
   }
 
-  const monthDate = monthStartDate(year, monthKey);
+  const monthDate = `${year}-${monthKey}-01`;
+  const monthEnd = new Date(year, monthNum, 0);
+
+  const status = norm(row.status);
+  const remarks = norm(row.remarks);
+  const stopRaw =
+    row.exit_date ||
+    row.resignation_effective_date ||
+    row.resignation_date ||
+    row.termination_date ||
+    row.awol_date ||
+    row.inactive_date;
+
+  if (
+    ["inactive", "resigned", "terminated", "awol", "deceased"].includes(status) ||
+    ["resigned", "terminated", "awol", "deceased"].includes(remarks)
+  ) {
+    const stopDate = stopRaw ? new Date(stopRaw) : null;
+
+    if (!stopDate || monthEnd > stopDate) {
+      return { salary: null, ecola: null };
+    }
+  }
 
   const validHistory = Array.isArray(historyRows)
     ? historyRows
