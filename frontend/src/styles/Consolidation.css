@@ -230,3 +230,72 @@
     font-size: 16px;
   }
 }
+
+@media print {
+  html,
+  body,
+  #root {
+    width: 100%;
+    height: auto;
+    overflow: visible !important;
+    background: white !important;
+  }
+
+  .sidebar,
+  .topbar,
+  .sys-header,
+  .conso-filters-grid,
+  .conso-search-row,
+  .exit-pager,
+  button {
+    display: none !important;
+  }
+
+  .sys-page,
+  .sys-card,
+  .conso-card,
+  .sys-card-body,
+  .conso-payroll-wrap {
+    display: block !important;
+    overflow: visible !important;
+    width: 100% !important;
+    background: white !important;
+    box-shadow: none !important;
+    border: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  .conso-payroll-table {
+    width: max-content !important;
+    min-width: 2600px !important;
+    border-collapse: collapse !important;
+    font-size: 7px !important;
+    transform: scale(0.45);
+    transform-origin: top left;
+  }
+
+  .conso-payroll-table th,
+  .conso-payroll-table td {
+    border: 1px solid #000 !important;
+    color: #000 !important;
+    background: #fff !important;
+    padding: 4px;
+  }
+
+  @page {
+    size: A4 landscape;
+    margin: 5mm;
+  }
+}
+
+/* Highlight inactive staff */
+
+.conso-payroll-table tbody tr.conso-inactive-row td {
+  background: #f6ff00 !important;   /* light yellow */
+  color: #000 !important;
+}
+
+.conso-payroll-table tbody tr.conso-inactive-row:hover td {
+  background: #f6ff00!important;
+}

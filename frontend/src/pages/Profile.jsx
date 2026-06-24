@@ -10,7 +10,8 @@ const Profile = () => {
     }
   }, []);
 
-  const [image, setImage] = useState(localStorage.getItem("profileImage") || "");
+  const profileImageKey = `profileImage_${user?.id || user?.username || "default"}`;
+  const [image, setImage] = useState(localStorage.getItem(profileImageKey) || "");
   const [saving, setSaving] = useState(false);
 
   const initials = useMemo(() => {
@@ -29,7 +30,7 @@ const Profile = () => {
 
     const reader = new FileReader();
     reader.onloadend = () => {
-      localStorage.setItem("profileImage", reader.result);
+      localStorage.setItem(profileImageKey, reader.result);
       setImage(reader.result);
       setSaving(false);
     };
@@ -37,7 +38,7 @@ const Profile = () => {
   };
 
   const removePhoto = () => {
-    localStorage.removeItem("profileImage");
+    localStorage.removeItem(profileImageKey);
     setImage("");
   };
 

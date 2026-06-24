@@ -38,6 +38,8 @@ export default function StaffProfileModal({
   const [loadingDemotion, setLoadingDemotion] = useState(false);
   const [errDemotion, setErrDemotion] = useState("");
 
+  const [remittanceYear, setRemittanceYear] = useState(new Date().getFullYear());
+
   const [openingLoanRows, setOpeningLoanRows] = useState([]);
   const [loadingOpeningLoans, setLoadingOpeningLoans] = useState(false);
   const [errOpeningLoans, setErrOpeningLoans] = useState("");
@@ -768,18 +770,45 @@ export default function StaffProfileModal({
 
   const bal = balances || {};
 
+  const openingLoanTotals = useMemo(() => {
+    const totals = {
+      salary_advance: 0,
+      special_advance: 0,
+      cash_advance: 0,
+      motorcycle_loan: 0,
+      pag_ibig_loan: 0,
+    };
+
+    (openingLoanRows || []).forEach((row) => {
+      if (String(row.status || "").toLowerCase() !== "active") return;
+
+      const type = String(row.loan_type || "").toLowerCase();
+      const amount = toNum(row.remaining_balance);
+
+      if (type.includes("salary")) totals.salary_advance += amount;
+      else if (type.includes("special")) totals.special_advance += amount;
+      else if (type.includes("cash")) totals.cash_advance += amount;
+      else if (type.includes("motorcycle")) totals.motorcycle_loan += amount;
+      else if (type.includes("pag")) totals.pag_ibig_loan += amount;
+    });
+
+    return totals;
+  }, [openingLoanRows]);
+
   const combinedBalances = useMemo(() => ({
     cbu: toNum(bal.cbu),
     cashbond: toNum(bal.cashbond),
     utility: toNum(bal.utility),
-    salary_advance: toNum(bal.salary_advance),
-    special_advance: toNum(bal.special_advance),
-    cash_advance: toNum(bal.cash_advance),
-    motorcycle_loan: toNum(bal.motorcycle_loan),
-    pag_ibig_loan: toNum(bal.pag_ibig_loan),
+
+    salary_advance: toNum(bal.salary_advance) + openingLoanTotals.salary_advance,
+    special_advance: toNum(bal.special_advance) + openingLoanTotals.special_advance,
+    cash_advance: toNum(bal.cash_advance) + openingLoanTotals.cash_advance,
+    motorcycle_loan: toNum(bal.motorcycle_loan) + openingLoanTotals.motorcycle_loan,
+    pag_ibig_loan: toNum(bal.pag_ibig_loan) + openingLoanTotals.pag_ibig_loan,
+
     other_receivable: toNum(bal.other_receivable),
     staff_accounts_payable: toNum(bal.staff_accounts_payable),
-  }), [bal]);
+  }), [bal, openingLoanTotals]);
 
   const headerName = displayName(staff);
   const headerPosition = toStr(staff?.position) || "-";
@@ -845,665 +874,800 @@ export default function StaffProfileModal({
           <button className="icon-btn" onClick={onClose} type="button">✕</button>
         </div>
 
-        <div className="modal-body staff-profile-scroll">
-          <div style={{ display: "flex", alignItems: "center", gap: 16, padding: "8px 0 14px 0" }}>
-            <img
-              src={signedPhotoUrl || "/default-avatar.png"}
-              alt="staff"
-              onError={(e) => {
-                e.currentTarget.style.display = "none";
-                const fallback = e.currentTarget.nextElementSibling;
-                if (fallback) fallback.style.display = "flex";
-              }}
-              style={{
-                width: 92,
-                height: 92,
-                borderRadius: "50%",
-                objectFit: "cover",
-                flex: "0 0 auto",
-              }}
-            />
-
-            <div
-              className="staff-avatar-lg staff-avatar--fallback"
-              style={{
-                width: 92,
-                height: 92,
-                borderRadius: "50%",
-                display: signedPhotoUrl ? "none" : "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                flex: "0 0 auto",
-              }}
-            >
-              {headerName.slice(0, 1).toUpperCase()}
-            </div>
-            <div style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
-              <div style={{ fontWeight: 900, fontSize: 16, lineHeight: 1.2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{headerName}</div>
-              <div style={{ opacity: 0.85, marginTop: 4, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{headerPosition}</div>
-              <div style={{ marginTop: 6, fontWeight: 800, color: String(headerStatus).toLowerCase() === "inactive" ? "#ef4444" : "#22c55e" }}>{headerStatus}</div>
-            </div>
-          </div>
-
-          <div className="staff-tabs" style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            {["staff", "contract", "leave", "attachments", "history", "balances"]
-              .filter((t) => canViewPrivateDetails || !["contract", "balances"].includes(t))
-              .map((t) => (
-              <button key={t} className={`tab-btn ${tab === t ? "active" : ""}`} onClick={() => setTab(t)} type="button">
-                {t === "staff" ? "Staff Details" : t === "contract" ? "Contract Details" : t === "leave" ? "Leave Details" : t === "attachments" ? "Attachments" : t === "history" ? "Transaction History" : "Personal Balances"}
-              </button>
-            ))}
-          </div>
-
-          <br />
-
-          {tab === "staff" && (
-            <table className="profile-table">
-              <tbody>
-                <tr><td><h2>Employee Details</h2></td></tr>
-                <tr><td>ID</td><td>{staff.id}</td></tr>
-                <tr><td>Employee No</td><td>{staff.employee_no || "-"}</td></tr>
-                <tr><td>Name</td><td>{displayName(staff)}</td></tr>
-                <tr><td>Start Date</td><td>{fmtDate(staff.start_date)}</td></tr>
-                <tr><td>Address</td><td>{staff.address || "-"}</td></tr>
-                <tr><td>Municipality</td><td>{staff.municipality || "-"}</td></tr>
-                <tr><td>Province</td><td>{staff.province || "-"}</td></tr>
-                <tr><td>Contact</td><td>{staff.contact || "-"}</td></tr>
-                <tr><td>Email</td><td>{staff.email || "-"}</td></tr>
-                <tr><td><h2>Employee Background</h2></td></tr>
-                <tr><td>Date of Birth</td><td>{fmtDate(staff.date_of_birth)}</td></tr>
-                <tr><td>Place of Birth</td><td>{staff.place_of_birth || "-"}</td></tr>
-                <tr><td>Gender</td><td>{staff.gender || "-"}</td></tr>
-                <tr><td>Civil Status</td><td>{staff.civil_status || "-"}</td></tr>
-                <tr><td>Citizenship</td><td>{staff.citizenship || "-"}</td></tr>
-                <tr><td>Height</td><td>{toStr(staff.height) || "-"}</td></tr>
-                <tr><td>Weight</td><td>{toStr(staff.weight) || "-"}</td></tr>
-                <tr><td>Religion</td><td>{staff.religion || "-"}</td></tr>
-                <tr><td>Blood Type</td><td>{staff.blood_type || "-"}</td></tr>
-                <tr><td><h2>Spouse & Children Information</h2></td></tr>
-                <tr><td>Spouse Fullname</td><td>{staff.spouse_fullname || "-"}</td></tr>
-                <tr><td>Spouse Address</td><td>{staff.spouse_address || "-"}</td></tr>
-                <tr><td>Spouse Occupation</td><td>{staff.spouse_occupation || "-"}</td></tr>
-                <tr><td>Spouse Employer</td><td>{staff.spouse_employer || "-"}</td></tr>
-                <tr><td><h3>Children</h3></td></tr>
-                {childrenArr.length === 0 ? (
-                  <tr><td colSpan="2">-</td></tr>
-                ) : (
-                  childrenArr.map((c, idx) => (
-                    <React.Fragment key={idx}>
-                      <tr><td>Fullname</td><td>{c?.fullname || "-"}</td></tr>
-                      <tr><td>Date of Birth</td><td>{c?.date_of_birth || "-"}</td></tr>
-                      <tr><td>Place of Birth</td><td>{c?.place_of_birth || "-"}</td></tr>
-                      <tr><td colSpan="2"><hr /></td></tr>
-                    </React.Fragment>
-                  ))
-                )}
-                <tr><td><h2>Parents / Guardian</h2></td></tr>
-                <tr><td>Father Fullname</td><td>{staff.father_fullname || "-"}</td></tr>
-                <tr><td>Father Address</td><td>{staff.father_address || "-"}</td></tr>
-                <tr><td>Father Occupation</td><td>{staff.father_occupation || "-"}</td></tr>
-                <tr><td>Father Employer</td><td>{staff.father_employer || "-"}</td></tr>
-                <tr><td>Father Contact</td><td>{staff.father_contact || "-"}</td></tr>
-                <tr><td>Mother Fullname</td><td>{staff.mother_fullname || "-"}</td></tr>
-                <tr><td>Mother Address</td><td>{staff.mother_address || "-"}</td></tr>
-                <tr><td>Mother Occupation</td><td>{staff.mother_occupation || "-"}</td></tr>
-                <tr><td>Mother Employer</td><td>{staff.mother_employer || "-"}</td></tr>
-                <tr><td>Mother Contact</td><td>{staff.mother_contact || "-"}</td></tr>
-                <tr><td>Guardian Fullname</td><td>{staff.guardian_fullname || "-"}</td></tr>
-                <tr><td>Guardian Address</td><td>{staff.guardian_address || "-"}</td></tr>
-                <tr><td>Guardian Occupation</td><td>{staff.guardian_occupation || "-"}</td></tr>
-                <tr><td>Guardian Employer</td><td>{staff.guardian_employer || "-"}</td></tr>
-                <tr><td>Guardian Contact</td><td>{staff.guardian_contact || "-"}</td></tr>
-                <tr><td colSpan="2"><h2>Education</h2></td></tr>
-                {renderEducation()}
-                <tr><td colSpan="2"><h2>Employment</h2></td></tr>
-                {renderEmployment()}
-                <tr><td colSpan="2"><h2>Beneficiaries</h2></td></tr>
-                {renderBeneficiaries()}
-                <tr><td><h2>Remittances</h2></td></tr>
-                <tr><td>SSS No.</td><td>{staff.sss_no || "-"}</td></tr>
-                <tr><td>PhilHealth No.</td><td>{staff.philhealth_no || "-"}</td></tr>
-                <tr><td>Pag-Ibig No.</td><td>{staff.pagibig_no || "-"}</td></tr>
-                <tr><td>TIN No.</td><td>{staff.tin_no || "-"}</td></tr>
-              </tbody>
-            </table>
-          )}
-
-          {tab === "contract" && (
-            <table className="profile-table">
-              <tbody>
-                <tr><td><h2>Others</h2></td></tr>
-                <tr><td>Position</td><td>{staff.position || "-"}</td></tr>
-                <tr><td>Branch</td><td>{branchNameById(staff.branch_id) ||
-                  staff.branch_name ||
-                  staff.branch ||
-                  staff.branch_code ||
-                  "-"}</td></tr>
-                <tr><td>Department</td><td>{staff.department || "-"}</td></tr>
-                <tr><td>Area</td><td>{staff.area || "-"}</td></tr>
-                <tr><td>Region</td><td>{staff.region || "-"}</td></tr>
-                <tr><td>Division</td><td>{staff.division || "-"}</td></tr>
-                <tr><td>Status</td><td>{staff.status || "Active"}</td></tr>
-                <tr><td>Start Date</td><td>{fmtDate(staff.start_date)}</td></tr>
-                <tr><td>Regularization Date</td><td>{fmtDate(staff.regularization_date)}</td></tr>
-                <tr><td><h2>Salary Details</h2></td></tr>
-                <tr><td>Basic Salary</td><td>{money(staff.salary)}</td></tr>
-                <tr><td>Ecola</td><td>{money(staff.ecola)}</td></tr>
-                <tr><td><h3>Total</h3></td><td>{money(totals.salaryTotal)}</td></tr>
-                <tr><td><h2>Personal Deductions</h2></td></tr>
-                <tr><td>CBU</td><td>{money(staff.cbu)}</td></tr>
-                <tr><td>Cashbond</td><td>{money(staff.cashbond)}</td></tr>
-                <tr><td>Utility</td><td>{money(staff.utility_charge ?? staff.utility)}</td></tr>
-              </tbody>
-            </table>
-          )}
-
-          {tab === "leave" && (
-            <>
-              {canEditLeaveDetails && !editingLeave && (
-                <button
-                  className="btn btn-outline"
-                  onClick={() => setEditingLeave(true)}
-                  style={{ marginBottom: 10 }}
-                >
-                  Edit Leave Details
-                </button>
-              )}
-
-              {editingLeave && (
-                <div className="leave-edit-card">
-                  <div className="leave-edit-grid">
-                    {[
-                      ["Annual Leave", "annual_leave"],
-                      ["Sick Leave", "sick_leave"],
-                      ["Emergency Leave", "emergency_leave"],
-                      ["Maternity Leave", "maternity_leave"],
-                      ["Paternity Leave", "parental_leave"],
-                    ].map(([label, key]) => (
-                      <div key={key} className="leave-field">
-                        <label className="leave-label">{label}</label>
-                        <input
-                          type="number"
-                          value={leaveForm[key]}
-                          onChange={(e) => handleLeaveChange(key, e.target.value)}
-                          className="leave-input"
-                        />
-                      </div>
-                    ))}
-                  </div>
-
-                  <div className="leave-actions">
-                    <button className="btn btn-primary" onClick={saveLeaveDetails}>
-                      💾 Save Changes
-                    </button>
-
-                    <button
-                      className="btn btn-outline"
-                      onClick={() => setEditingLeave(false)}
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {!editingLeave && (
-                <table className="profile-table">
-                  <thead>
-                    <tr>
-                      <th>Leave Type</th>
-                      <th>Available</th>
-                      <th>Used</th>
-                      <th>Remaining</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr>
-                      <td>Annual Leave</td>
-                      <td>{toNum(localLeave.annual_leave)}</td>
-                      <td>{leaveUsage.annual_leave}</td>
-                      <td>
-                        {toNum(localLeave.annual_leave) - leaveUsage.annual_leave}
-                      </td>
-                    </tr>
-
-                    <tr>
-                      <td>Sick Leave</td>
-                      <td>{toNum(localLeave.sick_leave)}</td>
-                      <td>{leaveUsage.sick_leave}</td>
-                      <td>
-                        {toNum(localLeave.sick_leave) - leaveUsage.sick_leave}
-                      </td>
-                    </tr>
-
-                    <tr>
-                      <td>Emergency Leave</td>
-                      <td>{toNum(localLeave.emergency_leave)}</td>
-                      <td>{leaveUsage.emergency_leave}</td>
-                      <td>
-                        {toNum(localLeave.emergency_leave) - leaveUsage.emergency_leave}
-                      </td>
-                    </tr>
-
-                    <tr>
-                      <td>Maternity Leave</td>
-                      <td>{toNum(localLeave.maternity_leave)}</td>
-                      <td>{leaveUsage.maternity_leave}</td>
-                      <td>
-                        {toNum(localLeave.maternity_leave) - leaveUsage.maternity_leave}
-                      </td>
-                    </tr>
-
-                    <tr>
-                      <td>Paternity Leave</td>
-                      <td>{toNum(localLeave.parental_leave)}</td>
-                      <td>{leaveUsage.parental_leave}</td>
-                      <td>
-                        {toNum(localLeave.parental_leave) - leaveUsage.parental_leave}
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
-              )}
-            </>
-          )}
-
-          {tab === "attachments" && (
-            <>
-              {canManageAttachments && (
-                <div
-                  className="leave-edit-card"
+          <div className="modal-body staff-profile-scroll">
+            <div style={{ display: "flex", alignItems: "center", gap: 16, padding: "8px 0 14px 0" }}>
+              <img
+                src={signedPhotoUrl || "/default-avatar.png"}
+                alt="staff"
+                onError={(e) => {
+                  e.currentTarget.style.display = "none";
+                  const fallback = e.currentTarget.nextElementSibling;
+                  if (fallback) fallback.style.display = "flex";
+                }}
                 style={{
-                  marginBottom: 14,
-                  padding: 14,
-                  borderRadius: 14,
+                  width: 92,
+                  height: 92,
+                  borderRadius: "50%",
+                  objectFit: "cover",
+                  flex: "0 0 auto",
+                }}
+              />
+
+              <div
+                className="staff-avatar-lg staff-avatar--fallback"
+                style={{
+                  width: 92,
+                  height: 92,
+                  borderRadius: "50%",
+                  display: signedPhotoUrl ? "none" : "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  flex: "0 0 auto",
                 }}
               >
-                <div style={{ fontWeight: 900, marginBottom: 10 }}>
-                  Upload Staff Attachment
-                </div>
+                {headerName.slice(0, 1).toUpperCase()}
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
+                <div style={{ fontWeight: 900, fontSize: 16, lineHeight: 1.2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{headerName}</div>
+                <div style={{ opacity: 0.85, marginTop: 4, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{headerPosition}</div>
+                <div style={{ marginTop: 6, fontWeight: 800, color: String(headerStatus).toLowerCase() === "inactive" ? "#ef4444" : "#22c55e" }}>{headerStatus}</div>
+              </div>
+            </div>
 
-                <div
-                  className="leave-edit-grid"
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr) auto",
-                    gap: 10,
-                    alignItems: "end",
-                  }}
-                >
-                  <div className="leave-field">
-                    <label className="leave-label">Rename File As</label>
-                    <input
-                      type="text"
-                      className="leave-input"
-                      value={attachmentName}
-                      onChange={(e) => setAttachmentName(e.target.value)}
-                      placeholder={
-                        attachmentFiles.length > 1
-                          ? "Used only when uploading one file"
-                          : "Example: Contract 2026"
-                      }
-                      disabled={attachmentFiles.length > 1}
-                    />
-                  </div>
-
-                  <div className="leave-field">
-                    <label className="leave-label">Choose File(s)</label>
-                    <input
-                      id="staff-attachment-file-input"
-                      type="file"
-                      multiple
-                      className="leave-input"
-                      onChange={(e) =>
-                        setAttachmentFiles(Array.from(e.target.files || []))
-                      }
-                    />
-                  </div>
-
+            <div className="staff-tabs" style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              {["staff", "contract", "leave", "attachments", "history", "balances", "remittances",]
+                .filter(
+                  (t) =>
+                    canViewPrivateDetails ||
+                    !["contract", "balances", "remittances"].includes(t)
+                )
+                .map((t) => (
                   <button
+                    key={t}
+                    className={`tab-btn ${tab === t ? "active" : ""}`}
+                    onClick={() => setTab(t)}
                     type="button"
-                    className="btn btn-primary"
-                    onClick={uploadAttachment}
-                    disabled={uploadingAttachment}
-                    style={{ whiteSpace: "nowrap" }}
                   >
-                    {uploadingAttachment ? "Uploading..." : "Upload"}
+                    {t === "staff"
+                      ? "Staff Details"
+                      : t === "contract"
+                      ? "Contract Details"
+                      : t === "leave"
+                      ? "Leave Details"
+                      : t === "attachments"
+                      ? "Attachments"
+                      : t === "history"
+                      ? "Transaction History"
+                      : t === "balances"
+                      ? "Personal Balances"
+                      : "Remittances"}
                   </button>
-                </div>
+                ))}
+            </div>
 
-                {attachmentFiles.length > 0 ? (
-                  <div style={{ fontSize: 12, opacity: 0.85, marginTop: 8 }}>
-                    Selected: {attachmentFiles.map((f) => f.name).join(", ")}
-                  </div>
-                ) : null}
-          </div>
+            <br />
+
+            {tab === "staff" && (
+              <table className="profile-table">
+                <tbody>
+                  <tr><td><h2>Employee Details</h2></td></tr>
+                  <tr><td>ID</td><td>{staff.id}</td></tr>
+                  <tr><td>Employee No</td><td>{staff.employee_no || "-"}</td></tr>
+                  <tr><td>Name</td><td>{displayName(staff)}</td></tr>
+                  <tr><td>Start Date</td><td>{fmtDate(staff.start_date)}</td></tr>
+                  <tr><td>Address</td><td>{staff.address || "-"}</td></tr>
+                  <tr><td>Municipality</td><td>{staff.municipality || "-"}</td></tr>
+                  <tr><td>Province</td><td>{staff.province || "-"}</td></tr>
+                  <tr><td>Contact</td><td>{staff.contact || "-"}</td></tr>
+                  <tr><td>Email</td><td>{staff.email || "-"}</td></tr>
+                  <tr><td><h2>Employee Background</h2></td></tr>
+                  <tr><td>Date of Birth</td><td>{fmtDate(staff.date_of_birth)}</td></tr>
+                  <tr><td>Place of Birth</td><td>{staff.place_of_birth || "-"}</td></tr>
+                  <tr><td>Gender</td><td>{staff.gender || "-"}</td></tr>
+                  <tr><td>Civil Status</td><td>{staff.civil_status || "-"}</td></tr>
+                  <tr><td>Citizenship</td><td>{staff.citizenship || "-"}</td></tr>
+                  <tr><td>Height</td><td>{toStr(staff.height) || "-"}</td></tr>
+                  <tr><td>Weight</td><td>{toStr(staff.weight) || "-"}</td></tr>
+                  <tr><td>Religion</td><td>{staff.religion || "-"}</td></tr>
+                  <tr><td>Blood Type</td><td>{staff.blood_type || "-"}</td></tr>
+                  <tr><td><h2>Spouse & Children Information</h2></td></tr>
+                  <tr><td>Spouse Fullname</td><td>{staff.spouse_fullname || "-"}</td></tr>
+                  <tr><td>Spouse Address</td><td>{staff.spouse_address || "-"}</td></tr>
+                  <tr><td>Spouse Occupation</td><td>{staff.spouse_occupation || "-"}</td></tr>
+                  <tr><td>Spouse Employer</td><td>{staff.spouse_employer || "-"}</td></tr>
+                  <tr><td><h3>Children</h3></td></tr>
+                  {childrenArr.length === 0 ? (
+                    <tr><td colSpan="2">-</td></tr>
+                  ) : (
+                    childrenArr.map((c, idx) => (
+                      <React.Fragment key={idx}>
+                        <tr><td>Fullname</td><td>{c?.fullname || "-"}</td></tr>
+                        <tr><td>Date of Birth</td><td>{c?.date_of_birth || "-"}</td></tr>
+                        <tr><td>Place of Birth</td><td>{c?.place_of_birth || "-"}</td></tr>
+                        <tr><td colSpan="2"><hr /></td></tr>
+                      </React.Fragment>
+                    ))
+                  )}
+                  <tr><td><h2>Parents / Guardian</h2></td></tr>
+                  <tr><td>Father Fullname</td><td>{staff.father_fullname || "-"}</td></tr>
+                  <tr><td>Father Address</td><td>{staff.father_address || "-"}</td></tr>
+                  <tr><td>Father Occupation</td><td>{staff.father_occupation || "-"}</td></tr>
+                  <tr><td>Father Employer</td><td>{staff.father_employer || "-"}</td></tr>
+                  <tr><td>Father Contact</td><td>{staff.father_contact || "-"}</td></tr>
+                  <tr><td>Mother Fullname</td><td>{staff.mother_fullname || "-"}</td></tr>
+                  <tr><td>Mother Address</td><td>{staff.mother_address || "-"}</td></tr>
+                  <tr><td>Mother Occupation</td><td>{staff.mother_occupation || "-"}</td></tr>
+                  <tr><td>Mother Employer</td><td>{staff.mother_employer || "-"}</td></tr>
+                  <tr><td>Mother Contact</td><td>{staff.mother_contact || "-"}</td></tr>
+                  <tr><td>Guardian Fullname</td><td>{staff.guardian_fullname || "-"}</td></tr>
+                  <tr><td>Guardian Address</td><td>{staff.guardian_address || "-"}</td></tr>
+                  <tr><td>Guardian Occupation</td><td>{staff.guardian_occupation || "-"}</td></tr>
+                  <tr><td>Guardian Employer</td><td>{staff.guardian_employer || "-"}</td></tr>
+                  <tr><td>Guardian Contact</td><td>{staff.guardian_contact || "-"}</td></tr>
+                  <tr><td colSpan="2"><h2>Education</h2></td></tr>
+                  {renderEducation()}
+                  <tr><td colSpan="2"><h2>Employment</h2></td></tr>
+                  {renderEmployment()}
+                  <tr><td colSpan="2"><h2>Beneficiaries</h2></td></tr>
+                  {renderBeneficiaries()}
+                  <tr><td><h2>Remittances</h2></td></tr>
+                  <tr><td>SSS No.</td><td>{staff.sss_no || "-"}</td></tr>
+                  <tr><td>PhilHealth No.</td><td>{staff.philhealth_no || "-"}</td></tr>
+                  <tr><td>Pag-Ibig No.</td><td>{staff.pagibig_no || "-"}</td></tr>
+                  <tr><td>TIN No.</td><td>{staff.tin_no || "-"}</td></tr>
+                </tbody>
+              </table>
             )}
 
-              {loadingAttachments ? (
-                <div className="empty-state">Loading attachments…</div>
-              ) : null}
+            {tab === "contract" && (
+              <table className="profile-table">
+                <tbody>
+                  <tr><td><h2>Others</h2></td></tr>
+                  <tr><td>Position</td><td>{staff.position || "-"}</td></tr>
+                  <tr><td>Branch</td><td>{branchNameById(staff.branch_id) ||
+                    staff.branch_name ||
+                    staff.branch ||
+                    staff.branch_code ||
+                    "-"}</td></tr>
+                  <tr><td>Department</td><td>{staff.department || "-"}</td></tr>
+                  <tr><td>Area</td><td>{staff.area || "-"}</td></tr>
+                  <tr><td>Region</td><td>{staff.region || "-"}</td></tr>
+                  <tr><td>Division</td><td>{staff.division || "-"}</td></tr>
+                  <tr><td>Status</td><td>{staff.status || "Active"}</td></tr>
+                  <tr><td>Start Date</td><td>{fmtDate(staff.start_date)}</td></tr>
+                  <tr><td>Regularization Date</td><td>{fmtDate(staff.regularization_date)}</td></tr>
+                  <tr><td><h2>Salary Details</h2></td></tr>
+                  <tr><td>Basic Salary</td><td>{money(staff.salary)}</td></tr>
+                  <tr><td>Ecola</td><td>{money(staff.ecola)}</td></tr>
+                  <tr><td><h3>Total</h3></td><td>{money(totals.salaryTotal)}</td></tr>
+                  <tr><td><h2>Personal Deductions</h2></td></tr>
+                  <tr><td>CBU</td><td>{money(staff.cbu)}</td></tr>
+                  <tr><td>Cashbond</td><td>{money(staff.cashbond)}</td></tr>
+                  <tr><td>Utility</td><td>{money(staff.utility_charge ?? staff.utility)}</td></tr>
+                </tbody>
+              </table>
+            )}
 
-              {!loadingAttachments && errAttachments ? (
-                <div className="empty-state" style={{ color: "#ef4444" }}>
-                  {errAttachments}
-                </div>
-              ) : null}
+            {tab === "leave" && (
+              <>
+                {canEditLeaveDetails && !editingLeave && (
+                  <button
+                    className="btn btn-outline"
+                    onClick={() => setEditingLeave(true)}
+                    style={{ marginBottom: 10 }}
+                  >
+                    Edit Leave Details
+                  </button>
+                )}
 
-              {!loadingAttachments && !errAttachments && attachments.length === 0 ? (
-                <EmptyState
-                  title="No attachments yet."
-                  hint="Uploaded staff files will appear here."
-                />
-              ) : null}
-
-              {!loadingAttachments && attachments.length > 0 ? (
-                <div className="table-scroll" style={{ overflowX: "hidden" }}>
-                  <table className="saas-table staffinfo-table">
-                    <thead>
-                      <tr>
-                        <th style={{ width: "35%" }}>File Name</th>
-                        <th style={{ width: "25%" }}>Original Name</th>
-                        <th style={{ width: 150 }}>Uploaded</th>
-                        <th style={{ width: 320 }}>Action</th>
-                      </tr>
-                    </thead>
-
-                    <tbody>
-                      {attachments.map((row) => (
-                        <tr key={row.id}>
-                          <td className="strong" style={{ wordBreak: "break-word" }}>
-                            {row.file_name || row.original_name || "-"}
-                          </td>
-                          <td style={{ wordBreak: "break-word" }}>
-                            {row.original_name || "-"}
-                          </td>
-                          <td className="mono">
-                            {row.created_at ? fmtDate(row.created_at) : "-"}
-                          </td>
-                          <td>
-                            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                              <button
-                                type="button"
-                                className="btn btn-outline"
-                                onClick={() => downloadAttachment(row)}
-                              >
-                                Download
-                              </button>
-
-                              {canManageAttachments && (
-                                <>
-                                  <button
-                                    type="button"
-                                    className="btn btn-outline"
-                                    onClick={() => renameAttachment(row)}
-                                  >
-                                    Rename
-                                  </button>
-
-                                  <button
-                                    type="button"
-                                    className="btn btn-danger"
-                                    onClick={() => deleteAttachment(row)}
-                                  >
-                                    Delete
-                                  </button>
-                                </>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
+                {editingLeave && (
+                  <div className="leave-edit-card">
+                    <div className="leave-edit-grid">
+                      {[
+                        ["Annual Leave", "annual_leave"],
+                        ["Sick Leave", "sick_leave"],
+                        ["Emergency Leave", "emergency_leave"],
+                        ["Maternity Leave", "maternity_leave"],
+                        ["Paternity Leave", "parental_leave"],
+                      ].map(([label, key]) => (
+                        <div key={key} className="leave-field">
+                          <label className="leave-label">{label}</label>
+                          <input
+                            type="number"
+                            value={leaveForm[key]}
+                            onChange={(e) => handleLeaveChange(key, e.target.value)}
+                            className="leave-input"
+                          />
+                        </div>
                       ))}
-                    </tbody>
-                  </table>
-                </div>
-              ) : null}
-            </>
-          )}
+                    </div>
 
+                    <div className="leave-actions">
+                      <button className="btn btn-primary" onClick={saveLeaveDetails}>
+                        💾 Save Changes
+                      </button>
 
+                      <button
+                        className="btn btn-outline"
+                        onClick={() => setEditingLeave(false)}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                )}
 
-
-          {tab === "history" && (
-            <>
-              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
-                <Chip label="All" active={historyKind === "All"} onClick={() => setHistoryKind("All")} />
-                <Chip label="Leaves" active={historyKind === "Leaves"} onClick={() => setHistoryKind("Leaves")} />
-                <Chip label="Transfers" active={historyKind === "Transfers"} onClick={() => setHistoryKind("Transfers")} />
-                <Chip label="Promotions" active={historyKind === "Promotions"} onClick={() => setHistoryKind("Promotions")} />
-                <Chip label="Suspensions" active={historyKind === "Suspensions"} onClick={() => setHistoryKind("Suspensions")} />
-                <Chip label="Loans" active={historyKind === "Loans"} onClick={() => setHistoryKind("Loans")} />
-                <Chip label="Demotions" active={historyKind === "Demotions"} onClick={() => setHistoryKind("Demotions")} />
-                <Chip label="SAP" active={historyKind === "SAP"} onClick={() => setHistoryKind("SAP")} />
-              </div>
-
-              {(loadingLoan || loadingLeave || loadingTransfer || loadingPromotion || loadingSuspension || loadingDemotion || loadingSapHist) && (
-                <div className="empty-state">Loading transaction history…</div>
-              )}
-
-              {!loadingLoan && errLoan ? (
-                <div className="empty-state" style={{ color: "#ef4444" }}>{errLoan}</div>
-              ) : null}
-
-              {!loadingDemotion && errDemotion ? (
-                <div className="empty-state" style={{ color: "#ef4444" }}>{errDemotion}</div>
-              ) : null}
-
-              {!loadingSapHist && errSapHist ? (
-                <div className="empty-state" style={{ color: "#ef4444" }}>{errSapHist}</div>
-              ) : null}
-
-              {!loadingTransfer && errTransfer ? (
-                <div className="empty-state" style={{ color: "#ef4444" }}>{errTransfer}</div>
-              ) : null}
-
-              {!loadingPromotion && errPromotion ? (
-                <div className="empty-state" style={{ color: "#ef4444" }}>{errPromotion}</div>
-              ) : null}
-
-              {!loadingSuspension && errSuspension ? (
-                <div className="empty-state" style={{ color: "#ef4444" }}>{errSuspension}</div>
-              ) : null}
-
-              {!loadingLeave && errLeave ? (
-                <div className="empty-state" style={{ color: "#ef4444" }}>{errLeave}</div>
-              ) : null}
-
-
-              {!loadingLoan &&
-              !loadingLeave &&
-              !loadingTransfer &&
-              !loadingPromotion &&
-              !loadingSuspension &&
-              !loadingDemotion &&
-              !loadingSapHist &&
-              !errLoan &&
-              !errLeave &&
-              !errTransfer &&
-              !errPromotion &&
-              !errSuspension &&
-              !errDemotion &&
-              !errSapHist &&
-              historyItems.length === 0 ? (
-                <EmptyState
-                  title="No transaction history yet."
-                  hint="Leaves, Transfers, Promotions, Suspensions, Loans, Demotions, and SAP records will appear here."
-                />
-              ) : null}
-
-              {!loadingLoan &&
-              !loadingLeave &&
-              !loadingTransfer &&
-              !loadingPromotion &&
-              !loadingSuspension &&
-              !loadingDemotion &&
-              !loadingSapHist &&
-              historyItems.length > 0 ? (
-                <div className="table-scroll" style={{ overflowX: "hidden" }}>
-                  <table className="saas-table staffinfo-table">
-                    <thead>
-                      <tr>
-                        <th style={{ width: 120 }}>Type</th>
-                        <th style={{ width: 200 }}>Ref</th>
-                        <th>Details</th>
-                        <th style={{ width: 140 }}>Date</th>
-                        <th style={{ width: 130 }}>Status</th>
-                      </tr>
-                    </thead>
-
-                    <tbody>
-                      {historyItems.map((it) => (
-                        <tr key={`${it._type}-${it.id}`}>
-                          <td className="mono">{it._type}</td>
-                          <td className="mono">{it.ref}</td>
-                          <td>
-                            <div className="strong">{it.title}</div>
-                            <div style={{ fontSize: 12, opacity: 0.9, marginTop: 4 }}>
-                              {it.subtitle}
-                            </div>
-
-                            {it.extra ? (
-                              <div style={{ fontSize: 12, opacity: 0.85, marginTop: 4 }}>
-                                {it.extra}
-                              </div>
-                            ) : null}
-
-                            {it.reason ? (
-                              <div style={{ fontSize: 12, opacity: 0.85, marginTop: 6 }}>
-                                Remarks: {it.reason}
-                              </div>
-                            ) : null}
-
-                            {it.rejection_reason ? (
-                              <div style={{ fontSize: 12, color: "#ef4444", marginTop: 6 }}>
-                                Rejection: {it.rejection_reason}
-                              </div>
-                            ) : null}
-                          </td>
-
-                          <td className="mono">{it.date ? fmtDate(it.date) : "-"}</td>
-                          <td className="mono">{it.status}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              ) : null}
-            </>
-          )}
-
-          {tab === "balances" && (
-            <>
-              {loadingBal ? <div className="empty-state">Loading balances…</div> : null}
-              {errBal ? <div className="empty-state" style={{ color: "#ef4444" }}>{errBal}</div> : null}
-              {!loadingBal && !errBal ? (
-                <>
+                {!editingLeave && (
                   <table className="profile-table">
-                    <tbody>
-                      <tr><td colSpan="2"><h2>Personal Savings</h2></td></tr>
-                      <tr><td>CBU</td><td>{money(combinedBalances.cbu)}</td></tr>
-                      <tr><td>Cashbond</td><td>{money(combinedBalances.cashbond)}</td></tr>
-                      <tr><td>Utility</td><td>{money(combinedBalances.utility)}</td></tr>
+                    <thead>
                       <tr>
-                        <td><strong>Total Personal Savings</strong></td>
-                        <td>{money(combinedBalances.cbu + combinedBalances.cashbond + combinedBalances.utility)}</td>
+                        <th>Leave Type</th>
+                        <th>Available</th>
+                        <th>Used</th>
+                        <th>Remaining</th>
                       </tr>
-
-                      <tr><td>Salary Advance</td><td>{money(combinedBalances.salary_advance)}</td></tr>
-                      <tr><td>Special Advance</td><td>{money(combinedBalances.special_advance)}</td></tr>
-                      <tr><td>Cash Advance</td><td>{money(combinedBalances.cash_advance)}</td></tr>
-                      <tr><td>Motorcycle Loan</td><td>{money(combinedBalances.motorcycle_loan)}</td></tr>
-                      <tr><td>Pag-ibig Loan</td><td>{money(combinedBalances.pag_ibig_loan)}</td></tr>
-                      <tr><td>Other Receivable</td><td>{money(combinedBalances.other_receivable)}</td></tr>
-                      <tr><td>Staff Accounts Payable</td><td>{money(combinedBalances.staff_accounts_payable)}</td></tr>
+                    </thead>
+                    <tbody>
                       <tr>
-                        <td><strong>Total Personal Balance</strong></td>
+                        <td>Annual Leave</td>
+                        <td>{toNum(localLeave.annual_leave)}</td>
+                        <td>{leaveUsage.annual_leave}</td>
                         <td>
-                          {money(
-                            combinedBalances.salary_advance +
-                              combinedBalances.special_advance +
-                              combinedBalances.cash_advance +
-                              combinedBalances.motorcycle_loan +
-                              combinedBalances.pag_ibig_loan +
-                              combinedBalances.other_receivable +
-                              combinedBalances.staff_accounts_payable
-                          )}
+                          {toNum(localLeave.annual_leave) - leaveUsage.annual_leave}
                         </td>
                       </tr>
 
-                      <tr><td colSpan="2"><h2>Tax Contribution (2316)</h2></td></tr>
-                      <tr><td>Basic Salary</td><td>{money(staff.salary)}</td></tr>
-                      <tr><td>Ecola</td><td>{money(staff.ecola)}</td></tr>
-                      <tr><td><strong>Total Contribution</strong></td><td>{money(toNum(staff.salary) + toNum(staff.ecola))}</td></tr>
+                      <tr>
+                        <td>Sick Leave</td>
+                        <td>{toNum(localLeave.sick_leave)}</td>
+                        <td>{leaveUsage.sick_leave}</td>
+                        <td>
+                          {toNum(localLeave.sick_leave) - leaveUsage.sick_leave}
+                        </td>
+                      </tr>
 
-                      <tr><td colSpan="2"><h2>Remittances (EE)</h2></td></tr>
-                      <tr><td>SSS</td><td>{money(staff.sss_ee)}</td></tr>
-                      <tr><td>Philhealth</td><td>{money(staff.ph_ee)}</td></tr>
-                      <tr><td>Pag-ibig</td><td>{money(staff.hdmf_ee)}</td></tr>
-                      <tr><td><strong>Total (EE)</strong></td><td>{money(toNum(staff.sss_ee) + toNum(staff.ph_ee) + toNum(staff.hdmf_ee))}</td></tr>
+                      <tr>
+                        <td>Emergency Leave</td>
+                        <td>{toNum(localLeave.emergency_leave)}</td>
+                        <td>{leaveUsage.emergency_leave}</td>
+                        <td>
+                          {toNum(localLeave.emergency_leave) - leaveUsage.emergency_leave}
+                        </td>
+                      </tr>
 
-                      <tr><td colSpan="2"><h2>Tax</h2></td></tr>
-                      <tr><td>Tax</td><td>{money(staff.tax)}</td></tr>
-                      <tr><td><strong>Total Tax</strong></td><td>{money(toNum(staff.tax))}</td></tr>
+                      <tr>
+                        <td>Maternity Leave</td>
+                        <td>{toNum(localLeave.maternity_leave)}</td>
+                        <td>{leaveUsage.maternity_leave}</td>
+                        <td>
+                          {toNum(localLeave.maternity_leave) - leaveUsage.maternity_leave}
+                        </td>
+                      </tr>
 
-                      <tr><td colSpan="2"><h2>13th / 14th / 15th Month Computation ({thirteenthMonthData.year})</h2></td></tr>
-                      <tr><td>Basic Salary</td><td>{money(thirteenthMonthData.basicSalary)}</td></tr>
-                      <tr><td>Ecola</td><td>{money(thirteenthMonthData.ecola)}</td></tr>
-                      <tr><td><strong>Monthly Compensation</strong></td><td>{money(thirteenthMonthData.monthlyCompensation)}</td></tr>
+                      <tr>
+                        <td>Paternity Leave</td>
+                        <td>{toNum(localLeave.parental_leave)}</td>
+                        <td>{leaveUsage.parental_leave}</td>
+                        <td>
+                          {toNum(localLeave.parental_leave) - leaveUsage.parental_leave}
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                )}
+              </>
+            )}
 
-                      {thirteenthMonthData.rows.map((row) => (
-                        <tr key={row.month}>
-                          <td>{row.month}</td>
-                          <td>{row.amount == null ? "-" : money(row.amount)}</td>
+            {tab === "attachments" && (
+              <>
+                {canManageAttachments && (
+                  <div
+                    className="leave-edit-card"
+                  style={{
+                    marginBottom: 14,
+                    padding: 14,
+                    borderRadius: 14,
+                  }}
+                >
+                  <div style={{ fontWeight: 900, marginBottom: 10 }}>
+                    Upload Staff Attachment
+                  </div>
+
+                  <div
+                    className="leave-edit-grid"
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr) auto",
+                      gap: 10,
+                      alignItems: "end",
+                    }}
+                  >
+                    <div className="leave-field">
+                      <label className="leave-label">Rename File As</label>
+                      <input
+                        type="text"
+                        className="leave-input"
+                        value={attachmentName}
+                        onChange={(e) => setAttachmentName(e.target.value)}
+                        placeholder={
+                          attachmentFiles.length > 1
+                            ? "Used only when uploading one file"
+                            : "Example: Contract 2026"
+                        }
+                        disabled={attachmentFiles.length > 1}
+                      />
+                    </div>
+
+                    <div className="leave-field">
+                      <label className="leave-label">Choose File(s)</label>
+                      <input
+                        id="staff-attachment-file-input"
+                        type="file"
+                        multiple
+                        className="leave-input"
+                        onChange={(e) =>
+                          setAttachmentFiles(Array.from(e.target.files || []))
+                        }
+                      />
+                    </div>
+
+                    <button
+                      type="button"
+                      className="btn btn-primary"
+                      onClick={uploadAttachment}
+                      disabled={uploadingAttachment}
+                      style={{ whiteSpace: "nowrap" }}
+                    >
+                      {uploadingAttachment ? "Uploading..." : "Upload"}
+                    </button>
+                  </div>
+
+                  {attachmentFiles.length > 0 ? (
+                    <div style={{ fontSize: 12, opacity: 0.85, marginTop: 8 }}>
+                      Selected: {attachmentFiles.map((f) => f.name).join(", ")}
+                    </div>
+                  ) : null}
+            </div>
+              )}
+
+                {loadingAttachments ? (
+                  <div className="empty-state">Loading attachments…</div>
+                ) : null}
+
+                {!loadingAttachments && errAttachments ? (
+                  <div className="empty-state" style={{ color: "#ef4444" }}>
+                    {errAttachments}
+                  </div>
+                ) : null}
+
+                {!loadingAttachments && !errAttachments && attachments.length === 0 ? (
+                  <EmptyState
+                    title="No attachments yet."
+                    hint="Uploaded staff files will appear here."
+                  />
+                ) : null}
+
+                {!loadingAttachments && attachments.length > 0 ? (
+                  <div className="table-scroll" style={{ overflowX: "hidden" }}>
+                    <table className="saas-table staffinfo-table">
+                      <thead>
+                        <tr>
+                          <th style={{ width: "35%" }}>File Name</th>
+                          <th style={{ width: "25%" }}>Original Name</th>
+                          <th style={{ width: 150 }}>Uploaded</th>
+                          <th style={{ width: 320 }}>Action</th>
                         </tr>
-                      ))}
+                      </thead>
 
-                      <tr><td><strong>Total Compensation Earned</strong></td><td>{money(thirteenthMonthData.totalCompensationEarned)}</td></tr>
-                      <tr><td><strong>13th Month Pay</strong></td><td>{money(thirteenthMonthData.thirteenthMonth)}</td></tr>
-                      <tr><td><strong>14th Month Pay</strong></td><td>{money(thirteenthMonthData.fourteenthMonth)}</td></tr>
-                      <tr><td><strong>15th Month Pay</strong></td><td>{money(thirteenthMonthData.fifteenthMonth)}</td></tr>
+                      <tbody>
+                        {attachments.map((row) => (
+                          <tr key={row.id}>
+                            <td className="strong" style={{ wordBreak: "break-word" }}>
+                              {row.file_name || row.original_name || "-"}
+                            </td>
+                            <td style={{ wordBreak: "break-word" }}>
+                              {row.original_name || "-"}
+                            </td>
+                            <td className="mono">
+                              {row.created_at ? fmtDate(row.created_at) : "-"}
+                            </td>
+                            <td>
+                              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                                <button
+                                  type="button"
+                                  className="btn btn-outline"
+                                  onClick={() => downloadAttachment(row)}
+                                >
+                                  Download
+                                </button>
+
+                                {canManageAttachments && (
+                                  <>
+                                    <button
+                                      type="button"
+                                      className="btn btn-outline"
+                                      onClick={() => renameAttachment(row)}
+                                    >
+                                      Rename
+                                    </button>
+
+                                    <button
+                                      type="button"
+                                      className="btn btn-danger"
+                                      onClick={() => deleteAttachment(row)}
+                                    >
+                                      Delete
+                                    </button>
+                                  </>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : null}
+              </>
+            )}
+
+
+
+
+            {tab === "history" && (
+              <>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
+                  <Chip label="All" active={historyKind === "All"} onClick={() => setHistoryKind("All")} />
+                  <Chip label="Leaves" active={historyKind === "Leaves"} onClick={() => setHistoryKind("Leaves")} />
+                  <Chip label="Transfers" active={historyKind === "Transfers"} onClick={() => setHistoryKind("Transfers")} />
+                  <Chip label="Promotions" active={historyKind === "Promotions"} onClick={() => setHistoryKind("Promotions")} />
+                  <Chip label="Suspensions" active={historyKind === "Suspensions"} onClick={() => setHistoryKind("Suspensions")} />
+                  <Chip label="Loans" active={historyKind === "Loans"} onClick={() => setHistoryKind("Loans")} />
+                  <Chip label="Demotions" active={historyKind === "Demotions"} onClick={() => setHistoryKind("Demotions")} />
+                  <Chip label="SAP" active={historyKind === "SAP"} onClick={() => setHistoryKind("SAP")} />
+                </div>
+
+                {(loadingLoan || loadingLeave || loadingTransfer || loadingPromotion || loadingSuspension || loadingDemotion || loadingSapHist) && (
+                  <div className="empty-state">Loading transaction history…</div>
+                )}
+
+                {!loadingLoan && errLoan ? (
+                  <div className="empty-state" style={{ color: "#ef4444" }}>{errLoan}</div>
+                ) : null}
+
+                {!loadingDemotion && errDemotion ? (
+                  <div className="empty-state" style={{ color: "#ef4444" }}>{errDemotion}</div>
+                ) : null}
+
+                {!loadingSapHist && errSapHist ? (
+                  <div className="empty-state" style={{ color: "#ef4444" }}>{errSapHist}</div>
+                ) : null}
+
+                {!loadingTransfer && errTransfer ? (
+                  <div className="empty-state" style={{ color: "#ef4444" }}>{errTransfer}</div>
+                ) : null}
+
+                {!loadingPromotion && errPromotion ? (
+                  <div className="empty-state" style={{ color: "#ef4444" }}>{errPromotion}</div>
+                ) : null}
+
+                {!loadingSuspension && errSuspension ? (
+                  <div className="empty-state" style={{ color: "#ef4444" }}>{errSuspension}</div>
+                ) : null}
+
+                {!loadingLeave && errLeave ? (
+                  <div className="empty-state" style={{ color: "#ef4444" }}>{errLeave}</div>
+                ) : null}
+
+
+                {!loadingLoan &&
+                !loadingLeave &&
+                !loadingTransfer &&
+                !loadingPromotion &&
+                !loadingSuspension &&
+                !loadingDemotion &&
+                !loadingSapHist &&
+                !errLoan &&
+                !errLeave &&
+                !errTransfer &&
+                !errPromotion &&
+                !errSuspension &&
+                !errDemotion &&
+                !errSapHist &&
+                historyItems.length === 0 ? (
+                  <EmptyState
+                    title="No transaction history yet."
+                    hint="Leaves, Transfers, Promotions, Suspensions, Loans, Demotions, and SAP records will appear here."
+                  />
+                ) : null}
+
+                {!loadingLoan &&
+                !loadingLeave &&
+                !loadingTransfer &&
+                !loadingPromotion &&
+                !loadingSuspension &&
+                !loadingDemotion &&
+                !loadingSapHist &&
+                historyItems.length > 0 ? (
+                  <div className="table-scroll" style={{ overflowX: "hidden" }}>
+                    <table className="saas-table staffinfo-table">
+                      <thead>
+                        <tr>
+                          <th style={{ width: 120 }}>Type</th>
+                          <th style={{ width: 200 }}>Ref</th>
+                          <th>Details</th>
+                          <th style={{ width: 140 }}>Date</th>
+                          <th style={{ width: 130 }}>Status</th>
+                        </tr>
+                      </thead>
+
+                      <tbody>
+                        {historyItems.map((it) => (
+                          <tr key={`${it._type}-${it.id}`}>
+                            <td className="mono">{it._type}</td>
+                            <td className="mono">{it.ref}</td>
+                            <td>
+                              <div className="strong">{it.title}</div>
+                              <div style={{ fontSize: 12, opacity: 0.9, marginTop: 4 }}>
+                                {it.subtitle}
+                              </div>
+
+                              {it.extra ? (
+                                <div style={{ fontSize: 12, opacity: 0.85, marginTop: 4 }}>
+                                  {it.extra}
+                                </div>
+                              ) : null}
+
+                              {it.reason ? (
+                                <div style={{ fontSize: 12, opacity: 0.85, marginTop: 6 }}>
+                                  Remarks: {it.reason}
+                                </div>
+                              ) : null}
+
+                              {it.rejection_reason ? (
+                                <div style={{ fontSize: 12, color: "#ef4444", marginTop: 6 }}>
+                                  Rejection: {it.rejection_reason}
+                                </div>
+                              ) : null}
+                            </td>
+
+                            <td className="mono">{it.date ? fmtDate(it.date) : "-"}</td>
+                            <td className="mono">{it.status}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : null}
+              </>
+            )}
+
+            {tab === "balances" && (
+              <>
+                {loadingBal ? <div className="empty-state">Loading balances…</div> : null}
+                {errBal ? <div className="empty-state" style={{ color: "#ef4444" }}>{errBal}</div> : null}
+                {!loadingBal && !errBal ? (
+                  <>
+                    <table className="profile-table">
+                      <tbody>
+                        <tr><td colSpan="2"><h2>Personal Savings</h2></td></tr>
+                        <tr><td>CBU</td><td>{money(combinedBalances.cbu)}</td></tr>
+                        <tr><td>Cashbond</td><td>{money(combinedBalances.cashbond)}</td></tr>
+                        <tr><td>Utility</td><td>{money(combinedBalances.utility)}</td></tr>
+                        <tr>
+                          <td><strong>Total Personal Savings</strong></td>
+                          <td>{money(combinedBalances.cbu + combinedBalances.cashbond + combinedBalances.utility)}</td>
+                        </tr>
+
+                        <tr><td>Salary Advance</td><td>{money(combinedBalances.salary_advance)}</td></tr>
+                        <tr><td>Special Advance</td><td>{money(combinedBalances.special_advance)}</td></tr>
+                        <tr><td>Cash Advance</td><td>{money(combinedBalances.cash_advance)}</td></tr>
+                        <tr><td>Motorcycle Loan</td><td>{money(combinedBalances.motorcycle_loan)}</td></tr>
+                        <tr><td>Pag-ibig Loan</td><td>{money(combinedBalances.pag_ibig_loan)}</td></tr>
+                        <tr><td>Other Receivable</td><td>{money(combinedBalances.other_receivable)}</td></tr>
+                        <tr><td>Staff Accounts Payable</td><td>{money(combinedBalances.staff_accounts_payable)}</td></tr>
+                        <tr>
+                          <td><strong>Total Personal Balance</strong></td>
+                          <td>
+                            {money(
+                              combinedBalances.salary_advance +
+                                combinedBalances.special_advance +
+                                combinedBalances.cash_advance +
+                                combinedBalances.motorcycle_loan +
+                                combinedBalances.pag_ibig_loan +
+                                combinedBalances.other_receivable +
+                                combinedBalances.staff_accounts_payable
+                            )}
+                          </td>
+                        </tr>
+
+                        <tr><td colSpan="2"><h2>Tax Contribution (2316)</h2></td></tr>
+                        <tr><td>Basic Salary</td><td>{money(staff.salary)}</td></tr>
+                        <tr><td>Ecola</td><td>{money(staff.ecola)}</td></tr>
+                        <tr><td><strong>Total Contribution</strong></td><td>{money(toNum(staff.salary) + toNum(staff.ecola))}</td></tr>
+
+                        <tr><td colSpan="2"><h2>Remittances (EE)</h2></td></tr>
+                        <tr><td>SSS</td><td>{money(staff.sss_ee)}</td></tr>
+                        <tr><td>Philhealth</td><td>{money(staff.ph_ee)}</td></tr>
+                        <tr><td>Pag-ibig</td><td>{money(staff.hdmf_ee)}</td></tr>
+                        <tr><td><strong>Total (EE)</strong></td><td>{money(toNum(staff.sss_ee) + toNum(staff.ph_ee) + toNum(staff.hdmf_ee))}</td></tr>
+
+                        <tr><td colSpan="2"><h2>Tax</h2></td></tr>
+                        <tr><td>Tax</td><td>{money(staff.tax)}</td></tr>
+                        <tr><td><strong>Total Tax</strong></td><td>{money(toNum(staff.tax))}</td></tr>
+
+                        <tr><td colSpan="2"><h2>13th / 14th / 15th Month Computation ({thirteenthMonthData.year})</h2></td></tr>
+                        <tr><td>Basic Salary</td><td>{money(thirteenthMonthData.basicSalary)}</td></tr>
+                        <tr><td>Ecola</td><td>{money(thirteenthMonthData.ecola)}</td></tr>
+                        <tr><td><strong>Monthly Compensation</strong></td><td>{money(thirteenthMonthData.monthlyCompensation)}</td></tr>
+
+                        {thirteenthMonthData.rows.map((row) => (
+                          <tr key={row.month}>
+                            <td>{row.month}</td>
+                            <td>{row.amount == null ? "-" : money(row.amount)}</td>
+                          </tr>
+                        ))}
+
+                        <tr><td><strong>Total Compensation Earned</strong></td><td>{money(thirteenthMonthData.totalCompensationEarned)}</td></tr>
+                        <tr><td><strong>13th Month Pay</strong></td><td>{money(thirteenthMonthData.thirteenthMonth)}</td></tr>
+                        <tr><td><strong>14th Month Pay</strong></td><td>{money(thirteenthMonthData.fourteenthMonth)}</td></tr>
+                        <tr><td><strong>15th Month Pay</strong></td><td>{money(thirteenthMonthData.fifteenthMonth)}</td></tr>
+                      </tbody>
+                    </table>
+
+                    <div style={{ marginTop: 20 }}>
+                      {loadingBonus15 ? (
+                        <div className="empty-state">Loading bonus data…</div>
+                      ) : null}
+
+                      {errBonus15 ? (
+                        <div className="empty-state" style={{ color: "#ef4444" }}>
+                          {errBonus15}
+                        </div>
+                      ) : null}
+
+                      {!loadingBonus15 && !errBonus15 ? (
+                        <table className="profile-table">
+                          <thead>
+                            <tr>
+                              <th>2025 13th Month</th>
+                              <th>Percentage</th>
+                              <th>Result</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            <tr>
+                              <td>{money(bonus15Data.base || 0)}</td>
+                              <td>{bonus15Data.percentage}%</td>
+                              <td>{money(bonus15Data.result)}</td>
+                            </tr>
+                          </tbody>
+                        </table>
+                      ) : null}
+                    </div>
+                  </>
+                ) : null}
+              </>
+            )}
+
+            {tab === "remittances" && (() => {
+              const remittanceMonths = [
+                "January", "February", "March", "April", "May", "June",
+                "July", "August", "September", "October", "November", "December",
+              ];
+
+              const monthlyRows = [
+                { label: "SSS", ee: staff.sss_ee, er: staff.sss_er },
+                { label: "PhilHealth", ee: staff.ph_ee, er: staff.ph_er },
+                { label: "Pag-IBIG", ee: staff.hdmf_ee, er: staff.hdmf_er },
+              ];
+
+              const renderRemitTable = (type) => (
+                <div className="table-scroll" style={{ overflowX: "auto" }}>
+                  <table className="saas-table staffinfo-table">
+                    <thead>
+                      <tr>
+                        <th>Remittance</th>
+                        {remittanceMonths.map((m) => <th key={m}>{m}</th>)}
+                        <th>Total</th>
+                      </tr>
+                    </thead>
+
+                    <tbody>
+                      {monthlyRows.map((r) => {
+                        const value = type === "ee" ? toNum(r.ee) : toNum(r.er);
+
+                        return (
+                          <tr key={r.label}>
+                            <td className="strong">{r.label}</td>
+                            {remittanceMonths.map((m) => <td key={m}>{money(value)}</td>)}
+                            <td className="strong">{money(value * 12)}</td>
+                          </tr>
+                        );
+                      })}
+
+                      <tr>
+                        <td className="strong">Total ({type === "ee" ? "EE" : "ER"})</td>
+                        {remittanceMonths.map((m) => {
+                          const total = monthlyRows.reduce(
+                            (sum, r) => sum + toNum(type === "ee" ? r.ee : r.er),
+                            0
+                          );
+                          return <td key={m} className="strong">{money(total)}</td>;
+                        })}
+                        <td className="strong">
+                          {money(
+                            monthlyRows.reduce(
+                              (sum, r) => sum + toNum(type === "ee" ? r.ee : r.er),
+                              0
+                            ) * 12
+                          )}
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              );
+
+              return (
+                <>
+                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 14 }}>
+                    <h2>Government Remittances</h2>
+
+                    <select
+                      className="leave-input"
+                      style={{ width: 160 }}
+                      value={remittanceYear}
+                      onChange={(e) => setRemittanceYear(Number(e.target.value))}
+                    >
+                      {Array.from({ length: 8 }).map((_, i) => {
+                        const y = new Date().getFullYear() - i;
+                        return (
+                          <option key={y} value={y}>
+                            Year: {y}
+                          </option>
+                        );
+                      })}
+                    </select>
+                  </div>
+
+                  <table className="profile-table">
+                    <tbody>
+                      <tr><td>SSS Number</td><td>{staff.sss_no || "-"}</td></tr>
+                      <tr><td>PhilHealth Number</td><td>{staff.philhealth_no || "-"}</td></tr>
+                      <tr><td>Pag-IBIG Number</td><td>{staff.pagibig_no || "-"}</td></tr>
+                      <tr><td>TIN Number</td><td>{staff.tin_no || "-"}</td></tr>
                     </tbody>
                   </table>
 
-                  <div style={{ marginTop: 20 }}>
-                    {loadingBonus15 ? (
-                      <div className="empty-state">Loading bonus data…</div>
-                    ) : null}
+                  <h2>Employee Share (EE) - {remittanceYear}</h2>
+                  {renderRemitTable("ee")}
 
-                    {errBonus15 ? (
-                      <div className="empty-state" style={{ color: "#ef4444" }}>
-                        {errBonus15}
-                      </div>
-                    ) : null}
+                  <h2 style={{ marginTop: 24 }}>Employer Share (ER) - {remittanceYear}</h2>
+                  {renderRemitTable("er")}
 
-                    {!loadingBonus15 && !errBonus15 ? (
-                      <table className="profile-table">
-                        <thead>
-                          <tr>
-                            <th>2025 13th Month</th>
-                            <th>Percentage</th>
-                            <th>Result</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          <tr>
-                            <td>{money(bonus15Data.base || 0)}</td>
-                            <td>{bonus15Data.percentage}%</td>
-                            <td>{money(bonus15Data.result)}</td>
-                          </tr>
-                        </tbody>
-                      </table>
-                    ) : null}
+                  <h2 style={{ marginTop: 24 }}>Tax - {remittanceYear}</h2>
+                  <div className="table-scroll" style={{ overflowX: "auto" }}>
+                    <table className="saas-table staffinfo-table">
+                      <tbody>
+                        <tr>
+                          <td className="strong">Withholding Tax Monthly</td>
+                          {remittanceMonths.map((m) => (
+                            <td key={m}>{money(staff.tax)}</td>
+                          ))}
+                          <td className="strong">{money(toNum(staff.tax) * 12)}</td>
+                        </tr>
+                      </tbody>
+                    </table>
                   </div>
                 </>
-              ) : null}
-            </>
-          )}
-        </div>
-
-        <div className="modal-foot">
-          <button className="btn btn-outline" onClick={onClose} type="button">Close</button>
-        </div>
+              );
+            })()}
+            
+            </div>
+            <div className="modal-foot">
+              <button className="btn btn-outline" onClick={onClose} type="button">Close</button>
+            </div>
       </div>
     </div>
   );

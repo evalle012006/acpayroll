@@ -51,7 +51,7 @@
  * │       "middle_name": "Santos",                                          │
  * │       "status": "Active",                                               │
  * │       "position": "Branch Manager",                                     │
- * │       "department": "Operations",                                       │
+ * │       "department": "Department Operations",                                       │
  * │       "area": "Area 1",                                                 │
  * │       "region": "",                                                     │
  * │       "division": "",                                                   │
@@ -94,6 +94,13 @@
  * │ }                                                                       │
  * └─────────────────────────────────────────────────────────────────────────┘
  *  
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
  * ┌─────────────────────────────────────────────────────────────────────────┐
  * │ 2. SINGLE STAFF                                                         │
  * │    GET /api/webhook/staff/:ref                                          │
@@ -186,6 +193,12 @@
  * │   "exit": { "exited": false, "source": null, "record": null }           │
  * │ }                                                                       │
  * └─────────────────────────────────────────────────────────────────────────┘
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
  */
 
 const express = require("express");

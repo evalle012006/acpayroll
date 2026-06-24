@@ -136,6 +136,9 @@ export default function Consolidation() {
   const [loadingStaff, setLoadingStaff] = useState(false);
   const [search, setSearch] = useState("");
 
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
+
   const [branchFilter, setBranchFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("All");
 
@@ -237,6 +240,22 @@ export default function Consolidation() {
     });
   }, [enrichedStaff, search, branchFilter, statusFilter]);
 
+  const totalPages = Math.max(1, Math.ceil(filteredStaff.length / pageSize));
+
+  const pagedStaff = useMemo(() => {
+    const safePage = Math.min(page, totalPages);
+    const start = (safePage - 1) * pageSize;
+    return filteredStaff.slice(start, start + pageSize);
+  }, [filteredStaff, page, pageSize, totalPages]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [search, branchFilter, statusFilter, selectedYear, pageSize]);
+
+  useEffect(() => {
+    if (page > totalPages) setPage(totalPages);
+  }, [page, totalPages]);
+
   const buildExportRows = () => {
     return filteredStaff.map((row, i) => {
       const historyRows = salaryHistoryMap[String(row.employee_no)] || [];
@@ -296,6 +315,74 @@ export default function Consolidation() {
     XLSX.writeFile(workbook, `2316-Consolidation-${selectedYear}.xlsx`);
   };
 
+  const printConsolidation = () => {
+    const table = document.querySelector(".conso-payroll-table");
+    if (!table) return alert("No table to print.");
+
+    const clonedTable = table.cloneNode(true);
+
+    Array.from(clonedTable.querySelectorAll("tbody tr")).forEach((tr) => {
+      const statusCell = tr.cells[5];
+
+      if (statusCell && statusCell.textContent.trim().toLowerCase() === "inactive") {
+        tr.classList.add("conso-inactive-row");
+      }
+    });
+
+    const printWindow = window.open("", "_blank", "width=1400,height=900");
+
+    printWindow.document.write(`
+      <html>
+        <head>
+          <title>2316-Consolidation-${selectedYear}</title>
+          <style>
+            @page { size: legal landscape; margin: 5mm; }
+            body { font-family: Arial, sans-serif; margin: 0; }
+            h2 { margin: 0 0 10px; font-size: 14px; }
+
+            table {
+              width: 100%;
+              border-collapse: collapse;
+              font-size: 7px;
+            }
+
+            th, td {
+              border: 1px solid #000;
+              padding: 3px;
+              text-align: center;
+              white-space: nowrap;
+            }
+
+            th {
+              background: #d9d9d9 !important;
+              font-weight: bold;
+            }
+
+            tr.conso-inactive-row td {
+              background: #fff7b2 !important;
+              color: #000 !important;
+              font-weight: bold;
+              -webkit-print-color-adjust: exact;
+              print-color-adjust: exact;
+            }
+          </style>
+        </head>
+        <body>
+          <h2>2316 Consolidation - ${selectedYear}</h2>
+          ${clonedTable.outerHTML}
+        </body>
+      </html>
+    `);
+
+    printWindow.document.close();
+    printWindow.focus();
+
+    setTimeout(() => {
+      printWindow.print();
+      printWindow.close();
+    }, 500);
+  };
+
   const clearFilters = () => {
     setBranchFilter("");
     setStatusFilter("All");
@@ -310,6 +397,14 @@ export default function Consolidation() {
         </div>
 
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+          <button
+            className="conso-btn conso-btn-secondary"
+            onClick={printConsolidation}
+            type="button"
+          >
+            Print
+          </button>
+
           <button
             className="conso-btn conso-btn-secondary"
             onClick={exportExcel}
@@ -428,7 +523,7 @@ export default function Consolidation() {
                 </thead>
 
                 <tbody>
-                  {filteredStaff.map((row, i) => {
+                  {pagedStaff.map((row, i) => {
                     const historyRows = salaryHistoryMap[String(row.employee_no)] || [];
 
                     let totalSalary = 0;
@@ -451,8 +546,14 @@ export default function Consolidation() {
                     const totalComp = totalSalary + totalEcola;
 
                     return (
-                      <tr key={row.id}>
-                        <td>{i + 1}</td>
+                      <tr key={row.id} className={["inactive", "resigned", "terminated", "awol", "deceased"].includes(
+                            String(row._status).toLowerCase()
+                          )
+                            ? "conso-inactive-row"
+                            : ""
+                        }
+                      >
+                        <td>{(page - 1) * pageSize + i + 1}</td>
                         <td>{row.employee_no || "-"}</td>
                         <td>{displayName(row)}</td>
                         <td>{row.position || "-"}</td>
@@ -494,6 +595,33 @@ export default function Consolidation() {
               </table>
             </div>
           )}
+
+          <div className="exit-pager">
+            <div className="exit-page-size">
+              <span>Rows per page:</span>
+              <select value={pageSize} onChange={(e) => setPageSize(Number(e.target.value))}>
+                {[25, 50, 75, 100].map((n) => (
+                  <option key={n} value={n}>
+                    {n}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="exit-page-info">
+              Page {page} of {totalPages}
+            </div>
+
+            <div className="exit-page-buttons">
+              <button type="button" disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>
+                PreviousNarvacan, Ilocos Surbagui
+              </button>
+
+              <button type="button" disabled={page >= totalPages} onClick={() => setPage((p) => Math.min(totalPages, p + 1))}>
+                Next
+              </button>
+            </div>
+          </div>
         </div>
       </div>
     </div>

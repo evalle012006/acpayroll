@@ -1,16 +1,13 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import "../styles/StaffInformation.css";
 import api from "../api/axiosClient";
-
 import StepTabs from "./StaffInformation/StepTabs";
 import StaffDetailsStep from "./StaffInformation/StaffDetailsStep";
 import ContractDetailsStep from "./StaffInformation/ContractDetailsStep";
 import PersonalBalancesStep from "./StaffInformation/PersonalBalancesStep";
 import StaffProfileModal from "./StaffInformation/StaffProfileModal";
 import useStaffSignedUrls from "./StaffInformation/useStaffSignedUrls";
-
 import {safeJsonArray, toStr, norm, toNum, displayName, displayFormName, } from "./StaffInformation/staffInfoUtils";
-
 import { FaEye, FaEdit } from "react-icons/fa";
 
 export default function StaffInformation() {
