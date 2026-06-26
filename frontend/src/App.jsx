@@ -58,6 +58,7 @@ import ResignationRequests from "./pages/ResignationRequests";
 import StaffAccountsPayable from "./pages/StaffAccountsPayable";
 import OtherReceivable from "./pages/OtherReceivable";
 import BoardResolutionRequests from "./pages/BoardResolutionRequests";
+import TravelPlan from "./pages/TravelPlan";
 import Permissions from "./pages/Permissions";
 import StaffReport from "./pages/StaffReport";
 import Chat from "./pages/Chat";
@@ -519,6 +520,15 @@ function AppShell() {
         element={
           <Page module="hris_transactions">
             <Transactions />
+          </Page>
+        }
+      />
+
+      <Route
+        path="/transactions/travel-plan"
+        element={
+          <Page module="travel_plan">
+            <TravelPlan />
           </Page>
         }
       />

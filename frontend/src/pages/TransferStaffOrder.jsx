@@ -89,6 +89,10 @@ export default function TransferStaffOrder() {
     userDepartment === "human resources" ||
     userDepartment === "human resources department";
 
+  const isAccountingDepartment =
+    userDepartment === "accounting" ||
+    userDepartment === "accounting department";
+
   const canCreate = true;
   const canHRUpload = isAdmin || isHRDepartment;
   const canReject = isAdmin || isHRDepartment;
@@ -159,15 +163,13 @@ export default function TransferStaffOrder() {
   const canAccessStaff = useCallback(
     (s) => {
       if (
-        [
-          "admin",
-          "it",
-          "hr",
-          "accounting",
-          "vice president",
-          "senior vice president",
-          "president",
-        ].includes(role)
+        isAdmin ||
+        isIT ||
+        isHRDepartment ||
+        isAccountingDepartment ||
+        role === "vice president" ||
+        role === "senior vice president" ||
+        role === "president"
       ) {
         return true;
       }
@@ -206,21 +208,29 @@ export default function TransferStaffOrder() {
 
       return false;
     },
-    [role, userBranchId, userArea, userRegion, userDivision]
-  );
+      [
+        role,
+        userBranchId,
+        userArea,
+        userRegion,
+        userDivision,
+        isAdmin,
+        isIT,
+        isHRDepartment,
+        isAccountingDepartment,
+      ]
+      );
 
   const canAccessFromBranch = useCallback(
     (b) => {
       if (
-        [
-          "admin",
-          "it",
-          "hr",
-          "accounting",
-          "vice president",
-          "senior vice president",
-          "president",
-        ].includes(role)
+        isAdmin ||
+        isIT ||
+        isHRDepartment ||
+        isAccountingDepartment ||
+        role === "vice president" ||
+        role === "senior vice president" ||
+        role === "president"
       ) {
         return true;
       }
@@ -253,8 +263,18 @@ export default function TransferStaffOrder() {
 
       return false;
     },
-    [role, userBranchId, userArea, userRegion, userDivision]
-  );
+      [
+        role,
+        userBranchId,
+        userArea,
+        userRegion,
+        userDivision,
+        isAdmin,
+        isIT,
+        isHRDepartment,
+        isAccountingDepartment,
+      ]
+      );
 
   useEffect(() => {
     const loadRefs = async () => {

@@ -1768,9 +1768,13 @@ export default function LoanApprovalTab() {
                           getCurrentStage(item) === ACCOUNTING_FINAL ||
                           norm(item.status) === "pending accounting" ||
                           norm(item.approval_stage) === "accounting";
-
-                        const canAct =
+                        
+                        const canApprove =
                           !finalUploadStage &&
+                          canParticipateInLoanApproval &&
+                          canUserActOnLoan(item, user);
+
+                        const canReject =
                           canParticipateInLoanApproval &&
                           canUserActOnLoan(item, user);
 
@@ -1831,7 +1835,7 @@ export default function LoanApprovalTab() {
                                   View
                                 </button>
 
-                                {canAct && (
+                                {canApprove && (
                                   <>
                                     <label className="loan-upload-pill">
                                       <input
@@ -1855,30 +1859,24 @@ export default function LoanApprovalTab() {
 
                                     <button
                                       className="btn-success"
-                                      onClick={() => {
-                                        if (
-                                          vpFinalUpload ||
-                                          norm(item.status) === "pending accounting" ||
-                                          getCurrentStage(item) === ACCOUNTING_FINAL
-                                        ) {
-                                          uploadFinalApprovedLoanFile(item);
-                                        } else {
-                                          updateLoanStatus(item, "approve");
-                                        }
-                                      }}
+                                      onClick={() => updateLoanStatus(item, "approve")}
+                                      type="button"
+                                      disabled={processingId === `loan-${item.id}-approve`}
                                     >
                                       {processingId === `loan-${item.id}-approve` ? "Approving..." : "Submit"}
                                     </button>
-
-                                    <button
-                                      className="btn-danger"
-                                      onClick={() => updateLoanStatus(item, "reject")}
-                                      type="button"
-                                      disabled={processingId === `loan-${item.id}-reject`}
-                                    >
-                                      {processingId === `loan-${item.id}-reject` ? "Rejecting..." : "Reject"}
-                                    </button>
                                   </>
+                                )}
+
+                                {canReject && (
+                                  <button
+                                    className="btn-danger"
+                                    onClick={() => updateLoanStatus(item, "reject")}
+                                    type="button"
+                                    disabled={processingId === `loan-${item.id}-reject`}
+                                  >
+                                    {processingId === `loan-${item.id}-reject` ? "Rejecting..." : "Reject"}
+                                  </button>
                                 )}
 
                                 {canFinalUpload && (
@@ -2323,56 +2321,52 @@ export default function LoanApprovalTab() {
               </div>
 
               <div className="modal-buttons">
-                {!(
-                    isOperationDept(selectedLoan.department) &&
-                    isOperationAdvanceLoan(selectedLoan.loan_type) &&
-                    getCurrentStage(selectedLoan) === "vice president"
+
+                {selectedLoan &&
+                  !(
+                    (
+                      isOperationDept(selectedLoan.department) &&
+                      isOperationAdvanceLoan(selectedLoan.loan_type) &&
+                      getCurrentStage(selectedLoan) === "vice president"
+                    ) ||
+                    getCurrentStage(selectedLoan) === ACCOUNTING_FINAL ||
+                    norm(selectedLoan.status) === "pending accounting" ||
+                    norm(selectedLoan.approval_stage) === "accounting" ||
+                    norm(selectedLoan.status) === "approved" ||
+                    norm(selectedLoan.status) === "voided"
                   ) &&
-                  getCurrentStage(selectedLoan) !== ACCOUNTING_FINAL &&
-                  norm(selectedLoan.status) !== "pending accounting" &&
-                  norm(selectedLoan.approval_stage) !== "accounting" &&
-                  norm(selectedLoan.status) !== "approved" &&
-                  norm(selectedLoan.status) !== "voided" &&
                   canParticipateInLoanApproval &&
                   canUserActOnLoan(selectedLoan, user) && (
                     <>
                       <button
                         className="btn-success"
                         type="button"
-                        disabled={
-                          processingId ===
-                          `loan-${selectedLoan.id}-final-upload`
-                        }
-                        onClick={() => {
-                          const vpFinalUpload =
-                            isOperationDept(selectedLoan.department) &&
-                            isOperationAdvanceLoan(selectedLoan.loan_type) &&
-                            getCurrentStage(selectedLoan) === "vice president";
-
-                          if (
-                            vpFinalUpload ||
-                            getCurrentStage(selectedLoan) === ACCOUNTING_FINAL ||
-                            norm(selectedLoan.status) === "pending accounting"
-                          ) {
-                            uploadFinalApprovedLoanFile(selectedLoan);
-                          } else {
-                            updateLoanStatus(selectedLoan, "approve");
-                          }
-                        }}
+                        disabled={processingId === `loan-${selectedLoan.id}-approve`}
+                        onClick={() => updateLoanStatus(selectedLoan, "approve")}
                       >
-                        Submit
-                      </button>
-
-                      <button
-                        className="btn-danger"
-                        type="button"
-                        disabled={processingId === `loan-${selectedLoan.id}-reject`}
-                        onClick={() => updateLoanStatus(selectedLoan, "reject")}
-                      >
-                        {processingId === `loan-${selectedLoan.id}-reject` ? "Rejecting..." : "Reject"}
+                        {processingId === `loan-${selectedLoan.id}-approve`
+                          ? "Approving..."
+                          : "Submit"}
                       </button>
                     </>
-                  )}
+                    )}
+
+                    {selectedLoan &&
+                      canParticipateInLoanApproval &&
+                      canUserActOnLoan(selectedLoan, user) &&
+                      norm(selectedLoan.status) !== "approved" &&
+                      norm(selectedLoan.status) !== "voided" && (
+                        <button
+                          className="btn-danger"
+                          type="button"
+                          disabled={processingId === `loan-${selectedLoan.id}-reject`}
+                          onClick={() => updateLoanStatus(selectedLoan, "reject")}
+                        >
+                          {processingId === `loan-${selectedLoan.id}-reject`
+                            ? "Rejecting..."
+                            : "Reject"}
+                        </button>
+                    )}
 
                 {canVoidLoan && norm(selectedLoan.status) === "approved" && (
                   <button

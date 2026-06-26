@@ -11,7 +11,7 @@ import { FiSettings } from "react-icons/fi";
 import { FaUserGroup, FaIdBadge } from "react-icons/fa6";
 import { RxExit } from "react-icons/rx";
 import { LuFiles } from "react-icons/lu";
-import { BiPackage } from "react-icons/bi";
+import { BiPackage, BiSolidPlaneAlt } from "react-icons/bi";
 import { PiHandCoinsBold } from "react-icons/pi";
 import { SiOpenaccess } from "react-icons/si";
 
@@ -320,6 +320,12 @@ const Sidebar = ({ collapsed }) => {
         anyModule: ["loan_request", "cbu_withdrawal", "reimbursement_request"],
       },
       {
+        to: "/transactions/travel-plan",
+        label: "Travel Plan",
+        icon: BiSolidPlaneAlt,
+        module: "travel_plan",
+      },
+      {
         to: "/branches",
         label: "Branch Payroll",
         icon: TbGitBranch,
@@ -387,6 +393,22 @@ const Sidebar = ({ collapsed }) => {
         }
       }
 
+      if (item.to === "/transactions/travel-plan") {
+        if (isSuperUser) return true;
+
+        return (
+          can("travel_plan", "view") &&
+          dept.includes("operation") &&
+          [
+            "area manager",
+            "regional manager",
+            "assistant vice president",
+            "vice president",
+            "senior vice president",
+          ].includes(role)
+        );
+      }
+
       if (isSuperUser) return true;
 
       const allowed = allowedSidebar();
@@ -403,8 +425,13 @@ const Sidebar = ({ collapsed }) => {
     });
   }, [permissionMap, isSuperUser, reportPending, role, userDepartment]);
 
-  const isPathActive = (basePath) =>
-    pathname === basePath || pathname.startsWith(basePath + "/");
+  const isPathActive = (basePath) => {
+    if (basePath === "/transactions") {
+      return pathname === "/transactions";
+    }
+
+    return pathname === basePath || pathname.startsWith(basePath + "/");
+  };
 
   return (
     <aside className={`sidebar ${collapsed ? "collapsed" : ""}`}>

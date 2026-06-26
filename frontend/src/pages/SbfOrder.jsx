@@ -87,6 +87,7 @@ const canView =
   isAccounting ||
   isPresident ||
   isOfficeOfPresident ||
+  isTreadDepartment ||
   accountingManager ||
   itManager ||
   hrManager ||
