@@ -8,6 +8,7 @@ const multer = require("multer");
 
 const { requireAuth } = require("../middlewares/authMiddleware");
 const { requirePermission } = require("../middlewares/permissionMiddleware");
+const { writeEvent, dispatchSyncEvent } = require("../services/lmsSyncService");
 
 const toNum = (v) => {
   const n = Number(v ?? 0);
@@ -986,7 +987,27 @@ router.put(
           ]
         );
 
+        // ── LMS Sync ──
+        const syncEventId = await writeEvent(client, {
+          event_type:   "promoted",
+          employee_id:  order.employee_id,
+          employee_no:  order.employee_no || null,
+          source_table: "promotion_orders",
+          source_id:    order.id,
+          payload: {
+            employee_no:    order.employee_no,
+            employee_name:  order.employee_name,
+            old_position:   order.old_position,
+            new_position:   order.new_position,
+            effective_date: order.effective_date,
+            order_no:       order.order_no,
+          },
+        });
+        // ── end LMS Sync ──
+
         await client.query("COMMIT");
+
+        dispatchSyncEvent(syncEventId).catch(() => {});
 
         if (order.attachment_path && order.attachment_path !== latestPath) {
           removeStoredFile(order.attachment_path);

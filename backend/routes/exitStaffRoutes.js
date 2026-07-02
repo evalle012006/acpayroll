@@ -4,6 +4,7 @@ const pool = require("../db");
 
 const { requireAuth } = require("../middlewares/authMiddleware");
 const { requirePermission } = require("../middlewares/permissionMiddleware");
+const { writeEvent, dispatchSyncEvent } = require("../services/lmsSyncService");
 
 const {
   isAdmin,
@@ -636,7 +637,30 @@ router.put(
         console.warn("status_history insert skipped:", historyErr.message);
       }
 
+      // ── LMS Sync ──
+      // Fetch updated staff row for employee_id (exit_staff_orders uses employee_no)
+      const staffForSync = staffRes.rows[0]; // already fetched above in this handler
+      const syncEventId = await writeEvent(client, {
+        event_type:   "exited",
+        employee_id:  staffForSync.id,
+        employee_no:  existing.employee_no,
+        source_table: "exit_staff_orders",
+        source_id:    existing.id,
+        payload: {
+          employee_no:    existing.employee_no,
+          employee_name:  existing.employee_name,
+          exit_type:      existing.exit_type,
+          effective_date: existing.effective_date,
+          remarks:        existing.remarks,
+          order_no:       existing.order_no,
+        },
+      });
+      // ── end LMS Sync ──
+
       await client.query("COMMIT");
+
+      dispatchSyncEvent(syncEventId).catch(() => {});
+
       return res.json(orderUpdate.rows[0]);
     } catch (e) {
       await client.query("ROLLBACK");

@@ -7,6 +7,7 @@
 
   const { requireAuth } = require("../middlewares/authMiddleware");
   const { requirePermission } = require("../middlewares/permissionMiddleware");
+  const { writeEvent, dispatchSyncEvent } = require("../services/lmsSyncService");
 
   const {
     isAdmin,
@@ -820,7 +821,31 @@
           ]
         );
 
+        // ── LMS Sync ──
+        const syncEventId = await writeEvent(client, {
+          event_type:   "transferred",
+          employee_id:  order.employee_id,
+          employee_no:  order.employee_no || null,
+          source_table: "transfer_staff_orders",
+          source_id:    order.id,
+          payload: {
+            employee_no:       order.employee_no,
+            employee_name:     order.employee_name,
+            prev_branch_code:  order.prev_branch_code,
+            prev_branch_name:  order.prev_branch_name,
+            to_branch_code:    order.to_branch_code,
+            to_branch_name:    order.to_branch_name,
+            area:              order.area,
+            region:            order.region,
+            effective_date:    order.effective_date,
+            order_no:          order.order_no,
+          },
+        });
+        // ── end LMS Sync ──
+
         await client.query("COMMIT");
+
+        dispatchSyncEvent(syncEventId).catch(() => {});
 
         return res.json({
           order: updatedOrder,

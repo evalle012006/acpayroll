@@ -7,6 +7,7 @@ const multer = require("multer");
 
 const { requireAuth } = require("../middlewares/authMiddleware");
 const { requirePermission } = require("../middlewares/permissionMiddleware");
+const { writeEvent, dispatchSyncEvent } = require("../services/lmsSyncService");
 
 const toStr = (v) => String(v ?? "").trim();
 const norm = (v) => toStr(v).toLowerCase();
@@ -1041,7 +1042,42 @@ router.put(
             }
 
       await client.query(sql, params);
+
+      // ── LMS Sync — only on final HR approval ──
+      let syncEventId = null;
+      if (currentStatus === "Pending HR") {
+        const leaveRow = await client.query(
+          `SELECT lr.id, lr.employee_id, lr.leave_type, lr.start_date, lr.end_date,
+                  lr.transaction_code, s.employee_no, s.fullname
+          FROM public.leave_requests lr
+          JOIN public.staff s ON s.id = lr.employee_id
+          WHERE lr.id = $1`,
+          [id]
+        );
+        if (leaveRow.rowCount > 0) {
+          const lv = leaveRow.rows[0];
+          syncEventId = await writeEvent(client, {
+            event_type:   "leave_approved",
+            employee_id:  lv.employee_id,
+            employee_no:  lv.employee_no,
+            source_table: "leave_requests",
+            source_id:    lv.id,
+            payload: {
+              employee_no:      lv.employee_no,
+              fullname:         lv.fullname,
+              leave_type:       lv.leave_type,
+              start_date:       lv.start_date,
+              end_date:         lv.end_date,
+              transaction_code: lv.transaction_code,
+            },
+          });
+        }
+      }
+      // ── end LMS Sync ──
+
       await client.query("COMMIT");
+
+      if (syncEventId) dispatchSyncEvent(syncEventId).catch(() => {});
 
       const finalRow = await pool.query(`${baseLeaveSelect} WHERE lr.id = $1`, [
         id,

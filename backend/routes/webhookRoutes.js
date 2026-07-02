@@ -93,10 +93,6 @@
  * │   ]                                                                     │
  * │ }                                                                       │
  * └─────────────────────────────────────────────────────────────────────────┘
- *  
- * 
- * 
- * 
  * 
  * 
  * 
@@ -197,14 +193,30 @@
  * 
  * 
  * 
- * 
- * 
+ * ===============================================
+ * Allows LMS (or an admin) to:
+ *   - List unacknowledged / failed sync events
+ *   - Retry a failed event manually
+ *
+ * All routes require X-API-Key (already applied via router.use(requireApiKey)).
+ *
+ * ┌─────────────────────────────────────────────────────────────────────┐
+ * │ GET /api/webhook/sync-events                                        │
+ * │   ?status=pending|sent|failed  (default: all)                      │
+ * │   ?limit=50  ?page=1                                               │
+ * │                                                                     │
+ * │ GET /api/webhook/sync-events/:id                                    │
+ * │                                                                     │
+ * │ POST /api/webhook/sync-events/:id/retry                             │
+ * │   Re-fires a failed event immediately.                              │
+ * └─────────────────────────────────────────────────────────────────────┘
  */
 
 const express = require("express");
 const router = express.Router();
 const pool = require("../db");
 const { requireApiKey } = require("../middlewares/webhookAuth");
+const { dispatchSyncEvent } = require("../services/lmsSyncService");
 
 router.use(requireApiKey);
 
@@ -428,6 +440,108 @@ router.get("/staff/:id/status", async (req, res) => {
     });
   } catch (err) {
     console.error("[webhook/staff/:id/status] GET ERROR:", err.message);
+    return res.status(500).json({ error: "Internal server error." });
+  }
+});
+
+/* ── GET /api/webhook/sync-events ── */
+router.get("/sync-events", async (req, res) => {
+  try {
+    const page   = toInt(req.query.page, 1);
+    const limit  = Math.min(toInt(req.query.limit, 50), 200);
+    const offset = (page - 1) * limit;
+    const status = toStr(req.query.status);
+ 
+    const conditions = [];
+    const params = [];
+ 
+    if (status) {
+      params.push(status);
+      conditions.push(`status = $${params.length}`);
+    }
+ 
+    const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
+ 
+    const countRes = await pool.query(
+      `SELECT COUNT(*) AS total FROM public.staff_sync_events ${where}`,
+      params
+    );
+    const total = parseInt(countRes.rows[0].total, 10);
+ 
+    params.push(limit);
+    params.push(offset);
+ 
+    const dataRes = await pool.query(
+      `SELECT id, event_type, employee_id, employee_no, source_table, source_id,
+              status, attempts, last_error, sent_at, created_at
+       FROM public.staff_sync_events
+       ${where}
+       ORDER BY created_at DESC
+       LIMIT $${params.length - 1} OFFSET $${params.length}`,
+      params
+    );
+ 
+    const totalPages = Math.ceil(total / limit);
+    return res.json({
+      meta: { page, limit, total, total_pages: totalPages, has_next: page < totalPages, has_prev: page > 1 },
+      data: dataRes.rows,
+    });
+  } catch (err) {
+    console.error("[webhook/sync-events] GET ERROR:", err.message);
+    return res.status(500).json({ error: "Internal server error." });
+  }
+});
+ 
+/* ── GET /api/webhook/sync-events/:id ── */
+router.get("/sync-events/:id", async (req, res) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    if (!Number.isFinite(id)) return res.status(400).json({ error: "Invalid event id." });
+ 
+    const r = await pool.query(
+      `SELECT * FROM public.staff_sync_events WHERE id = $1`,
+      [id]
+    );
+    if (r.rowCount === 0) return res.status(404).json({ error: "Event not found." });
+ 
+    return res.json({ data: r.rows[0] });
+  } catch (err) {
+    console.error("[webhook/sync-events/:id] GET ERROR:", err.message);
+    return res.status(500).json({ error: "Internal server error." });
+  }
+});
+ 
+/* ── POST /api/webhook/sync-events/:id/retry ── */
+router.post("/sync-events/:id/retry", async (req, res) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    if (!Number.isFinite(id)) return res.status(400).json({ error: "Invalid event id." });
+ 
+    const r = await pool.query(
+      `SELECT id, status FROM public.staff_sync_events WHERE id = $1`,
+      [id]
+    );
+    if (r.rowCount === 0) return res.status(404).json({ error: "Event not found." });
+ 
+    const event = r.rows[0];
+    if (event.status === "sent") {
+      return res.status(400).json({ error: "Event already successfully sent." });
+    }
+ 
+    // Reset to pending so dispatchSyncEvent re-fires cleanly
+    await pool.query(
+      `UPDATE public.staff_sync_events SET status = 'pending' WHERE id = $1`,
+      [id]
+    );
+ 
+    // Fire async — don't await so the response returns immediately
+    dispatchSyncEvent(id).catch((err) =>
+      console.error(`[webhook/sync-events/retry] dispatchSyncEvent error:`, err.message)
+    );
+ 
+    return res.json({ message: `Retry dispatched for event ${id}.` });
+  } catch (err) {
+    console.error("[webhook/sync-events/:id/retry] POST ERROR:", err.message);
     return res.status(500).json({ error: "Internal server error." });
   }
 });
