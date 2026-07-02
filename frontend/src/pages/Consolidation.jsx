@@ -614,7 +614,7 @@ export default function Consolidation() {
 
             <div className="exit-page-buttons">
               <button type="button" disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>
-                PreviousNarvacan, Ilocos Surbagui
+                Previous
               </button>
 
               <button type="button" disabled={page >= totalPages} onClick={() => setPage((p) => Math.min(totalPages, p + 1))}>

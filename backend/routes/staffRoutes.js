@@ -1,6 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const pool = require("../db");
+const { build2316Html } = require("../templates/bir2316Template");
 const { requireAuth } = require("../middlewares/authMiddleware");
 const { requirePermission, hasPermission } = require("../middlewares/permissionMiddleware");
 
@@ -1809,6 +1810,51 @@ router.get(
       });
     } finally {
       client.release();
+    }
+  }
+);
+
+router.get(
+  "/staff/:id/print-2316",
+  requireAuth,
+  async (req, res) => {
+    try {
+      const id = toInt(req.params.id);
+
+      if (!id) {
+        return res.status(400).send("Invalid staff id");
+      }
+
+      const result = await pool.query(
+        `
+        SELECT
+            s.*,
+            b.name AS branch_name,
+            b.code AS branch_code
+        FROM public.staff s
+        LEFT JOIN public.branches b
+            ON b.id = s.branch_id
+        WHERE s.id = $1
+        LIMIT 1
+        `,
+        [id]
+      );
+
+      if (!result.rowCount) {
+        return res.status(404).send("Staff not found");
+      }
+
+      const staff = result.rows[0];
+
+      const html = build2316Html(staff);
+
+      res.setHeader("Content-Type", "text/html");
+      return res.send(html);
+
+    } catch (err) {
+      console.error("PRINT 2316 ERROR:", err);
+
+      return res.status(500).send("Server Error");
     }
   }
 );

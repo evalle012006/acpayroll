@@ -58,7 +58,7 @@ import ResignationRequests from "./pages/ResignationRequests";
 import StaffAccountsPayable from "./pages/StaffAccountsPayable";
 import OtherReceivable from "./pages/OtherReceivable";
 import BoardResolutionRequests from "./pages/BoardResolutionRequests";
-import TravelPlan from "./pages/TravelPlan";
+import TravelPlan from "./pages/Calendar";
 import Permissions from "./pages/Permissions";
 import StaffReport from "./pages/StaffReport";
 import Chat from "./pages/Chat";

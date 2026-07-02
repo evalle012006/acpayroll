@@ -63,6 +63,24 @@ export default function StaffProfileModal({
   const role = String(user?.role || "").trim().toLowerCase();
   const department = String(user?.department || "").trim().toLowerCase();
 
+  const canShowPrint2316 =
+    role === "admin" ||
+    (
+      [
+        "it department",
+        "accounting department",
+        "hr department",
+      ].includes(department) &&
+      [
+        "branch manager",
+        "area manager",
+        "regional manager",
+        "assistant vice president",
+        "vice president",
+        "senior vice president",
+      ].includes(role)
+    );
+
   const isITDepartmentManager =
     department === "it department" &&
     [
@@ -915,7 +933,16 @@ export default function StaffProfileModal({
             </div>
 
             <div className="staff-tabs" style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              {["staff", "contract", "leave", "attachments", "history", "balances", "remittances",]
+              {[
+                "staff",
+                "contract",
+                "leave",
+                "attachments",
+                "history",
+                "balances",
+                "remittances",
+                ...(canShowPrint2316 ? ["print2316"] : []),
+              ]
                 .filter(
                   (t) =>
                     canViewPrivateDetails ||
@@ -940,7 +967,9 @@ export default function StaffProfileModal({
                       ? "Transaction History"
                       : t === "balances"
                       ? "Personal Balances"
-                      : "Remittances"}
+                      : t === "remittances"
+                      ? "Remittances"
+                      : "Print 2316"}
                   </button>
                 ))}
             </div>
@@ -1556,6 +1585,15 @@ export default function StaffProfileModal({
                 "July", "August", "September", "October", "November", "December",
               ];
 
+              const currentDate = new Date();
+              const currentMonthIndex = currentDate.getMonth();
+
+              const shouldShowMonthValue = (monthIndex) => {
+                if (remittanceYear < currentDate.getFullYear()) return true;
+                if (remittanceYear > currentDate.getFullYear()) return false;
+                return monthIndex <= currentMonthIndex;
+              };
+
               const monthlyRows = [
                 { label: "SSS", ee: staff.sss_ee, er: staff.sss_er },
                 { label: "PhilHealth", ee: staff.ph_ee, er: staff.ph_er },
@@ -1568,7 +1606,7 @@ export default function StaffProfileModal({
                     <thead>
                       <tr>
                         <th>Remittance</th>
-                        {remittanceMonths.map((m) => <th key={m}>{m}</th>)}
+                        {remittanceMonths.map((m) => (<th key={m}>{m}</th>))}
                         <th>Total</th>
                       </tr>
                     </thead>
@@ -1580,27 +1618,34 @@ export default function StaffProfileModal({
                         return (
                           <tr key={r.label}>
                             <td className="strong">{r.label}</td>
-                            {remittanceMonths.map((m) => <td key={m}>{money(value)}</td>)}
-                            <td className="strong">{money(value * 12)}</td>
+                            {remittanceMonths.map((m, monthIndex) => (
+                              <td key={m}>{shouldShowMonthValue(monthIndex) ? money(value) : ""}</td>
+                            ))}
+                            <td className="strong">{money(value *remittanceMonths.filter((_, monthIndex) =>shouldShowMonthValue(monthIndex)).length)}</td>
                           </tr>
                         );
                       })}
 
                       <tr>
                         <td className="strong">Total ({type === "ee" ? "EE" : "ER"})</td>
-                        {remittanceMonths.map((m) => {
+                        {remittanceMonths.map((m, monthIndex) => {
                           const total = monthlyRows.reduce(
                             (sum, r) => sum + toNum(type === "ee" ? r.ee : r.er),
                             0
                           );
-                          return <td key={m} className="strong">{money(total)}</td>;
+                            return (
+                              <td key={m} className="strong">{shouldShowMonthValue(monthIndex) ? money(total) : ""}</td>
+                            );
                         })}
                         <td className="strong">
                           {money(
                             monthlyRows.reduce(
                               (sum, r) => sum + toNum(type === "ee" ? r.ee : r.er),
                               0
-                            ) * 12
+                            ) *
+                              remittanceMonths.filter((_, monthIndex) =>
+                                shouldShowMonthValue(monthIndex)
+                              ).length
                           )}
                         </td>
                       </tr>
@@ -1647,15 +1692,41 @@ export default function StaffProfileModal({
                   {renderRemitTable("er")}
 
                   <h2 style={{ marginTop: 24 }}>Tax - {remittanceYear}</h2>
+                  
                   <div className="table-scroll" style={{ overflowX: "auto" }}>
                     <table className="saas-table staffinfo-table">
+                      <thead>
+                        <tr>
+                          <th>Tax</th>
+
+                          {remittanceMonths.map((m) => (
+                            <th key={m}>{m}</th>
+                          ))}
+
+                          <th>Total</th>
+                        </tr>
+                      </thead>
+
                       <tbody>
                         <tr>
-                          <td className="strong">Withholding Tax Monthly</td>
-                          {remittanceMonths.map((m) => (
-                            <td key={m}>{money(staff.tax)}</td>
+                          <td className="strong">Withholding Tax</td>
+
+                          {remittanceMonths.map((m, monthIndex) => (
+                            <td key={m}>
+                              {shouldShowMonthValue(monthIndex)
+                                ? money(staff.tax)
+                                : ""}
+                            </td>
                           ))}
-                          <td className="strong">{money(toNum(staff.tax) * 12)}</td>
+
+                          <td className="strong">
+                            {money(
+                              toNum(staff.tax) *
+                                remittanceMonths.filter((_, monthIndex) =>
+                                  shouldShowMonthValue(monthIndex)
+                                ).length
+                            )}
+                          </td>
                         </tr>
                       </tbody>
                     </table>
@@ -1663,6 +1734,43 @@ export default function StaffProfileModal({
                 </>
               );
             })()}
+
+            {tab === "print2316" && (
+              <div
+                style={{
+                  padding: 25,
+                  textAlign: "center",
+                }}
+              >
+                <h2>BIR Form 2316</h2>
+
+                <p>
+                  Certificate of Compensation Payment / Tax Withheld
+                </p>
+
+                <button
+                  className="btn btn-primary"
+                  onClick={async () => {
+                    try {
+                      const res = await api.get(`/staff/${staff.id}/print-2316`, {
+                        responseType: "text",
+                      });
+
+                      const printWindow = window.open("", "_blank", "width=900,height=1200");
+
+                      printWindow.document.open();
+                      printWindow.document.write(res.data);
+                      printWindow.document.close();
+                    } catch (err) {
+                      console.error(err);
+                      alert("Failed to open 2316.");
+                    }
+                  }}
+                >
+                  🖨 Print 2316
+                </button>
+              </div>
+            )}
             
             </div>
             <div className="modal-foot">

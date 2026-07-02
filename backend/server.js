@@ -46,7 +46,7 @@ const boardResolutionRoutes = require("./routes/boardResolutionRoutes");
 const rolePermissionsRoutes = require("./routes/rolePermissionsRoutes");
 const awolReportsRoutes = require("./routes/awolReportsRoutes");
 const otherReceivableRoutes = require("./routes/otherReceivableRoutes");
-const travelPlanRoutes = require("./routes/travelPlanRoutes");
+const calendarRoutes = require("./routes/calendarRoutes");
 const { startMonthlyBalancePoster } = require("./jobs/monthlyBalancePoster");
 
 const app = express();
@@ -107,7 +107,7 @@ app.use("/api", boardResolutionRoutes);
 app.use("/api", rolePermissionsRoutes);
 app.use("/api", awolReportsRoutes);
 app.use("/api", otherReceivableRoutes);
-app.use("/api", travelPlanRoutes);
+app.use("/api", calendarRoutes);
 app.use("/api", apiRoutes);
 
 app.get("/test", (_req, res) => {

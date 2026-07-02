@@ -82,6 +82,24 @@ const moveFromTemp = async (tempKey, origin, uuid, filename) => {
   return finalKey;
 };
 
+const moveFromTempKeepExisting = async (tempKey, origin, uuid, filename) => {
+  const prefix = `${ROOT}/${origin}/${uuid}/`;
+  const safeName = filename.replace(/[^a-zA-Z0-9._-]/g, "_");
+  const finalKey = `${prefix}${Date.now()}-${safeName}`;
+
+  await s3Client.send(
+    new CopyObjectCommand({
+      Bucket: BUCKET,
+      CopySource: `${BUCKET}/${tempKey}`,
+      Key: finalKey,
+    })
+  );
+
+  await s3Client.send(new DeleteObjectCommand({ Bucket: BUCKET, Key: tempKey }));
+
+  return finalKey;
+};
+
 const deleteKey = async (key) => {
   if (!key) return;
   await s3Client.send(new DeleteObjectCommand({ Bucket: BUCKET, Key: key }));
@@ -98,9 +116,24 @@ const getSignedDownloadUrl = async (key, expiresIn = 3600) => {
   return getSignedUrl(s3Client, cmd, { expiresIn });
 };
 
+const uploadPhotosToTemp = multer({
+  storage: multerS3({
+    s3: s3Client,
+    bucket: BUCKET,
+    key: (_req, file, cb) => {
+      const timestamp = Date.now();
+      const safeName = file.originalname.replace(/[^a-zA-Z0-9._-]/g, "_");
+      cb(null, `${ROOT}/temp/${timestamp}-${safeName}`);
+    },
+  }),
+  limits: { fileSize: 25 * 1024 * 1024 },
+}).array("photos", 20);
+
 module.exports = {
   uploadToTemp,
+  uploadPhotosToTemp,
   moveFromTemp,
+  moveFromTempKeepExisting,
   deleteKey,
   getSignedDownloadUrl,
 };

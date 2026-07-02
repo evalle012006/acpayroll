@@ -122,6 +122,19 @@ const isHRDepartmentManager = (req) => {
   );
 };
 
+const isOperationDepartmentUser = (req) => {
+  const dept = String(
+    req.user?.department ||
+      req.user?.department_name ||
+      req.user?.departmentName ||
+      req.user?.user_department ||
+      req.user?.dept ||
+      ""
+  ).toLowerCase();
+
+  return dept === "operation department";
+};
+
 const uploadRoot = path.join(process.cwd(), "uploads");
 const suspensionUploadDir = path.join(uploadRoot, "suspension");
 
@@ -339,8 +352,7 @@ router.get(
         isAccountingDepartmentUser(req) ||
         isOfficeOfThePresidentUser(req) ||
         isITDepartmentManager(req) ||
-        isTread(req) ||
-        isVicePresident(req) ||
+        isTread(req) || 
         isSeniorVicePresident(req) ||
         isPresident(req)
       ) {
@@ -425,6 +437,24 @@ router.get(
         return res.json(r.rows);
       }
 
+      if (isVicePresident(req)) {
+        const division = getUserDivision(req);
+        if (!division) return res.json([]);
+
+        const r = await pool.query(
+          `
+          SELECT so.*
+          FROM public.suspension_orders so
+          LEFT JOIN public.staff s ON s.id = so.employee_id
+          WHERE LOWER(TRIM(COALESCE(s.division, so.division, ''))) = LOWER(TRIM($1))
+          ORDER BY so.id DESC
+          `,
+          [division]
+        );
+
+        return res.json(r.rows);
+      }
+
       return res.status(403).json({ message: "Access denied" });
     } catch (e) {
       console.error("GET /api/suspension-orders ERROR:", e);
@@ -492,6 +522,22 @@ router.post(
 
     try {
       await client.query("BEGIN");
+
+      if (
+        isOperationDepartmentUser(req) &&
+        (
+          isBranchManager(req) ||
+          isAreaManager(req) ||
+          isRegionalManager(req) ||
+          isAssistantVicePresident(req) ||
+          isVicePresident(req)
+        )
+      ) {
+        await client.query("ROLLBACK");
+        return res.status(403).json({
+          message: "Operation Department Branch Manager to Vice President can only view suspension orders.",
+        });
+      }
 
       const employee_id = toInt(req.body?.employee_id);
       const reason = clean(req.body?.reason);
@@ -742,6 +788,22 @@ router.put(
     try {
       await client.query("BEGIN");
 
+      if (
+        isOperationDepartmentUser(req) &&
+        (
+          isBranchManager(req) ||
+          isAreaManager(req) ||
+          isRegionalManager(req) ||
+          isAssistantVicePresident(req) ||
+          isVicePresident(req)
+        )
+      ) {
+        await client.query("ROLLBACK");
+        return res.status(403).json({
+          message: "Operation Department Branch Manager to Vice President can only view suspension orders.",
+        });
+      }
+
       const id = toInt(req.params.id);
 
       if (!id) {
@@ -980,6 +1042,22 @@ router.delete(
     try {
       await client.query("BEGIN");
 
+      if (
+        isOperationDepartmentUser(req) &&
+        (
+          isBranchManager(req) ||
+          isAreaManager(req) ||
+          isRegionalManager(req) ||
+          isAssistantVicePresident(req) ||
+          isVicePresident(req)
+        )
+      ) {
+        await client.query("ROLLBACK");
+        return res.status(403).json({
+          message: "Operation Department Branch Manager to Vice President can only view suspension orders.",
+        });
+      }
+
       const id = toInt(req.params.id);
 
       if (!id) {
@@ -1176,6 +1254,22 @@ router.put(
 
       if (!id) return res.status(400).json({ message: "Invalid id" });
 
+      if (
+        isOperationDepartmentUser(req) &&
+        (
+          isBranchManager(req) ||
+          isAreaManager(req) ||
+          isRegionalManager(req) ||
+          isAssistantVicePresident(req) ||
+          isVicePresident(req)
+        )
+      ) {
+        return res.status(403).json({
+          message:
+            "Operation Department Branch Manager to Vice President can only view suspension orders.",
+        });
+      }
+
       const existingRes = await pool.query(
         `SELECT * FROM public.suspension_orders WHERE id = $1`,
         [id]
@@ -1327,6 +1421,22 @@ router.put(
       const id = toInt(req.params.id);
 
       if (!id) return res.status(400).json({ message: "Invalid id" });
+
+      if (
+        isOperationDepartmentUser(req) &&
+        (
+          isBranchManager(req) ||
+          isAreaManager(req) ||
+          isRegionalManager(req) ||
+          isAssistantVicePresident(req) ||
+          isVicePresident(req)
+        )
+      ) {
+        return res.status(403).json({
+          message:
+            "Operation Department Branch Manager to Vice President can only view suspension orders.",
+        });
+      }
 
       const reason = clean(req.body?.reason);
 

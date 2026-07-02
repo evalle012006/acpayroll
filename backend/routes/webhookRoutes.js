@@ -51,7 +51,7 @@
  * │       "middle_name": "Santos",                                          │
  * │       "status": "Active",                                               │
  * │       "position": "Branch Manager",                                     │
- * │       "department": "Department Operations",                                       │
+ * │       "department": "Department Operations",                            │
  * │       "area": "Area 1",                                                 │
  * │       "region": "",                                                     │
  * │       "division": "",                                                   │

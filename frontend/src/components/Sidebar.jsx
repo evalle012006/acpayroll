@@ -11,7 +11,8 @@ import { FiSettings } from "react-icons/fi";
 import { FaUserGroup, FaIdBadge } from "react-icons/fa6";
 import { RxExit } from "react-icons/rx";
 import { LuFiles } from "react-icons/lu";
-import { BiPackage, BiSolidPlaneAlt } from "react-icons/bi";
+import { BiPackage } from "react-icons/bi";
+import { FaCalendarAlt } from "react-icons/fa";
 import { PiHandCoinsBold } from "react-icons/pi";
 import { SiOpenaccess } from "react-icons/si";
 
@@ -321,8 +322,8 @@ const Sidebar = ({ collapsed }) => {
       },
       {
         to: "/transactions/travel-plan",
-        label: "Travel Plan",
-        icon: BiSolidPlaneAlt,
+        label: "Calendar",
+        icon: FaCalendarAlt,
         module: "travel_plan",
       },
       {

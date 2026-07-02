@@ -84,6 +84,7 @@ export default function SuspensionOrder() {
 
 
   const isHRDepartment = department === "hr department";
+  const isOperationDepartment = department === "operation department";
 
   const isHRDepartmentManager =
     isHRDepartment &&
@@ -102,10 +103,6 @@ export default function SuspensionOrder() {
     isIt ||
     isHr ||
     isAccounting ||
-    isAreaManager ||
-    isRegionalManager ||
-    isAssistantVicePresident ||
-    isVicePresident ||
     isSeniorVicePresident ||
     isPresident ||
     isITDepartmentManager ||
@@ -116,10 +113,6 @@ export default function SuspensionOrder() {
     isIt ||
     isHr ||
     isAccounting ||
-    isAreaManager ||
-    isRegionalManager ||
-    isAssistantVicePresident ||
-    isVicePresident ||
     isSeniorVicePresident ||
     isPresident ||
     isITDepartmentManager ||
@@ -132,9 +125,9 @@ export default function SuspensionOrder() {
       return stage === "admin";
     }
 
-    if (isAreaManager && stage === "area manager") return true;
-    if (isRegionalManager && stage === "regional manager") return true;
-    if (isAssistantVicePresident && stage === "assistant vice president") return true;
+    if (!isOperationDepartment && isAreaManager && stage === "area manager") return true;
+    if (!isOperationDepartment && isRegionalManager && stage === "regional manager") return true;
+    if (!isOperationDepartment && isAssistantVicePresident && stage === "assistant vice president") return true;
     if ((isAdmin || isIt || isHr || isAccounting) && stage === "admin") return true;
 
     return false;
@@ -265,9 +258,6 @@ export default function SuspensionOrder() {
       isHr ||
       isAccounting ||
       isTread ||
-      isRegionalManager ||
-      isAssistantVicePresident ||
-      isVicePresident ||
       isSeniorVicePresident ||
       isPresident
     ) {
@@ -290,21 +280,39 @@ export default function SuspensionOrder() {
       });
     }
 
+    if (isRegionalManager) {
+      const userRegion = norm(user?.region);
+
+      return orders.filter((order) => {
+        const staffRow = getStaffForOrder(order);
+        return norm(staffRow?.region || order?.region) === userRegion;
+      });
+    }
+
+    if (isAssistantVicePresident || isVicePresident) {
+      const userDivision = norm(user?.division);
+
+      return orders.filter((order) => {
+        const staffRow = getStaffForOrder(order);
+        return norm(staffRow?.division || order?.division) === userDivision;
+      });
+    }
+
     return [];
   }, [
-    orders,
-    staff,
-    user,
-    isAdmin,
-    isIt,
-    isHr,
-    isAccounting,
-    isTread,
-    isBranchManager,
-    isAreaManager,
-    isRegionalManager,
-    isAssistantVicePresident,
-  ]);
+      orders,
+      staff,
+      user,
+      isAdmin,
+      isIt,
+      isHr,
+      isAccounting,
+      isTread,
+      isBranchManager,
+      isAreaManager,
+      isRegionalManager,
+      isAssistantVicePresident,
+    ]);
 
   const filteredOrders = useMemo(() => {
     const q = norm(search);

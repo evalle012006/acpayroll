@@ -381,3 +381,30 @@
   cursor: not-allowed;
 }
 
+.form-right {
+  border-left: 2px solid #000;
+  height: 78px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 4px;
+}
+
+.barcode-box {
+  width: 120px;
+  height: 42px;
+  border: 1px solid #000;
+  background:
+    repeating-linear-gradient(
+      90deg,
+      #000 0 2px,
+      #fff 2px 4px,
+      #000 4px 5px,
+      #fff 5px 8px
+    );
+}
+
+.form-code {
+  font-size: 10px;
+}
