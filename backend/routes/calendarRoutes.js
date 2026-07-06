@@ -37,22 +37,31 @@ const travelPlanSelect = `
   id,
   title,
   TO_CHAR(plan_date, 'YYYY-MM-DD') AS plan_date,
+
+  employee_name,
+  position,
+
   branch_name,
   description,
+
   review,
   findings,
+
   photo_url,
   photo_uploaded_at,
   photo_latitude,
   photo_longitude,
+
   check_in_photo_url,
   check_in_at,
   check_in_latitude,
   check_in_longitude,
+
   check_out_photo_url,
   check_out_at,
   check_out_latitude,
   check_out_longitude,
+
   created_by,
   created_at,
   status,
@@ -86,6 +95,10 @@ router.post("/travel-plans", requireAuth, async (req, res) => {
 
     const title = toStr(req.body.title);
     const plan_date = toStr(req.body.plan_date);
+
+    const employee_name = toStr(req.body.employee_name);
+    const position = toStr(req.body.position);
+
     const branch_name = toStr(req.body.branch_name);
     const description = toStr(req.body.description);
 
@@ -96,12 +109,40 @@ router.post("/travel-plans", requireAuth, async (req, res) => {
     const r = await pool.query(
       `
       INSERT INTO public.travel_plans
-        (title, plan_date, branch_name, description, created_by, created_at, updated_at)
+        (
+        title,
+        plan_date,
+        employee_name,
+        position,
+        branch_name,
+        description,
+        created_by,
+        created_at,
+        updated_at
+        )
       VALUES
-        ($1, $2::date, $3, $4, $5, NOW(), NOW())
+        (
+        $1,
+        $2::date,
+        $3,
+        $4,
+        $5,
+        $6,
+        $7,
+        NOW(),
+        NOW()
+        )
       RETURNING ${travelPlanSelect}
       `,
-      [title, plan_date, branch_name || null, description || null, req.user?.id || null]
+      [
+        title,
+        plan_date,
+        employee_name || null,
+        position || null,
+        branch_name || null,
+        description || null,
+        req.user?.id || null,
+        ]
     );
 
     return res.json({ message: "Travel plan created", plan: r.rows[0] });
@@ -365,29 +406,74 @@ router.get("/travel-plans/staff-scope", requireAuth, async (req, res) => {
     if (role === "area manager") {
       sql = `
         ${baseSelect}
-          AND LOWER(TRIM(COALESCE(s.area, ''))) = LOWER(TRIM($1))
+        AND LOWER(TRIM(COALESCE(s.area,''))) =
+            LOWER(TRIM($1))
+
         ORDER BY
           b.name ASC,
-          CASE LOWER(COALESCE(s.position, ''))
+
+          CASE LOWER(COALESCE(s.position,''))
+
             WHEN 'branch manager' THEN 1
             WHEN 'acting branch manager' THEN 2
+
             WHEN 'loan officer' THEN 3
             WHEN 'probationary loan officer' THEN 4
+
+            WHEN 'cashier' THEN 5
+            WHEN 'collector' THEN 6
+            WHEN 'office staff' THEN 7
+            WHEN 'branch secretary' THEN 8
+            WHEN 'bookkeeper' THEN 9
+            WHEN 'utility' THEN 10
+            WHEN 'security guard' THEN 11
+
             ELSE 99
+
           END,
+
           s.fullname ASC
-      `;
+    `;
       params = [req.user?.area || ""];
-    } else if (role === "regional manager") {
+    } else if (
+      role === "regional manager" ||
+      role === "acting regional manager"
+    ) {
       sql = `
         ${baseSelect}
-          AND LOWER(TRIM(COALESCE(s.region, ''))) = LOWER(TRIM($1))
-          AND LOWER(TRIM(COALESCE(s.position, ''))) IN (
-            'area manager',
-            'acting area manager'
-          )
-        ORDER BY s.area ASC, s.fullname ASC
+          AND LOWER(TRIM(COALESCE(s.region,''))) =
+              LOWER(TRIM($1))
+
+        ORDER BY
+          s.area ASC,
+          b.name ASC,
+
+          CASE LOWER(COALESCE(s.position,''))
+
+            WHEN 'area manager' THEN 1
+            WHEN 'acting area manager' THEN 2
+
+            WHEN 'branch manager' THEN 3
+            WHEN 'acting branch manager' THEN 4
+
+            WHEN 'loan officer' THEN 5
+            WHEN 'probationary loan officer' THEN 6
+
+            WHEN 'cashier' THEN 7
+            WHEN 'collector' THEN 8
+            WHEN 'office staff' THEN 9
+            WHEN 'branch secretary' THEN 10
+            WHEN 'bookkeeper' THEN 11
+            WHEN 'utility' THEN 12
+            WHEN 'security guard' THEN 13
+
+            ELSE 99
+
+          END,
+
+          s.fullname ASC
       `;
+
       params = [req.user?.region || ""];
     } else if (role === "assistant vice president") {
       sql = `
@@ -427,6 +513,15 @@ router.get("/travel-plans/staff-scope", requireAuth, async (req, res) => {
     } else {
       return res.json([]);
     }
+
+    console.log("Logged User");
+    console.log(req.user);
+
+    console.log("Area:");
+    console.log(req.user.area);
+
+    console.log("Params:");
+    console.log(params);
 
     const r = await pool.query(sql, params);
     return res.json(r.rows);
@@ -554,5 +649,42 @@ router.get("/calendar-activities", requireAuth, async (_req, res) => {
     return res.status(500).json({ message: "Server error" });
   }
 });
+
+router.get(
+  "/travel-plans/branch/:branch",
+  requireAuth,
+  async (req, res) => {
+    try {
+      const branch = req.params.branch;
+
+      const r = await pool.query(
+        `
+        SELECT
+          id,
+          title,
+          employee_name,
+          position,
+          branch_name,
+          description,
+          review,
+          findings,
+          status,
+          TO_CHAR(plan_date,'YYYY-MM-DD') AS plan_date
+        FROM public.travel_plans
+        WHERE branch_name = $1
+        ORDER BY plan_date DESC,id DESC
+        `,
+        [branch]
+      );
+
+      return res.json(r.rows);
+    } catch (err) {
+      console.error(err);
+      return res.status(500).json({
+        message: "Server error",
+      });
+    }
+  }
+);
 
 module.exports = router;

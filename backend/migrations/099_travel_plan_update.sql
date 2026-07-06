@@ -55,4 +55,10 @@ DO UPDATE SET
   allowed = true,
   updated_at = NOW();
 
+  ALTER TABLE public.travel_plans
+    ADD COLUMN IF NOT EXISTS employee_name TEXT;
+
+    ALTER TABLE public.travel_plans
+    ADD COLUMN IF NOT EXISTS position TEXT;
+
 COMMIT;

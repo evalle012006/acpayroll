@@ -23,6 +23,7 @@ export default function TravelPlan() {
 
   const [month, setMonth] = useState(today.getMonth());
   const [year, setYear] = useState(today.getFullYear());
+  const [visitRange, setVisitRange] = useState("month");
   const [view, setView] = useState("Month");
   const [activeMenu, setActiveMenu] = useState("Travel Plan");
   const [activities, setActivities] = useState([]);
@@ -38,6 +39,7 @@ export default function TravelPlan() {
   const [planNotes, setPlanNotes] = useState([]);
   const [selectedCalendarDate, setSelectedCalendarDate] = useState("");
   const [selectedActivity, setSelectedActivity] = useState(null);
+  const [selectedBranchVisit, setSelectedBranchVisit] = useState(null);
 
   const [showNoteForm, setShowNoteForm] = useState(false);
   const [noteForm, setNoteForm] = useState(emptyNoteForm);
@@ -56,6 +58,8 @@ export default function TravelPlan() {
   const [planForm, setPlanForm] = useState({
     title: "",
     plan_date: "",
+    employee_name: "",
+    position: "",
     branch_name: "",
     description: "",
   });
@@ -129,6 +133,89 @@ export default function TravelPlan() {
     return d === selectedDateText;
   });
 
+  const mostVisitedBranches = useMemo(() => {
+  const now = new Date();
+
+  let filteredPlans = [...plans];
+
+  if (visitRange === "week") {
+    const weekAgo = new Date();
+    weekAgo.setDate(now.getDate() - 7);
+
+    filteredPlans = plans.filter(
+      (p) => new Date(p.plan_date) >= weekAgo
+    );
+  }
+
+  if (visitRange === "month") {
+    filteredPlans = plans.filter((p) => {
+      const d = new Date(p.plan_date);
+      return (
+        d.getMonth() === month &&
+        d.getFullYear() === year
+      );
+    });
+  }
+
+  if (visitRange === "year") {
+    filteredPlans = plans.filter((p) => {
+      const d = new Date(p.plan_date);
+      return d.getFullYear() === year;
+    });
+  }
+
+  const counts = {};
+
+  branchRows.forEach((b) => {
+    counts[b.branch_name] = 0;
+  });
+
+  filteredPlans.forEach((plan) => {
+    if (counts[plan.branch_name] !== undefined) {
+      counts[plan.branch_name]++;
+    }
+  });
+
+  return Object.entries(counts)
+    .map(([branch, count]) => ({
+      branch,
+      count,
+    }))
+    .sort((a, b) => b.count - a.count);
+}, [plans, branchRows, visitRange, month, year]);
+
+const selectedBranchPlans = useMemo(() => {
+  let filtered = [...plans];
+
+  if (visitRange === "week") {
+    const weekAgo = new Date();
+    weekAgo.setDate(new Date().getDate() - 7);
+
+    filtered = filtered.filter((p) => new Date(p.plan_date) >= weekAgo);
+  }
+
+  if (visitRange === "month") {
+    filtered = filtered.filter((p) => {
+      const d = new Date(p.plan_date);
+      return d.getMonth() === month && d.getFullYear() === year;
+    });
+  }
+
+  if (visitRange === "year") {
+    filtered = filtered.filter((p) => {
+      const d = new Date(p.plan_date);
+      return d.getFullYear() === year;
+    });
+  }
+
+  return filtered.filter((p) => p.branch_name === selectedBranchVisit);
+}, [plans, selectedBranchVisit, visitRange, month, year]);
+
+  const maxBranchVisits = Math.max(
+    1,
+    ...mostVisitedBranches.map((b) => b.count)
+  );
+
   const fetchActivities = async () => {
     try {
       const res = await api.get("/calendar-activities");
@@ -198,6 +285,8 @@ export default function TravelPlan() {
       setPlanForm({
         title: "",
         plan_date: "",
+        employee_name: "",
+        position: "",
         branch_name: "",
         description: "",
       });
@@ -639,6 +728,8 @@ export default function TravelPlan() {
                   setPlanForm({
                     title: "",
                     plan_date: "",
+                    employee_name: "",
+                    position: "",
                     branch_name: "",
                     description: "",
                   });
@@ -662,7 +753,7 @@ export default function TravelPlan() {
           {activeMenu === "Travel Plan" && (
             <>
               <div className="travel-plan-layout">
-                {/* LEFT SIDE - CALENDAR */}
+                {/* LEFT SIDE */}
                 <div className="travel-plan-calendar-card">
                   <div className="travel-mini-calendar">
                     {DAYS.map((d) => (
@@ -683,7 +774,10 @@ export default function TravelPlan() {
                           type="button"
                           onClick={() => {
                             if (!cell.currentMonth) return;
-                            setPlanForm((p) => ({ ...p, plan_date: date }));
+                            setPlanForm((p) => ({
+                              ...p,
+                              plan_date: date,
+                            }));
                           }}
                           className={`travel-mini-date ${
                             cell.currentMonth ? "" : "muted"
@@ -699,96 +793,62 @@ export default function TravelPlan() {
                 {/* RIGHT SIDE */}
                 <div className="travel-right-column">
 
-                  {/* EVENTS */}
                   <div className="travel-events-card">
-                    <h3>Events</h3>
-
-                    <p>
-                      {selectedDateText
-                        ? `Travel plans for ${selectedDateText}`
-                        : "Select a date to view travel plan events."}
-                    </p>
-
-                    {selectedDatePlans.length === 0 ? (
-                      <div className="travel-empty">
-                        No events for this date.
-                      </div>
-                    ) : (
-                      <div className="travel-event-list">
-                        {selectedDatePlans.map((plan) => (
-                          <div
-                            key={plan.id}
-                            className="travel-event-item"
-                            onClick={() => openPlan(plan)}
-                          >
-                            <strong>{plan.title}</strong>
-
-                            <div className="travel-event-header">
-                              <span>{plan.branch_name || "No Branch"}</span>
-
-                              <div
-                                className={`travel-status ${
-                                  plan.status === "Completed"
-                                    ? "completed"
-                                    : "pending"
-                                }`}
-                              >
-                                {plan.status || "Pending"}
-                              </div>
-                            </div>
-
-                            <p>{plan.description}</p>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* ACTIVITIES */}
-                  <div className="travel-dashboard-card travel-activities-card">
-                    <div className="travel-dashboard-head">
+                    <div className="travel-card-header">
                       <div>
-                        <h3>Activities & Events</h3>
-                        <p>All travel plans for your scope.</p>
+                        <h3>Most Visited Branches</h3>
+                        <p>Based on created travel plans.</p>
                       </div>
 
-                      <span>{plans.length} Plans</span>
+                      <select
+                        value={visitRange}
+                        onChange={(e) => setVisitRange(e.target.value)}
+                        className="travel-range-select"
+                      >
+                        <option value="week">Week</option>
+                        <option value="month">Month</option>
+                        <option value="year">Year</option>
+                      </select>
                     </div>
 
-                    {plans.length === 0 ? (
+                    {mostVisitedBranches.length === 0 ? (
                       <div className="travel-empty">
-                        No activities yet.
+                        No branch visits yet.
                       </div>
                     ) : (
-                      <div className="travel-activity-list">
-                        {plans.map((plan) => (
+                      <div className="branch-visit-chart">
+                        {mostVisitedBranches.map((item) => (
                           <div
-                            key={plan.id}
-                            className="travel-activity-card"
-                            onClick={() => openPlan(plan)}
+                            key={item.branch}
+                            className={`travel-branch-item ${
+                              selectedBranchVisit === item.branch ? "active" : ""
+                            }`}
+                            onClick={() =>
+                              setSelectedBranchVisit(
+                                selectedBranchVisit === item.branch
+                                  ? null
+                                  : item.branch
+                              )
+                            }
                           >
-                            <div>
-                              <strong>{plan.title}</strong>
-                              <p>{plan.branch_name || "No Branch"}</p>
-                              <small>
-                                {plan.description || "No description"}
-                              </small>
-                            </div>
-
-                            <div className="travel-activity-right">
-                              <span>
-                                {String(plan.plan_date).slice(0, 10)}
+                            <div className="branch-visit-info">
+                              <span className="travel-branch-name">
+                                {item.branch}
                               </span>
 
-                              <b
-                                className={`travel-status ${
-                                  plan.status === "Completed"
-                                    ? "completed"
-                                    : "pending"
-                                }`}
-                              >
-                                {plan.status || "Pending"}
+                              <b className="travel-branch-count">
+                                {item.count}
                               </b>
+                            </div>
+
+                            <div className="branch-visit-bar">
+                              <div
+                                style={{
+                                  width: `${
+                                    (item.count / maxBranchVisits) * 100
+                                  }%`,
+                                }}
+                              />
                             </div>
                           </div>
                         ))}
@@ -797,6 +857,61 @@ export default function TravelPlan() {
                   </div>
 
                 </div>
+
+              </div>
+
+              {/* ACTIVITIES */}
+              <div className="travel-dashboard-card travel-activities-card">
+
+                <div className="travel-dashboard-head">
+                  <div>
+                    <h3>Activities & Events</h3>
+                    <p>All travel plans for your scope.</p>
+                  </div>
+
+                  <span>{plans.length} Plans</span>
+                </div>
+
+                {plans.length === 0 ? (
+                  <div className="travel-empty">
+                    No activities yet.
+                  </div>
+                ) : (
+                  <div className="travel-activity-list">
+                    {plans.map((plan) => (
+                      <div
+                        key={plan.id}
+                        className="travel-activity-card"
+                        onClick={() => openPlan(plan)}
+                      >
+                        <div>
+                          <strong>{plan.title}</strong>
+                          <p>{plan.branch_name || "No Branch"}</p>
+                          <small>
+                            {plan.description || "No description"}
+                          </small>
+                        </div>
+
+                        <div className="travel-activity-right">
+                          <span>
+                            {String(plan.plan_date).slice(0, 10)}
+                          </span>
+
+                          <b
+                            className={`travel-status ${
+                              plan.status === "Completed"
+                                ? "completed"
+                                : "pending"
+                            }`}
+                          >
+                            {plan.status || "Pending"}
+                          </b>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
               </div>
 
               {/* STAFF SCOPE */}
@@ -1027,6 +1142,59 @@ export default function TravelPlan() {
                   </label>
 
                   <label>
+                    Employee
+
+                    <Select
+                      className="travel-staff-search"
+                      classNamePrefix="select"
+                      isSearchable
+                      isClearable
+                      placeholder="Search employee..."
+
+                      options={staffRows.map((staff) => ({
+                        value: staff.employee_no,
+                        label: `${staff.employee_name} • ${staff.position}`,
+                      }))}
+
+                      value={
+                        staffRows
+                          .filter((s) => s.employee_name === planForm.employee_name)
+                          .map((s) => ({
+                            value: s.employee_no,
+                            label: `${s.employee_name} • ${s.position}`,
+                          }))[0] || null
+                      }
+
+                      onChange={(option) => {
+                        const staff = staffRows.find(
+                          (s) => s.employee_no === option?.value
+                        );
+
+                        setPlanForm((prev) => ({
+                          ...prev,
+                          employee_name: staff?.employee_name || "",
+                          position: staff?.position || "",
+                        }));
+                      }}
+
+                      filterOption={(option, input) =>
+                        option.label
+                          .toLowerCase()
+                          .includes(input.toLowerCase())
+                      }
+                    />
+                  </label>
+
+                  <label>
+                    Position
+                    <input
+                      type="text"
+                      value={planForm.position}
+                      readOnly
+                    />
+                  </label>
+
+                  <label>
                     Date
                     <input
                       type="date"
@@ -1042,25 +1210,41 @@ export default function TravelPlan() {
 
                   <label>
                     Branch
-                    <select
-                      value={planForm.branch_name}
-                      onChange={(e) =>
-                        setPlanForm((p) => ({
-                          ...p,
-                          branch_name: e.target.value,
+
+                    <Select
+                      className="travel-staff-search"
+                      classNamePrefix="select"
+                      isSearchable
+                      isClearable
+                      placeholder="Search branch..."
+
+                      options={branchRows.map((branch) => ({
+                        value: branch.branch_name,
+                        label: branch.branch_name,
+                      }))}
+
+                      value={
+                        planForm.branch_name
+                          ? {
+                              value: planForm.branch_name,
+                              label: planForm.branch_name,
+                            }
+                          : null
+                      }
+
+                      onChange={(option) =>
+                        setPlanForm((prev) => ({
+                          ...prev,
+                          branch_name: option?.value || "",
                         }))
                       }
-                    >
-                      <option value="">Select branch</option>
-                      {branchRows.map((b) => (
-                        <option
-                          key={b.branch_code || b.branch_name}
-                          value={b.branch_name}
-                        >
-                          {b.branch_name}
-                        </option>
-                      ))}
-                    </select>
+
+                      filterOption={(option, input) =>
+                        option.label
+                          .toLowerCase()
+                          .includes(input.toLowerCase())
+                      }
+                    />
                   </label>
 
                   <label>
@@ -1373,6 +1557,57 @@ export default function TravelPlan() {
                       {renderPhotoGrid("CHECK_OUT")}
                     </div>
                   )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {selectedBranchVisit && (
+            <div className="travel-plan-modal-backdrop">
+              <div className="travel-plan-modal">
+                <div className="travel-plan-modal-head">
+                  <h3>
+                      {selectedBranchVisit} Visit History
+                  </h3>
+                    <div className="travel-visit-total">
+                      <span>Total Visits</span>
+                      <b>{selectedBranchPlans.length}</b>
+                    </div>
+                  <button type="button" onClick={() => setSelectedBranchVisit(null)}>
+                    ×
+                  </button>
+                </div>
+
+                <div className="travel-activity-list">
+                  {selectedBranchPlans.length === 0 ? (
+  <div className="travel-empty">
+    No visits found for this period.
+  </div>
+) : (
+  selectedBranchPlans.map((plan) => (
+                      <div key={plan.id} className="travel-activity-card">
+                        <div>
+                          <strong>{plan.employee_name || "No employee"}</strong>
+                            <p>{plan.position || "No position"}</p>
+                            <p>
+                              <b>Activity:</b> {plan.title || "-"}
+                            </p>
+                            <small>{plan.description || "No description"}</small>
+                        </div>
+
+                        <div className="travel-activity-right">
+                          <span>{String(plan.plan_date).slice(0, 10)}</span>
+                          <b
+                            className={`travel-status ${
+                              plan.status === "Completed" ? "completed" : "pending"
+                            }`}
+                          >
+                            {plan.status || "Pending"}
+                          </b>
+                        </div>
+                      </div>
+                      ))
+                    )}
                 </div>
               </div>
             </div>

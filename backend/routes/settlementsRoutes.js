@@ -410,6 +410,9 @@ router.post(
         return res.status(400).json({ message: "Settlement branch is required" });
       }
 
+      console.log("=== SETTLEMENT BODY ===");
+      console.log(req.body);
+
       await client.query("BEGIN");
 
       const branch = await getBranchByIdOrCode({
