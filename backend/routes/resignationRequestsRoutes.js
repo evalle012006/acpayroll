@@ -24,24 +24,56 @@ const clean = (v) => String(v ?? "").trim();
 const norm = (v) => clean(v).toLowerCase();
 
 const roleLower = (req) => norm(req.user?.role);
+const departmentLower = (req) => norm(req.user?.department);
 
 const isAdmin = (req) => ["admin", "it"].includes(roleLower(req));
 const isIT = (req) => roleLower(req) === "it";
 const isHr = (req) => roleLower(req) === "hr";
 const isAccounting = (req) => roleLower(req) === "accounting";
 const isTread = (req) => roleLower(req) === "tread";
-const isBranchManager = (req) => roleLower(req) === "branch manager";
-const isAreaManager = (req) => roleLower(req) === "area manager";
-const isRegionalManager = (req) => roleLower(req) === "regional manager";
+const isBranchManager = (req) =>
+  roleLower(req) === "branch manager";
+
+const isAreaManager = (req) =>
+  roleLower(req) === "area manager";
+
+const isRegionalManager = (req) =>
+  roleLower(req) === "regional manager";
+
 const isAssistantVicePresident = (req) =>
-      roleLower(req) === "assistant vice president";
-const isVicePresident = (req) => roleLower(req) === "vice president";
+  roleLower(req) === "assistant vice president";
+
+const isVicePresident = (req) =>
+  roleLower(req) === "vice president";
+
 const isSeniorVicePresident = (req) =>
-      roleLower(req) === "senior vice president";
+  roleLower(req) === "senior vice president";
+
+const isHRDepartment = (req) =>
+  departmentLower(req) === "hr department";
+
+const isAccountingDepartment = (req) =>
+  departmentLower(req) === "accounting department";
+
+const isHRorAccountingManager = (req) =>
+  (isHRDepartment(req) || isAccountingDepartment(req)) &&
+  (
+    isBranchManager(req) ||
+    isAreaManager(req) ||
+    isRegionalManager(req) ||
+    isAssistantVicePresident(req) ||
+    isVicePresident(req) ||
+    isSeniorVicePresident(req)
+  );
 const isPresident = (req) => roleLower(req) === "president";
 
 const isFinalApprover = (req) =>
-  isAdmin(req) || isIT(req) || isHr(req) || isAccounting(req) || isSeniorVicePresident(req);
+  isAdmin(req) ||
+  isIT(req) ||
+  isHr(req) ||
+  isAccounting(req) ||
+  isSeniorVicePresident(req) ||
+  isHRorAccountingManager(req);
 
 const getUserBranchId = (req) => req.user?.branch_id ?? null;
 const getUserArea = (req) => clean(req.user?.area);

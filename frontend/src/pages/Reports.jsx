@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import "../styles/Reports.css";
 import api from "../api/axiosClient";
 import useStaffSignedUrls from "./StaffInformation/useStaffSignedUrls";
@@ -86,6 +86,7 @@ const requestTypes = [
 
 export default function Reports() {
   const navigate = useNavigate();
+  const location = useLocation();
 
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
@@ -166,9 +167,23 @@ export default function Reports() {
     }
   };
 
+  useEffect(() => { loadRequests(); }, []);
+    
   useEffect(() => {
-    loadRequests();
-  }, []);
+    const params = new URLSearchParams(location.search);
+    const filter = params.get("filter");
+
+    setSelectedStatus("Pending");
+    setSelectedType("All");
+
+    if (filter === "finance") {
+      setSelectedDepartment("Finance");
+    } else if (filter === "hr") {
+      setSelectedDepartment("HR");
+    } else {
+      setSelectedDepartment("All");
+    }
+  }, [location.search]);
 
   useEffect(() => {
     if (!selectedRequest) return;
@@ -515,7 +530,13 @@ Remarks: ${item.remarks || "-"}`;
     <div className="reports-page">
       <div className="reports-topbar">
         <div>
-          <h2 className="reports-title">Requests / Follow Up</h2>
+          <h2 className="reports-title">
+            {selectedDepartment === "Finance"
+              ? "Finance Pending"
+              : selectedDepartment === "HR"
+              ? "HR Pending"
+              : "Requests / Follow Up"}
+          </h2>
           <p className="reports-subtitle">
             Track pending requests and follow up with HR, Finance, Accounting, or
             Operations.
@@ -537,76 +558,6 @@ Remarks: ${item.remarks || "-"}`;
           {err}
         </div>
       ) : null}
-
-      <div className="reports-grid">
-        <button
-          type="button"
-          className="reports-stat clickable"
-          onClick={() => {
-            setSelectedDepartment("All");
-            setSelectedStatus("All");
-          }}
-        >
-          <div className="reports-stat-label">All Requests</div>
-          <div className="reports-stat-value">{summary.total}</div>
-          <div className="reports-stat-sub">All departments and statuses</div>
-        </button>
-
-        <button
-          type="button"
-          className="reports-stat clickable"
-          onClick={() => {
-            setSelectedDepartment("All");
-            setSelectedStatus("Pending");
-          }}
-        >
-          <div className="reports-stat-head">
-            <div className="reports-stat-label">Pending Follow Ups</div>
-            {summary.pending > 0 && (
-              <span className="reports-badge">{summary.pending}</span>
-            )}
-          </div>
-
-          <div className="reports-stat-value">{summary.pending}</div>
-          <div className="reports-stat-sub">Needs action or follow up</div>
-        </button>
-
-        <button
-          type="button"
-          className="reports-stat clickable"
-          onClick={() => {
-            setSelectedDepartment("HR");
-            setSelectedStatus("Pending");
-          }}
-        >
-          <div className="reports-stat-head">
-            <div className="reports-stat-label">HR Pending</div>
-            {summary.hr > 0 && <span className="reports-badge">{summary.hr}</span>}
-          </div>
-
-          <div className="reports-stat-value">{summary.hr}</div>
-          <div className="reports-stat-sub">Leave, regularization, suspension, exit</div>
-        </button>
-
-        <button
-          type="button"
-          className="reports-stat clickable"
-          onClick={() => {
-            setSelectedDepartment("Finance");
-            setSelectedStatus("Pending");
-          }}
-        >
-          <div className="reports-stat-head">
-            <div className="reports-stat-label">Finance Pending</div>
-            {summary.finance > 0 && (
-              <span className="reports-badge">{summary.finance}</span>
-            )}
-          </div>
-
-          <div className="reports-stat-value">{summary.finance}</div>
-          <div className="reports-stat-sub">Loans, SBF, reimbursement</div>
-        </button>
-      </div>
 
       <div className="reports-card">
         <div className="reports-toolbar" style={{ marginBottom: 14 }}>

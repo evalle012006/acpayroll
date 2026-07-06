@@ -25,6 +25,7 @@ export default function TravelPlan() {
   const [year, setYear] = useState(today.getFullYear());
   const [view, setView] = useState("Month");
   const [activeMenu, setActiveMenu] = useState("Travel Plan");
+  const [activities, setActivities] = useState([]);
 
   const [selectedPlan, setSelectedPlan] = useState(null);
   const [detailTab, setDetailTab] = useState("photos");
@@ -35,9 +36,22 @@ export default function TravelPlan() {
   const [plans, setPlans] = useState([]);
   const [planPhotos, setPlanPhotos] = useState([]);
   const [planNotes, setPlanNotes] = useState([]);
+  const [selectedCalendarDate, setSelectedCalendarDate] = useState("");
+  const [selectedActivity, setSelectedActivity] = useState(null);
 
   const [showNoteForm, setShowNoteForm] = useState(false);
   const [noteForm, setNoteForm] = useState(emptyNoteForm);
+  const [showCreateActivity, setShowCreateActivity] = useState(false);
+
+  const [activityForm, setActivityForm] = useState({
+    title: "",
+    date_from: "",
+    date_to: "",
+    days: "",
+    subject: "",
+    venue: "",
+    description: "",
+  });
 
   const [planForm, setPlanForm] = useState({
     title: "",
@@ -115,6 +129,16 @@ export default function TravelPlan() {
     return d === selectedDateText;
   });
 
+  const fetchActivities = async () => {
+    try {
+      const res = await api.get("/calendar-activities");
+      setActivities(Array.isArray(res.data) ? res.data : []);
+    } catch (err) {
+      console.error("Fetch activities error:", err);
+      setActivities([]);
+    }
+  };
+
   const fetchScopedStaff = async () => {
     try {
       const res = await api.get("/travel-plans/staff-scope");
@@ -156,6 +180,7 @@ export default function TravelPlan() {
   };
 
   useEffect(() => {
+    fetchActivities();
     fetchScopedStaff();
     fetchPlans();
   }, []);
@@ -181,6 +206,35 @@ export default function TravelPlan() {
     } catch (err) {
       console.error("Save plan error:", err);
       alert(err.response?.data?.message || "Failed to save plan.");
+    }
+  };
+
+  const saveActivity = async () => {
+    if (!activityForm.title || !activityForm.date_from || !activityForm.date_to) {
+      alert("Title, Date From, and Date To are required.");
+      return;
+    }
+
+    try {
+      await api.post("/calendar-activities", activityForm);
+
+      setShowCreateActivity(false);
+      setActivityForm({
+        title: "",
+        date_from: "",
+        date_to: "",
+        days: "",
+        subject: "",
+        venue: "",
+        description: "",
+      });
+
+      fetchActivities();
+
+      alert("Activity saved successfully.");
+    } catch (err) {
+      console.error("Save activity error:", err);
+      alert(err.response?.data?.message || "Failed to save activity.");
     }
   };
 
@@ -519,8 +573,6 @@ export default function TravelPlan() {
             {[
               "Travel Plan",
               "Calendar",
-              "Activities & Events",
-              "Graph",
               "History",
             ].map((menu) => (
               <button
@@ -579,87 +631,214 @@ export default function TravelPlan() {
               </select>
             </div>
 
-            <button
-              className="travel-create-btn"
-              type="button"
-              onClick={() => setShowCreatePlan(true)}
-            >
-              + Create Plan
-            </button>
+            <div className="travel-top-actions">
+              <button
+                className="travel-create-btn"
+                type="button"
+                onClick={() => {
+                  setPlanForm({
+                    title: "",
+                    plan_date: "",
+                    branch_name: "",
+                    description: "",
+                  });
+                  setShowCreatePlan(true);
+                }}
+              >
+                + Create Plan
+              </button>
+
+              <button
+                className="travel-create-btn secondary"
+                type="button"
+                onClick={() => setShowCreateActivity(true)}
+              >
+                + Create Activity
+              </button>
+
+            </div>
           </div>
 
           {activeMenu === "Travel Plan" && (
-            <div className="travel-plan-layout">
-              <div className="travel-plan-calendar-card">
-                <div className="travel-mini-calendar">
-                  {DAYS.map((d) => (
-                    <div key={d} className="travel-mini-day-header">
-                      {d}
-                    </div>
-                  ))}
+            <>
+              <div className="travel-plan-layout">
+                {/* LEFT SIDE - CALENDAR */}
+                <div className="travel-plan-calendar-card">
+                  <div className="travel-mini-calendar">
+                    {DAYS.map((d) => (
+                      <div key={d} className="travel-mini-day-header">
+                        {d}
+                      </div>
+                    ))}
 
-                  {calendarDays.map((cell, idx) => {
-                    const date = `${year}-${String(month + 1).padStart(
-                      2,
-                      "0"
-                    )}-${String(cell.day).padStart(2, "0")}`;
+                    {calendarDays.map((cell, idx) => {
+                      const date = `${year}-${String(month + 1).padStart(
+                        2,
+                        "0"
+                      )}-${String(cell.day).padStart(2, "0")}`;
 
-                    return (
-                      <button
-                        key={idx}
-                        type="button"
-                        onClick={() => {
-                          if (!cell.currentMonth) return;
-                          setPlanForm((p) => ({ ...p, plan_date: date }));
-                        }}
-                        className={`travel-mini-date ${
-                          cell.currentMonth ? "" : "muted"
-                        } ${planForm.plan_date === date ? "selected" : ""}`}
-                      >
-                        {cell.day}
-                      </button>
-                    );
-                  })}
+                      return (
+                        <button
+                          key={idx}
+                          type="button"
+                          onClick={() => {
+                            if (!cell.currentMonth) return;
+                            setPlanForm((p) => ({ ...p, plan_date: date }));
+                          }}
+                          className={`travel-mini-date ${
+                            cell.currentMonth ? "" : "muted"
+                          } ${planForm.plan_date === date ? "selected" : ""}`}
+                        >
+                          {cell.day}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
-              </div>
 
-              <div className="travel-events-card">
-                <h3>Events</h3>
-                <p>
-                  {selectedDateText
-                    ? `Travel plans for ${selectedDateText}`
-                    : "Select a date to view travel plan events."}
-                </p>
+                {/* RIGHT SIDE */}
+                <div className="travel-right-column">
 
-                {selectedDatePlans.length === 0 ? (
-                  <div className="travel-empty">No events for this date.</div>
-                ) : (
-                  <div className="travel-event-list">
-                    {selectedDatePlans.map((plan) => (
-                      <div
-                        key={plan.id}
-                        className="travel-event-item"
-                        onClick={() => openPlan(plan)}
-                      >
-                        <strong>{plan.title}</strong>
-                          <div className="travel-event-header">
-                            <span>{plan.branch_name || "No branch"}</span>
+                  {/* EVENTS */}
+                  <div className="travel-events-card">
+                    <h3>Events</h3>
 
-                              <div className={`travel-status ${plan.status === "Completed"
+                    <p>
+                      {selectedDateText
+                        ? `Travel plans for ${selectedDateText}`
+                        : "Select a date to view travel plan events."}
+                    </p>
+
+                    {selectedDatePlans.length === 0 ? (
+                      <div className="travel-empty">
+                        No events for this date.
+                      </div>
+                    ) : (
+                      <div className="travel-event-list">
+                        {selectedDatePlans.map((plan) => (
+                          <div
+                            key={plan.id}
+                            className="travel-event-item"
+                            onClick={() => openPlan(plan)}
+                          >
+                            <strong>{plan.title}</strong>
+
+                            <div className="travel-event-header">
+                              <span>{plan.branch_name || "No Branch"}</span>
+
+                              <div
+                                className={`travel-status ${
+                                  plan.status === "Completed"
                                     ? "completed"
                                     : "pending"
                                 }`}
                               >
                                 {plan.status || "Pending"}
                               </div>
+                            </div>
+
+                            <p>{plan.description}</p>
                           </div>
-                          <p>{plan.description}</p>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* ACTIVITIES */}
+                  <div className="travel-dashboard-card travel-activities-card">
+                    <div className="travel-dashboard-head">
+                      <div>
+                        <h3>Activities & Events</h3>
+                        <p>All travel plans for your scope.</p>
+                      </div>
+
+                      <span>{plans.length} Plans</span>
+                    </div>
+
+                    {plans.length === 0 ? (
+                      <div className="travel-empty">
+                        No activities yet.
+                      </div>
+                    ) : (
+                      <div className="travel-activity-list">
+                        {plans.map((plan) => (
+                          <div
+                            key={plan.id}
+                            className="travel-activity-card"
+                            onClick={() => openPlan(plan)}
+                          >
+                            <div>
+                              <strong>{plan.title}</strong>
+                              <p>{plan.branch_name || "No Branch"}</p>
+                              <small>
+                                {plan.description || "No description"}
+                              </small>
+                            </div>
+
+                            <div className="travel-activity-right">
+                              <span>
+                                {String(plan.plan_date).slice(0, 10)}
+                              </span>
+
+                              <b
+                                className={`travel-status ${
+                                  plan.status === "Completed"
+                                    ? "completed"
+                                    : "pending"
+                                }`}
+                              >
+                                {plan.status || "Pending"}
+                              </b>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                </div>
+              </div>
+
+              {/* STAFF SCOPE */}
+              <div className="travel-dashboard-card">
+                <div className="travel-dashboard-head">
+                  <div>
+                    <h3>Staff Scope</h3>
+                    <p>Staff visible based on your position.</p>
+                  </div>
+
+                  <span>{staffRows.length} Staff</span>
+                </div>
+
+                {staffRows.length === 0 ? (
+                  <div className="travel-empty">
+                    No staff found.
+                  </div>
+                ) : (
+                  <div className="travel-staff-list">
+                    {staffRows.map((staff) => (
+                      <div
+                        key={staff.employee_no}
+                        className="travel-staff-card"
+                      >
+                        <div>
+                          <strong>{staff.employee_name}</strong>
+
+                          <p>{staff.position}</p>
+
+                          <small>{staff.branch_name}</small>
+                        </div>
+
+                        <div className="travel-staff-right">
+                          <span>{staff.area}</span>
+                          <span>{staff.region}</span>
+                        </div>
                       </div>
                     ))}
                   </div>
                 )}
               </div>
-            </div>
+            </>
           )}
 
           {activeMenu === "Calendar" && (
@@ -670,71 +849,154 @@ export default function TravelPlan() {
                 </div>
               ))}
 
-              {calendarDays.map((cell, idx) => (
-                <button
-                  key={idx}
-                  type="button"
-                  className={`travel-date-cell ${
-                    cell.currentMonth ? "" : "muted"
-                  } ${
-                    cell.currentMonth && cell.day === selectedDay
-                      ? "selected"
-                      : ""
-                  }`}
-                >
-                  {String(cell.day).padStart(2, "0")}
-                </button>
-              ))}
+              {calendarDays.map((cell, idx) => {
+                const date = `${year}-${String(month + 1).padStart(2, "0")}-${String(
+                  cell.day
+                ).padStart(2, "0")}`;
+
+                const dayActivities = activities.filter((a) => {
+                  const from = String(a.date_from || "").slice(0, 10);
+                  const to = String(a.date_to || "").slice(0, 10);
+
+                  return date >= from && date <= to;
+                });
+
+                return (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={() => {
+                      if (!cell.currentMonth) return;
+
+                      setSelectedCalendarDate(date);
+                    }}
+                    className={`travel-date-cell ${
+                      cell.currentMonth ? "" : "muted"
+                    } ${
+                      cell.currentMonth && cell.day === selectedDay ? "selected" : ""
+                    }`}
+                  >
+                    <span className="travel-date-number">
+                      {String(cell.day).padStart(2, "0")}
+                    </span>
+
+                    {dayActivities.length > 0 && (
+                      <span className="travel-date-plan-count">
+                        {dayActivities.length} activity{dayActivities.length > 1 ? "ies" : ""}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
             </div>
           )}
 
-          {activeMenu === "Activities & Events" && (
-            <div className="travel-dashboard-card">
-              <div className="travel-dashboard-head">
-                <div>
-                  <h3>Activities & Events</h3>
-                  <p>All travel plans, reviews, findings, and completed branch visits.</p>
-                </div>
-                <span>{plans.length} Plans</span>
-              </div>
 
-              {plans.length === 0 ? (
-                <div className="travel-empty">No activities yet.</div>
-              ) : (
-                <div className="travel-activity-list">
-                  {plans.map((plan) => (
-                    <div
-                      key={plan.id}
-                      className="travel-activity-card"
-                      onClick={() => openPlan(plan)}
-                    >
-                      <div>
-                        <strong>{plan.title}</strong>
-                        <p>{plan.branch_name || "No branch"}</p>
-                        <small>{plan.description || "No description"}</small>
-                      </div>
-
-                      <div className="travel-activity-right">
-                        <span>{String(plan.plan_date).slice(0, 10)}</span>
-
-                        <b
-                          className={`travel-status ${
-                            plan.status === "Completed" ? "completed" : "pending"
-                          }`}
-                        >
-                          {plan.status || "Pending"}
-                        </b>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-
-          {["Graph", "History"].includes(activeMenu) && (
+          {["History"].includes(activeMenu) && (
             <div className="travel-dashboard-card">
               <div className="travel-empty">No data yet.</div>
+            </div>
+          )}
+
+          {showCreateActivity && (
+            <div className="travel-plan-modal-backdrop">
+              <div className="travel-plan-modal">
+                <div className="travel-plan-modal-head">
+                  <h3>Create Activity</h3>
+                  <button type="button" onClick={() => setShowCreateActivity(false)}>
+                    ×
+                  </button>
+                </div>
+
+                <div className="travel-plan-form">
+                  <label>
+                    Title
+                    <input
+                      type="text"
+                      value={activityForm.title}
+                      onChange={(e) =>
+                        setActivityForm((p) => ({ ...p, title: e.target.value }))
+                      }
+                    />
+                  </label>
+
+                  <label>
+                    Date From
+                    <input
+                      type="date"
+                      value={activityForm.date_from}
+                      onChange={(e) =>
+                        setActivityForm((p) => ({ ...p, date_from: e.target.value }))
+                      }
+                    />
+                  </label>
+
+                  <label>
+                    Date To
+                    <input
+                      type="date"
+                      value={activityForm.date_to}
+                      onChange={(e) =>
+                        setActivityForm((p) => ({ ...p, date_to: e.target.value }))
+                      }
+                    />
+                  </label>
+
+                  <label>
+                    Days
+                    <input
+                      type="number"
+                      value={activityForm.days}
+                      onChange={(e) =>
+                        setActivityForm((p) => ({ ...p, days: e.target.value }))
+                      }
+                    />
+                  </label>
+
+                  <label>
+                    Subject
+                    <input
+                      type="text"
+                      value={activityForm.subject}
+                      onChange={(e) =>
+                        setActivityForm((p) => ({ ...p, subject: e.target.value }))
+                      }
+                    />
+                  </label>
+
+                  <label>
+                    Venue
+                    <input
+                      type="text"
+                      value={activityForm.venue}
+                      onChange={(e) =>
+                        setActivityForm((p) => ({ ...p, venue: e.target.value }))
+                      }
+                    />
+                  </label>
+
+                  <label>
+                    Description
+                    <textarea
+                      rows="4"
+                      value={activityForm.description}
+                      onChange={(e) =>
+                        setActivityForm((p) => ({ ...p, description: e.target.value }))
+                      }
+                    />
+                  </label>
+                </div>
+
+                <div className="travel-plan-modal-actions">
+                  <button type="button" onClick={() => setShowCreateActivity(false)}>
+                    Cancel
+                  </button>
+
+                  <button type="button" className="primary" onClick={saveActivity}>
+                    Save Activity
+                  </button>
+                </div>
+              </div>
             </div>
           )}
 
@@ -834,6 +1096,112 @@ export default function TravelPlan() {
             </div>
           )}
 
+          {selectedCalendarDate && (
+            <div className="travel-plan-modal-backdrop">
+              <div className="travel-plan-modal">
+                <div className="travel-plan-modal-head">
+                  <h3>Activities for {selectedCalendarDate}</h3>
+                  <button type="button" onClick={() => setSelectedCalendarDate("")}>
+                    ×
+                  </button>
+                </div>
+
+                {activities.filter((a) => {
+                  const from = String(a.date_from || "").slice(0, 10);
+                  const to = String(a.date_to || "").slice(0, 10);
+                  return selectedCalendarDate >= from && selectedCalendarDate <= to;
+                }).length === 0 ? (
+                  <div className="travel-empty">No activity for this date.</div>
+                ) : (
+                  <div className="travel-activity-list">
+                    {activities
+                      .filter((a) => {
+                        const from = String(a.date_from || "").slice(0, 10);
+                        const to = String(a.date_to || "").slice(0, 10);
+                        return selectedCalendarDate >= from && selectedCalendarDate <= to;
+                      })
+                      .map((activity) => (
+                        <div
+                          key={activity.id}
+                          className="travel-activity-card"
+                          onClick={() => {
+                            setSelectedCalendarDate("");
+                            setSelectedActivity(activity);
+                          }}
+                        >
+                          <div>
+                            <strong>{activity.title}</strong>
+                            <p>{activity.subject || "No subject"}</p>
+                            <small>{activity.description || "No description"}</small>
+                          </div>
+
+                          <div className="travel-activity-right">
+                            <span>
+                              {activity.date_from} to {activity.date_to}
+                            </span>
+                            <b className="travel-status pending">
+                              {activity.days || 0} day{Number(activity.days) > 1 ? "s" : ""}
+                            </b>
+                          </div>
+                        </div>
+                      ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {selectedActivity && (
+            <div className="travel-plan-modal-backdrop">
+              <div className="travel-plan-modal">
+                <div className="travel-plan-modal-head activity-close-only">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedActivity(null)}
+                  >
+                    ×
+                  </button>
+                </div>
+
+                <div className="travel-plan-detail">
+                  <div className="activity-detail-modal">
+                    <div className="activity-detail-hero">
+                      <h3>{selectedActivity.title}</h3>
+                      <span>{selectedActivity.days} Days</span>
+                    </div>
+
+                    <div className="activity-detail-grid">
+                      <div>
+                        <small>Date From</small>
+                        <b>{selectedActivity.date_from}</b>
+                      </div>
+
+                      <div>
+                        <small>Date To</small>
+                        <b>{selectedActivity.date_to}</b>
+                      </div>
+
+                      <div>
+                        <small>Subject</small>
+                        <b>{selectedActivity.subject || "No subject"}</b>
+                      </div>
+
+                      <div>
+                        <small>Venue</small>
+                        <b>{selectedActivity.venue || "No venue"}</b>
+                      </div>
+                    </div>
+
+                    <div className="activity-detail-description">
+                      <small>Description</small>
+                      <p>{selectedActivity.description || "No description"}</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
           {selectedPlan && (
             <div className="travel-plan-modal-backdrop">
               <div className="travel-plan-modal">
@@ -859,17 +1227,17 @@ export default function TravelPlan() {
 
                   <div className="travel-time-summary">
                     <div>
-                      <b>Check In:</b>
+                      <b>Time In:</b>
                       <span>{formatTime(getFirstPhotoTime("CHECK_IN"))}</span>
                     </div>
 
                     <div>
-                      <b>Check Out:</b>
+                      <b>Time Out:</b>
                       <span>{formatTime(getFirstPhotoTime("CHECK_OUT"))}</span>
                     </div>
 
                     <div>
-                      <b>Total Time:</b>
+                      <b>Duration:</b>
                       <span>{getTravelDuration()}</span>
                     </div>
                   </div>
@@ -928,7 +1296,7 @@ export default function TravelPlan() {
                         setShowNoteForm(false);
                       }}
                     >
-                      Check In
+                      Time In
                     </button>
 
                     <button
@@ -938,7 +1306,7 @@ export default function TravelPlan() {
                         setShowNoteForm(false);
                       }}
                     >
-                      Check Out
+                      Time Out
                     </button>
                   </div>
 

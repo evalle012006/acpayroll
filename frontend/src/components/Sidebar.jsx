@@ -206,6 +206,9 @@ const Sidebar = ({ collapsed }) => {
   };
 
   const [reportPending, setReportPending] = useState(0);
+  const [financePending, setFinancePending] = useState(0);
+  const [hrPending, setHrPending] = useState(0);
+  const [openMenus, setOpenMenus] = useState({});
   const [permissionMap, setPermissionMap] = useState({});
   const [isSuperUser, setIsSuperUser] = useState(false);
 
@@ -263,6 +266,15 @@ const Sidebar = ({ collapsed }) => {
           countPending(leaveRes.data) +
           countPending(loanRes.data) +
           countPending(sbfRes.data);
+        
+        const financeTotal =
+          countPending(loanRes.data) +
+          countPending(sbfRes.data);
+
+        const hrTotal = countPending(leaveRes.data);
+
+        setFinancePending(financeTotal);
+        setHrPending(hrTotal);
 
         setReportPending(total);
       } catch {
@@ -345,11 +357,22 @@ const Sidebar = ({ collapsed }) => {
         module: "payslip",
       },
       {
-        to: "/reports",
         label: "Requests",
         icon: LuFiles,
         module: "report",
         badge: reportPending > 0 ? reportPending : null,
+        children: [
+          {
+            to: "/reports?filter=finance",
+            label: "Finance Pending",
+            badge: financePending > 0 ? financePending : null,
+          },
+          {
+            to: "/reports?filter=hr",
+            label: "HR Pending",
+            badge: hrPending > 0 ? hrPending : null,
+          },
+        ],
       },
       {
         to: "/exit-staff",
@@ -453,39 +476,100 @@ const Sidebar = ({ collapsed }) => {
 
       {!collapsed && <div className="sidebar-section-title">MAIN</div>}
 
-      <nav className="sidebar-nav">
-        {navItems.map((item) => {
-          const Icon = item.icon;
-          const forcedActive = isPathActive(item.to);
+      {navItems.map((item) => {
+        const Icon = item.icon;
+
+        if (item.children) {
+          const isActiveParent = pathname.startsWith("/reports");
+          const isOpen = Boolean(openMenus[item.label]);  
 
           return (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              className={() =>
-                `sidebar-link ${forcedActive ? "active" : ""}`
-              }
-              title={collapsed ? item.label : undefined}
-            >
-              <span className="sidebar-icon">
-                <Icon />
-              </span>
-
-              {!collapsed && (
-                <span className="sidebar-label-wrap">
-                  <span className="sidebar-label">{item.label}</span>
-
-                  {item.badge ? (
-                    <span className="sidebar-badge">
-                      {item.badge > 99 ? "99+" : item.badge}
-                    </span>
-                  ) : null}
+            <div key={item.label} className="sidebar-dropdown">
+              <button
+                type="button"
+                className={`sidebar-link sidebar-dropdown-toggle ${
+                  isActiveParent ? "active" : ""
+                }`}
+                onClick={() =>
+                  setOpenMenus((prev) => ({
+                    ...prev,
+                    [item.label]: !prev[item.label],
+                  }))
+                }
+              >
+                <span className="sidebar-icon">
+                  <Icon />
                 </span>
+
+                {!collapsed && (
+                  <span className="sidebar-label-wrap">
+                    <span className="sidebar-label">{item.label}</span>
+
+                    <span className={`sidebar-arrow ${isOpen ? "open" : ""}`}>
+                      ▾
+                    </span>
+
+                    {item.badge ? (
+                      <span className="sidebar-badge">
+                        {item.badge > 99 ? "99+" : item.badge}
+                      </span>
+                    ) : null}
+                  </span>
+                )}
+              </button>
+
+              {!collapsed && isOpen && (
+                <div className="sidebar-submenu">
+                  {item.children.map((child) => (
+                    <NavLink
+                      key={child.to}
+                      to={child.to}
+                      className="sidebar-sub-link"
+                    >
+                      <span>{child.label}</span>
+
+                        {child.badge ? (
+                          <span className="sidebar-sub-badge">
+                            {child.badge > 99 ? "99+" : child.badge}
+                          </span>
+                        ) : null}
+                    </NavLink>
+                  ))}
+                </div>
               )}
-            </NavLink>
+            </div>
           );
-        })}
-      </nav>
+        }
+
+        const forcedActive = isPathActive(item.to);
+
+        return (
+          <NavLink
+            key={item.to}
+            to={item.to}
+            className={() =>
+              `sidebar-link ${forcedActive ? "active" : ""}`
+            }
+            title={collapsed ? item.label : undefined}
+          >
+            <span className="sidebar-icon">
+              <Icon />
+            </span>
+
+            {!collapsed && (
+              <span className="sidebar-label-wrap">
+                <span className="sidebar-label">{item.label}</span>
+
+                {item.badge ? (
+                  <span className="sidebar-badge">
+                    {item.badge > 99 ? "99+" : item.badge}
+                  </span>
+                ) : null}
+              </span>
+            )}
+          </NavLink>
+        );
+      })}
     </aside>
   );
 };

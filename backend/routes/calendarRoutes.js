@@ -333,9 +333,16 @@ router.delete("/travel-plans/photos/:photoId", requireAuth, async (req, res) => 
   }
 });
 
-router.get("/travel-plans/staff-scope", requireAuth, async (_req, res) => {
+router.get("/travel-plans/staff-scope", requireAuth, async (req, res) => {
   try {
-    const r = await pool.query(`
+    const role = norm(req.user?.role);
+    const dept = norm(req.user?.department);
+
+    if (!dept.includes("operation")) {
+      return res.json([]);
+    }
+
+    const baseSelect = `
       SELECT
         s.id,
         s.employee_no,
@@ -345,22 +352,83 @@ router.get("/travel-plans/staff-scope", requireAuth, async (_req, res) => {
         b.code AS branch_code,
         s.area,
         s.region,
-        s.division
+        s.division,
+        s.department
       FROM public.staff s
       LEFT JOIN public.branches b ON b.id = s.branch_id
       WHERE LOWER(COALESCE(s.status, 'active')) = 'active'
-      ORDER BY
-        b.name ASC,
-        CASE LOWER(COALESCE(s.position, ''))
-          WHEN 'branch manager' THEN 1
-          WHEN 'acting branch manager' THEN 2
-          WHEN 'loan officer' THEN 3
-          WHEN 'probationary loan officer' THEN 4
-          ELSE 99
-        END,
-        s.fullname ASC
-    `);
+    `;
 
+    let sql = "";
+    let params = [];
+
+    if (role === "area manager") {
+      sql = `
+        ${baseSelect}
+          AND LOWER(TRIM(COALESCE(s.area, ''))) = LOWER(TRIM($1))
+        ORDER BY
+          b.name ASC,
+          CASE LOWER(COALESCE(s.position, ''))
+            WHEN 'branch manager' THEN 1
+            WHEN 'acting branch manager' THEN 2
+            WHEN 'loan officer' THEN 3
+            WHEN 'probationary loan officer' THEN 4
+            ELSE 99
+          END,
+          s.fullname ASC
+      `;
+      params = [req.user?.area || ""];
+    } else if (role === "regional manager") {
+      sql = `
+        ${baseSelect}
+          AND LOWER(TRIM(COALESCE(s.region, ''))) = LOWER(TRIM($1))
+          AND LOWER(TRIM(COALESCE(s.position, ''))) IN (
+            'area manager',
+            'acting area manager'
+          )
+        ORDER BY s.area ASC, s.fullname ASC
+      `;
+      params = [req.user?.region || ""];
+    } else if (role === "assistant vice president") {
+      sql = `
+        ${baseSelect}
+          AND LOWER(TRIM(COALESCE(s.division, ''))) = LOWER(TRIM($1))
+        ORDER BY
+          s.region ASC,
+          s.area ASC,
+          b.name ASC,
+          s.fullname ASC
+      `;
+      params = [req.user?.division || ""];
+    } else if (
+      role === "vice president" ||
+      role === "senior vice president"
+    ) {
+      sql = `
+        ${baseSelect}
+          AND LOWER(TRIM(COALESCE(s.department, ''))) = 'operation department'
+        ORDER BY
+          CASE LOWER(COALESCE(s.position, ''))
+            WHEN 'senior vice president' THEN 1
+            WHEN 'vice president' THEN 2
+            WHEN 'assistant vice president' THEN 3
+            WHEN 'regional manager' THEN 4
+            WHEN 'acting regional manager' THEN 5
+            WHEN 'area manager' THEN 6
+            WHEN 'acting area manager' THEN 7
+            WHEN 'branch manager' THEN 8
+            WHEN 'acting branch manager' THEN 9
+            WHEN 'loan officer' THEN 10
+            WHEN 'probationary loan officer' THEN 11
+            ELSE 99
+          END,
+          s.fullname ASC
+      `;
+    } else {
+      return res.json([]);
+    }
+
+    const r = await pool.query(sql, params);
     return res.json(r.rows);
   } catch (err) {
     console.error("GET /travel-plans/staff-scope ERROR:", err);
@@ -400,6 +468,89 @@ router.put("/travel-plans/:id/submit", requireAuth, async (req, res) => {
     });
   } catch (err) {
     console.error("PUT /travel-plans/:id/submit ERROR:", err);
+    return res.status(500).json({ message: "Server error" });
+  }
+});
+
+router.post("/calendar-activities", requireAuth, async (req, res) => {
+  try {
+    const title = toStr(req.body.title);
+    const date_from = toStr(req.body.date_from);
+    const date_to = toStr(req.body.date_to);
+    const days = req.body.days ? Number(req.body.days) : null;
+    const subject = toStr(req.body.subject);
+    const venue = toStr(req.body.venue);
+    const description = toStr(req.body.description);
+
+    if (!title || !date_from || !date_to) {
+      return res.status(400).json({
+        message: "Title, Date From, and Date To are required.",
+      });
+    }
+
+    const r = await pool.query(
+      `
+      INSERT INTO public.calendar_activities
+        (
+          title,
+          date_from,
+          date_to,
+          days,
+          subject,
+          venue,
+          description,
+          created_by,
+          created_at,
+          updated_at
+        )
+      VALUES
+        ($1, $2::date, $3::date, $4, $5, $6, $7, $8, NOW(), NOW())
+      RETURNING *
+      `,
+      [
+        title,
+        date_from,
+        date_to,
+        days,
+        subject || null,
+        venue || null,
+        description || null,
+        req.user?.id || null,
+      ]
+    );
+
+    return res.json({
+      message: "Activity created",
+      activity: r.rows[0],
+    });
+  } catch (err) {
+    console.error("POST /calendar-activities ERROR:", err);
+    return res.status(500).json({ message: "Server error" });
+  }
+});
+
+router.get("/calendar-activities", requireAuth, async (_req, res) => {
+  try {
+    const r = await pool.query(`
+      SELECT
+        id,
+        title,
+        TO_CHAR(date_from, 'YYYY-MM-DD') AS date_from,
+        TO_CHAR(date_to, 'YYYY-MM-DD') AS date_to,
+        days,
+        subject,
+        venue,
+        description,
+        created_by,
+        created_at,
+        updated_at
+      FROM public.calendar_activities
+      ORDER BY date_from DESC, id DESC
+    `);
+
+    return res.json(r.rows);
+  } catch (err) {
+    console.error("GET /calendar-activities ERROR:", err);
     return res.status(500).json({ message: "Server error" });
   }
 });
