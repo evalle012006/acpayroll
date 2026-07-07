@@ -8,6 +8,7 @@ const { requirePermission, hasPermission } = require("../middlewares/permissionM
 const {
   uploadToTemp,
   moveFromTemp,
+  moveFromTempKeepExisting,
   deleteKey,
   getSignedDownloadUrl,
 } = require("../services/spacesUpload");
@@ -1442,7 +1443,7 @@ router.post(
         return res.status(403).json({ message: "Access denied" });
       }
 
-      const finalKey = await moveFromTemp(
+      const finalKey = await moveFromTempKeepExisting(
         req.file.key,
         "staff",
         String(staffId),
@@ -1614,11 +1615,11 @@ router.post(
         });
       }
 
-      const finalKey = await moveFromTemp(
-        req.file.key,
-        "staff-attachments",
-        String(staffId),
-        req.file.originalname
+      const finalKey = await moveFromTempKeepExisting(
+          req.file.key,
+          "staff-attachments",
+          String(staffId),
+          req.file.originalname
       );
 
       const r = await client.query(

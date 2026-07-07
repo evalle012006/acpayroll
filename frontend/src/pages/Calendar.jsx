@@ -649,6 +649,32 @@ const selectedBranchPlans = useMemo(() => {
     );
   };
 
+  const updateTravelPlan = async () => {
+    if (!selectedPlan?.id) return;
+
+    if (!selectedPlan.title || !selectedPlan.plan_date) {
+      alert("Title and date are required.");
+      return;
+    }
+
+    try {
+      const res = await api.put(`/travel-plans/${selectedPlan.id}`, {
+        title: selectedPlan.title,
+        plan_date: String(selectedPlan.plan_date).slice(0, 10),
+        branch_name: selectedPlan.branch_name,
+        description: selectedPlan.description,
+      });
+
+      setSelectedPlan(res.data.plan);
+      fetchPlans();
+
+      alert("Travel plan updated.");
+    } catch (err) {
+      console.error("Update travel plan error:", err);
+      alert(err.response?.data?.message || "Failed to update travel plan.");
+    }
+  };
+
   const submitPlan = async () => {
     if (!selectedPlan?.id) return;
 
@@ -1457,16 +1483,92 @@ const selectedBranchPlans = useMemo(() => {
                 </div>
 
                 <div className="travel-plan-detail">
-                  <p>
-                    <b>Branch:</b> {selectedPlan.branch_name}
-                  </p>
-                  <p>
-                    <b>Date:</b> {String(selectedPlan.plan_date).slice(0, 10)}
-                  </p>
-                  <p>
-                    <b>Description:</b>{" "}
-                    {selectedPlan.description || "No description"}
-                  </p>
+                  <div className="travel-edit-grid">
+                    <label>
+                      Title
+                      <input
+                        type="text"
+                        value={selectedPlan.title || ""}
+                        disabled={selectedPlan.status === "Completed"}
+                        onChange={(e) =>
+                          setSelectedPlan((prev) => ({
+                            ...prev,
+                            title: e.target.value,
+                          }))
+                        }
+                      />
+                    </label>
+
+                    <label>
+                      Branch
+                      <Select
+                        className="travel-staff-search"
+                        classNamePrefix="select"
+                        isSearchable
+                        isClearable
+                        isDisabled={selectedPlan.status === "Completed"}
+                        placeholder="Search branch..."
+                        options={branchRows.map((branch) => ({
+                          value: branch.branch_name,
+                          label: branch.branch_name,
+                        }))}
+                        value={
+                          selectedPlan.branch_name
+                            ? {
+                                value: selectedPlan.branch_name,
+                                label: selectedPlan.branch_name,
+                              }
+                            : null
+                        }
+                        onChange={(option) =>
+                          setSelectedPlan((prev) => ({
+                            ...prev,
+                            branch_name: option?.value || "",
+                          }))
+                        }
+                      />
+                    </label>
+
+                    <label>
+                      Date
+                      <input
+                        type="date"
+                        value={String(selectedPlan.plan_date || "").slice(0, 10)}
+                        disabled={selectedPlan.status === "Completed"}
+                        onChange={(e) =>
+                          setSelectedPlan((prev) => ({
+                            ...prev,
+                            plan_date: e.target.value,
+                          }))
+                        }
+                      />
+                    </label>
+
+                    <label className="full">
+                      Description
+                      <textarea
+                        rows="4"
+                        value={selectedPlan.description || ""}
+                        disabled={selectedPlan.status === "Completed"}
+                        onChange={(e) =>
+                          setSelectedPlan((prev) => ({
+                            ...prev,
+                            description: e.target.value,
+                          }))
+                        }
+                      />
+                    </label>
+
+                    {selectedPlan.status !== "Completed" && (
+                      <button
+                        type="button"
+                        className="travel-save-changes-btn"
+                        onClick={updateTravelPlan}
+                      >
+                        Save Changes
+                      </button>
+                    )}
+                  </div>
 
                   <div className="travel-time-summary">
                     <div>

@@ -87,7 +87,11 @@ const moveFromTempKeepExisting = async (tempKey, origin, uuid, filename) => {
   const safeName = filename.replace(/[^a-zA-Z0-9._-]/g, "_");
   const finalKey = `${prefix}${Date.now()}-${safeName}`;
 
-  await s3Client.send(
+  console.log("========== MOVE FILE ==========");
+  console.log("TEMP KEY:", tempKey);
+  console.log("FINAL KEY:", finalKey);
+
+  const copyResult = await s3Client.send(
     new CopyObjectCommand({
       Bucket: BUCKET,
       CopySource: `${BUCKET}/${tempKey}`,
@@ -95,7 +99,16 @@ const moveFromTempKeepExisting = async (tempKey, origin, uuid, filename) => {
     })
   );
 
-  await s3Client.send(new DeleteObjectCommand({ Bucket: BUCKET, Key: tempKey }));
+  console.log("COPY RESULT:", copyResult);
+
+  await s3Client.send(
+    new DeleteObjectCommand({
+      Bucket: BUCKET,
+      Key: tempKey,
+    })
+  );
+
+  console.log("DELETE TEMP SUCCESS");
 
   return finalKey;
 };

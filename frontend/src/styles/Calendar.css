@@ -274,7 +274,6 @@
   font-size: 12px;
 }
 
-.travel-event-list,
 .travel-activity-list {
   display: flex;
   flex-direction: column;
@@ -286,7 +285,6 @@
   overflow-y: auto;
 }
 
-.travel-event-item,
 .travel-activity-card {
   padding: 10px 12px;
   border-radius: 12px;
@@ -339,14 +337,6 @@
 
 .travel-activity-right span {
   font-size: 11px;
-}
-
-.travel-event-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 10px;
-  margin: 4px 0 8px;
 }
 
 .travel-event-header span {
@@ -1029,13 +1019,6 @@
   background: #65748f;
 }
 
-.branch-visit-row {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  min-height: 65px;
-}
-
 .branch-visit-info {
   display: flex;
   justify-content: space-between;
@@ -1304,4 +1287,45 @@
   background: var(--bg);
   color: var(--text);
   font-weight: 800;
+}
+
+.travel-edit-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  margin-bottom: 18px;
+}
+
+.travel-edit-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  font-weight: 800;
+  color: var(--text);
+}
+
+.travel-edit-grid label.full {
+  grid-column: 1 / -1;
+}
+
+.travel-edit-grid input,
+.travel-edit-grid textarea {
+  width: 100%;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  padding: 12px 14px;
+  font-weight: 700;
+}
+
+.travel-save-changes-btn {
+  width: fit-content;
+  border: 0;
+  border-radius: 12px;
+  padding: 12px 18px;
+  background: #22c55e;
+  color: white;
+  font-weight: 900;
+  cursor: pointer;
 }

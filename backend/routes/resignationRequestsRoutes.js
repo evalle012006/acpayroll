@@ -208,9 +208,10 @@ router.get(
         isTread(req) ||
         isVicePresident(req) ||
         isSeniorVicePresident(req) ||
-        isPresident(req)
+        isPresident(req) ||
+        isHRDepartment(req)
       ) {
-        // full access
+        // Full access
       } else if (isBranchManager(req)) {
         const branchId = getUserBranchId(req);
         if (!branchId) return res.json([]);

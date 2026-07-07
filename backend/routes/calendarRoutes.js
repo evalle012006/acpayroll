@@ -170,6 +170,61 @@ router.post("/travel-plans", requireAuth, async (req, res) => {
   }
 });
 
+router.put("/travel-plans/:id", requireAuth, async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+
+    if (!Number.isFinite(id)) {
+      return res.status(400).json({ message: "Invalid plan id" });
+    }
+
+    const title = toStr(req.body.title);
+    const plan_date = toStr(req.body.plan_date);
+    const branch_name = toStr(req.body.branch_name);
+    const description = toStr(req.body.description);
+
+    if (!title || !plan_date) {
+      return res.status(400).json({ message: "Title and date are required" });
+    }
+
+    const r = await pool.query(
+      `
+      UPDATE public.travel_plans
+      SET
+        title = $2,
+        plan_date = $3::date,
+        branch_name = $4,
+        description = $5,
+        updated_at = NOW()
+      WHERE id = $1
+        AND COALESCE(status, 'Pending') <> 'Completed'
+      RETURNING ${travelPlanSelect}
+      `,
+      [
+        id,
+        title,
+        plan_date,
+        branch_name || null,
+        description || null,
+      ]
+    );
+
+    if (!r.rowCount) {
+      return res.status(400).json({
+        message: "Plan not found or already completed.",
+      });
+    }
+
+    return res.json({
+      message: "Travel plan updated",
+      plan: r.rows[0],
+    });
+  } catch (err) {
+    console.error("PUT /travel-plans/:id ERROR:", err);
+    return res.status(500).json({ message: "Server error" });
+  }
+});
+
 router.get("/travel-plans/:id/notes", requireAuth, async (req, res) => {
   try {
     const id = Number(req.params.id);

@@ -38,6 +38,25 @@ export default function ResignationRequests() {
 
   const user = useMemo(() => readUser(), []);
   const role = norm(user?.role);
+  const dept = norm(
+  user?.department ||
+  user?.department_name ||
+  user?.departmentName ||
+  user?.user_department ||
+  user?.dept ||
+  ""
+);
+
+const isHRDeptManager =
+  dept.includes("hr") &&
+  [
+    "branch manager",
+    "area manager",
+    "regional manager",
+    "assistant vice president",
+    "vice president",
+    "senior vice president",
+  ].includes(role);
 
   const isAdmin = ["admin", "it"].includes(role);
   const isBranchManager = role === "branch manager";
@@ -65,9 +84,9 @@ export default function ResignationRequests() {
     isPresident;
 
   const canFinalAction =
-    isAdmin || isHr || isAccounting || isSeniorVicePresident;
-
-  const [rows, setRows] = useState([]);
+    isAdmin || isHr || isAccounting || isSeniorVicePresident || isHRDeptManager;
+  
+    const [rows, setRows] = useState([]);
   const [staffList, setStaffList] = useState([]);
   const [branches, setBranches] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -187,25 +206,25 @@ export default function ResignationRequests() {
   const searchableStaff = useMemo(() => {
     let scopedStaff = staffList || [];
 
-    if (isBranchManager) {
+    if (isBranchManager && !isHRDeptManager) {
       scopedStaff = scopedStaff.filter(
         (s) => String(s.branch_id) === String(user?.branch_id)
       );
     }
 
-    if (isAreaManager) {
+    if (isAreaManager && !isHRDeptManager) {
       scopedStaff = scopedStaff.filter(
         (s) => norm(s.area) === norm(user?.area)
       );
     }
 
-    if (isRegionalManager) {
+    if (isRegionalManager && !isHRDeptManager) {
       scopedStaff = scopedStaff.filter(
         (s) => norm(s.region) === norm(user?.region)
       );
     }
 
-    if (isAssistantVicePresident) {
+    if (isAssistantVicePresident && !isHRDeptManager) {
       scopedStaff = scopedStaff.filter(
         (s) => norm(s.division) === norm(user?.division)
       );
@@ -565,7 +584,7 @@ export default function ResignationRequests() {
     const status = toStr(row.status);
 
     if (
-      (isAdmin || isHr || isAccounting || isSeniorVicePresident) &&
+      (isAdmin || isHr || isAccounting || isSeniorVicePresident || isHRDeptManager) &&
       status !== STATUS_APPROVED &&
       status !== STATUS_REJECTED
     ) {
