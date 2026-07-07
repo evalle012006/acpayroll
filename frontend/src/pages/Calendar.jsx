@@ -33,9 +33,11 @@ export default function TravelPlan() {
   const [previewPhoto, setPreviewPhoto] = useState(null);
 
   const [staffRows, setStaffRows] = useState([]);
+  const [staffPositionFilter, setStaffPositionFilter] = useState("");
   const [branchScopeRows, setBranchScopeRows] = useState([]);
   const [showCreatePlan, setShowCreatePlan] = useState(false);
   const [plans, setPlans] = useState([]);
+  const [activityDateFilter, setActivityDateFilter] = useState("");
   const [planPhotos, setPlanPhotos] = useState([]);
   const [planNotes, setPlanNotes] = useState([]);
   const [selectedCalendarDate, setSelectedCalendarDate] = useState("");
@@ -108,12 +110,33 @@ export default function TravelPlan() {
     [staffRows]
   );
 
+  const staffPositionOptions = useMemo(() => {
+    return [...new Set(staffRows.map((s) => s.position).filter(Boolean))];
+  }, [staffRows]);
+
+  const filteredStaffRows = useMemo(() => {
+    if (!staffPositionFilter) return staffRows;
+
+    return staffRows.filter(
+      (s) => String(s.position || "") === staffPositionFilter
+    );
+  }, [staffRows, staffPositionFilter]);
+
   const selectedDateText = planForm.plan_date;
 
   const selectedDatePlans = plans.filter((p) => {
     const d = String(p.plan_date || "").slice(0, 10);
     return d === selectedDateText;
   });
+
+  const filteredActivityPlans = useMemo(() => {
+    if (!activityDateFilter) return plans;
+
+    return plans.filter((p) => {
+      const d = String(p.plan_date || "").slice(0, 10);
+      return d === activityDateFilter;
+    });
+  }, [plans, activityDateFilter]);
 
   const mostVisitedBranches = useMemo(() => {
   const now = new Date();
@@ -865,16 +888,33 @@ const selectedBranchPlans = useMemo(() => {
                     <p>All travel plans for your scope.</p>
                   </div>
 
-                  <span>{plans.length} Plans</span>
+                  <div className="travel-activity-filter">
+                    <input
+                      type="date"
+                      value={activityDateFilter}
+                      onChange={(e) => setActivityDateFilter(e.target.value)}
+                    />
+
+                    {activityDateFilter && (
+                      <button
+                        type="button"
+                        onClick={() => setActivityDateFilter("")}
+                      >
+                        Clear
+                      </button>
+                    )}
+
+                    <span>{filteredActivityPlans.length} Plans</span>
+                  </div>
                 </div>
 
-                {plans.length === 0 ? (
+                {filteredActivityPlans.length === 0 ? (
                   <div className="travel-empty">
                     No activities yet.
                   </div>
                 ) : (
                   <div className="travel-activity-list">
-                    {plans.map((plan) => (
+                    {filteredActivityPlans.map((plan) => (
                       <div
                         key={plan.id}
                         className="travel-activity-card"
@@ -918,16 +958,30 @@ const selectedBranchPlans = useMemo(() => {
                     <p>Staff visible based on your position.</p>
                   </div>
 
-                  <span>{staffRows.length} Staff</span>
+                  <div className="travel-staff-filter">
+                    <select
+                      value={staffPositionFilter}
+                      onChange={(e) => setStaffPositionFilter(e.target.value)}
+                    >
+                      <option value="">All Positions</option>
+                      {staffPositionOptions.map((pos) => (
+                        <option key={pos} value={pos}>
+                          {pos}
+                        </option>
+                      ))}
+                    </select>
+
+                    <span>{filteredStaffRows.length} Staff</span>
+                  </div>
                 </div>
 
-                {staffRows.length === 0 ? (
+                {filteredStaffRows.length === 0 ? (
                   <div className="travel-empty">
                     No staff found.
                   </div>
                 ) : (
                   <div className="travel-staff-list">
-                    {staffRows.map((staff) => (
+                    {filteredStaffRows.map((staff) => (
                       <div
                         key={staff.employee_no}
                         className="travel-staff-card"
