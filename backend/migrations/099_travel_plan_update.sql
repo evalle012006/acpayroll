@@ -61,4 +61,27 @@ DO UPDATE SET
     ALTER TABLE public.travel_plans
     ADD COLUMN IF NOT EXISTS position TEXT;
 
+INSERT INTO role_permissions
+  (role, department, module_name, action_name, allowed, created_at, updated_at)
+  SELECT
+    r.role,
+    'TREAD DEPARTMENT',
+    'travel_plan',
+    'view',
+    true,
+    NOW(),
+    NOW()
+  FROM (
+    VALUES
+    ('area manager'),
+    ('regional manager'),
+    ('assistant vice president'),
+    ('vice president'),
+    ('senior vice president')
+  ) AS r(role)
+  ON CONFLICT (role, COALESCE(department,''), module_name, action_name)
+  DO UPDATE SET
+    allowed = true,
+    updated_at = NOW();
+
 COMMIT;

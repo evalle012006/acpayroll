@@ -486,22 +486,23 @@ export default function Soa() {
       formData.append("settlement_branch_code", form.settlement_branch_code);
       formData.append("settlement_branch_name", form.settlement_branch_name);
 
-      formData.append("cbu", toNum(form.cbu));
-      formData.append("cashbond", toNum(form.cashbond));
-      formData.append("utility", toNum(form.utility));
-      formData.append("liabilities", toNum(form.liabilities));
-      formData.append("thirteenth_month_pay", toNum(form.thirteenth_month_pay));
-      formData.append("last_pay", toNum(form.last_pay));
-
+      formData.append("cbu", form.cbu === "" ? 0 : toNum(form.cbu));
+      formData.append("cashbond", form.cashbond === "" ? 0 : toNum(form.cashbond));
+      formData.append("utility", form.utility === "" ? 0 : toNum(form.utility));
+      formData.append("liabilities", form.liabilities === "" ? 0 : toNum(form.liabilities));
       formData.append(
-        "separation_pay",
-        form.separation_pay === "" ? "" : toNum(form.separation_pay)
+        "thirteenth_month_pay",
+        form.thirteenth_month_pay === "" ? 0 : toNum(form.thirteenth_month_pay)
       );
+      formData.append("last_pay", form.last_pay === "" ? 0 : toNum(form.last_pay));
 
-      formData.append(
-        "cash_assistance",
-        form.cash_assistance === "" ? "" : toNum(form.cash_assistance)
-      );
+      if (form.separation_pay !== "") {
+        formData.append("separation_pay", toNum(form.separation_pay));
+      }
+
+      if (form.cash_assistance !== "") {
+        formData.append("cash_assistance", toNum(form.cash_assistance));
+      }
 
       formData.append("total_benefits", totalBenefits);
       formData.append("net_settlement", netSettlement);

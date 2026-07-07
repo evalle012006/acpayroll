@@ -1164,3 +1164,99 @@
     padding:3px 10px;
     border-radius:999px;
 }
+
+/* ===========================
+   Travel Progress Stepper
+=========================== */
+
+.travel-stepper{
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    margin:30px 0;
+    gap:0;
+}
+
+.travel-step{
+    background:none;
+    border:none;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    cursor:pointer;
+    min-width:90px;
+}
+
+.travel-step span{
+    width:42px;
+    height:42px;
+    border-radius:50%;
+    background:#41537d;
+    color:#fff;
+    font-weight:800;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    transition:.25s;
+    border:4px solid rgba(255,255,255,.08);
+}
+
+.travel-step label{
+    margin-top:10px;
+    font-size:13px;
+    font-weight:700;
+    color:#a8b3cb;
+    cursor:pointer;
+}
+
+.travel-step-line{
+    flex:1;
+    height:5px;
+    background:#41537d;
+    margin:0 6px;
+    border-radius:999px;
+    margin-bottom:28px;
+}
+
+.travel-step.active span{
+    background:#ff4da6;
+    box-shadow:0 0 20px rgba(255,77,166,.45);
+}
+
+.travel-step.active label{
+    color:#fff;
+}
+
+.travel-staff-status{
+    margin-top:12px;
+    padding:6px 16px;
+    border-radius:999px;
+    font-size:12px;
+    font-weight:700;
+    text-align:center;
+    width:95px;
+}
+
+.travel-staff-status.pending{
+    background:#2f2412;
+    color:#ffbf3c;
+    border:1px solid #ffbf3c;
+}
+
+.travel-staff-status.submitted{
+    background:#123625;
+    color:#3ee58a;
+    border:1px solid #3ee58a;
+}
+
+.travel-side-panel {
+  position: sticky;
+  top: 0;
+  height: calc(100vh - 90px);
+  align-self: start;
+  overflow-y: auto;
+}
+
+.travel-modern-layout {
+  align-items: start;
+}

@@ -422,7 +422,10 @@ const Sidebar = ({ collapsed }) => {
 
         return (
           can("travel_plan", "view") &&
-          dept.includes("operation") &&
+          (
+            dept.includes("operation") ||
+            dept.includes("tread")
+          ) &&
           [
             "area manager",
             "regional manager",

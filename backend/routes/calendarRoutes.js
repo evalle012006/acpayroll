@@ -15,6 +15,24 @@ const {
 const toStr = (v) => String(v ?? "").trim();
 const norm = (v) => String(v ?? "").trim().toLowerCase();
 
+const isManagerToSVP = (role) =>
+  [
+    "branch manager",
+    "area manager",
+    "regional manager",
+    "assistant vice president",
+    "vice president",
+    "senior vice president",
+  ].includes(role);
+
+const canViewAllTravelScope = (role, dept) =>
+  role === "admin" ||
+  role === "it" ||
+  (
+    dept.includes("tread") &&
+    isManagerToSVP(role)
+  );
+
 const canCreatePlan = (req) => {
   const role = norm(req.user?.role);
   const dept = norm(req.user?.department);
@@ -379,7 +397,10 @@ router.get("/travel-plans/staff-scope", requireAuth, async (req, res) => {
     const role = norm(req.user?.role);
     const dept = norm(req.user?.department);
 
-    if (!dept.includes("operation")) {
+    if (
+      !canViewAllTravelScope(role, dept) &&
+      !dept.includes("operation")
+    ) {
       return res.json([]);
     }
 
@@ -394,7 +415,18 @@ router.get("/travel-plans/staff-scope", requireAuth, async (req, res) => {
         s.area,
         s.region,
         s.division,
-        s.department
+        s.department,
+          CASE
+          WHEN EXISTS (
+              SELECT 1
+              FROM travel_plans tp
+              WHERE tp.employee_name = s.fullname
+                AND tp.plan_date = CURRENT_DATE
+          )
+          THEN 'Submitted'
+          ELSE 'Pending'
+          END AS travel_status
+
       FROM public.staff s
       LEFT JOIN public.branches b ON b.id = s.branch_id
       WHERE LOWER(COALESCE(s.status, 'active')) = 'active'
@@ -403,98 +435,21 @@ router.get("/travel-plans/staff-scope", requireAuth, async (req, res) => {
     let sql = "";
     let params = [];
 
-    if (role === "area manager") {
+    if (canViewAllTravelScope(role, dept)) {
       sql = `
         ${baseSelect}
-        AND LOWER(TRIM(COALESCE(s.area,''))) =
-            LOWER(TRIM($1))
-
+        AND LOWER(TRIM(COALESCE(s.department,''))) = 'operation department'
+        AND LOWER(TRIM(COALESCE(s.position,''))) IN (
+          'area manager',
+          'acting area manager',
+          'regional manager',
+          'acting regional manager',
+          'assistant vice president',
+          'vice president',
+          'senior vice president'
+        )
         ORDER BY
-          b.name ASC,
-
-          CASE LOWER(COALESCE(s.position,''))
-
-            WHEN 'branch manager' THEN 1
-            WHEN 'acting branch manager' THEN 2
-
-            WHEN 'loan officer' THEN 3
-            WHEN 'probationary loan officer' THEN 4
-
-            WHEN 'cashier' THEN 5
-            WHEN 'collector' THEN 6
-            WHEN 'office staff' THEN 7
-            WHEN 'branch secretary' THEN 8
-            WHEN 'bookkeeper' THEN 9
-            WHEN 'utility' THEN 10
-            WHEN 'security guard' THEN 11
-
-            ELSE 99
-
-          END,
-
-          s.fullname ASC
-    `;
-      params = [req.user?.area || ""];
-    } else if (
-      role === "regional manager" ||
-      role === "acting regional manager"
-    ) {
-      sql = `
-        ${baseSelect}
-          AND LOWER(TRIM(COALESCE(s.region,''))) =
-              LOWER(TRIM($1))
-
-        ORDER BY
-          s.area ASC,
-          b.name ASC,
-
-          CASE LOWER(COALESCE(s.position,''))
-
-            WHEN 'area manager' THEN 1
-            WHEN 'acting area manager' THEN 2
-
-            WHEN 'branch manager' THEN 3
-            WHEN 'acting branch manager' THEN 4
-
-            WHEN 'loan officer' THEN 5
-            WHEN 'probationary loan officer' THEN 6
-
-            WHEN 'cashier' THEN 7
-            WHEN 'collector' THEN 8
-            WHEN 'office staff' THEN 9
-            WHEN 'branch secretary' THEN 10
-            WHEN 'bookkeeper' THEN 11
-            WHEN 'utility' THEN 12
-            WHEN 'security guard' THEN 13
-
-            ELSE 99
-
-          END,
-
-          s.fullname ASC
-      `;
-
-      params = [req.user?.region || ""];
-    } else if (role === "assistant vice president") {
-      sql = `
-        ${baseSelect}
-          AND LOWER(TRIM(COALESCE(s.division, ''))) = LOWER(TRIM($1))
-        ORDER BY
-          s.region ASC,
-          s.area ASC,
-          b.name ASC,
-          s.fullname ASC
-      `;
-      params = [req.user?.division || ""];
-    } else if (
-      role === "vice president" ||
-      role === "senior vice president"
-    ) {
-      sql = `
-        ${baseSelect}
-          AND LOWER(TRIM(COALESCE(s.department, ''))) = 'operation department'
-        ORDER BY
-          CASE LOWER(COALESCE(s.position, ''))
+          CASE LOWER(TRIM(COALESCE(s.position,'')))
             WHEN 'senior vice president' THEN 1
             WHEN 'vice president' THEN 2
             WHEN 'assistant vice president' THEN 3
@@ -502,31 +457,211 @@ router.get("/travel-plans/staff-scope", requireAuth, async (req, res) => {
             WHEN 'acting regional manager' THEN 5
             WHEN 'area manager' THEN 6
             WHEN 'acting area manager' THEN 7
-            WHEN 'branch manager' THEN 8
-            WHEN 'acting branch manager' THEN 9
-            WHEN 'loan officer' THEN 10
-            WHEN 'probationary loan officer' THEN 11
             ELSE 99
           END,
           s.fullname ASC
       `;
-    } else {
-      return res.json([]);
     }
 
-    console.log("Logged User");
-    console.log(req.user);
+    else if (role === "area manager" || role === "acting area manager") {
+      sql = `
+        ${baseSelect}
+        AND LOWER(TRIM(COALESCE(s.area,''))) = LOWER(TRIM($1))
+        ORDER BY b.name ASC, s.fullname ASC
+      `;
+      params = [req.user?.area || ""];
+    }
 
-    console.log("Area:");
-    console.log(req.user.area);
+    else if (role === "regional manager" || role === "acting regional manager") {
+      sql = `
+        ${baseSelect}
+        AND LOWER(TRIM(COALESCE(s.region,''))) = LOWER(TRIM($1))
+        AND LOWER(TRIM(COALESCE(s.position,''))) IN (
+          'area manager',
+          'acting area manager'
+        )
+        ORDER BY s.area ASC, s.fullname ASC
+      `;
+      params = [req.user?.region || ""];
+    }
 
-    console.log("Params:");
-    console.log(params);
+    else if (role === "assistant vice president") {
+      sql = `
+        ${baseSelect}
+        AND LOWER(TRIM(COALESCE(s.division,''))) = LOWER(TRIM($1))
+        AND LOWER(TRIM(COALESCE(s.position,''))) IN (
+          'regional manager',
+          'acting regional manager',
+          'area manager',
+          'acting area manager'
+        )
+        ORDER BY
+          CASE LOWER(COALESCE(s.position,''))
+            WHEN 'regional manager' THEN 1
+            WHEN 'acting regional manager' THEN 2
+            WHEN 'area manager' THEN 3
+            WHEN 'acting area manager' THEN 4
+            ELSE 99
+          END,
+          s.fullname ASC
+      `;
+      params = [req.user?.division || ""];
+    }
+
+    else if (role === "vice president") {
+      sql = `
+        ${baseSelect}
+        AND LOWER(TRIM(COALESCE(s.department,''))) = 'operation department'
+        AND LOWER(TRIM(COALESCE(s.position,''))) IN (
+          'assistant vice president',
+          'regional manager',
+          'acting regional manager',
+          'area manager',
+          'acting area manager'
+        )
+        ORDER BY
+          CASE LOWER(COALESCE(s.position,''))
+            WHEN 'assistant vice president' THEN 1
+            WHEN 'regional manager' THEN 2
+            WHEN 'acting regional manager' THEN 3
+            WHEN 'area manager' THEN 4
+            WHEN 'acting area manager' THEN 5
+            ELSE 99
+          END,
+          s.fullname ASC
+      `;
+    }
+
+    else if (
+      canViewAllTravelScope(role, dept) ||
+      role === "senior vice president"
+    ) {
+      sql = `
+        ${baseSelect}
+        AND LOWER(TRIM(COALESCE(s.department,''))) = 'operation department'
+        AND LOWER(TRIM(COALESCE(s.position,''))) IN (
+          'area manager',
+          'acting area manager',
+          'regional manager',
+          'acting regional manager',
+          'assistant vice president',
+          'vice president',
+          'senior vice president'
+        )
+        ORDER BY
+          CASE LOWER(TRIM(COALESCE(s.position,'')))
+            WHEN 'senior vice president' THEN 1
+            WHEN 'vice president' THEN 2
+            WHEN 'assistant vice president' THEN 3
+            WHEN 'regional manager' THEN 4
+            WHEN 'acting regional manager' THEN 5
+            WHEN 'area manager' THEN 6
+            WHEN 'acting area manager' THEN 7
+            ELSE 99
+          END,
+          s.fullname ASC
+      `;
+    }
+
+    else {
+      return res.json([]);
+    }
 
     const r = await pool.query(sql, params);
     return res.json(r.rows);
   } catch (err) {
     console.error("GET /travel-plans/staff-scope ERROR:", err);
+    return res.status(500).json({ message: "Server error" });
+  }
+});
+
+router.get("/travel-plans/branch-scope", requireAuth, async (req, res) => {
+  try {
+    const role = norm(req.user?.role);
+    const dept = norm(req.user?.department);
+
+    if (
+      !canViewAllTravelScope(role, dept) &&
+      !dept.includes("operation")
+    ) {
+      return res.json([]);
+    }
+
+    let sql = "";
+    let params = [];
+
+    const baseSelect = `
+      SELECT DISTINCT
+        b.id,
+        b.code AS branch_code,
+        b.name AS branch_name,
+        b.area,
+        b.region,
+        b.division
+      FROM public.branches b
+      WHERE b.name IS NOT NULL
+    `;
+
+    if (canViewAllTravelScope(role, dept)) {
+      sql = `
+        ${baseSelect}
+        ORDER BY b.division ASC, b.region ASC, b.area ASC, b.name ASC
+      `;
+    }
+
+    else if (role === "area manager" || role === "acting area manager") {
+      sql = `
+        ${baseSelect}
+        AND LOWER(TRIM(COALESCE(b.area,''))) = LOWER(TRIM($1))
+        ORDER BY b.name ASC
+      `;
+      params = [req.user?.area || ""];
+    }
+
+    else if (role === "regional manager" || role === "acting regional manager") {
+      sql = `
+        ${baseSelect}
+        AND LOWER(TRIM(COALESCE(b.region,''))) = LOWER(TRIM($1))
+        ORDER BY b.area ASC, b.name ASC
+      `;
+      params = [req.user?.region || ""];
+    }
+
+    else if (role === "assistant vice president") {
+      sql = `
+        ${baseSelect}
+        AND LOWER(TRIM(COALESCE(b.division,''))) = LOWER(TRIM($1))
+        ORDER BY b.region ASC, b.area ASC, b.name ASC
+      `;
+      params = [req.user?.division || ""];
+    }
+
+    else if (
+      role === "vice president" ||  
+      role === "senior vice president"
+    ) {
+      sql = `
+        ${baseSelect}
+        ORDER BY b.division ASC, b.region ASC, b.area ASC, b.name ASC
+      `;
+    }
+
+    else {
+      return res.json([]);
+    }
+
+    console.log("=================================");
+    console.log("ROLE:", req.user.role);
+    console.log("AREA:", req.user.area);
+    console.log("REGION:", req.user.region);
+    console.log("DIVISION:", req.user.division);
+    console.log("PARAMS:", params);
+    console.log("=================================");
+
+    const r = await pool.query(sql, params);
+    return res.json(r.rows);
+  } catch (err) {
+    console.error("GET /travel-plans/branch-scope ERROR:", err);
     return res.status(500).json({ message: "Server error" });
   }
 });
@@ -650,8 +785,7 @@ router.get("/calendar-activities", requireAuth, async (_req, res) => {
   }
 });
 
-router.get(
-  "/travel-plans/branch/:branch",
+router.get("/travel-plans/branch/:branch",
   requireAuth,
   async (req, res) => {
     try {

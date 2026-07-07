@@ -14,8 +14,7 @@ const STATUS_VOID = "Voided";
 
 const REPORT_TYPES = [
   "AWOL Report",
-  "Notice to Explain",
-  "Termination of Contract",
+  "Incident Report",
 ];
 
 const readUser = () => {
@@ -598,7 +597,7 @@ export default function StaffReport() {
         <div>
           <h2 className="approval-title">Staff Report</h2>
           <p className="approval-subtitle">
-            Create and manage AWOL, Notice to Explain, and Termination of Contract reports.
+            Create and manage AWOL and Termination of Contract reports.
           </p>
         </div>
 

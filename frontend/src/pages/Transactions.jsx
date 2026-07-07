@@ -287,7 +287,33 @@ export default function Transactions() {
       "president",
     ],
   },
-  ];
+
+  {
+    title: "Notice to Explain",
+    desc: "Create and manage notice to explain reports.",
+    path: "/transactions/notice-to-explain",
+    roles: [
+      "admin",
+      "it",
+      "hr",
+      "accounting",
+      "tread",
+      "branch manager",
+      "area manager",
+      "regional manager",
+      "assistant vice president",
+      "vice president",
+      "senior vice president",
+      "president",
+    ],
+  },
+
+  {
+    title: "Termination of Contract",
+    desc: "Create and manage termination reports.",
+    path: "/transactions/termination-of-contract",
+  },
+];
 
   const department = norm(
   user?.department ||

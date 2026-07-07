@@ -1,17 +1,5 @@
-import {
-  BrowserRouter as Router,
-  Routes,
-  Route,
-  Navigate,
-  useNavigate,
-} from "react-router-dom";
-import {
-  createContext,
-  useContext,
-  useEffect,
-  useMemo,
-  useState,
-} from "react";
+import { BrowserRouter as Router, Routes, Route, Navigate, useNavigate, } from "react-router-dom";
+import { createContext, useContext, useEffect, useMemo, useState, } from "react";
 import "./styles/layout.css";
 
 import Sidebar from "./components/Sidebar";
@@ -61,6 +49,8 @@ import BoardResolutionRequests from "./pages/BoardResolutionRequests";
 import TravelPlan from "./pages/Calendar";
 import Permissions from "./pages/Permissions";
 import StaffReport from "./pages/StaffReport";
+import NoticeToExplain from "./pages/NoticeToExplain";
+import TerminationOfContract from "./pages/TerminationOfContract";
 import Chat from "./pages/Chat";
 
 import api from "./api/axiosClient";
@@ -664,6 +654,24 @@ function AppShell() {
         element={
           <Page module="staff_report">
             <StaffReport />
+          </Page>
+        }
+      />
+
+      <Route
+        path="/transactions/notice-to-explain"
+        element={
+          <Page module="staff_report">
+            <NoticeToExplain />
+          </Page>
+        }
+      />
+
+      <Route
+        path="/transactions/termination-of-contract"
+        element={
+          <Page module="staff_report">
+            <TerminationOfContract />
           </Page>
         }
       />

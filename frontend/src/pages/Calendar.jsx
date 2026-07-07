@@ -33,6 +33,7 @@ export default function TravelPlan() {
   const [previewPhoto, setPreviewPhoto] = useState(null);
 
   const [staffRows, setStaffRows] = useState([]);
+  const [branchScopeRows, setBranchScopeRows] = useState([]);
   const [showCreatePlan, setShowCreatePlan] = useState(false);
   const [plans, setPlans] = useState([]);
   const [planPhotos, setPlanPhotos] = useState([]);
@@ -95,27 +96,8 @@ export default function TravelPlan() {
       : null;
 
   const branchRows = useMemo(() => {
-    const map = new Map();
-
-    staffRows.forEach((s) => {
-      const key = s.branch_code || s.branch_name || "NO_BRANCH";
-
-      if (!map.has(key)) {
-        map.set(key, {
-          branch_code: s.branch_code,
-          branch_name: s.branch_name || "No Branch",
-          area: s.area,
-          region: s.region,
-          division: s.division,
-          staff: [],
-        });
-      }
-
-      map.get(key).staff.push(s);
-    });
-
-    return Array.from(map.values());
-  }, [staffRows]);
+    return branchScopeRows;
+  }, [branchScopeRows]);
 
   const staffOptions = useMemo(
     () =>
@@ -166,13 +148,16 @@ export default function TravelPlan() {
 
   const counts = {};
 
-  branchRows.forEach((b) => {
-    counts[b.branch_name] = 0;
+  branchRows.forEach((branch) => {
+    if (!branch.branch_name) return;
+    counts[branch.branch_name] = 0;
   });
 
   filteredPlans.forEach((plan) => {
+    if (!plan.branch_name) return;
+
     if (counts[plan.branch_name] !== undefined) {
-      counts[plan.branch_name]++;
+      counts[plan.branch_name] += 1;
     }
   });
 
@@ -236,6 +221,16 @@ const selectedBranchPlans = useMemo(() => {
     }
   };
 
+  const fetchScopedBranches = async () => {
+    try {
+      const res = await api.get("/travel-plans/branch-scope");
+      setBranchScopeRows(Array.isArray(res.data) ? res.data : []);
+    } catch (err) {
+      console.error("Fetch branch scope error:", err);
+      setBranchScopeRows([]);
+    }
+  };
+
   const fetchPlans = async () => {
     try {
       const res = await api.get("/travel-plans");
@@ -269,6 +264,7 @@ const selectedBranchPlans = useMemo(() => {
   useEffect(() => {
     fetchActivities();
     fetchScopedStaff();
+    fetchScopedBranches();
     fetchPlans();
   }, []);
 
@@ -947,6 +943,15 @@ const selectedBranchPlans = useMemo(() => {
                         <div className="travel-staff-right">
                           <span>{staff.area}</span>
                           <span>{staff.region}</span>
+                          <div
+                            className={
+                              staff.travel_status === "Submitted"
+                                ? "travel-staff-status submitted"
+                                : "travel-staff-status pending"
+                            }
+                          >
+                            {staff.travel_status}
+                          </div>
                         </div>
                       </div>
                     ))}
@@ -1442,56 +1447,70 @@ const selectedBranchPlans = useMemo(() => {
                     )}
                   </div>
 
-                  <div className="travel-tabs">
+                  <div className="travel-stepper">
                     <button
-                      className={detailTab === "review" ? "active" : ""}
-                      onClick={() => {
-                        setDetailTab("review");
-                        setShowNoteForm(false);
-                      }}
-                    >
-                      Review
-                    </button>
-
-                    <button
-                      className={detailTab === "findings" ? "active" : ""}
-                      onClick={() => {
-                        setDetailTab("findings");
-                        setShowNoteForm(false);
-                      }}
-                    >
-                      Findings
-                    </button>
-
-                    <button
-                      className={detailTab === "photos" ? "active" : ""}
-                      onClick={() => {
-                        setDetailTab("photos");
-                        setShowNoteForm(false);
-                      }}
-                    >
-                      Gallery
-                    </button>
-
-                    <button
-                      className={detailTab === "checkin" ? "active" : ""}
-                      onClick={() => {
+                      className={`travel-step ${detailTab==="checkin"?"active":""}`}
+                      onClick={()=>{
                         setDetailTab("checkin");
                         setShowNoteForm(false);
                       }}
                     >
-                      Time In
+                        <span>1</span>
+                        <label>Time In</label>
                     </button>
 
+                    <div className="travel-step-line"></div>
+
                     <button
-                      className={detailTab === "checkout" ? "active" : ""}
-                      onClick={() => {
+                      className={`travel-step ${detailTab==="review"?"active":""}`}
+                      onClick={()=>{
+                        setDetailTab("review");
+                        setShowNoteForm(false);
+                      }}
+                    >
+                        <span>2</span>
+                        <label>Review</label>
+                    </button>
+
+                    <div className="travel-step-line"></div>
+
+                    <button
+                      className={`travel-step ${detailTab==="findings"?"active":""}`}
+                      onClick={()=>{
+                        setDetailTab("findings");
+                        setShowNoteForm(false);
+                      }}
+                    >
+                        <span>3</span>
+                        <label>Findings</label>
+                    </button>
+
+                    <div className="travel-step-line"></div>
+
+                    <button
+                      className={`travel-step ${detailTab==="photos"?"active":""}`}
+                      onClick={()=>{
+                        setDetailTab("photos");
+                        setShowNoteForm(false);
+                      }}
+                    >
+                        <span>4</span>
+                        <label>Upload</label>
+                    </button>
+
+                    <div className="travel-step-line"></div>
+
+                    <button
+                      className={`travel-step ${detailTab==="checkout"?"active":""}`}
+                      onClick={()=>{
                         setDetailTab("checkout");
                         setShowNoteForm(false);
                       }}
                     >
-                      Time Out
+                        <span>5</span>
+                        <label>Time Out</label>
                     </button>
+
                   </div>
 
                   {detailTab === "review" && renderNoteTab("REVIEW")}
