@@ -47,6 +47,7 @@ const rolePermissionsRoutes = require("./routes/rolePermissionsRoutes");
 const awolReportsRoutes = require("./routes/awolReportsRoutes");
 const otherReceivableRoutes = require("./routes/otherReceivableRoutes");
 const calendarRoutes = require("./routes/calendarRoutes");
+const terminationRoutes = require("./routes/terminationRoutes");
 const { startMonthlyBalancePoster } = require("./jobs/monthlyBalancePoster");
 
 const app = express();
@@ -109,6 +110,7 @@ app.use("/api", awolReportsRoutes);
 app.use("/api", otherReceivableRoutes);
 app.use("/api", calendarRoutes);
 app.use("/api", apiRoutes);
+app.use("/api", terminationRoutes);
 
 app.get("/test", (_req, res) => {
   res.send("Backend is working!");

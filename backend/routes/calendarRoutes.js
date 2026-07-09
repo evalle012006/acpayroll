@@ -39,7 +39,7 @@ const canCreatePlan = (req) => {
 
   if (role === "admin" || role === "it") return true;
 
-  return (
+  if (
     dept.includes("operation") &&
     [
       "area manager",
@@ -48,7 +48,25 @@ const canCreatePlan = (req) => {
       "vice president",
       "senior vice president",
     ].includes(role)
-  );
+  ) {
+    return true;
+  }
+
+  if (
+    dept.includes("tread") &&
+    [
+      "branch manager",
+      "area manager",
+      "regional manager",
+      "assistant vice president",
+      "vice president",
+      "senior vice president",
+    ].includes(role)
+  ) {
+    return true;
+  }
+
+  return false;
 };
 
 const travelPlanSelect = `
@@ -621,6 +639,11 @@ router.get("/travel-plans/staff-scope", requireAuth, async (req, res) => {
     else {
       return res.json([]);
     }
+
+    console.log("=================================");
+    console.log(sql);
+    console.log(params);
+    console.log("=================================");
 
     const r = await pool.query(sql, params);
     return res.json(r.rows);

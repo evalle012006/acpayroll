@@ -329,7 +329,7 @@ function startMonthlyBalancePoster() {
   );
 
   console.log(
-    "[monthlyBalancePoster] scheduled every 1st day of month 12:05 AM"
+    "[monthlyBalancePoster] scheduled every 27th day of month 12:05 AM"
   );
 }
 

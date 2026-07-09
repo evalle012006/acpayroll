@@ -423,16 +423,28 @@ const Sidebar = ({ collapsed }) => {
         return (
           can("travel_plan", "view") &&
           (
-            dept.includes("operation") ||
-            dept.includes("tread")
-          ) &&
-          [
-            "area manager",
-            "regional manager",
-            "assistant vice president",
-            "vice president",
-            "senior vice president",
-          ].includes(role)
+            (
+              dept.includes("operation") &&
+              [
+                "area manager",
+                "regional manager",
+                "assistant vice president",
+                "vice president",
+                "senior vice president",
+              ].includes(role)
+            ) ||
+            (
+              dept.includes("tread") &&
+              [
+                "branch manager",
+                "area manager",
+                "regional manager",
+                "assistant vice president",
+                "vice president",
+                "senior vice president",
+              ].includes(role)
+            )
+          )
         );
       }
 

@@ -613,8 +613,8 @@ export default function StaffProfileModal({
         items.push({
           _type: "LOAN", id: l.id, ref: l.transaction_code || l.employee_no || l.id, date,
           status: l.status || "Pending", title: l.loan_type || "Loan",
-          subtitle: `Amount: ₱ ${money(l.approved_amount || l.amount)} • Term: ${l.approved_term || l.term || "-"} • Interest: ${Number(l.interest || 0)}%`,
-          extra: `Total: ₱ ${money(l.approved_total || l.total)} • Per Month: ₱ ${money(l.approved_per_month || l.per_month)}${extraDates ? ` • ${extraDates}` : ""}`,
+          subtitle: `Amount: ₱ ${money(toNum(l.approved_amount) || toNum(l.amount))} • Term: ${toNum(l.approved_term) || toNum(l.term) || "-"} • Interest: ${Number(l.interest || 0)}%`,
+          extra: `Total: ₱ ${money(toNum(l.approved_total) || toNum(l.total) || toNum(l.amount))} • Per Month: ₱ ${money(toNum(l.approved_per_month) || toNum(l.per_month))}${extraDates ? ` • ${extraDates}` : ""}`,
           reason: l.reason || "", rejection_reason: l.rejection_reason || "",
         });
       }
@@ -653,7 +653,13 @@ export default function StaffProfileModal({
           status: l.status || "Pending",
           title: `${l.leave_type || "Leave"} Request`,
           subtitle: `${fmtDate(l.start_date)} → ${fmtDate(l.end_date)}`,
-          extra: `Days: ${l.total_days || l.days || 0}`,
+          extra: `Days: ${
+            toNum(l.total_no_of_days) ||
+            toNum(l.total_days) ||
+            toNum(l.days) ||
+            Math.max(
+              1, (new Date(l.end_date) - new Date(l.start_date)) / (1000 * 60 * 60 * 24) + 1) || 0
+          }`,
           reason: l.reason || l.details || "",
           rejection_reason: l.rejection_reason || "",
         });
