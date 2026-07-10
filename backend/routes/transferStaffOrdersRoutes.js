@@ -110,11 +110,13 @@
       isSeniorVicePresident(req) ||
       isPresident(req);
 
-  const canUploadFinalFile = (req) =>
-    isHrDepartmentUser(req) || isAdmin(req);
+  const canHRAccountingAction = (req) =>
+    isAdmin(req) || isHrDepartmentUser(req) || isAccountingDepartmentUser(req);
 
-  const canRejectOrder = (req) =>
-    isHrDepartmentUser(req) || isAdmin(req);
+  const canUploadFinalFile = canHRAccountingAction;
+  const canRejectOrder = canHRAccountingAction;
+  const canVoidOrder = canHRAccountingAction;
+  const canDeleteOrder = canHRAccountingAction;
 
   const getUserBranchId = (req) => req.user?.branch_id ?? null;
 
@@ -681,7 +683,7 @@
       try {
         if (!canUploadFinalFile(req)) {
           return res.status(403).json({
-            message: "Only HR Department or Admin can upload the final transfer file.",
+            message: "Only HR Department, Accounting Department, or Admin can upload the final transfer file.",
           });
         }
 
@@ -916,7 +918,7 @@
     requirePermission("transfer_staff_order", "void"),
     async (req, res) => {
       try {
-        if (!(isAdmin(req) || isHrDepartmentUser(req))) {
+        if (!canVoidOrder(req)) {
           return res.status(403).json({ message: "Access denied" });
         }
 
@@ -959,8 +961,10 @@
     requirePermission("transfer_staff_order", "delete"),
     async (req, res) => {
       try {
-        if (!isAdmin(req)) {
-          return res.status(403).json({ message: "Only Admin can Delete." });
+        if (!canDeleteOrder(req)) {
+          return res.status(403).json({
+            message: "Only Admin, HR Department, or Accounting Department can delete.",
+          });
         }
 
         const id = toInt(req.params.id);
@@ -998,7 +1002,7 @@
       try {
         if (!canRejectOrder(req)) {
           return res.status(403).json({
-            message: "Only HR Department or Admin can reject transfer orders.",
+            message: "Only HR Department, Accounting Department, or Admin can reject transfer orders.",
           });
         }
 

@@ -588,12 +588,27 @@ const insertApprovedAttachment = async (client, leaveId, file, req) => {
   );
 };
 
+async function applyIndefiniteLeaveEffectiveDates(client = pool) {
+  await client.query(`
+    UPDATE public.staff s
+    SET status = 'Inactive'
+    FROM public.leave_requests lr
+    WHERE lr.employee_id = s.id
+      AND lr.leave_type = 'Indefinite Leave'
+      AND lr.status = 'Approved'
+      AND lr.start_date IS NOT NULL
+      AND lr.start_date::date <= CURRENT_DATE
+      AND COALESCE(s.status, '') <> 'Inactive'
+  `);
+}
+
 router.get(
   "/leave-requests",
   requireAuth,
   requirePermission("leave_request", "view"),
   async (req, res) => {
     try {
+      await applyIndefiniteLeaveEffectiveDates();
       if (
         isAdminOrIT(req) ||
         isAccounting(req) ||
@@ -766,7 +781,7 @@ router.post(
           staffName || null,
           leave_type,
           date_created,
-          isIndefiniteLeave ? null : start_date,
+          start_date,
           isIndefiniteLeave ? null : end_date,
           total_no_of_days,
           reason || null,
@@ -805,17 +820,6 @@ router.post(
             req.user?.id ?? null,
             roleLower(req),
           ]
-        );
-      }
-
-      if (isIndefiniteLeave) {
-        await client.query(
-          `
-          UPDATE public.staff
-          SET status = 'Inactive'
-          WHERE id = $1
-          `,
-          [employee_id]
         );
       }
 
@@ -1041,6 +1045,7 @@ router.put(
             }
 
       await client.query(sql, params);
+      await applyIndefiniteLeaveEffectiveDates(client);
       await client.query("COMMIT");
 
       const finalRow = await pool.query(`${baseLeaveSelect} WHERE lr.id = $1`, [
@@ -1293,6 +1298,79 @@ router.get(
     } catch (e) {
       console.error("DOWNLOAD LEAVE FILE ERROR:", e.message);
       return res.status(500).json({ message: e?.message || "Server error" });
+    }
+  }
+);
+
+router.put(
+  "/leave-requests/:id/return-to-work",
+  requireAuth,
+  requirePermission("leave_request", "approve"),
+  async (req, res) => {
+    const client = await pool.connect();
+
+    try {
+      if (!(isAdminOrIT(req) || isHrDepartmentUser(req))) {
+        return res.status(403).json({
+          message: "Only Admin, IT, or HR Department can return staff to work.",
+        });
+      }
+
+      const id = String(req.params.id || "").trim();
+
+      await client.query("BEGIN");
+
+      const r = await client.query(
+        `
+        SELECT id, employee_id, leave_type, status
+        FROM public.leave_requests
+        WHERE id = $1
+        FOR UPDATE
+        `,
+        [id]
+      );
+
+      if (r.rowCount === 0) {
+        await client.query("ROLLBACK");
+        return res.status(404).json({ message: "Leave request not found." });
+      }
+
+      const row = r.rows[0];
+
+      if (row.leave_type !== "Indefinite Leave" || row.status !== "Approved") {
+        await client.query("ROLLBACK");
+        return res.status(400).json({
+          message: "Only approved Indefinite Leave can be returned to work.",
+        });
+      }
+
+      await client.query(
+        `
+        UPDATE public.staff
+        SET status = 'Active'
+        WHERE id = $1
+        `,
+        [row.employee_id]
+      );
+
+      await client.query(
+        `
+        UPDATE public.leave_requests
+        SET status = 'Returned to Work'
+        WHERE id = $1
+        `,
+        [id]
+      );
+
+      await client.query("COMMIT");
+
+      return res.json({ message: "Staff returned to work." });
+    } catch (e) {
+      await client.query("ROLLBACK");
+      console.error("RETURN TO WORK ERROR:", e.message);
+      return res.status(500).json({ message: e.message || "Server error" });
+    } finally {
+      client.release();
     }
   }
 );

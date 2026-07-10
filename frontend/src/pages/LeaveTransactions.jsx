@@ -260,17 +260,6 @@ export default function LeaveTransactions() {
     return () => document.removeEventListener("mousedown", onMouseDown);
   }, []);
 
-  useEffect(() => {
-    if (!isIndefiniteLeave) return;
-
-    setLeaveForm((prev) => ({
-      ...prev,
-      start_date: "",
-      end_date: "",
-      total_no_of_days: "",
-    }));
-  }, [isIndefiniteLeave]);
-
   const filteredEmployees = useMemo(() => {
     let scopedStaff = staffList || [];
 
@@ -423,6 +412,9 @@ export default function LeaveTransactions() {
     if (!leaveForm.employee_id) return alert("Select an employee.");
     if (!leaveForm.leave_type) return alert("Select leave type.");
     if (!leaveForm.date_created) return alert("Select date created.");
+    if (isIndefiniteLeave && !leaveForm.start_date) {
+      return alert("Select effective date.");
+    }
 
     if (!isIndefiniteLeave) {
       if (!leaveForm.start_date || !leaveForm.end_date) {
@@ -459,7 +451,7 @@ export default function LeaveTransactions() {
       formData.append("employee_id", leaveForm.employee_id);
       formData.append("leave_type", leaveForm.leave_type);
       formData.append("date_created", leaveForm.date_created);
-      formData.append("start_date", isIndefiniteLeave ? "" : leaveForm.start_date);
+      formData.append("start_date", leaveForm.start_date);
       formData.append("end_date", isIndefiniteLeave ? "" : leaveForm.end_date);
       formData.append("reason", leaveForm.reason || "");
 
@@ -564,6 +556,21 @@ export default function LeaveTransactions() {
         ...prev,
         [`${id}-${action}`]: false,
       }));
+    }
+  };
+
+  const returnToWork = async (item) => {
+    if (!item?.id) return;
+
+    if (!window.confirm("Return this staff to Active status?")) return;
+
+    try {
+      await api.put(`/leave-requests/${item.id}/return-to-work`);
+      await fetchLeave();
+      await fetchStaff();
+    } catch (err) {
+      if (err?.response?.status === 401) return logout();
+      alert(err?.response?.data?.message || "Failed to return staff to work.");
     }
   };
 
@@ -1075,6 +1082,20 @@ export default function LeaveTransactions() {
                             </button>
                           ) : null}
 
+                          {(isAdminOrIT || isHrDepartmentUser) &&
+                            item.leave_type === "Indefinite Leave" &&
+                            approved &&
+                            item.start_date &&
+                            new Date(item.start_date) <= new Date() ? (
+                              <button
+                                className="btn-success"
+                                type="button"
+                                onClick={() => returnToWork(item)}
+                              >
+                                Return to Work
+                              </button>
+                            ) : null}
+
                           {isAdmin && (rejected || voided) ? (
                             <button
                               className="btn-danger"
@@ -1252,19 +1273,18 @@ export default function LeaveTransactions() {
                 </div>
 
                 <div className="form-group">
-                  <label>Start Date</label>
+                  <label>{isIndefiniteLeave ? "Effective Date" : "Start Date"}</label>
 
                   <input
                     type="date"
                     value={leaveForm.start_date}
-                    disabled={isIndefiniteLeave}
                     onChange={(e) =>
                       setLeaveForm((p) => ({
                         ...p,
                         start_date: e.target.value,
                       }))
                     }
-                    required={!isIndefiniteLeave}
+                    required
                   />
                 </div>
 

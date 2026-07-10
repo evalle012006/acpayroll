@@ -615,7 +615,11 @@ router.put(
         ? `/uploads/resignation-requests/${req.file.filename}`
         : null;
 
-      if (isFinalApprover(req)) {
+      const bypass =
+        req.body?.bypass === true ||
+        req.body?.bypass === "true";
+
+      if (isFinalApprover(req) && !bypass) {
         const finalAttachmentPath =
           uploadedAttachmentPath || existing.attachment_path || null;
 
@@ -759,6 +763,73 @@ router.put(
 
         await client.query("COMMIT");
         return res.json(updateRequest.rows[0]);
+      }
+
+      if (bypass) {
+
+      if (!isAdmin(req) && !isIT(req)) {
+        await client.query("ROLLBACK");
+        return res.status(403).json({
+          message: "Only Admin and IT can bypass approval."
+        });
+      }
+        let nextStatus = null;
+
+        switch (currentStatus) {
+          case STATUS_BRANCH:
+            nextStatus = STATUS_AREA;
+            break;
+
+          case STATUS_AREA:
+            nextStatus = STATUS_RM;
+            break;
+
+          case STATUS_RM:
+            nextStatus = STATUS_AVP;
+            break;
+
+          case STATUS_AVP:
+            nextStatus = STATUS_VP;
+            break;
+
+          case STATUS_VP:
+            nextStatus = STATUS_ADMIN;
+            break;
+
+          case STATUS_SVP:
+            nextStatus = STATUS_ADMIN;
+            break;
+
+          case STATUS_ADMIN:
+            return res.status(400).json({
+              message: "Admin is already the last approval stage.",
+            });
+
+          default:
+            return res.status(400).json({
+              message: "Cannot bypass this stage.",
+            });
+        }
+
+        const updated = await client.query(
+          `
+          UPDATE resignation_requests
+          SET
+            status = $2,
+            approved_by = $3,
+            approved_at = NOW()
+          WHERE id = $1
+          RETURNING *;
+          `,
+          [
+            id,
+            nextStatus,
+            req.user?.id ?? null
+          ]
+        );
+
+        await client.query("COMMIT");
+        return res.json(updated.rows[0]);
       }
 
       let nextStatus = null;

@@ -94,8 +94,12 @@ export default function TransferStaffOrder() {
     userDepartment === "accounting department";
 
   const canCreate = true;
-  const canHRUpload = isAdmin || isHRDepartment;
-  const canReject = isAdmin || isHRDepartment;
+    const canHRAccountingAction = isAdmin || isHRDepartment || isAccountingDepartment;
+
+  const canHRUpload = canHRAccountingAction;
+  const canReject = canHRAccountingAction;
+  const canVoid = canHRAccountingAction;
+  const canDelete = canHRAccountingAction;
 
   const userBranchId = String(user?.branch_id || "");
   const userArea = norm(user?.area);
@@ -1631,7 +1635,7 @@ export default function TransferStaffOrder() {
                 </button>
               ) : null}
 
-              {selectedOrder.status === "Approved" && (isAdmin || isHRDepartment) ? (
+              {selectedOrder.status === "Approved" && canVoid ? (
                 <button
                   className="btn-secondary"
                   type="button"
@@ -1641,7 +1645,7 @@ export default function TransferStaffOrder() {
                 </button>
               ) : null}
 
-              {["Rejected", "Void"].includes(selectedOrder.status) && isAdmin ? (
+              {["Rejected", "Void"].includes(selectedOrder.status) && canDelete ? (
                 <button
                   className="btn-secondary"
                   type="button"
