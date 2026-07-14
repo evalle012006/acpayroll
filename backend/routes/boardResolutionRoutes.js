@@ -12,7 +12,30 @@ const toStr = (v) => String(v ?? "").trim();
 const norm = (v) => toStr(v).toLowerCase();
 
 const roleLower = (req) => norm(req.user?.role);
+
+const departmentLower = (req) =>
+  norm(
+    req.user?.department ||
+      req.user?.department_name ||
+      req.user?.user_department
+  );
+
 const isAdmin = (req) => ["admin", "it"].includes(roleLower(req));
+
+const isHrDepartment = (req) =>
+  departmentLower(req) === "hr department";
+
+const isAccountingDepartment = (req) =>
+  departmentLower(req) === "accounting department";
+
+const isITDepartment = (req) =>
+  departmentLower(req) === "it department";
+
+const canFinalApprove = (req) =>
+  isAdmin(req) ||
+  isHrDepartment(req) ||
+  isAccountingDepartment(req) ||
+  isITDepartment(req);
 
 const uploadDir = path.join(process.cwd(), "uploads", "board-resolution");
 fs.mkdirSync(uploadDir, { recursive: true });
@@ -45,7 +68,7 @@ async function ensureTable() {
       thru_text TEXT,
       title TEXT NOT NULL,
       details TEXT,
-      status VARCHAR(100) DEFAULT 'Submitted',
+      status VARCHAR(100) DEFAULT 'Pending Approval',
       created_by INTEGER,
       created_by_role VARCHAR(100),
       created_at TIMESTAMP DEFAULT NOW(),
@@ -65,13 +88,15 @@ async function ensureTable() {
     ADD COLUMN IF NOT EXISTS thru_text TEXT,
     ADD COLUMN IF NOT EXISTS title TEXT,
     ADD COLUMN IF NOT EXISTS details TEXT,
-    ADD COLUMN IF NOT EXISTS status VARCHAR(100) DEFAULT 'Submitted',
+    ADD COLUMN IF NOT EXISTS status VARCHAR(100) DEFAULT 'Pending Approval',
     ADD COLUMN IF NOT EXISTS created_by INTEGER,
     ADD COLUMN IF NOT EXISTS created_by_role VARCHAR(100),
     ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW(),
     ADD COLUMN IF NOT EXISTS request_attachment_path TEXT,
     ADD COLUMN IF NOT EXISTS request_attachment_name TEXT,
     ADD COLUMN IF NOT EXISTS request_attachment_mime TEXT,
+    ADD COLUMN IF NOT EXISTS approved_by INTEGER,
+    ADD COLUMN IF NOT EXISTS approved_at TIMESTAMP,
     ADD COLUMN IF NOT EXISTS rejected_by INTEGER,
     ADD COLUMN IF NOT EXISTS rejected_at TIMESTAMP,
     ADD COLUMN IF NOT EXISTS rejection_reason TEXT;
@@ -164,7 +189,7 @@ router.post(
           request_attachment_name,
           request_attachment_mime
         )
-        VALUES ($1,$2::date,$3,$4,$5,$6,'Submitted',$7,$8,$9,$10,$11)
+        VALUES ($1,$2::date,$3,$4,$5,$6,'Pending Approval',$7,$8,$9,$10,$11)
         RETURNING *;
         `,
         [
@@ -247,12 +272,77 @@ router.get(
 );
 
 router.put(
+  "/board-resolution-requests/:id/approve",
+  requireAuth,
+  requirePermission("board_resolution", "approve"),
+  async (req, res) => {
+    try {
+      await ensureTable();
+
+      if (!canFinalApprove(req)) {
+        return res.status(403).json({
+          message:
+            "Only HR, Accounting, IT Departments or Admin can approve.",
+        });
+      }
+
+      const id = Number(req.params.id);
+
+      if (!Number.isFinite(id)) {
+        return res.status(400).json({
+          message: "Invalid request id",
+        });
+      }
+
+      const result = await pool.query(
+        `
+        UPDATE public.board_resolution_requests
+        SET
+            status = 'Approved',
+            approved_by = $2,
+            approved_at = NOW()
+        WHERE
+            id = $1
+            AND status = 'Pending Approval'
+        RETURNING *
+        `,
+        [
+          id,
+          req.user?.id ?? null,
+        ]
+      );
+
+      if (!result.rowCount) {
+        return res.status(400).json({
+          message: "This request is already approved or rejected.",
+        });
+      }
+
+      return res.json(result.rows[0]);
+    } catch (e) {
+      console.error("APPROVE BOARD RESOLUTION ERROR:", e);
+
+      return res.status(500).json({
+        message: e.message,
+      });
+    }
+  }
+);
+
+router.put(
   "/board-resolution-requests/:id/reject",
   requireAuth,
   requirePermission("board_resolution", "reject"),
   async (req, res) => {
     try {
       await ensureTable();
+
+      if (!canFinalApprove(req)) {
+        return res.status(403).json({
+          message:
+            "Only HR, Accounting, IT Departments or Admin can reject.",
+        });
+      }
 
       const id = Number(req.params.id);
       const reason = toStr(req.body?.reason || req.body?.rejection_reason);
@@ -273,18 +363,26 @@ router.put(
           rejected_by = $2,
           rejected_at = NOW(),
           rejection_reason = $3
-        WHERE id = $1
+        WHERE
+          id = $1
+          AND status = 'Pending Approval'
         RETURNING *
         `,
-        [id, req.user?.id ?? null, reason]
+        [
+          id,
+          req.user?.id ?? null,
+          reason,
+        ]
       );
 
       if (r.rowCount === 0) {
-        return res.status(404).json({ message: "Request not found" });
+        return res.status(400).json({
+          message: "This request is already approved or rejected.",
+        });
       }
 
       return res.json(r.rows[0]);
-    } catch (e) {
+    } catch (e) { 
       console.error("REJECT board-resolution ERROR:", e);
       return res.status(500).json({ message: e?.message || "Server error" });
     }

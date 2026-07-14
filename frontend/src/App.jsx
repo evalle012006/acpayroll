@@ -40,7 +40,6 @@ import TaxCalculator from "./pages/TaxCalculator";
 import { CompRatesProvider } from "./context/CompRatesContext";
 import Logistic from "./pages/Logistic";
 import DetailsCompensation from "./pages/DetailsCompensation";
-import OpeningLoanBalances from "./pages/OpeningLoanBalances";
 import RegularizationOrders from "./pages/RegularizationOrders";
 import ResignationRequests from "./pages/ResignationRequests";
 import StaffAccountsPayable from "./pages/StaffAccountsPayable";
@@ -374,15 +373,6 @@ function AppShell() {
         element={
           <Page module="schedule_balance">
             <ScheduleBalances />
-          </Page>
-        }
-      />
-
-      <Route
-        path="/opening-loan-balances"
-        element={
-          <Page module="staff_loan_opening_balance">
-            <OpeningLoanBalances />
           </Page>
         }
       />

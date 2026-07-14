@@ -711,33 +711,51 @@
 
         const staffRow = s.rows[0];
 
-        if (isBranchManager(req)) {
-          const userBranchId = await resolveUserBranchId(req);
+        const isOperationUser = isOperationDepartmentName(
+          getUserDepartment(req)
+        );
 
-          if (Number(userBranchId) !== Number(prev_branch_id)) {
-            await client.query("ROLLBACK");
-            return res.status(403).json({ message: "Access denied" });
+        if (isOperationUser) {
+          if (isBranchManager(req)) {
+            const userBranchId = await resolveUserBranchId(req);
+
+            if (Number(userBranchId) !== Number(prev_branch_id)) {
+              await client.query("ROLLBACK");
+
+              return res.status(403).json({
+                message: "Access denied",
+              });
+            }
           }
-        }
 
-        if (isAreaManager(req)) {
-          if (norm(getUserArea(req)) !== norm(staffRow.area)) {
-            await client.query("ROLLBACK");
-            return res.status(403).json({ message: "Access denied" });
+          if (isAreaManager(req)) {
+            if (norm(getUserArea(req)) !== norm(staffRow.area)) {
+              await client.query("ROLLBACK");
+
+              return res.status(403).json({
+                message: "Access denied",
+              });
+            }
           }
-        }
 
-        if (isRegionalManager(req)) {
-          if (norm(getUserRegion(req)) !== norm(staffRow.region)) {
-            await client.query("ROLLBACK");
-            return res.status(403).json({ message: "Access denied" });
+          if (isRegionalManager(req)) {
+            if (norm(getUserRegion(req)) !== norm(staffRow.region)) {
+              await client.query("ROLLBACK");
+
+              return res.status(403).json({
+                message: "Access denied",
+              });
+            }
           }
-        }
 
-        if (isAssistantVicePresident(req)) {
-          if (norm(getUserDivision(req)) !== norm(staffRow.division)) {
-            await client.query("ROLLBACK");
-            return res.status(403).json({ message: "Access denied" });
+          if (isAssistantVicePresident(req)) {
+            if (norm(getUserDivision(req)) !== norm(staffRow.division)) {
+              await client.query("ROLLBACK");
+
+              return res.status(403).json({
+                message: "Access denied",
+              });
+            }
           }
         }
 

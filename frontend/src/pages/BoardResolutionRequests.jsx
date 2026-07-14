@@ -48,8 +48,15 @@ export default function BoardResolutionRequests() {
     ].includes(role);
 
   const isAdmin = ["admin", "it"].includes(role);
-  const isHr = role === "hr";
-  const isAccounting = role === "accounting";
+  
+  const canApprove =
+    isAdmin ||
+    isHrDepartment ||
+    isAccountingDepartment ||
+    isITDepartment;
+
+  const isHrDepartment = department === "hr department";
+  const isAccountingDepartment = department === "accounting department";
   const isAreaManager = role === "area manager";
   const isRegionalManager = role === "regional manager";
   const isAssistantVicePresident = role === "assistant vice president";
@@ -66,13 +73,10 @@ export default function BoardResolutionRequests() {
 
   const canViewPage =
     canCreate ||
-    isAdmin ||
-    isHr ||
-    isAccounting ||
+    canApprove ||
     isVp ||
     isSvp ||
-    isPresident ||
-    isITDepartmentManager;
+    isPresident;
 
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -80,6 +84,7 @@ export default function BoardResolutionRequests() {
 
   const [showCreate, setShowCreate] = useState(false);
   const [form, setForm] = useState(defaultForm);
+  const [search, setSearch] = useState("");
 
   const loadRows = useCallback(async () => {
     try {
@@ -97,6 +102,27 @@ export default function BoardResolutionRequests() {
   useEffect(() => {
     if (canViewPage) loadRows();
   }, [canViewPage, loadRows]);
+
+  const filteredRows = useMemo(() => {
+    const keyword = search.trim().toLowerCase();
+
+    if (!keyword) return rows;
+
+    return rows.filter((row) =>
+      [
+        row.request_no,
+        row.to_text,
+        row.thru_text,
+        row.title,
+        row.details,
+        row.created_by_role,
+        row.status,
+      ]
+        .join(" ")
+        .toLowerCase()
+        .includes(keyword)
+    );
+  }, [rows, search]);
 
   const closeCreate = () => {
     setShowCreate(false);
@@ -177,6 +203,45 @@ export default function BoardResolutionRequests() {
     }
   };
 
+  const approveRequest = async (row) => {
+    if (!window.confirm("Approve this request?")) return;
+
+    try {
+      await api.put(
+        `/board-resolution-requests/${row.id}/approve`
+      );
+
+      await loadRows();
+    } catch (err) {
+      alert(
+        err?.response?.data?.message ||
+          "Failed to approve request."
+      );
+    }
+  };
+
+  const rejectRequest = async (row) => {
+    const reason = window.prompt("Reason for rejection:");
+
+    if (!reason) return;
+
+    try {
+      await api.put(
+        `/board-resolution-requests/${row.id}/reject`,
+        {
+          reason,
+        }
+      );
+
+      await loadRows();
+    } catch (err) {
+      alert(
+        err?.response?.data?.message ||
+          "Failed to reject request."
+      );
+    }
+  };
+
   const canDeleteRow = (row) =>
     String(row.created_by) === String(user?.id) || isAdmin;
 
@@ -195,7 +260,7 @@ export default function BoardResolutionRequests() {
         <div>
           <h2 className="approval-title">Board Resolution Requests</h2>
           <p className="approval-subtitle">
-            Regional Managers can create requests. HR, Accounting, Admin, IT, VP, SVP, and President can view.
+            Area Managers, Regional Managers, Assistant Vice Presidents, and IT Department Managers can create requests.
           </p>
         </div>
 
@@ -216,6 +281,16 @@ export default function BoardResolutionRequests() {
         </div>
       </div>
 
+      <div className="approval-toolbar">
+        <input
+          type="text"
+          className="approval-search"
+          placeholder="Search request no, subject, to, thru..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
+      </div>
+
       <div className="table-card">
         <div className="table-wrap">
           <table className="table">
@@ -228,6 +303,7 @@ export default function BoardResolutionRequests() {
                 <th>Subject</th>
                 <th>Body</th>
                 <th>Created</th>
+                <th>Status</th>
                 <th style={{ width: 260 }}>Actions</th>
               </tr>
             </thead>
@@ -235,18 +311,18 @@ export default function BoardResolutionRequests() {
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={8} className="empty-state">
+                  <td colSpan={9} className="empty-state">
                     Loading...
                   </td>
                 </tr>
-              ) : rows.length === 0 ? (
+              ) : filteredRows.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="empty-state">
+                  <td colSpan={9} className="empty-state">
                     No board resolution requests found.
                   </td>
                 </tr>
               ) : (
-                rows.map((row) => (
+                filteredRows.map((row) => (
                   <tr key={row.id}>
                     <td>{row.request_no || row.id}</td>
                     <td>{fmtDate(row.date_created)}</td>
@@ -261,28 +337,49 @@ export default function BoardResolutionRequests() {
                         : "-"}
                     </td>
                     <td>{fmtDate(row.created_at)}</td>
+                    <td>{row.status}</td>
                     <td>
-                      <div className="row-actions">
+                      <div className="board-actions">
+
+                        {canApprove &&
+                          row.status === "Pending Approval" && (
+                            <>
+                              <button
+                                className="board-btn approve"
+                                onClick={() => approveRequest(row)}
+                              >
+                                ✓ Approve
+                              </button>
+
+                              <button
+                                className="board-btn reject"
+                                onClick={() => rejectRequest(row)}
+                              >
+                                ✕ Reject
+                              </button>
+                            </>
+                        )}
+
                         {row.request_attachment_path && (
                           <button
-                            className="btn-secondary"
-                            type="button"
+                            className="board-btn download"
                             onClick={() => downloadFile(row)}
                           >
-                            Download File
+                            ⬇ Download
                           </button>
                         )}
 
                         {canDeleteRow(row) && (
                           <button
-                            className="btn-danger"
-                            type="button"
+                            className="board-btn delete"
                             onClick={() => deleteRequest(row)}
                           >
-                            Delete
+                            🗑 Delete
                           </button>
                         )}
+
                       </div>
+
                     </td>
                   </tr>
                 ))

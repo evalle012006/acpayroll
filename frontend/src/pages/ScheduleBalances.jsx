@@ -15,6 +15,34 @@ const MONEY_COLS = [
   { key: "staff_accounts_payable", label: "Staff Accounts Payable" },
 ];
 
+const OPENING_LOAN_TYPES = [
+  "Salary Advance",
+  "Special Advance",
+  "Cash Advance",
+  "Motorcycle Loan",
+  "Other Loan",
+];
+
+const OPENING_LOAN_STATUSES = ["Active", "Paid", "Cancelled"];
+
+const EMPTY_OPENING_LOAN_FORM = {
+  id: null,
+  staff_id: "",
+  loan_type: "Salary Advance",
+  original_amount: "",
+  interest: "",
+  interest_amount: "",
+  total_amount: "",
+  term_months: "",
+  months_paid: "",
+  per_month: "",
+  remaining_balance: "",
+  start_date: "",
+  effective_date: "",
+  status: "Active",
+  remarks: "",
+};
+
 const toStr = (v) => String(v ?? "").trim();
 
 const toNum = (v) => {
@@ -91,6 +119,8 @@ export default function ScheduleBalances() {
     isITDepartment ||
     isAccountingDepartment;
 
+  const canManageOpeningLoans = canEditHistory || isAreaManager;
+
   const userBranchRaw = useMemo(() => {
     const raw = user?.branch_id;
     return raw === null || raw === undefined || raw === "" ? "" : String(raw).trim();
@@ -122,6 +152,14 @@ export default function ScheduleBalances() {
 
   const [historySaving, setHistorySaving] = useState(false);
   const [historyError, setHistoryError] = useState("");
+
+  const [openingLoanRows, setOpeningLoanRows] = useState([]);
+  const [openingLoanLoading, setOpeningLoanLoading] = useState(false);
+  const [openingLoanSaving, setOpeningLoanSaving] = useState(false);
+  const [openingLoanError, setOpeningLoanError] = useState("");
+  const [openingLoanForm, setOpeningLoanForm] = useState(
+    EMPTY_OPENING_LOAN_FORM
+  );
 
   const logout = useCallback(() => {
     localStorage.removeItem("token");
@@ -319,13 +357,113 @@ export default function ScheduleBalances() {
 
   const handleRefresh = () => fetchLiveBalances(effectiveBranchId, month);
 
-  const openHistoryEdit = (row) => {
-    if (isCurrentMonth(month)) {
-      alert("The current month cannot be edited as historical data.");
+  const resetOpeningLoanForm = useCallback((staffId = "") => {
+    setOpeningLoanForm({
+      ...EMPTY_OPENING_LOAN_FORM,
+      staff_id: staffId ? String(staffId) : "",
+    });
+    setOpeningLoanError("");
+  }, []);
+
+  const fetchOpeningLoans = useCallback(async (staffId) => {
+    if (!staffId) {
+      setOpeningLoanRows([]);
       return;
     }
 
-    if (!row?.id) {
+    try {
+      setOpeningLoanLoading(true);
+      setOpeningLoanError("");
+
+      const res = await api.get(
+        `/staff-loan-opening-balances/staff/${staffId}`
+      );
+
+      setOpeningLoanRows(Array.isArray(res.data) ? res.data : []);
+    } catch (err) {
+      if (err?.response?.status === 401) {
+        logout();
+        return;
+      }
+
+      setOpeningLoanRows([]);
+      setOpeningLoanError(
+        err?.response?.data?.message ||
+          "Failed to load opening loan balances."
+      );
+    } finally {
+      setOpeningLoanLoading(false);
+    }
+  }, [logout]);
+
+  useEffect(() => {
+    const original = toNum(openingLoanForm.original_amount);
+    const interest = toNum(openingLoanForm.interest);
+    const term = toNum(openingLoanForm.term_months);
+    const paid = toNum(openingLoanForm.months_paid);
+
+    const interestAmount = Number(
+      (original * (interest / 100)).toFixed(2)
+    );
+
+    const totalAmount = Number(
+      (original + interestAmount).toFixed(2)
+    );
+
+    const perMonth =
+      totalAmount > 0 && term > 0
+        ? Number((totalAmount / term).toFixed(2))
+        : 0;
+
+    const safePaid = term > 0 ? Math.min(paid, term) : paid;
+
+    const remainingBalance =
+      totalAmount > 0
+        ? Math.max(
+            0,
+            Number((totalAmount - perMonth * safePaid).toFixed(2))
+          )
+        : 0;
+
+    setOpeningLoanForm((previous) => {
+      const next = {
+        ...previous,
+        months_paid:
+          term > 0 && paid > term ? String(term) : previous.months_paid,
+        interest_amount: String(interestAmount),
+        total_amount: String(totalAmount),
+        per_month: String(perMonth),
+        remaining_balance: String(remainingBalance),
+      };
+
+      if (
+        next.months_paid === previous.months_paid &&
+        next.interest_amount === previous.interest_amount &&
+        next.total_amount === previous.total_amount &&
+        next.per_month === previous.per_month &&
+        next.remaining_balance === previous.remaining_balance
+      ) {
+        return previous;
+      }
+
+      return next;
+    });
+  }, [
+    openingLoanForm.original_amount,
+    openingLoanForm.interest,
+    openingLoanForm.term_months,
+    openingLoanForm.months_paid,
+  ]);
+
+  const openHistoryEdit = async (row) => {
+    const staffId = row?.staff_id || row?.id;
+
+    if (!staffId) {
+      alert("Staff ID is missing.");
+      return;
+    }
+
+    if (!isCurrentMonth(month) && !row?.id) {
       alert("Historical snapshot ID is missing.");
       return;
     }
@@ -339,9 +477,13 @@ export default function ScheduleBalances() {
     });
 
     setHistoryError("");
+    resetOpeningLoanForm(staffId);
+    await fetchOpeningLoans(staffId);
   };
 
   const closeHistoryEdit = () => {
+    if (historySaving || openingLoanSaving) return;
+
     setEditingHistory(null);
 
     setHistoryForm({
@@ -351,17 +493,24 @@ export default function ScheduleBalances() {
     });
 
     setHistoryError("");
+    setOpeningLoanRows([]);
+    resetOpeningLoanForm("");
   };
 
   const saveHistoryEdit = async (e) => {
     e.preventDefault();
 
-    if (!editingHistory?.id || historySaving) return;
+    if (
+      isCurrentMonth(month) ||
+      !editingHistory?.id ||
+      historySaving
+    ) {
+      return;
+    }
 
     const cbu = Number(historyForm.cbu);
     const cashbond = Number(historyForm.cashbond);
     const utility = Number(historyForm.utility);
-    const reason = toStr(historyForm.reason);
 
     if (
       !Number.isFinite(cbu) ||
@@ -390,22 +539,14 @@ export default function ScheduleBalances() {
         }
       );
 
-      setEditingHistory(null);
-
-      setHistoryForm({
-        cbu: "",
-        cashbond: "",
-        utility: "",
-      });
-
-      setHistoryError("");
+      setEditingHistory((previous) => ({
+        ...previous,
+        cbu,
+        cashbond,
+        utility,
+      }));
 
       await fetchLiveBalances(effectiveBranchId, month);
-
-      /*
-        Refresh the already-open branch modal using the newly loaded data.
-        The effect below will update its staff rows.
-      */
     } catch (err) {
       if (err?.response?.status === 401) {
         logout();
@@ -418,6 +559,126 @@ export default function ScheduleBalances() {
       );
     } finally {
       setHistorySaving(false);
+    }
+  };
+
+  const editOpeningLoan = (row) => {
+    setOpeningLoanForm({
+      id: row.id,
+      staff_id: row.staff_id,
+      loan_type: row.loan_type || "Salary Advance",
+      original_amount: row.original_amount ?? "",
+      interest: row.interest ?? "",
+      interest_amount: row.interest_amount ?? "",
+      total_amount: row.total_amount ?? "",
+      term_months: row.term_months ?? "",
+      months_paid: row.months_paid ?? "",
+      per_month: row.per_month ?? "",
+      remaining_balance: row.remaining_balance ?? "",
+      start_date: row.start_date
+        ? String(row.start_date).slice(0, 10)
+        : "",
+      effective_date: row.effective_date
+        ? String(row.effective_date).slice(0, 10)
+        : "",
+      status: row.status || "Active",
+      remarks: row.remarks || "",
+    });
+
+    setOpeningLoanError("");
+  };
+
+  const saveOpeningLoan = async (e) => {
+    e.preventDefault();
+
+    if (!canManageOpeningLoans || openingLoanSaving) return;
+
+    const staffId = editingHistory?.staff_id || editingHistory?.id;
+
+    if (!staffId) {
+      setOpeningLoanError("Staff ID is missing.");
+      return;
+    }
+
+    if (!toStr(openingLoanForm.loan_type)) {
+      setOpeningLoanError("Loan type is required.");
+      return;
+    }
+
+    if (toNum(openingLoanForm.original_amount) <= 0) {
+      setOpeningLoanError("Original amount must be greater than zero.");
+      return;
+    }
+
+    if (toNum(openingLoanForm.term_months) <= 0) {
+      setOpeningLoanError("Term months must be greater than zero.");
+      return;
+    }
+
+    try {
+      setOpeningLoanSaving(true);
+      setOpeningLoanError("");
+
+      const payload = {
+        ...openingLoanForm,
+        staff_id: Number(staffId),
+      };
+
+      if (openingLoanForm.id) {
+        await api.put(
+          `/staff-loan-opening-balances/${openingLoanForm.id}`,
+          payload
+        );
+      } else {
+        await api.post("/staff-loan-opening-balances", payload);
+      }
+
+      resetOpeningLoanForm(staffId);
+      await fetchOpeningLoans(staffId);
+      await fetchLiveBalances(effectiveBranchId, month);
+    } catch (err) {
+      if (err?.response?.status === 401) {
+        logout();
+        return;
+      }
+
+      setOpeningLoanError(
+        err?.response?.data?.message ||
+          "Failed to save opening loan balance."
+      );
+    } finally {
+      setOpeningLoanSaving(false);
+    }
+  };
+
+  const deleteOpeningLoan = async (id) => {
+    if (!canManageOpeningLoans || openingLoanSaving) return;
+
+    if (!window.confirm("Delete this opening loan balance?")) return;
+
+    const staffId = editingHistory?.staff_id || editingHistory?.id;
+
+    try {
+      setOpeningLoanSaving(true);
+      setOpeningLoanError("");
+
+      await api.delete(`/staff-loan-opening-balances/${id}`);
+
+      resetOpeningLoanForm(staffId);
+      await fetchOpeningLoans(staffId);
+      await fetchLiveBalances(effectiveBranchId, month);
+    } catch (err) {
+      if (err?.response?.status === 401) {
+        logout();
+        return;
+      }
+
+      setOpeningLoanError(
+        err?.response?.data?.message ||
+          "Failed to delete opening loan balance."
+      );
+    } finally {
+      setOpeningLoanSaving(false);
     }
   };
 
@@ -788,18 +1049,16 @@ export default function ScheduleBalances() {
                           ))}
 
                           <td>
-                            {canEditHistory && !isCurrentMonth(month) ? (
+                            {canEditHistory || canManageOpeningLoans ? (
                               <button
                                 type="button"
                                 className="staff-edit-btn"
                                 onClick={() => openHistoryEdit(r)}
                               >
-                                Edit History
+                                {isCurrentMonth(month)
+                                  ? "Opening Loans"
+                                  : "Edit History"}
                               </button>
-                            ) : isCurrentMonth(month) ? (
-                              <span style={{ fontSize: 12, opacity: 0.7 }}>
-                                Live balance
-                              </span>
                             ) : (
                               <span style={{ fontSize: 12, opacity: 0.7 }}>
                                 View only
@@ -828,6 +1087,7 @@ export default function ScheduleBalances() {
           onMouseDown={(e) => {
             if (
               !historySaving &&
+              !openingLoanSaving &&
               e.target.classList.contains("modal-overlay")
             ) {
               closeHistoryEdit();
@@ -836,16 +1096,24 @@ export default function ScheduleBalances() {
         >
           <div
             className="modal saas-modal"
-            style={{ maxWidth: 620, width: "95vw" }}
+            style={{
+              maxWidth: 1180,
+              width: "96vw",
+              maxHeight: "92vh",
+              overflowY: "auto",
+            }}
             onMouseDown={(e) => e.stopPropagation()}
           >
             <div className="modal-head">
               <div>
                 <h3 className="modal-title">
-                  Edit Historical Balance
+                  {isCurrentMonth(month)
+                    ? "Opening Loan Balances"
+                    : "Edit Historical Balance"}
                 </h3>
 
                 <p className="modal-subtitle">
+                  {editingHistory.employee_no || "-"} —{" "}
                   {displayName(editingHistory)} — {month}
                 </p>
               </div>
@@ -854,102 +1122,420 @@ export default function ScheduleBalances() {
                 className="modal-x"
                 type="button"
                 onClick={closeHistoryEdit}
-                disabled={historySaving}
+                disabled={historySaving || openingLoanSaving}
               >
                 ✕
               </button>
             </div>
 
-            <form onSubmit={saveHistoryEdit}>
-              <div className="form-grid">
-                <div className="field">
-                  <label>CBU</label>
+            {!isCurrentMonth(month) && canEditHistory && (
+              <form onSubmit={saveHistoryEdit}>
+                <h4 style={{ margin: "0 0 12px" }}>
+                  Historical Balance Correction
+                </h4>
 
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={historyForm.cbu}
-                    onChange={(e) =>
-                      setHistoryForm((previous) => ({
-                        ...previous,
-                        cbu: e.target.value,
-                      }))
-                    }
-                    required
-                  />
+                <div className="form-grid">
+                  <div className="field">
+                    <label>CBU</label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={historyForm.cbu}
+                      onChange={(e) =>
+                        setHistoryForm((previous) => ({
+                          ...previous,
+                          cbu: e.target.value,
+                        }))
+                      }
+                      required
+                    />
+                  </div>
+
+                  <div className="field">
+                    <label>Cashbond</label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={historyForm.cashbond}
+                      onChange={(e) =>
+                        setHistoryForm((previous) => ({
+                          ...previous,
+                          cashbond: e.target.value,
+                        }))
+                      }
+                      required
+                    />
+                  </div>
+
+                  <div className="field">
+                    <label>Utility</label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={historyForm.utility}
+                      onChange={(e) =>
+                        setHistoryForm((previous) => ({
+                          ...previous,
+                          utility: e.target.value,
+                        }))
+                      }
+                      required
+                    />
+                  </div>
                 </div>
 
-                <div className="field">
-                  <label>Cashbond</label>
+                {historyError && (
+                  <div
+                    style={{
+                      marginTop: 12,
+                      color: "#ef4444",
+                      fontWeight: 800,
+                    }}
+                  >
+                    {historyError}
+                  </div>
+                )}
 
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={historyForm.cashbond}
-                    onChange={(e) =>
-                      setHistoryForm((previous) => ({
-                        ...previous,
-                        cashbond: e.target.value,
-                      }))
-                    }
-                    required
-                  />
+                <div className="modal-buttons">
+                  <button
+                    className="btn-primary"
+                    type="submit"
+                    disabled={historySaving}
+                  >
+                    {historySaving
+                      ? "Saving..."
+                      : "Save Historical Correction"}
+                  </button>
+                </div>
+              </form>
+            )}
+
+            <div
+              style={{
+                borderTop: !isCurrentMonth(month)
+                  ? "1px solid var(--border)"
+                  : "none",
+                marginTop: !isCurrentMonth(month) ? 18 : 0,
+                paddingTop: !isCurrentMonth(month) ? 18 : 0,
+              }}
+            >
+              <h4 style={{ margin: "0 0 12px" }}>
+                Opening Loan Balance
+              </h4>
+
+              <form onSubmit={saveOpeningLoan}>
+                <div className="form-grid">
+                  <div className="field">
+                    <label>Loan Type</label>
+                    <select
+                      value={openingLoanForm.loan_type}
+                      onChange={(e) =>
+                        setOpeningLoanForm((previous) => ({
+                          ...previous,
+                          loan_type: e.target.value,
+                        }))
+                      }
+                      required
+                    >
+                      {OPENING_LOAN_TYPES.map((item) => (
+                        <option key={item} value={item}>
+                          {item}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="field">
+                    <label>Original Amount</label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={openingLoanForm.original_amount}
+                      onChange={(e) =>
+                        setOpeningLoanForm((previous) => ({
+                          ...previous,
+                          original_amount: e.target.value,
+                        }))
+                      }
+                      required
+                    />
+                  </div>
+
+                  <div className="field">
+                    <label>Interest (%)</label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={openingLoanForm.interest}
+                      onChange={(e) =>
+                        setOpeningLoanForm((previous) => ({
+                          ...previous,
+                          interest: e.target.value,
+                        }))
+                      }
+                    />
+                  </div>
+
+                  <div className="field">
+                    <label>Interest Amount</label>
+                    <input
+                      value={openingLoanForm.interest_amount}
+                      readOnly
+                    />
+                  </div>
+
+                  <div className="field">
+                    <label>Total Amount</label>
+                    <input
+                      value={openingLoanForm.total_amount}
+                      readOnly
+                    />
+                  </div>
+
+                  <div className="field">
+                    <label>Term Months</label>
+                    <input
+                      type="number"
+                      min="1"
+                      step="1"
+                      value={openingLoanForm.term_months}
+                      onChange={(e) =>
+                        setOpeningLoanForm((previous) => ({
+                          ...previous,
+                          term_months: e.target.value,
+                        }))
+                      }
+                      required
+                    />
+                  </div>
+
+                  <div className="field">
+                    <label>Months Paid</label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="1"
+                      value={openingLoanForm.months_paid}
+                      onChange={(e) =>
+                        setOpeningLoanForm((previous) => ({
+                          ...previous,
+                          months_paid: e.target.value,
+                        }))
+                      }
+                    />
+                  </div>
+
+                  <div className="field">
+                    <label>Per Month</label>
+                    <input value={openingLoanForm.per_month} readOnly />
+                  </div>
+
+                  <div className="field">
+                    <label>Remaining Balance</label>
+                    <input
+                      value={openingLoanForm.remaining_balance}
+                      readOnly
+                    />
+                  </div>
+
+                  <div className="field">
+                    <label>Start Date</label>
+                    <input
+                      type="date"
+                      value={openingLoanForm.start_date}
+                      onChange={(e) =>
+                        setOpeningLoanForm((previous) => ({
+                          ...previous,
+                          start_date: e.target.value,
+                        }))
+                      }
+                    />
+                  </div>
+
+                  <div className="field">
+                    <label>Effective Date</label>
+                    <input
+                      type="date"
+                      value={openingLoanForm.effective_date}
+                      onChange={(e) =>
+                        setOpeningLoanForm((previous) => ({
+                          ...previous,
+                          effective_date: e.target.value,
+                        }))
+                      }
+                    />
+                  </div>
+
+                  <div className="field">
+                    <label>Status</label>
+                    <select
+                      value={openingLoanForm.status}
+                      onChange={(e) =>
+                        setOpeningLoanForm((previous) => ({
+                          ...previous,
+                          status: e.target.value,
+                        }))
+                      }
+                    >
+                      {OPENING_LOAN_STATUSES.map((item) => (
+                        <option key={item} value={item}>
+                          {item}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="field" style={{ gridColumn: "1 / -1" }}>
+                    <label>Remarks</label>
+                    <textarea
+                      rows={3}
+                      value={openingLoanForm.remarks}
+                      onChange={(e) =>
+                        setOpeningLoanForm((previous) => ({
+                          ...previous,
+                          remarks: e.target.value,
+                        }))
+                      }
+                    />
+                  </div>
                 </div>
 
-                <div className="field">
-                  <label>Utility</label>
+                {openingLoanError && (
+                  <div
+                    style={{
+                      marginTop: 12,
+                      color: "#ef4444",
+                      fontWeight: 800,
+                    }}
+                  >
+                    {openingLoanError}
+                  </div>
+                )}
 
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={historyForm.utility}
-                    onChange={(e) =>
-                      setHistoryForm((previous) => ({
-                        ...previous,
-                        utility: e.target.value,
-                      }))
+                <div className="modal-buttons">
+                  <button
+                    className="btn-secondary"
+                    type="button"
+                    onClick={() =>
+                      resetOpeningLoanForm(
+                        editingHistory.staff_id || editingHistory.id
+                      )
                     }
-                    required
-                  />
+                    disabled={openingLoanSaving}
+                  >
+                    Clear
+                  </button>
+
+                  <button
+                    className="btn-primary"
+                    type="submit"
+                    disabled={
+                      !canManageOpeningLoans || openingLoanSaving
+                    }
+                  >
+                    {openingLoanSaving
+                      ? "Saving..."
+                      : openingLoanForm.id
+                        ? "Update Opening Loan"
+                        : "Save Opening Loan"}
+                  </button>
+                </div>
+              </form>
+
+              <div className="table-card" style={{ marginTop: 18 }}>
+                <div className="table-wrap">
+                  <table className="table">
+                    <thead>
+                      <tr>
+                        <th>Loan Type</th>
+                        <th>Original</th>
+                        <th>Interest</th>
+                        <th>Total</th>
+                        <th>Term</th>
+                        <th>Paid</th>
+                        <th>Per Month</th>
+                        <th>Remaining</th>
+                        <th>Status</th>
+                        <th>Effective</th>
+                        <th>Action</th>
+                      </tr>
+                    </thead>
+
+                    <tbody>
+                      {openingLoanLoading ? (
+                        <tr>
+                          <td colSpan={11} className="empty-state">
+                            Loading...
+                          </td>
+                        </tr>
+                      ) : openingLoanRows.length === 0 ? (
+                        <tr>
+                          <td colSpan={11} className="empty-state">
+                            No opening loan balances found.
+                          </td>
+                        </tr>
+                      ) : (
+                        openingLoanRows.map((row) => (
+                          <tr key={row.id}>
+                            <td>{row.loan_type}</td>
+                            <td>{fmtMoney(row.original_amount)}</td>
+                            <td>{toNum(row.interest).toFixed(2)}%</td>
+                            <td>{fmtMoney(row.total_amount)}</td>
+                            <td>{row.term_months}</td>
+                            <td>{row.months_paid}</td>
+                            <td>{fmtMoney(row.per_month)}</td>
+                            <td>{fmtMoney(row.remaining_balance)}</td>
+                            <td>{row.status}</td>
+                            <td>
+                              {row.effective_date
+                                ? String(row.effective_date).slice(0, 10)
+                                : "-"}
+                            </td>
+                            <td>
+                              <div className="row-actions">
+                                <button
+                                  className="btn-secondary"
+                                  type="button"
+                                  onClick={() => editOpeningLoan(row)}
+                                  disabled={openingLoanSaving}
+                                >
+                                  Edit
+                                </button>
+
+                                <button
+                                  className="btn-danger"
+                                  type="button"
+                                  onClick={() => deleteOpeningLoan(row.id)}
+                                  disabled={openingLoanSaving}
+                                >
+                                  Delete
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
                 </div>
               </div>
+            </div>
 
-              {historyError ? (
-                <div
-                  style={{
-                    marginTop: 12,
-                    color: "#ef4444",
-                    fontWeight: 800,
-                  }}
-                >
-                  {historyError}
-                </div>
-              ) : null}
-
-              <div className="modal-buttons">
-                <button
-                  className="btn-secondary"
-                  type="button"
-                  onClick={closeHistoryEdit}
-                  disabled={historySaving}
-                >
-                  Cancel
-                </button>
-
-                <button
-                  className="btn-primary"
-                  type="submit"
-                  disabled={historySaving}
-                >
-                  {historySaving
-                    ? "Saving..."
-                    : "Save Historical Correction"}
-                </button>
-              </div>
-            </form>
+            <div className="modal-buttons">
+              <button
+                className="btn-secondary"
+                type="button"
+                onClick={closeHistoryEdit}
+                disabled={historySaving || openingLoanSaving}
+              >
+                Close
+              </button>
+            </div>
           </div>
         </div>
       )}
