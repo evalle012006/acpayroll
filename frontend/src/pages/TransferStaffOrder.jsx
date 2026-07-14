@@ -67,6 +67,9 @@ export default function TransferStaffOrder() {
   const employeeBoxRef = useRef(null);
   const fromBranchBoxRef = useRef(null);
   const toBranchBoxRef = useRef(null);
+  const divisionBoxRef = useRef(null);
+  const areaBoxRef = useRef(null);
+  const regionBoxRef = useRef(null);
 
   const user = useMemo(() => readUser(), []);
   const role = norm(user?.role);
@@ -93,6 +96,10 @@ export default function TransferStaffOrder() {
     userDepartment === "accounting" ||
     userDepartment === "accounting department";
 
+  const isITDepartment =
+    userDepartment === "it" ||
+    userDepartment === "it department";
+
   const canCreate = true;
     const canHRAccountingAction = isAdmin || isHRDepartment || isAccountingDepartment;
 
@@ -101,14 +108,29 @@ export default function TransferStaffOrder() {
   const canVoid = canHRAccountingAction;
   const canDelete = canHRAccountingAction;
 
+  const canEditTransfer =
+    isAdmin ||
+    isHRDepartment ||
+    isAccountingDepartment ||
+    isITDepartment;
+
   const userBranchId = String(user?.branch_id || "");
   const userArea = norm(user?.area);
   const userRegion = norm(user?.region);
   const userDivision = norm(user?.division);
 
+  const [divisionQuery, setDivisionQuery] = useState("");
+  const [areaQuery, setAreaQuery] = useState("");
+  const [regionQuery, setRegionQuery] = useState("");
+
+  const [showDivisionResults, setShowDivisionResults] = useState(false);
+  const [showAreaResults, setShowAreaResults] = useState(false);
+  const [showRegionResults, setShowRegionResults] = useState(false);
+
   const [showModal, setShowModal] = useState(false);
   const [showViewModal, setShowViewModal] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState(null);
+  const [editingOrder, setEditingOrder] = useState(null);
 
   const [search, setSearch] = useState("");
   const [appliedSearch, setAppliedSearch] = useState("");
@@ -458,6 +480,30 @@ export default function TransferStaffOrder() {
       .slice(0, 100);
   }, [branches, toBranchQuery]);
 
+  const filteredDivisions = useMemo(() => {
+    const q = norm(divisionQuery);
+
+    return [...new Set(branches.map((b) => toStr(b.division)).filter(Boolean))]
+      .filter((d) => d.toLowerCase().includes(q))
+      .slice(0, 100);
+  }, [branches, divisionQuery]);
+
+  const filteredAreas = useMemo(() => {
+    const q = norm(areaQuery);
+
+    return [...new Set(branches.map((b) => toStr(b.area)).filter(Boolean))]
+      .filter((d) => d.toLowerCase().includes(q))
+      .slice(0, 100);
+  }, [branches, areaQuery]);
+
+  const filteredRegions = useMemo(() => {
+    const q = norm(regionQuery);
+
+    return [...new Set(branches.map((b) => toStr(b.region)).filter(Boolean))]
+      .filter((d) => d.toLowerCase().includes(q))
+      .slice(0, 100);
+  }, [branches, regionQuery]);
+
   useEffect(() => {
     if (!showModal || !selectedEmployee) return;
 
@@ -475,21 +521,54 @@ export default function TransferStaffOrder() {
     if (!showModal) return;
 
     const onMouseDown = (e) => {
-      if (employeeBoxRef.current && !employeeBoxRef.current.contains(e.target)) {
+      if (
+        employeeBoxRef.current &&
+        !employeeBoxRef.current.contains(e.target)
+      ) {
         setShowEmployeeResults(false);
       }
 
-      if (fromBranchBoxRef.current && !fromBranchBoxRef.current.contains(e.target)) {
+      if (
+        fromBranchBoxRef.current &&
+        !fromBranchBoxRef.current.contains(e.target)
+      ) {
         setShowFromBranchResults(false);
       }
 
-      if (toBranchBoxRef.current && !toBranchBoxRef.current.contains(e.target)) {
+      if (
+        toBranchBoxRef.current &&
+        !toBranchBoxRef.current.contains(e.target)
+      ) {
         setShowToBranchResults(false);
+      }
+
+      if (
+        divisionBoxRef.current &&
+        !divisionBoxRef.current.contains(e.target)
+      ) {
+        setShowDivisionResults(false);
+      }
+
+      if (
+        areaBoxRef.current &&
+        !areaBoxRef.current.contains(e.target)
+      ) {
+        setShowAreaResults(false);
+      }
+
+      if (
+        regionBoxRef.current &&
+        !regionBoxRef.current.contains(e.target)
+      ) {
+        setShowRegionResults(false);
       }
     };
 
     document.addEventListener("mousedown", onMouseDown);
-    return () => document.removeEventListener("mousedown", onMouseDown);
+
+    return () => {
+      document.removeEventListener("mousedown", onMouseDown);
+    };
   }, [showModal]);
 
   const resetForm = () => {
@@ -498,6 +577,13 @@ export default function TransferStaffOrder() {
     setDivision("");
     setArea("");
     setRegion("");
+    setDivisionQuery("");
+    setAreaQuery("");
+    setRegionQuery("");
+
+    setShowDivisionResults(false);
+    setShowAreaResults(false);
+    setShowRegionResults(false);
     setDetails("");
     setEmployeeId("");
     setEmployeeQuery("");
@@ -514,8 +600,70 @@ export default function TransferStaffOrder() {
     setShowModal(true);
   };
 
+  const openEditModal = (order) => {
+    if (!order?.id) return;
+
+    const employee = staff.find(
+      (s) => Number(s.id) === Number(order.employee_id)
+    );
+
+    const previousBranch = branches.find(
+      (b) => Number(b.id) === Number(order.prev_branch_id)
+    );
+
+    const transferBranch = branches.find(
+      (b) => Number(b.id) === Number(order.to_branch_id)
+    );
+
+    setEditingOrder(order);
+
+    setEmployeeId(String(order.employee_id || ""));
+    setEmployeeQuery(
+      employee
+        ? `${displayName(employee)}${
+            employee.employee_no ? ` (${employee.employee_no})` : ""
+          }`
+        : toStr(order.employee_name)
+    );
+
+    setFromBranchId(String(order.prev_branch_id || ""));
+    setFromBranchQuery(
+      previousBranch
+        ? branchLabel(previousBranch)
+        : `${toStr(order.prev_branch_code)} - ${toStr(
+            order.prev_branch_name
+          )}`
+    );
+
+    setToBranchId(String(order.to_branch_id || ""));
+    setToBranchQuery(
+      transferBranch
+        ? branchLabel(transferBranch)
+        : `${toStr(order.to_branch_code)} - ${toStr(order.to_branch_name)}`
+    );
+
+    setDepartment(toStr(order.department));
+
+    setDivision(toStr(order.division));
+    setArea(toStr(order.area));
+    setRegion(toStr(order.region));
+
+    setDivisionQuery(toStr(order.division));
+    setAreaQuery(toStr(order.area));
+    setRegionQuery(toStr(order.region));
+
+    setDateCreated(fmtDate(order.date_created));
+    setEffectiveDate(fmtDate(order.effective_date));
+    setDetails(toStr(order.details));
+
+    setError("");
+    setShowViewModal(false);
+    setShowModal(true);
+  };
+
   const closeModal = () => {
     setShowModal(false);
+    setEditingOrder(null);
     resetForm();
   };
 
@@ -559,9 +707,18 @@ export default function TransferStaffOrder() {
       setFromBranchQuery(branch ? branchLabel(branch) : "");
 
       if (branch) {
-        setArea(toStr(branch.area));
-        setRegion(toStr(branch.region));
-        setDivision(toStr(branch.division));
+        const nextArea = toStr(branch.area);
+        const nextRegion = toStr(branch.region);
+        const nextDivision = toStr(branch.division);
+
+        setArea(nextArea);
+        setRegion(nextRegion);
+        setDivision(nextDivision);
+
+        setAreaQuery(nextArea);
+        setRegionQuery(nextRegion);
+        setDivisionQuery(nextDivision);
+
         setDepartment(toStr(s.department));
       }
     }
@@ -574,9 +731,21 @@ export default function TransferStaffOrder() {
   };
 
   const handleChooseToBranch = (b) => {
+    const nextDivision = toStr(b.division);
+    const nextArea = toStr(b.area);
+    const nextRegion = toStr(b.region);
+
     setToBranchId(String(b.id || ""));
     setToBranchQuery(branchLabel(b));
     setShowToBranchResults(false);
+
+    setDivision(nextDivision);
+    setArea(nextArea);
+    setRegion(nextRegion);
+
+    setDivisionQuery(nextDivision);
+    setAreaQuery(nextArea);
+    setRegionQuery(nextRegion);
   };
 
   const saveOrder = async () => {
@@ -617,13 +786,34 @@ export default function TransferStaffOrder() {
     setSaving(true);
 
     try {
-      const res = await api.post("/transfer-staff-orders", payload);
-      const created = res.data;
+      let res;
 
-      setOrders((prev) => [created, ...prev]);
-      setSelectedOrder(created);
+      if (editingOrder?.id) {
+        res = await api.put(
+          `/transfer-staff-orders/${editingOrder.id}`,
+          payload
+        );
+      } else {
+        res = await api.post("/transfer-staff-orders", payload);
+      }
+
+      const savedOrder = res.data;
+
+      if (editingOrder?.id) {
+        setOrders((prev) =>
+          prev.map((order) =>
+            Number(order.id) === Number(savedOrder.id)
+              ? savedOrder
+              : order
+          )
+        );
+      } else {
+        setOrders((prev) => [savedOrder, ...prev]);
+      }
+
+      setSelectedOrder(savedOrder);
       closeModal();
-      fetchOrders();
+      await fetchOrders();
     } catch (err) {
       if (err?.response?.status === 401) return logout();
       setError(err?.response?.data?.message || "Failed to save transfer order.");
@@ -1087,9 +1277,14 @@ export default function TransferStaffOrder() {
           >
             <div className="modal-head">
               <div>
-                <h3 className="modal-title">Create Transfer Order</h3>
+                <h3 className="modal-title">
+                  {editingOrder ? "Edit Transfer Order" : "Create Transfer Order"}
+                </h3>
+
                 <p className="modal-subtitle">
-                  Order No. will be auto-generated on save.
+                  {editingOrder
+                    ? `Editing ${editingOrder.order_no}`
+                    : "Order No. will be auto-generated on save."}
                 </p>
               </div>
 
@@ -1325,49 +1520,136 @@ export default function TransferStaffOrder() {
                     )}
                   </div>
 
-                  <div className="field">
+                  <div
+                    className="field"
+                    style={{ position: "relative" }}
+                    ref={divisionBoxRef}
+                  >
                     <label>Division</label>
+
                     <input
-                      list="division-options"
-                      value={division}
-                      onChange={(e) => setDivision(e.target.value)}
-                      placeholder="Search or select division"
+                      type="text"
+                      value={divisionQuery}
+                      placeholder="Search division..."
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        setDivisionQuery(value);
+                        setDivision(value);
+                        setShowDivisionResults(true);
+                      }}
+                      onFocus={() => setShowDivisionResults(true)}
                     />
-                    <datalist id="division-options">
-                      {[...new Set(branches.map((b) => toStr(b.division)).filter(Boolean))].map((x) => (
-                        <option key={x} value={x} />
-                      ))}
-                    </datalist>
+
+                    {showDivisionResults && (
+                      <div className="transfer-search-results">
+                        {filteredDivisions.length === 0 ? (
+                          <div className="transfer-search-empty">No division found.</div>
+                        ) : (
+                          filteredDivisions.map((item) => (
+                            <button
+                              key={item}
+                              type="button"
+                              className="transfer-search-item"
+                              onClick={() => {
+                                setDivision(item);
+                                setDivisionQuery(item);
+                                setShowDivisionResults(false);
+                              }}
+                            >
+                              {item}
+                            </button>
+                          ))
+                        )}
+                      </div>
+                    )}
                   </div>
 
-                  <div className="field">
+                  <div
+                    className="field"
+                    style={{ position: "relative" }}
+                    ref={areaBoxRef}
+                  >
                     <label>Area</label>
+
                     <input
-                      list="area-options"
-                      value={area}
-                      onChange={(e) => setArea(e.target.value)}
-                      placeholder="Search or select area"
+                      type="text"
+                      value={areaQuery}
+                      placeholder="Search area..."
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        setAreaQuery(value);
+                        setArea(value);
+                        setShowAreaResults(true);
+                      }}
+                      onFocus={() => setShowAreaResults(true)}
                     />
-                    <datalist id="area-options">
-                      {[...new Set(branches.map((b) => toStr(b.area)).filter(Boolean))].map((x) => (
-                        <option key={x} value={x} />
-                      ))}
-                    </datalist>
+
+                    {showAreaResults && (
+                      <div className="transfer-search-results">
+                        {filteredAreas.length === 0 ? (
+                          <div className="transfer-search-empty">No area found.</div>
+                        ) : (
+                          filteredAreas.map((item) => (
+                            <button
+                              key={item}
+                              type="button"
+                              className="transfer-search-item"
+                              onClick={() => {
+                                setArea(item);
+                                setAreaQuery(item);
+                                setShowAreaResults(false);
+                              }}
+                            >
+                              {item}
+                            </button>
+                          ))
+                        )}
+                      </div>
+                    )}
                   </div>
 
-                  <div className="field">
+                  <div
+                    className="field"
+                    style={{ position: "relative" }}
+                    ref={regionBoxRef}
+                  >
                     <label>Region</label>
+
                     <input
-                      list="region-options"
-                      value={region}
-                      onChange={(e) => setRegion(e.target.value)}
-                      placeholder="Search or select region"
+                      type="text"
+                      value={regionQuery}
+                      placeholder="Search region..."
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        setRegionQuery(value);
+                        setRegion(value);
+                        setShowRegionResults(true);
+                      }}
+                      onFocus={() => setShowRegionResults(true)}
                     />
-                    <datalist id="region-options">
-                      {[...new Set(branches.map((b) => toStr(b.region)).filter(Boolean))].map((x) => (
-                        <option key={x} value={x} />
-                      ))}
-                    </datalist>
+
+                    {showRegionResults && (
+                      <div className="transfer-search-results">
+                        {filteredRegions.length === 0 ? (
+                          <div className="transfer-search-empty">No region found.</div>
+                        ) : (
+                          filteredRegions.map((item) => (
+                            <button
+                              key={item}
+                              type="button"
+                              className="transfer-search-item"
+                              onClick={() => {
+                                setRegion(item);
+                                setRegionQuery(item);
+                                setShowRegionResults(false);
+                              }}
+                            >
+                              {item}
+                            </button>
+                          ))
+                        )}
+                      </div>
+                    )}
                   </div>
 
                   <div className="field">
@@ -1443,7 +1725,11 @@ export default function TransferStaffOrder() {
                     type="button"
                     disabled={saving}
                   >
-                    {saving ? "Saving..." : "Save Order"}
+                    {saving
+                      ? "Saving..."
+                      : editingOrder
+                      ? "Update Order"
+                      : "Save Order"}
                   </button>
                 </div>
               </>
@@ -1624,6 +1910,17 @@ export default function TransferStaffOrder() {
                 Close
               </button>
 
+              {canEditTransfer &&
+                !["Approved", "Rejected", "Void"].includes(selectedOrder.status) && (
+                  <button
+                    className="btn-primary"
+                    type="button"
+                    onClick={() => openEditModal(selectedOrder)}
+                  >
+                    Edit
+                  </button>
+                )}
+
               {isUploadStage(selectedOrder.status) && canReject ? (
                 <button
                   className="btn-secondary"
@@ -1648,7 +1945,7 @@ export default function TransferStaffOrder() {
               {["Rejected", "Void"].includes(selectedOrder.status) && canDelete ? (
                 <button
                   className="btn-secondary"
-                  type="button"
+                  type="button" 
                   onClick={() => deleteOrder(selectedOrder)}
                 >
                   Delete

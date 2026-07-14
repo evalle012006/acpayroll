@@ -16,18 +16,10 @@ const getMonthLabel = () => {
   }).format(now);
 };
 
-async function createMonthlySnapshot(client, monthLabel) {
+async function createMonthlySnapshot(client, monthLabel) {  
   const snapshotMonth = `${monthLabel}-01`;
 
   console.log(`[monthlyBalancePoster] creating snapshot ${monthLabel}`);
-
-  await client.query(
-    `
-    DELETE FROM public.schedule_balance_snapshots
-    WHERE snapshot_month = $1::date
-    `,
-    [snapshotMonth]
-  );
 
   await client.query(
     `
@@ -86,6 +78,9 @@ async function createMonthlySnapshot(client, monthLabel) {
     WHERE LOWER(COALESCE(s.status, 'active')) = 'active'
       AND s.employee_no IS NOT NULL
       AND TRIM(s.employee_no) <> ''
+
+    ON CONFLICT (snapshot_month, staff_id)
+    DO NOTHING
     `,
     [snapshotMonth]
   );
@@ -315,7 +310,7 @@ async function postMonthlyBalances(monthLabel = getMonthLabel()) {
 
 function startMonthlyBalancePoster() {
   cron.schedule(
-    "5 0 1 * *",
+    "5 0 25 * *",
     async () => {
       try {
         await postMonthlyBalances();
@@ -329,7 +324,7 @@ function startMonthlyBalancePoster() {
   );
 
   console.log(
-    "[monthlyBalancePoster] scheduled every 27th day of month 12:05 AM"
+    "[monthlyBalancePoster] scheduled every 25th day of month 12:05 AM"
   );
 }
 

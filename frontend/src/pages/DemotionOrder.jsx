@@ -150,58 +150,30 @@ export default function DemotionOrder() {
   const isPresident = role === "president";
 
   const isITDepartment =
+    department === "it" ||
     department === "it department";
 
   const isHRDepartment =
-  department === "hr department" ||
-  department === "human resources" ||
-  department === "human resources department";
+    department === "hr" ||
+    department === "hr department" ||
+    department === "human resources" ||
+    department === "human resources department";
+
+  const isAccountingDepartment =
+    department === "accounting" ||
+    department === "accounting department";
 
   const canCreate =
     isAdmin ||
-    isIt ||
-    isHr ||
     isHRDepartment ||
-    isAccounting ||
-    isPresident ||
-
-    isAreaManager ||
-    isRegionalManager ||
-    isAssistantVicePresident ||
-    isVicePresident ||
-    isSeniorVicePresident ||
-
-    (
-      isHRDepartment &&
-      (
-        isBranchManager ||
-        isAreaManager ||
-        isRegionalManager ||
-        isAssistantVicePresident ||
-        isVicePresident ||
-        isSeniorVicePresident
-      )
-    ) ||
-
-    (
-      isITDepartment &&
-      (
-        isBranchManager ||
-        isAreaManager ||
-        isRegionalManager ||
-        isAssistantVicePresident ||
-        isVicePresident ||
-        isSeniorVicePresident
-      )
-    );
+    isITDepartment ||
+    isAccountingDepartment;
 
   const canFinalUpload =
     isAdmin ||
-    isIt ||
-    isHr ||
     isHRDepartment ||
-    isAccounting ||
-    isSeniorVicePresident;
+    isITDepartment ||
+    isAccountingDepartment;
 
   const canDownloadFile =
     isAdmin ||
@@ -220,27 +192,16 @@ export default function DemotionOrder() {
   const canActOnStage = (order) => {
     const status = norm(order?.status);
 
-      if (status === "approved" || status === "rejected") return false;
-      if (
+    if (status === "approved" || status === "rejected") {
+      return false;
+    }
+
+    return (
       isAdmin ||
-      isIt ||
-      isHr ||
       isHRDepartment ||
-      isAccounting ||
-      isSeniorVicePresident
-  ) {
-      return true;
-  }
-
-    const stage = getCurrentStage(order);
-
-    if (stage === "area manager") return isAreaManager;
-    if (stage === "regional manager") return isRegionalManager;
-    if (stage === "assistant vice president") return isAssistantVicePresident;
-    if (stage === "vice president") return isVicePresident;
-    if (stage === "admin") return canFinalUpload;
-
-    return false;
+      isITDepartment ||
+      isAccountingDepartment
+    );
   };
 
   const [orders, setOrders] = useState([]);

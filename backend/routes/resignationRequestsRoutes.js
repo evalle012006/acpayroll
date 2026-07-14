@@ -588,10 +588,21 @@ router.put(
 
       const requestRes = await client.query(
         `
-        SELECT *
-        FROM public.resignation_requests
-        WHERE id = $1
-        FOR UPDATE
+        SELECT
+          rr.*,
+          s.area AS current_staff_area,
+          s.region AS current_staff_region,
+          s.division AS current_staff_division,
+          s.branch_id AS current_staff_branch_id
+        FROM public.resignation_requests rr
+        LEFT JOIN public.staff s
+          ON s.id = rr.staff_id
+          OR (
+            rr.employee_no IS NOT NULL
+            AND s.employee_no = rr.employee_no
+          )
+        WHERE rr.id = $1
+        FOR UPDATE OF rr
         `,
         [id]
       );
@@ -865,9 +876,20 @@ router.put(
           });
         }
 
-        const userArea = getUserArea(req);
+        const userArea = norm(getUserArea(req));
+        const requestArea = norm(
+          existing.current_staff_area || existing.area
+        );
 
-        if (!userArea || norm(userArea) !== norm(existing.area)) {
+        if (!userArea) {
+          await client.query("ROLLBACK");
+          return res.status(403).json({
+            message:
+              "Your user account has no assigned area. Please update the user account and log in again.",
+          });
+        }
+
+        if (!requestArea || userArea !== requestArea) {
           await client.query("ROLLBACK");
           return res.status(403).json({
             message: "You can only approve resignation requests within your area",
@@ -878,27 +900,89 @@ router.put(
         approverField = "area_manager_approved_by";
         approverAtField = "area_manager_approved_at";
       } else if (isRegionalManager(req)) {
-        if (currentStatus !== STATUS_RM) {
-          await client.query("ROLLBACK");
-          return res.status(400).json({
-            message: "This request is not pending Regional Manager approval",
-          });
+      if (currentStatus !== STATUS_RM) {
+        await client.query("ROLLBACK");
+
+        return res.status(400).json({
+          message: "This request is not pending Regional Manager approval",
+        });
+      }
+
+      /*
+        Get the Regional Manager's latest region from the staff table.
+
+        First try employee_no from the logged-in user.
+        If no staff record is found, fall back to the region inside the login token.
+      */
+      let managerRegion = clean(getUserRegion(req));
+
+      const loggedInEmployeeNo = clean(
+        req.user?.employee_no ||
+        req.user?.employeeNo ||
+        req.user?.staff_employee_no
+      );
+
+      if (loggedInEmployeeNo) {
+        const managerStaffRes = await client.query(
+          `
+          SELECT region
+          FROM public.staff
+          WHERE LOWER(TRIM(COALESCE(employee_no, ''))) =
+                LOWER(TRIM($1))
+          LIMIT 1
+          `,
+          [loggedInEmployeeNo]
+        );
+
+        if (managerStaffRes.rowCount > 0) {
+          managerRegion =
+            clean(managerStaffRes.rows[0]?.region) || managerRegion;
         }
+      }
 
-        const userRegion = getUserRegion(req);
+      /*
+        Use the employee's current staff region first.
+        Fall back to the region saved in the resignation request.
+      */
+      const staffRegion = clean(
+        existing.current_staff_region || existing.region
+      );
 
-        if (!userRegion || norm(userRegion) !== norm(existing.region)) {
-          await client.query("ROLLBACK");
-          return res.status(403).json({
-            message:
-              "You can only approve resignation requests within your region",
-          });
-        }
+      const normalizedManagerRegion = norm(managerRegion);
+      const normalizedStaffRegion = norm(staffRegion);
 
-        nextStatus = STATUS_AVP;
-        approverField = "regional_manager_approved_by";
-        approverAtField = "regional_manager_approved_at";
-      } else if (isAssistantVicePresident(req)) {
+      if (!normalizedManagerRegion) {
+        await client.query("ROLLBACK");
+
+        return res.status(403).json({
+          message:
+            "Your Regional Manager account has no assigned region. Please update the account and log in again.",
+        });
+      }
+
+      if (!normalizedStaffRegion) {
+        await client.query("ROLLBACK");
+
+        return res.status(403).json({
+          message:
+            "The employee has no assigned region in Staff Information.",
+        });
+      }
+
+      if (normalizedManagerRegion !== normalizedStaffRegion) {
+        await client.query("ROLLBACK");
+
+        return res.status(403).json({
+          message:
+            `Region mismatch. Regional Manager region: ${managerRegion}. ` +
+            `Employee region: ${staffRegion}.`,
+        });
+      }
+
+      nextStatus = STATUS_AVP;
+      approverField = "regional_manager_approved_by";
+      approverAtField = "regional_manager_approved_at";
+    } else if (isAssistantVicePresident(req)) {
         if (currentStatus !== STATUS_AVP) {
           await client.query("ROLLBACK");
           return res.status(400).json({

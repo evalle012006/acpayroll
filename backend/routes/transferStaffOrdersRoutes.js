@@ -99,6 +99,12 @@
       );
     };
 
+    const canEditOrder = (req) =>
+      isAdmin(req) ||
+      isHrDepartmentUser(req) ||
+      isAccountingDepartmentUser(req) ||
+      isITDepartmentUser(req);
+
     const canViewAllTransferOrders = (req) =>
       isAdmin(req) ||
       isITDepartmentUser(req) ||
@@ -380,6 +386,251 @@
       } catch (e) {
         console.error("GET /api/transfer-staff-orders ERROR:", e.message);
         return res.status(500).json({ message: "Server error" });
+      }
+    }
+  );
+
+  router.put(
+    "/transfer-staff-orders/:id",
+    requireAuth,
+    requirePermission("transfer_staff_order", "edit"),
+    async (req, res) => {
+      const client = await pool.connect();
+
+      try {
+        if (!canEditOrder(req)) {
+          return res.status(403).json({
+            message:
+              "Only Admin and any role under HR, Accounting, or IT Department can edit transfer orders.",
+          });
+        }
+
+        const id = toInt(req.params.id);
+        const b = req.body || {};
+
+        if (!id) {
+          return res.status(400).json({
+            message: "Invalid transfer order id.",
+          });
+        }
+
+        const employee_id = toInt(b.employee_id);
+        const prev_branch_id = toInt(b.prev_branch_id);
+        const to_branch_id = toInt(b.to_branch_id);
+
+        const department = toStr(b.department);
+        const division = toStr(b.division);
+        const area = toStr(b.area);
+        const region = toStr(b.region);
+        const details = toStr(b.details);
+
+        const date_created = toDateOrNull(b.date_created);
+        const effective_date = toDateOrNull(b.effective_date);
+
+        if (!employee_id) {
+          return res.status(400).json({
+            message: "Employee required.",
+          });
+        }
+
+        if (!prev_branch_id || !to_branch_id) {
+          return res.status(400).json({
+            message: "Previous branch and transfer branch are required.",
+          });
+        }
+
+        if (Number(prev_branch_id) === Number(to_branch_id)) {
+          return res.status(400).json({
+            message:
+              "Previous branch and transfer branch cannot be the same.",
+          });
+        }
+
+        if (!department || !division || !area || !region) {
+          return res.status(400).json({
+            message:
+              "Department, division, area, and region are required.",
+          });
+        }
+
+        if (!date_created || !effective_date) {
+          return res.status(400).json({
+            message:
+              "Date created and effective date are required.",
+          });
+        }
+
+        if (!details) {
+          return res.status(400).json({
+            message: "Details required.",
+          });
+        }
+
+        await client.query("BEGIN");
+
+        const existing = await client.query(
+          `
+          SELECT *
+          FROM public.transfer_staff_orders
+          WHERE id = $1
+          FOR UPDATE
+          `,
+          [id]
+        );
+
+        if (existing.rowCount === 0) {
+          await client.query("ROLLBACK");
+
+          return res.status(404).json({
+            message: "Transfer order not found.",
+          });
+        }
+
+        const currentOrder = existing.rows[0];
+
+        if (
+          [STATUS_APPROVED, STATUS_REJECTED, STATUS_VOID].includes(
+            currentOrder.status
+          )
+        ) {
+          await client.query("ROLLBACK");
+
+          return res.status(400).json({
+            message:
+              "Approved, Rejected, or Void transfer orders cannot be edited.",
+          });
+        }
+
+        const staffResult = await client.query(
+          `
+          SELECT
+            id,
+            fullname,
+            last_name,
+            first_name,
+            middle_name
+          FROM public.staff
+          WHERE id = $1
+          `,
+          [employee_id]
+        );
+
+        if (staffResult.rowCount === 0) {
+          await client.query("ROLLBACK");
+
+          return res.status(404).json({
+            message: "Selected employee was not found.",
+          });
+        }
+
+        const previousBranchResult = await client.query(
+          `
+          SELECT id, code, name
+          FROM public.branches
+          WHERE id = $1
+          `,
+          [prev_branch_id]
+        );
+
+        if (previousBranchResult.rowCount === 0) {
+          await client.query("ROLLBACK");
+
+          return res.status(404).json({
+            message: "Previous branch was not found.",
+          });
+        }
+
+        const transferBranchResult = await client.query(
+          `
+          SELECT id, code, name
+          FROM public.branches
+          WHERE id = $1
+          `,
+          [to_branch_id]
+        );
+
+        if (transferBranchResult.rowCount === 0) {
+          await client.query("ROLLBACK");
+
+          return res.status(404).json({
+            message: "Transfer branch was not found.",
+          });
+        }
+
+        const employee = staffResult.rows[0];
+        const previousBranch = previousBranchResult.rows[0];
+        const transferBranch = transferBranchResult.rows[0];
+
+        const updated = await client.query(
+          `
+          UPDATE public.transfer_staff_orders
+          SET
+            employee_id = $2,
+            employee_name = $3,
+
+            prev_branch_id = $4,
+            prev_branch_code = $5,
+            prev_branch_name = $6,
+
+            to_branch_id = $7,
+            to_branch_code = $8,
+            to_branch_name = $9,
+
+            area = $10,
+            region = $11,
+            division = $12,
+            department = $13,
+
+            date_created = $14::date,
+            effective_date = $15::date,
+            details = $16,
+            updated_at = NOW()
+
+          WHERE id = $1
+          RETURNING *
+          `,
+          [
+            id,
+            employee_id,
+            displayName(employee),
+
+            prev_branch_id,
+            toStr(previousBranch.code),
+            toStr(previousBranch.name),
+
+            to_branch_id,
+            toStr(transferBranch.code),
+            toStr(transferBranch.name),
+
+            area,
+            region,
+            division,
+            department,
+
+            date_created,
+            effective_date,
+            details,
+          ]
+        );
+
+        await client.query("COMMIT");
+
+        return res.json(updated.rows[0]);
+      } catch (e) {
+        try {
+          await client.query("ROLLBACK");
+        } catch {}
+
+        console.error(
+          "PUT /api/transfer-staff-orders/:id ERROR:",
+          e
+        );
+
+        return res.status(500).json({
+          message: e.message || "Failed to update transfer order.",
+        });
+      } finally {
+        client.release();
       }
     }
   );

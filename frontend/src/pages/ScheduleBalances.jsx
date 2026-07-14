@@ -35,6 +35,10 @@ const getCurrentMonth = () => {
   return `${yyyy}-${mm}`;
 };
 
+const isCurrentMonth = (monthValue) => {
+  return monthValue === getCurrentMonth();
+};
+
 const readUser = () => {
   try {
     return JSON.parse(localStorage.getItem("user") || "null");
@@ -63,6 +67,30 @@ export default function ScheduleBalances() {
   const isBranchManager = role === "branch manager";
   const isAreaManager = role === "area manager";
 
+  const department = String(user?.department || "")
+    .trim()
+    .toLowerCase();
+
+  const isHRDepartment =
+    department === "hr" ||
+    department === "hr department" ||
+    department === "human resources" ||
+    department === "human resources department";
+
+  const isITDepartment =
+    department === "it" ||
+    department === "it department";
+
+  const isAccountingDepartment =
+    department === "accounting" ||
+    department === "accounting department";
+
+  const canEditHistory =
+    isAdmin ||
+    isHRDepartment ||
+    isITDepartment ||
+    isAccountingDepartment;
+
   const userBranchRaw = useMemo(() => {
     const raw = user?.branch_id;
     return raw === null || raw === undefined || raw === "" ? "" : String(raw).trim();
@@ -78,12 +106,22 @@ export default function ScheduleBalances() {
   const [month, setMonth] = useState(getCurrentMonth());
 
   const [loading, setLoading] = useState(false);
-  const [savingSnap, setSavingSnap] = useState(false);
 
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
 
   const [viewBranch, setViewBranch] = useState(null);
+
+  const [editingHistory, setEditingHistory] = useState(null);
+
+  const [historyForm, setHistoryForm] = useState({
+    cbu: "",
+    cashbond: "",
+    utility: "",
+  });
+
+  const [historySaving, setHistorySaving] = useState(false);
+  const [historyError, setHistoryError] = useState("");
 
   const logout = useCallback(() => {
     localStorage.removeItem("token");
@@ -155,10 +193,24 @@ export default function ScheduleBalances() {
       if (!m) return;
 
       setLoading(true);
-      try {
-        const finalBranchId = isBranchManager ? resolvedUserBranchId : branchId;
 
-        const res = await api.get("/schedule-balances/live", {
+      try {
+        const finalBranchId = isBranchManager
+          ? resolvedUserBranchId
+          : branchId;
+
+        /*
+          Current month:
+          Read changing values from staff_balances and transactions.
+
+          Previous month:
+          Read permanent records from schedule_balance_snapshots.
+        */
+        const endpoint = isCurrentMonth(m)
+          ? "/schedule-balances/live"
+          : "/schedule-balances";
+
+        const res = await api.get(endpoint, {
           params: {
             month: m,
             ...(finalBranchId ? { branchId: finalBranchId } : {}),
@@ -168,12 +220,19 @@ export default function ScheduleBalances() {
         let data = Array.isArray(res.data) ? res.data : [];
 
         if (isBranchManager && finalBranchId) {
-          data = data.filter((r) => String(r.branch_id) === String(finalBranchId));
+          data = data.filter(
+            (r) => String(r.branch_id) === String(finalBranchId)
+          );
         }
 
         if (isAreaManager) {
-          const allowedIds = new Set(visibleBranches.map((b) => String(b.id)));
-          data = data.filter((r) => allowedIds.has(String(r.branch_id)));
+          const allowedIds = new Set(
+            visibleBranches.map((b) => String(b.id))
+          );
+
+          data = data.filter((r) =>
+            allowedIds.has(String(r.branch_id))
+          );
         }
 
         setRows(data);
@@ -182,6 +241,8 @@ export default function ScheduleBalances() {
           logout();
           return;
         }
+
+        console.error("LOAD SCHEDULE BALANCES ERROR:", err);
         setRows([]);
       } finally {
         setLoading(false);
@@ -226,6 +287,7 @@ export default function ScheduleBalances() {
     branches.length,
   ]);
 
+
   useEffect(() => {
     if (!viewBranch) return;
 
@@ -257,21 +319,105 @@ export default function ScheduleBalances() {
 
   const handleRefresh = () => fetchLiveBalances(effectiveBranchId, month);
 
-  const saveSnapshotFromCurrent = async () => {
-    if (!isAdmin) return alert("Admin only.");
-    if (!month) return alert("Select month first.");
-    if (!window.confirm(`Save snapshot for ${month}? This will overwrite if already saved.`)) return;
+  const openHistoryEdit = (row) => {
+    if (isCurrentMonth(month)) {
+      alert("The current month cannot be edited as historical data.");
+      return;
+    }
 
-    setSavingSnap(true);
+    if (!row?.id) {
+      alert("Historical snapshot ID is missing.");
+      return;
+    }
+
+    setEditingHistory(row);
+
+    setHistoryForm({
+      cbu: String(toNum(row.cbu)),
+      cashbond: String(toNum(row.cashbond)),
+      utility: String(toNum(row.utility)),
+    });
+
+    setHistoryError("");
+  };
+
+  const closeHistoryEdit = () => {
+    setEditingHistory(null);
+
+    setHistoryForm({
+      cbu: "",
+      cashbond: "",
+      utility: "",
+    });
+
+    setHistoryError("");
+  };
+
+  const saveHistoryEdit = async (e) => {
+    e.preventDefault();
+
+    if (!editingHistory?.id || historySaving) return;
+
+    const cbu = Number(historyForm.cbu);
+    const cashbond = Number(historyForm.cashbond);
+    const utility = Number(historyForm.utility);
+    const reason = toStr(historyForm.reason);
+
+    if (
+      !Number.isFinite(cbu) ||
+      !Number.isFinite(cashbond) ||
+      !Number.isFinite(utility)
+    ) {
+      setHistoryError("CBU, Cashbond, and Utility must be valid numbers.");
+      return;
+    }
+
+    if (cbu < 0 || cashbond < 0 || utility < 0) {
+      setHistoryError("CBU, Cashbond, and Utility cannot be negative.");
+      return;
+    }
+
+    setHistorySaving(true);
+    setHistoryError("");
+
     try {
-      await api.post("/schedule-balances/snapshot/from-current", { month });
-      alert("Snapshot saved.");
+      await api.put(
+        `/schedule-balances/snapshot/${editingHistory.id}/manual-edit`,
+        {
+          cbu,
+          cashbond,
+          utility,
+        }
+      );
+
+      setEditingHistory(null);
+
+      setHistoryForm({
+        cbu: "",
+        cashbond: "",
+        utility: "",
+      });
+
+      setHistoryError("");
+
+      await fetchLiveBalances(effectiveBranchId, month);
+
+      /*
+        Refresh the already-open branch modal using the newly loaded data.
+        The effect below will update its staff rows.
+      */
     } catch (err) {
-      if (err?.response?.status === 401) return logout();
-      if (err?.response?.status === 403) return alert("Access denied.");
-      alert(err?.response?.data?.message || "Failed to save snapshot.");
+      if (err?.response?.status === 401) {
+        logout();
+        return;
+      }
+
+      setHistoryError(
+        err?.response?.data?.message ||
+          "Failed to update historical balance."
+      );
     } finally {
-      setSavingSnap(false);
+      setHistorySaving(false);
     }
   };
 
@@ -356,6 +502,19 @@ export default function ScheduleBalances() {
     branchMap,
     userArea,
   ]);
+
+  useEffect(() => {
+    if (!viewBranch) return;
+
+    const refreshedBranch = groupedBranches.find(
+      (branch) =>
+        String(branch.branch_id) === String(viewBranch.branch_id)
+    );
+
+    if (refreshedBranch) {
+      setViewBranch(refreshedBranch);
+    }
+  }, [groupedBranches, viewBranch?.branch_id]);
 
   const totals = useMemo(() => {
     const t = Object.fromEntries(MONEY_COLS.map((c) => [c.key, 0]));
@@ -480,17 +639,6 @@ export default function ScheduleBalances() {
           >
             {loading ? "Refreshing..." : "Refresh"}
           </button>
-
-          {isAdmin && (
-            <button
-              className="btn-primary"
-              onClick={saveSnapshotFromCurrent}
-              type="button"
-              disabled={savingSnap}
-            >
-              {savingSnap ? "Saving..." : "Save Snapshot"}
-            </button>
-          )}
 
           <button
             className="btn-primary"
@@ -640,15 +788,23 @@ export default function ScheduleBalances() {
                           ))}
 
                           <td>
-                            <button
-                              type="button"
-                              className="staff-edit-btn"
-                              onClick={() => {
-                                window.location.href = `/staff-information?id=${r.id}&tab=balances&edit=true`;
-                              }}
-                            >
-                              Edit
-                            </button>
+                            {canEditHistory && !isCurrentMonth(month) ? (
+                              <button
+                                type="button"
+                                className="staff-edit-btn"
+                                onClick={() => openHistoryEdit(r)}
+                              >
+                                Edit History
+                              </button>
+                            ) : isCurrentMonth(month) ? (
+                              <span style={{ fontSize: 12, opacity: 0.7 }}>
+                                Live balance
+                              </span>
+                            ) : (
+                              <span style={{ fontSize: 12, opacity: 0.7 }}>
+                                View only
+                              </span>
+                            )}
                           </td>
                         </tr>
                       ))
@@ -663,6 +819,137 @@ export default function ScheduleBalances() {
                 Close
               </button>
             </div>
+          </div>
+        </div>
+      )}
+      {editingHistory && (
+        <div
+          className="modal-overlay"
+          onMouseDown={(e) => {
+            if (
+              !historySaving &&
+              e.target.classList.contains("modal-overlay")
+            ) {
+              closeHistoryEdit();
+            }
+          }}
+        >
+          <div
+            className="modal saas-modal"
+            style={{ maxWidth: 620, width: "95vw" }}
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <div className="modal-head">
+              <div>
+                <h3 className="modal-title">
+                  Edit Historical Balance
+                </h3>
+
+                <p className="modal-subtitle">
+                  {displayName(editingHistory)} — {month}
+                </p>
+              </div>
+
+              <button
+                className="modal-x"
+                type="button"
+                onClick={closeHistoryEdit}
+                disabled={historySaving}
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={saveHistoryEdit}>
+              <div className="form-grid">
+                <div className="field">
+                  <label>CBU</label>
+
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={historyForm.cbu}
+                    onChange={(e) =>
+                      setHistoryForm((previous) => ({
+                        ...previous,
+                        cbu: e.target.value,
+                      }))
+                    }
+                    required
+                  />
+                </div>
+
+                <div className="field">
+                  <label>Cashbond</label>
+
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={historyForm.cashbond}
+                    onChange={(e) =>
+                      setHistoryForm((previous) => ({
+                        ...previous,
+                        cashbond: e.target.value,
+                      }))
+                    }
+                    required
+                  />
+                </div>
+
+                <div className="field">
+                  <label>Utility</label>
+
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={historyForm.utility}
+                    onChange={(e) =>
+                      setHistoryForm((previous) => ({
+                        ...previous,
+                        utility: e.target.value,
+                      }))
+                    }
+                    required
+                  />
+                </div>
+              </div>
+
+              {historyError ? (
+                <div
+                  style={{
+                    marginTop: 12,
+                    color: "#ef4444",
+                    fontWeight: 800,
+                  }}
+                >
+                  {historyError}
+                </div>
+              ) : null}
+
+              <div className="modal-buttons">
+                <button
+                  className="btn-secondary"
+                  type="button"
+                  onClick={closeHistoryEdit}
+                  disabled={historySaving}
+                >
+                  Cancel
+                </button>
+
+                <button
+                  className="btn-primary"
+                  type="submit"
+                  disabled={historySaving}
+                >
+                  {historySaving
+                    ? "Saving..."
+                    : "Save Historical Correction"}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

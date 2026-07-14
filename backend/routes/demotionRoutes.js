@@ -94,17 +94,24 @@ const isFinalUploader = (req) => {
   const dept = norm(req.user?.department);
 
   const isHRDepartment =
+    dept === "hr" ||
     dept === "hr department" ||
     dept === "human resources" ||
     dept === "human resources department";
 
+  const isITDepartment =
+    dept === "it" ||
+    dept === "it department";
+
+  const isAccountingDepartment =
+    dept === "accounting" ||
+    dept === "accounting department";
+
   return (
     isAdmin(req) ||
-    isIT(req) ||
-    isHr(req) ||
     isHRDepartment ||
-    isAccounting(req) ||
-    isSeniorVicePresident(req)
+    isITDepartment ||
+    isAccountingDepartment
   );
 };
 
@@ -112,35 +119,24 @@ const canCreateDemotion = (req) => {
   const dept = norm(req.user?.department);
 
   const isHRDepartment =
+    dept === "hr" ||
     dept === "hr department" ||
     dept === "human resources" ||
     dept === "human resources department";
 
+  const isITDepartment =
+    dept === "it" ||
+    dept === "it department";
+
+  const isAccountingDepartment =
+    dept === "accounting" ||
+    dept === "accounting department";
+
   return (
     isAdmin(req) ||
-    isIT(req) ||
-    isHr(req) ||
     isHRDepartment ||
-    isAccounting(req) ||
-    isPresident(req) ||
-
-    isAreaManager(req) ||
-    isRegionalManager(req) ||
-    isAssistantVicePresident(req) ||
-    isVicePresident(req) ||
-    isSeniorVicePresident(req) ||
-
-    (
-      dept === "it department" &&
-      (
-        isBranchManager(req) ||
-        isAreaManager(req) ||
-        isRegionalManager(req) ||
-        isAssistantVicePresident(req) ||
-        isVicePresident(req) ||
-        isSeniorVicePresident(req)
-      )
-    )
+    isITDepartment ||
+    isAccountingDepartment
   );
 };
 
@@ -292,33 +288,28 @@ async function generateOrderNo(client, prefix) {
 }
 
 function userCanActStage(req, stage) {
-  const s = norm(stage);
+  const dept = norm(req.user?.department);
 
-  if (isAdmin(req) || isIT(req)) return true;
+  const isHRDepartment =
+    dept === "hr" ||
+    dept === "hr department" ||
+    dept === "human resources" ||
+    dept === "human resources department";
 
-  if (s === "area manager") return isAreaManager(req);
-  if (s === "regional manager") return isRegionalManager(req);
-  if (s === "assistant vice president") return isAssistantVicePresident(req);
-  if (s === "vice president") return isVicePresident(req);
+  const isITDepartment =
+    dept === "it" ||
+    dept === "it department";
 
-  if (s === "admin") {
-    const dept = norm(req.user?.department);
+  const isAccountingDepartment =
+    dept === "accounting" ||
+    dept === "accounting department";
 
-    const isHRDepartment =
-      dept === "hr department" ||
-      dept === "human resources" ||
-      dept === "human resources department";
-
-    return (
-      isAdmin(req) ||
-      isIT(req) ||
-      isHr(req) ||
-      isHRDepartment ||
-      isAccounting(req)
-    );
-  }
-
-  return false;
+  return (
+    isAdmin(req) ||
+    isHRDepartment ||
+    isITDepartment ||
+    isAccountingDepartment
+  );
 }
 
 async function getStaffScope(client, staffId) {
@@ -362,6 +353,8 @@ async function canAccessStaff(client, req, staffRow) {
       dept === "human resources department" ||
     
     isAccounting(req) ||
+    dept === "accounting" ||
+    dept === "accounting department" ||
     isTread(req) ||
     isVicePresident(req) ||
     isSeniorVicePresident(req) ||
@@ -588,7 +581,7 @@ router.post(
           await client.query("ROLLBACK");
           return res.status(403).json({
             message:
-              "Only Area Manager, Regional Manager, Assistant Vice President, Vice President, Senior Vice President, Admin, IT, HR, or Accounting can create demotion orders.",
+              "Only Admin, IT Department, HR Department, and Accounting Department can create demotion orders.",
           });
         }
 

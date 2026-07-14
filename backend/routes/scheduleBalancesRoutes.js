@@ -572,143 +572,129 @@ router.post(
   }
 );
 
-router.post(
-  "/snapshot/from-current",
+router.put(
+  "/snapshot/:id/manual-edit",
   requireAuth,
-  requirePermission("schedule_balance", "create"),
+  requirePermission("schedule_balance", "edit"),
   async (req, res) => {
-    const snapshotMonth = monthToDate(req.body?.month);
-
-    if (!snapshotMonth) {
-      return res.status(400).json({
-        message: "month is required in YYYY-MM format",
-      });
-    }
-
     const client = await pool.connect();
 
     try {
       await client.query("BEGIN");
 
-      const current = await client.query(buildLiveSql(" WHERE LOWER(COALESCE(s.status, 'active')) = 'active' "), [
-        snapshotMonth,
-      ]);
+      const id = toInt(req.params.id);
+      const cbu = toNum(req.body?.cbu);
+      const cashbond = toNum(req.body?.cashbond);
+      const utility = toNum(req.body?.utility);
+      
 
-      const rows = current.rows || [];
-
-      for (const r of rows) {
-        const staff_id = Number(r.staff_id);
-        if (!staff_id) continue;
-
-        await client.query(
-          `
-          INSERT INTO public.schedule_balance_snapshots (
-            snapshot_month,
-            staff_id,
-            employee_no,
-            fullname,
-            position,
-            branch_id,
-            last_name,
-            first_name,
-            middle_name,
-            cbu,
-            cashbond,
-            utility,
-            salary_loan,
-            salary_advance,
-            motorcycle_loan,
-            special_advance,
-            cash_advance,
-            other_receivable,
-            staff_accounts_payable,
-            created_at,
-            updated_at
-          )
-          VALUES (
-            $1::date,
-            $2::int,
-            $3::varchar,
-            $4::varchar,
-            $5::varchar,
-            $6::int,
-            $7::varchar,
-            $8::varchar,
-            $9::varchar,
-            $10::numeric,
-            $11::numeric,
-            $12::numeric,
-            $13::numeric,
-            $14::numeric,
-            $15::numeric,
-            $16::numeric,
-            $17::numeric,
-            $18::numeric,
-            $19::numeric,
-            NOW(),
-            NOW()
-          )
-          ON CONFLICT (snapshot_month, staff_id)
-          DO UPDATE SET
-            employee_no = EXCLUDED.employee_no,
-            fullname = EXCLUDED.fullname,
-            position = EXCLUDED.position,
-            branch_id = EXCLUDED.branch_id,
-            last_name = EXCLUDED.last_name,
-            first_name = EXCLUDED.first_name,
-            middle_name = EXCLUDED.middle_name,
-            cbu = EXCLUDED.cbu,
-            cashbond = EXCLUDED.cashbond,
-            utility = EXCLUDED.utility,
-            salary_loan = EXCLUDED.salary_loan,
-            salary_advance = EXCLUDED.salary_advance,
-            motorcycle_loan = EXCLUDED.motorcycle_loan,
-            special_advance = EXCLUDED.special_advance,
-            cash_advance = EXCLUDED.cash_advance,
-            other_receivable = EXCLUDED.other_receivable,
-            staff_accounts_payable = EXCLUDED.staff_accounts_payable,
-            updated_at = NOW()
-          `,
-          [
-            snapshotMonth,
-            staff_id,
-            r.employee_no || null,
-            String(r.fullname || ""),
-            String(r.position || ""),
-            r.branch_id ? Number(r.branch_id) : null,
-            r.last_name || null,
-            r.first_name || null,
-            r.middle_name || null,
-            toNum(r.cbu),
-            toNum(r.cashbond),
-            toNum(r.utility),
-            toNum(r.salary_loan),
-            toNum(r.salary_advance),
-            toNum(r.motorcycle_loan),
-            toNum(r.special_advance),
-            toNum(r.cash_advance),
-            toNum(r.other_receivable),
-            toNum(r.staff_accounts_payable),
-          ]
-        );
+      if (!id) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({
+          message: "Invalid snapshot id",
+        });
       }
+
+      if (cbu < 0 || cashbond < 0 || utility < 0) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({
+          message: "CBU, Cashbond, and Utility cannot be negative",
+        });
+      }
+
+      const current = await client.query(
+        `
+        SELECT *
+        FROM public.schedule_balance_snapshots
+        WHERE id = $1
+        FOR UPDATE
+        `,
+        [id]
+      );
+
+      if (current.rowCount === 0) {
+        await client.query("ROLLBACK");
+        return res.status(404).json({
+          message: "Historical snapshot not found",
+        });
+      }
+
+      const old = current.rows[0];
+
+      await client.query(
+        `
+        INSERT INTO public.schedule_balance_snapshot_history
+        (
+          snapshot_id,
+          snapshot_month,
+          staff_id,
+          employee_no,
+          old_cbu,
+          new_cbu,
+          old_cashbond,
+          new_cashbond,
+          old_utility,
+          new_utility,
+          edited_by,
+          edited_at
+        )
+        VALUES
+        (
+        $1,$2,$3,$4,
+        $5,$6,
+        $7,$8,
+        $9,$10,
+        $11,
+        NOW()
+        )
+        `,
+        [
+          old.id,
+          old.snapshot_month,
+          old.staff_id,
+          old.employee_no,
+          toNum(old.cbu),
+          cbu,
+          toNum(old.cashbond),
+          cashbond,
+          toNum(old.utility),
+          utility,
+          req.user?.id ?? null,
+        ]
+      );
+
+      const updated = await client.query(
+        `
+        UPDATE public.schedule_balance_snapshots
+        SET
+          cbu = $2,
+          cashbond = $3,
+          utility = $4,
+          updated_at = NOW()
+        WHERE id = $1
+        RETURNING *
+        `,
+        [id, cbu, cashbond, utility]
+      );
 
       await client.query("COMMIT");
 
       return res.json({
-        message: "Snapshot saved from current live balances",
-        month: snapshotMonth,
-        count: rows.length,
+        message: "Historical balance corrected successfully",
+        snapshot: updated.rows[0],
       });
-    } catch (e) {
+    } catch (err) {
       try {
         await client.query("ROLLBACK");
       } catch {}
 
-      console.error("POST /api/schedule-balances/snapshot/from-current ERROR:", e);
+      console.error(
+        "PUT /api/schedule-balances/snapshot/:id/manual-edit ERROR:",
+        err
+      );
 
       return res.status(500).json({
-        message: e.message || "Server error",
+        message: err.message || "Failed to edit historical balance",
       });
     } finally {
       client.release();

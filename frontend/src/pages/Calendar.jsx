@@ -16,8 +16,6 @@ const emptyNoteForm = {
   content: "",
 };
 
-
-
 export default function TravelPlan() {
   const today = new Date();
 
@@ -27,6 +25,7 @@ export default function TravelPlan() {
   const [view, setView] = useState("Month");
   const [activeMenu, setActiveMenu] = useState("Travel Plan");
   const [activities, setActivities] = useState([]);
+  const [branchSearch, setBranchSearch] = useState("");
 
   const [selectedPlan, setSelectedPlan] = useState(null);
   const [detailTab, setDetailTab] = useState("photos");
@@ -139,28 +138,28 @@ export default function TravelPlan() {
   }, [plans, activityDateFilter]);
 
   const mostVisitedBranches = useMemo(() => {
-  const now = new Date();
+    const now = new Date();
 
-  let filteredPlans = [...plans];
+    let filteredPlans = [...plans];
 
-  if (visitRange === "week") {
-    const weekAgo = new Date();
-    weekAgo.setDate(now.getDate() - 7);
+    if (visitRange === "week") {
+      const weekAgo = new Date();
+      weekAgo.setDate(now.getDate() - 7);
 
-    filteredPlans = plans.filter(
-      (p) => new Date(p.plan_date) >= weekAgo
-    );
-  }
-
-  if (visitRange === "month") {
-    filteredPlans = plans.filter((p) => {
-      const d = new Date(p.plan_date);
-      return (
-        d.getMonth() === month &&
-        d.getFullYear() === year
+      filteredPlans = plans.filter(
+        (p) => new Date(p.plan_date) >= weekAgo
       );
-    });
-  }
+    }
+
+    if (visitRange === "month") {
+      filteredPlans = plans.filter((p) => {
+        const d = new Date(p.plan_date);
+        return (
+          d.getMonth() === month &&
+          d.getFullYear() === year
+        );
+      });
+    }
 
   if (visitRange === "year") {
     filteredPlans = plans.filter((p) => {
@@ -218,6 +217,12 @@ const selectedBranchPlans = useMemo(() => {
 
   return filtered.filter((p) => p.branch_name === selectedBranchVisit);
 }, [plans, selectedBranchVisit, visitRange, month, year]);
+
+  const filteredMostVisitedBranches = mostVisitedBranches.filter((branch) =>
+    (branch.branch || "")
+      .toLowerCase()
+      .includes(branchSearch.toLowerCase())
+  );
 
   const maxBranchVisits = Math.max(
     1,
@@ -843,6 +848,14 @@ const selectedBranchPlans = useMemo(() => {
                       <div>
                         <h3>Most Visited Branches</h3>
                         <p>Based on created travel plans.</p>
+
+                        <input
+                          type="text"
+                          placeholder="Search branch..."
+                          value={branchSearch}
+                          onChange={(e) => setBranchSearch(e.target.value)}
+                          className="travel-branch-search"
+                        />
                       </div>
 
                       <select
@@ -856,13 +869,13 @@ const selectedBranchPlans = useMemo(() => {
                       </select>
                     </div>
 
-                    {mostVisitedBranches.length === 0 ? (
+                    {filteredMostVisitedBranches.length === 0 ? (
                       <div className="travel-empty">
                         No branch visits yet.
                       </div>
                     ) : (
                       <div className="branch-visit-chart">
-                        {mostVisitedBranches.map((item) => (
+                        {filteredMostVisitedBranches.map((item) => (
                           <div
                             key={item.branch}
                             className={`travel-branch-item ${
