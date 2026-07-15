@@ -86,6 +86,20 @@ const canBypass = (role, department = "") =>
       "vice president",
       "senior vice president",
     ].includes(norm(role))
+  ) ||
+  (
+    norm(department).includes("it") &&
+    [
+      "branch manager",
+      "acting branch manager",
+      "area manager",
+      "acting area manager",
+      "regional manager",
+      "acting regional manager",
+      "assistant vice president",
+      "vice president",
+      "senior vice president",
+    ].includes(norm(role))
   );
 
 const canFinalUpload = (role, department = "") =>
@@ -96,6 +110,20 @@ const canFinalUpload = (role, department = "") =>
       "branch manager",
       "area manager",
       "regional manager",
+      "assistant vice president",
+      "vice president",
+      "senior vice president",
+    ].includes(norm(role))
+  ) ||
+  (
+    norm(department).includes("it") &&
+    [
+      "branch manager",
+      "acting branch manager",
+      "area manager",
+      "acting area manager",
+      "regional manager",
+      "acting regional manager",
       "assistant vice president",
       "vice president",
       "senior vice president",
@@ -114,7 +142,50 @@ const canVoid = (role, department = "") =>
       "vice president",
       "senior vice president",
     ].includes(norm(role))
+  ) ||
+  (
+    norm(department).includes("it") &&
+    [
+      "branch manager",
+      "acting branch manager",
+      "area manager",
+      "acting area manager",
+      "regional manager",
+      "acting regional manager",
+      "assistant vice president",
+      "vice president",
+      "senior vice president",
+    ].includes(norm(role))
   );
+
+const canDelete = (role, department = "") =>
+  ["admin", "it"].includes(norm(role)) ||
+  (
+    norm(department).includes("accounting") &&
+    [
+      "branch manager",
+      "area manager",
+      "regional manager",
+      "assistant vice president",
+      "vice president",
+      "senior vice president",
+    ].includes(norm(role))
+  ) ||
+  (
+    norm(department).includes("it") &&
+    [
+      "branch manager",
+      "acting branch manager",
+      "area manager",
+      "acting area manager",
+      "regional manager",
+      "acting regional manager",
+      "assistant vice president",
+      "vice president",
+      "senior vice president",
+    ].includes(norm(role))
+  );
+
 
 const getCurrentStage = (item) => {
   const explicit = norm(item?.approval_stage);
@@ -683,7 +754,9 @@ const isITDeptManager =
     }
 
     if (action === "void" && !canVoid(role, department)) {
-      return alert("Only Admin/IT can void reimbursement.");
+      return alert(
+        "Only Admin, IT, Accounting Department managers, or IT Department managers can void reimbursement."
+      );
     }
 
     let rejectionReason = "";
@@ -751,6 +824,54 @@ const isITDeptManager =
       alert(
         err?.response?.data?.message ||
           "Failed to update reimbursement request."
+      );
+    } finally {
+      setProcessingId("");
+    }
+  };
+
+  const deleteRequest = async (item) => {
+    const id = item?.id;
+
+    if (!id) {
+      return alert("Reimbursement record has no valid id.");
+    }
+
+    if (!["rejected", "void"].includes(norm(item.status))) {
+      return alert(
+        "Only Rejected or Void reimbursement requests can be deleted."
+      );
+    }
+
+    if (
+      !window.confirm(
+        "Permanently delete this reimbursement request?"
+      )
+    ) {
+      return;
+    }
+
+    try {
+      setProcessingId(`reimbursement-${id}-delete`);
+
+      await api.delete(`/reimbursement-requests/${id}`);
+
+      alert("Reimbursement request deleted successfully.");
+
+      if (selected?.id === id) {
+        setSelected(null);
+        setShowView(false);
+      }
+
+      await loadRows();
+    } catch (err) {
+      if (err?.response?.status === 401) {
+        return logout();
+      }
+
+      alert(
+        err?.response?.data?.message ||
+          "Failed to delete reimbursement request."
       );
     } finally {
       setProcessingId("");
@@ -1470,7 +1591,7 @@ const isITDeptManager =
                 ) : null}
 
                 {canVoid(role, department) &&
-                !["void", "rejected"].includes(norm(selected.status)) ? (
+                  norm(selected.status) === "approved" ? (
                   <button
                     className="btn-danger"
                     type="button"
@@ -1482,6 +1603,24 @@ const isITDeptManager =
                       : "Void"}
                   </button>
                 ) : null}
+
+                {canDelete(role, department) &&
+                  ["rejected", "void"].includes(norm(selected.status)) ? (
+                    <button
+                      className="btn-danger"
+                      type="button"
+                      disabled={
+                        processingId ===
+                        `reimbursement-${selected.id}-delete`
+                      }
+                      onClick={() => deleteRequest(selected)}
+                    >
+                      {processingId ===
+                      `reimbursement-${selected.id}-delete`
+                        ? "Deleting..."
+                        : "Delete"}
+                    </button>
+                  ) : null}
 
                 <button className="btn-secondary" type="button" onClick={closeView}>
                   Close

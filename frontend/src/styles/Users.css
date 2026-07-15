@@ -166,7 +166,7 @@
   display:flex;
   align-items:center;
   justify-content:center;
-  gap:8px;
+  gap:12px;
   flex-wrap:nowrap;
 }
 
@@ -369,16 +369,8 @@
 
 .table td:last-child,
 .table th:last-child{
-  min-width:170px;
-  width:170px;
-}
-
-.row-actions{
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  gap:8px;
-  flex-wrap:nowrap;
+  min-width:230px;
+  width:230px;
 }
 
 .users-icon-btn{
@@ -386,4 +378,69 @@
   height:38px;
   min-width:38px;
   flex-shrink:0;
+}
+
+.status-badge{
+  padding:6px 12px;
+  border-radius:999px;
+  font-size:12px;
+  font-weight:800;
+}
+
+.status-badge.active{
+  background:#dcfce7;
+  color:#166534;
+}
+
+.status-badge.inactive{
+  background:#fee2e2;
+  color:#991b1b;
+}
+
+/* ===========================
+   USER STATUS TOGGLE
+=========================== */
+
+.users-switch{
+  position:relative;
+  display:inline-block;
+  width:52px;
+  height:28px;
+  flex-shrink:0;
+}
+
+.users-switch input{
+  opacity:0;
+  width:0;
+  height:0;
+}
+
+.users-slider{
+  position:absolute;
+  inset:0;
+  cursor:pointer;
+  background:#9ca3af;
+  border-radius:999px;
+  transition:.25s ease;
+}
+
+.users-slider::before{
+  content:"";
+  position:absolute;
+  width:22px;
+  height:22px;
+  left:3px;
+  top:3px;
+  background:white;
+  border-radius:50%;
+  transition:.25s ease;
+  box-shadow:0 2px 6px rgba(0,0,0,.25);
+}
+
+.users-switch input:checked + .users-slider{
+  background:#22c55e;
+}
+
+.users-switch input:checked + .users-slider::before{
+  transform:translateX(24px);
 }

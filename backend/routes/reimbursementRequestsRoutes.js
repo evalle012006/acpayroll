@@ -827,62 +827,84 @@ router.get(
 ====================================================== */
 
 router.put(
-"/:id",
-requireAuth,
-upload.single("attachment"),
-async (req,res)=>{
+  "/:id",
+    requireAuth,
+    requirePermission("reimbursement_request","approve"),
+    upload.single("attachment"),
 
-const client=await pool.connect();
+  async (req,res)=>{
 
-try{
+    const client=await pool.connect();
 
-const id=toInt(req.params.id);
-const action=norm(req.body.action||"");
+      try{
 
-await client.query("BEGIN");
+        const id=toInt(req.params.id);
+        const action=norm(req.body.action||"");
 
-const q=await client.query(`
-SELECT rr.*,s.department AS staff_department,
-s.position AS staff_position
-FROM reimbursement_requests rr
-LEFT JOIN staff s
-ON s.id=rr.employee_id
-WHERE rr.id=$1
-FOR UPDATE OF rr
-`,[id]);
+        await client.query("BEGIN");
 
-if(!q.rows.length){
-await client.query("ROLLBACK");
-return res.status(404).json({
-message:"Request not found"
-});
-}
+        const q=await client.query(`
+          SELECT rr.*,s.department AS staff_department,
+          s.position AS staff_position
+          FROM reimbursement_requests rr
+          LEFT JOIN staff s
+          ON s.id=rr.employee_id
+          WHERE rr.id=$1
+          FOR UPDATE OF rr
+        `,[id]);
 
-const row=q.rows[0];
+        if(!q.rows.length){
+          await client.query("ROLLBACK");
+          return res.status(404).json({
+          message:"Request not found"
+          });
+        }
 
-if(action==="void"){
+        const row=q.rows[0];
 
-if(!canBypassApproval(req)){
-await client.query("ROLLBACK");
+        if (action === "void") {
+          if (!canBypassApproval(req)) {
+            await client.query("ROLLBACK");
 
-return res.status(403).json({
-message:"Only Admin / IT can void"
-});
-}
+            return res.status(403).json({
+              message:
+                "Only Admin, IT, Accounting Department managers, or IT Department managers can void reimbursement.",
+            });
+          }
 
-const r=await client.query(`
-UPDATE reimbursement_requests
-SET
-status='Void',
-approval_stage='Void',
-updated_at=NOW()
-WHERE id=$1
-RETURNING *
-`,[id]);
+          if (norm(row.status) !== "approved") {
+            await client.query("ROLLBACK");
 
-await client.query("COMMIT");
+            return res.status(400).json({
+              message: "Only approved reimbursement requests can be voided.",
+            });
+          }
 
-return res.json(r.rows[0]);
+  const r = await client.query(
+    `
+    UPDATE reimbursement_requests
+    SET
+      status = 'Void',
+      approval_stage = 'Void',
+      updated_at = NOW()
+    WHERE id = $1
+      AND LOWER(TRIM(COALESCE(status, ''))) = 'approved'
+    RETURNING *
+    `,
+    [id]
+  );
+
+  if (r.rowCount === 0) {
+    await client.query("ROLLBACK");
+
+    return res.status(400).json({
+      message: "Reimbursement cannot be voided.",
+    });
+  }
+
+  await client.query("COMMIT");
+
+  return res.json(r.rows[0]);
 }
 
 if(
@@ -1250,6 +1272,117 @@ router.post(
       return res.status(500).json({
         message:
           err.message || "Failed to upload final reimbursement approved file.",
+      });
+    } finally {
+      client.release();
+    }
+  }
+);
+
+router.delete(
+  "/:id",
+  requireAuth,
+  requirePermission("reimbursement_request", "delete"),
+  async (req, res) => {
+    const client = await pool.connect();
+
+    try {
+      await client.query("BEGIN");
+
+      const id = toInt(req.params.id);
+
+      if (!id) {
+        await client.query("ROLLBACK");
+
+        return res.status(400).json({
+          message: "Invalid reimbursement id.",
+        });
+      }
+
+      if (!canBypassApproval(req)) {
+        await client.query("ROLLBACK");
+
+        return res.status(403).json({
+          message:
+            "Only Admin, IT, Accounting Department managers, or IT Department managers can delete reimbursement.",
+        });
+      }
+
+      const existing = await client.query(
+        `
+        SELECT
+          id,
+          status,
+          attachment_path
+        FROM reimbursement_requests
+        WHERE id = $1
+        FOR UPDATE
+        `,
+        [id]
+      );
+
+      if (existing.rowCount === 0) {
+        await client.query("ROLLBACK");
+
+        return res.status(404).json({
+          message: "Reimbursement request not found.",
+        });
+      }
+
+      const row = existing.rows[0];
+      const currentStatus = norm(row.status);
+
+      if (!["rejected", "void"].includes(currentStatus)) {
+        await client.query("ROLLBACK");
+
+        return res.status(400).json({
+          message:
+            "Only Rejected or Void reimbursement requests can be deleted.",
+        });
+      }
+
+      await client.query(
+        `
+        DELETE FROM reimbursement_requests
+        WHERE id = $1
+        `,
+        [id]
+      );
+
+      await client.query("COMMIT");
+
+      if (row.attachment_path) {
+        const filePath = path.join(
+          __dirname,
+          "..",
+          String(row.attachment_path).replace(/^\/+/, "")
+        );
+
+        try {
+          if (fs.existsSync(filePath)) {
+            fs.unlinkSync(filePath);
+          }
+        } catch (fileError) {
+          console.warn(
+            "Unable to remove reimbursement file:",
+            fileError.message
+          );
+        }
+      }
+
+      return res.json({
+        message: "Reimbursement request deleted successfully.",
+      });
+    } catch (err) {
+      try {
+        await client.query("ROLLBACK");
+      } catch {}
+
+      console.error("DELETE reimbursement error:", err);
+
+      return res.status(500).json({
+        message:
+          err.message || "Failed to delete reimbursement request.",
       });
     } finally {
       client.release();

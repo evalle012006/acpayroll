@@ -387,9 +387,14 @@ async function hasApproverAccount(client, stage, staff) {
   };
 
   try {
-    return (await checkUsers()) || (await checkStaff());
-  } catch { 
-    return true;
+    return await checkUsers();
+  } catch (error) {
+    console.error(
+      "CHECK ACTIVE LOAN APPROVER ERROR:",
+      error.message
+    );
+
+    return false;
   }
 }
 
@@ -1383,9 +1388,51 @@ router.put(
 
       const staff = staffInfo.rows[0];
 
-      const currentStage =
+      let currentStage =
         norm(loan.approval_stage) ||
         (await getInitialApprovalStage(client, staff));
+
+      const currentStageHasActiveApprover =
+        await hasApproverAccount(
+          client,
+          currentStage,
+          staff
+        );
+
+      if (!currentStageHasActiveApprover) {
+        const activeChain = await getApprovalChain(
+          client,
+          staff
+        );
+
+        const rawChain = getRawApprovalChain(staff);
+
+        const oldStageIndex = rawChain.findIndex(
+          (stage) => norm(stage) === norm(currentStage)
+        );
+
+        const nextActiveStage = activeChain.find((stage) => {
+          const stageIndex = rawChain.findIndex(
+            (rawStage) => norm(rawStage) === norm(stage)
+          );
+
+          return stageIndex > oldStageIndex;
+        });
+
+        currentStage =
+          nextActiveStage ||
+          activeChain[0] ||
+          ACCOUNTING_FINAL;
+
+        await client.query(
+          `
+          UPDATE public.loan_requests
+          SET approval_stage = $2
+          WHERE id = $1
+          `,
+          [id, currentStage]
+        );
+      }
 
       if (!canApproveStage(req, currentStage)) {
         await client.query("ROLLBACK");

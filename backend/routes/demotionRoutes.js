@@ -195,7 +195,10 @@ const getInitialStage = (department, oldPosition) => {
   return "admin";
 };
 
-const getApprovalChain = (department, oldPosition = "") => {
+const getRawApprovalChain = (
+  department,
+  oldPosition = ""
+) => {
   if (isOperationDepartment(department)) {
     const full = [
       "area manager",
@@ -205,14 +208,191 @@ const getApprovalChain = (department, oldPosition = "") => {
       "admin",
     ];
 
-    const start = getInitialStage(department, oldPosition);
+    const start = getInitialStage(
+      department,
+      oldPosition
+    );
+
     const index = full.indexOf(start);
 
-    return index >= 0 ? full.slice(index) : full;
+    return index >= 0
+      ? full.slice(index)
+      : full;
   }
 
   return ["admin"];
 };
+
+async function hasActiveApprover(
+  client,
+  stage,
+  staff
+) {
+  const normalizedStage = norm(stage);
+
+  // Admin means the final HR/Accounting/IT/Admin group.
+  // This stage is not assigned to one specific account.
+  if (normalizedStage === "admin") {
+    return true;
+  }
+
+  const values = [normalizedStage];
+
+  const conditions = [
+    `LOWER(TRIM(COALESCE(u.role, ''))) = $1`,
+    `LOWER(TRIM(COALESCE(u.status, 'Active'))) = 'active'`,
+  ];
+
+  if (normalizedStage === "area manager") {
+    values.push(toStr(staff?.area));
+
+    conditions.push(
+      `LOWER(TRIM(COALESCE(u.area, ''))) =
+       LOWER(TRIM($${values.length}))`
+    );
+  }
+
+  if (normalizedStage === "regional manager") {
+    values.push(toStr(staff?.region));
+
+    conditions.push(
+      `LOWER(TRIM(COALESCE(u.region, ''))) =
+       LOWER(TRIM($${values.length}))`
+    );
+  }
+
+  if (
+    normalizedStage ===
+      "assistant vice president" &&
+    staff?.division
+  ) {
+    values.push(toStr(staff.division));
+
+    conditions.push(
+      `LOWER(TRIM(COALESCE(u.division, ''))) =
+       LOWER(TRIM($${values.length}))`
+    );
+  }
+
+  if (
+    [
+      "assistant vice president",
+      "vice president",
+    ].includes(normalizedStage)
+  ) {
+    values.push(toStr(staff?.department));
+
+    conditions.push(
+      `LOWER(TRIM(COALESCE(u.department, ''))) =
+       LOWER(TRIM($${values.length}))`
+    );
+  }
+
+  const result = await client.query(
+    `
+    SELECT u.id
+    FROM public.users u
+    WHERE ${conditions.join("\n      AND ")}
+    LIMIT 1
+    `,
+    values
+  );
+
+  return result.rowCount > 0;
+}
+
+async function getActiveApprovalChain(
+  client,
+  staff
+) {
+  const rawChain = getRawApprovalChain(
+    staff.department,
+    staff.position
+  );
+
+  const activeChain = [];
+
+  for (const stage of rawChain) {
+    if (stage === "admin") {
+      activeChain.push(stage);
+      continue;
+    }
+
+    const exists = await hasActiveApprover(
+      client,
+      stage,
+      staff
+    );
+
+    if (exists) {
+      activeChain.push(stage);
+    }
+  }
+
+  return activeChain.length
+    ? activeChain
+    : ["admin"];
+}
+
+async function resolveCurrentActiveStage(
+  client,
+  staff,
+  savedStage
+) {
+  const currentStage = norm(savedStage);
+
+  const activeChain =
+    await getActiveApprovalChain(
+      client,
+      staff
+    );
+
+  if (!currentStage) {
+    return activeChain[0] || "admin";
+  }
+
+  if (currentStage === "admin") {
+    return "admin";
+  }
+
+  const currentStillActive =
+    await hasActiveApprover(
+      client,
+      currentStage,
+      staff
+    );
+
+  if (currentStillActive) {
+    return currentStage;
+  }
+
+  const rawChain = getRawApprovalChain(
+    staff.department,
+    staff.position
+  );
+
+  const currentIndex = rawChain.findIndex(
+    (stage) =>
+      norm(stage) === currentStage
+  );
+
+  const nextActiveStage = activeChain.find(
+    (stage) => {
+      const stageIndex = rawChain.findIndex(
+        (rawStage) =>
+          norm(rawStage) === norm(stage)
+      );
+
+      return stageIndex > currentIndex;
+    }
+  );
+
+  if (nextActiveStage) {
+    return nextActiveStage;
+  }
+
+  return "admin";
+}
 
 const statusColumnMap = {
   "area manager": "area_manager_status",
@@ -661,7 +841,20 @@ router.post(
       const employee_name = buildEmployeeName(staffRow);
       const orderNo = await generateOrderNo(client, "DMO");
       const department = toStr(staffRow.department);
-      const initialStage = getInitialStage(department, staffRow.position);
+      const staffForApproval = {
+        ...staffRow,
+        department,
+        position: staffRow.position,
+      };
+
+      const activeChain =
+        await getActiveApprovalChain(
+          client,
+          staffForApproval
+        );
+
+      const initialStage =
+        activeChain[0] || "admin";
 
       const attachment_path = `/uploads/demotions/${req.file.filename}`;
       const attachment_name = req.file.originalname || null;
@@ -883,7 +1076,8 @@ router.put(
           s.area,
           s.region,
           s.division,
-          s.department
+          s.department,
+          s.position
         FROM public.demotion_orders dmo
         JOIN public.staff s ON s.id = dmo.employee_id
         WHERE dmo.id = $1
@@ -904,18 +1098,49 @@ router.put(
         return res.status(400).json({ message: "Already finalized" });
       }
 
-      const department = toStr(order.department);
-      const chain = getApprovalChain(department, order.old_position);
+      const approvalStaff = {
+        branch_id: order.branch_id,
+        area: order.area,
+        region: order.region,
+        division: order.division,
+        department: toStr(order.department),
+        position:
+          toStr(order.old_position) ||
+          toStr(order.position),
+      };
 
-      let currentStage = norm(order.approval_stage);
+      const chain =
+        await getActiveApprovalChain(
+          client,
+          approvalStaff
+        );
 
-      if (!chain.includes(currentStage)) {
-        currentStage = chain[0] || "admin";
+      let currentStage =
+        await resolveCurrentActiveStage(
+          client,
+          approvalStaff,
+          order.approval_stage
+        );
+
+      if (
+        norm(order.approval_stage) !==
+        norm(currentStage)
+      ) {
+        await client.query(
+          `
+          UPDATE public.demotion_orders
+          SET approval_stage = $2
+          WHERE id = $1
+          `,
+          [id, currentStage]
+        );
       }
 
       if (!userCanActStage(req, currentStage)) {
         await client.query("ROLLBACK");
-        return res.status(403).json({ message: "Not your approval stage" });
+        return res.status(403).json({ 
+          message: "Not your approval stage" 
+        });
       }
 
       const column = statusColumnMap[currentStage];

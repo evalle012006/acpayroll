@@ -121,35 +121,293 @@ const upload = multer({
 const isAuditDepartment = (staff) =>
   norm(staff?.department) === "audit department";
 
-const determineInitialStatus = (req, staff) => {
+const STATUS_ROLE_MAP = {
+  [STATUS_BRANCH]: ["branch manager", "acting branch manager"],
+  [STATUS_AREA]: ["area manager", "acting area manager"],
+  [STATUS_RM]: ["regional manager", "acting regional manager"],
+  [STATUS_AVP]: ["assistant vice president"],
+  [STATUS_VP]: ["vice president"],
+  [STATUS_SVP]: ["senior vice president"],
+};
+
+const approverExists = async (client, status, staff) => {
+  if (status === STATUS_ADMIN) {
+    return true;
+  }
+
+  const roles = STATUS_ROLE_MAP[status] || [];
+
+  if (roles.length === 0) {
+    return false;
+  }
+
+  const values = [...roles];
+  const rolePlaceholders = roles
+    .map((_, index) => `$${index + 1}`)
+    .join(", ");
+
+  const conditions = [
+    `LOWER(TRIM(COALESCE(role, ''))) IN (${rolePlaceholders})`,
+    `LOWER(TRIM(COALESCE(status, 'Active'))) = 'active'`,
+  ];
+
+  if (status === STATUS_BRANCH) {
+    values.push(String(staff?.branch_id || ""));
+
+    conditions.push(
+      `LOWER(TRIM(COALESCE(branch_id::text, ''))) =
+       LOWER(TRIM($${values.length}))`
+    );
+  }
+
+  if (status === STATUS_AREA) {
+    values.push(clean(staff?.area));
+
+    conditions.push(
+      `LOWER(TRIM(COALESCE(area, ''))) =
+       LOWER(TRIM($${values.length}))`
+    );
+  }
+
+  if (status === STATUS_RM) {
+    values.push(clean(staff?.region));
+
+    conditions.push(
+      `LOWER(TRIM(COALESCE(region, ''))) =
+       LOWER(TRIM($${values.length}))`
+    );
+  }
+
+  if (status === STATUS_AVP && staff?.division) {
+    values.push(clean(staff.division));
+
+    conditions.push(
+      `LOWER(TRIM(COALESCE(division, ''))) =
+       LOWER(TRIM($${values.length}))`
+    );
+  }
+
+  if (
+    [STATUS_AVP, STATUS_VP, STATUS_SVP].includes(status) &&
+    staff?.department
+  ) {
+    values.push(clean(staff.department));
+
+    conditions.push(
+      `LOWER(TRIM(COALESCE(department, ''))) =
+       LOWER(TRIM($${values.length}))`
+    );
+  }
+
+  const result = await client.query(
+    `
+    SELECT id
+    FROM public.users
+    WHERE ${conditions.join("\n      AND ")}
+    LIMIT 1
+    `,
+    values
+  );
+
+  return result.rowCount > 0;
+};
+
+const getFirstActiveStatus = async (
+  client,
+  staff,
+  possibleStatuses
+) => {
+  for (const status of possibleStatuses) {
+    if (status === STATUS_ADMIN) {
+      return STATUS_ADMIN;
+    }
+
+    const exists = await approverExists(
+      client,
+      status,
+      staff
+    );
+
+    if (exists) {
+      return status;
+    }
+  }
+
+  return STATUS_ADMIN;
+};
+
+const determineInitialStatus = async (
+  client,
+  req,
+  staff
+) => {
   const staffPosition = norm(staff?.position)
     .replace(/[_-]/g, " ")
     .replace(/\s+/g, " ")
     .trim();
 
-  if (isAuditDepartment(staff)) return STATUS_SVP;
+  if (isAuditDepartment(staff)) {
+    return await getFirstActiveStatus(
+      client,
+      staff,
+      [STATUS_SVP, STATUS_ADMIN]
+    );
+  }
 
   if (
     isAreaManager(req) &&
     staffPosition.includes("branch") &&
     staffPosition.includes("manager")
   ) {
-    return STATUS_BRANCH;
+    return await getFirstActiveStatus(
+      client,
+      staff,
+      [
+        STATUS_BRANCH,
+        STATUS_AREA,
+        STATUS_RM,
+        STATUS_AVP,
+        STATUS_VP,
+        STATUS_ADMIN,
+      ]
+    );
   }
 
-  if (staffPosition.includes("area manager")) return STATUS_RM;
-  if (staffPosition.includes("regional manager")) return STATUS_AVP;
-  if (staffPosition.includes("assistant vice president")) return STATUS_VP;
-  if (staffPosition.includes("vice president")) return STATUS_ADMIN;
+  if (staffPosition.includes("area manager")) {
+    return await getFirstActiveStatus(
+      client,
+      staff,
+      [STATUS_RM, STATUS_AVP, STATUS_VP, STATUS_ADMIN]
+    );
+  }
 
-  if (isBranchManager(req)) return STATUS_AREA;
-  if (isAreaManager(req)) return STATUS_AREA;
-  if (isRegionalManager(req)) return STATUS_AVP;
-  if (isAssistantVicePresident(req)) return STATUS_VP;
-  if (isVicePresident(req)) return STATUS_ADMIN;
-  if (isFinalApprover(req) || isTread(req)) return STATUS_ADMIN;
+  if (staffPosition.includes("regional manager")) {
+    return await getFirstActiveStatus(
+      client,
+      staff,
+      [STATUS_AVP, STATUS_VP, STATUS_ADMIN]
+    );
+  }
 
-  return STATUS_AREA;
+  if (staffPosition.includes("assistant vice president")) {
+    return await getFirstActiveStatus(
+      client,
+      staff,
+      [STATUS_VP, STATUS_ADMIN]
+    );
+  }
+
+  if (staffPosition.includes("vice president")) {
+    return STATUS_ADMIN;
+  }
+
+  if (isBranchManager(req) || isAreaManager(req)) {
+    return await getFirstActiveStatus(
+      client,
+      staff,
+      [
+        STATUS_AREA,
+        STATUS_RM,
+        STATUS_AVP,
+        STATUS_VP,
+        STATUS_ADMIN,
+      ]
+    );
+  }
+
+  if (isRegionalManager(req)) {
+    return await getFirstActiveStatus(
+      client,
+      staff,
+      [STATUS_AVP, STATUS_VP, STATUS_ADMIN]
+    );
+  }
+
+  if (isAssistantVicePresident(req)) {
+    return await getFirstActiveStatus(
+      client,
+      staff,
+      [STATUS_VP, STATUS_ADMIN]
+    );
+  }
+
+  if (
+    isVicePresident(req) ||
+    isFinalApprover(req) ||
+    isTread(req)
+  ) {
+    return STATUS_ADMIN;
+  }
+
+  return await getFirstActiveStatus(
+    client,
+    staff,
+    [
+      STATUS_AREA,
+      STATUS_RM,
+      STATUS_AVP,
+      STATUS_VP,
+      STATUS_ADMIN,
+    ]
+  );
+};
+
+const getNextActiveStatus = async (
+  client,
+  currentStatus,
+  staff
+) => {
+  if (currentStatus === STATUS_BRANCH) {
+    return await getFirstActiveStatus(
+      client,
+      staff,
+      [
+        STATUS_AREA,
+        STATUS_RM,
+        STATUS_AVP,
+        STATUS_VP,
+        STATUS_ADMIN,
+      ]
+    );
+  }
+
+  if (currentStatus === STATUS_AREA) {
+    return await getFirstActiveStatus(
+      client,
+      staff,
+      [
+        STATUS_RM,
+        STATUS_AVP,
+        STATUS_VP,
+        STATUS_ADMIN,
+      ]
+    );
+  }
+
+  if (currentStatus === STATUS_RM) {
+    return await getFirstActiveStatus(
+      client,
+      staff,
+      [STATUS_AVP, STATUS_VP, STATUS_ADMIN]
+    );
+  }
+
+  if (currentStatus === STATUS_AVP) {
+    return await getFirstActiveStatus(
+      client,
+      staff,
+      [STATUS_VP, STATUS_ADMIN]
+    );
+  }
+
+  if (
+    currentStatus === STATUS_VP ||
+    currentStatus === STATUS_SVP
+  ) {
+    return STATUS_ADMIN;
+  }
+
+  return STATUS_ADMIN;
 };
 
 const canActOnCurrentStage = (req, row) => {
@@ -332,6 +590,7 @@ router.post(
           status,
           area,
           region,
+          division,
           position,
           department
         FROM public.staff
@@ -441,7 +700,11 @@ router.post(
 
       const n = Number(seq.rows[0].n);
       const request_no = `RES-${String(n).padStart(8, "0")}`;
-      const initialStatus = determineInitialStatus(req, staff);
+      const initialStatus = await determineInitialStatus(
+        client,
+        req,
+        staff
+      );
 
       const ins = await client.query(
         `
@@ -593,7 +856,9 @@ router.put(
           s.area AS current_staff_area,
           s.region AS current_staff_region,
           s.division AS current_staff_division,
-          s.branch_id AS current_staff_branch_id
+          s.branch_id AS current_staff_branch_id,
+          s.department AS current_staff_department,
+          s.position AS current_staff_position
         FROM public.resignation_requests rr
         LEFT JOIN public.staff s
           ON s.id = rr.staff_id
@@ -614,6 +879,24 @@ router.put(
 
       const existing = requestRes.rows[0];
       const currentStatus = clean(existing.status);
+
+      const approvalStaff = {
+        branch_id:
+          existing.current_staff_branch_id ||
+          existing.branch_id,
+        area:
+          existing.current_staff_area ||
+          existing.area,
+        region:
+          existing.current_staff_region ||
+          existing.region,
+        division:
+          existing.current_staff_division || "",
+        department:
+          existing.current_staff_department || "",
+        position:
+          existing.current_staff_position || "",
+      };
 
       if (currentStatus === STATUS_APPROVED || currentStatus === STATUS_REJECTED) {
         await client.query("ROLLBACK");
@@ -788,35 +1071,31 @@ router.put(
 
         switch (currentStatus) {
           case STATUS_BRANCH:
-            nextStatus = STATUS_AREA;
-            break;
-
           case STATUS_AREA:
-            nextStatus = STATUS_RM;
-            break;
-
           case STATUS_RM:
-            nextStatus = STATUS_AVP;
-            break;
-
           case STATUS_AVP:
-            nextStatus = STATUS_VP;
+            nextStatus = await getNextActiveStatus(
+              client,
+              currentStatus,
+              approvalStaff
+            );
             break;
 
           case STATUS_VP:
-            nextStatus = STATUS_ADMIN;
-            break;
-
           case STATUS_SVP:
             nextStatus = STATUS_ADMIN;
             break;
 
           case STATUS_ADMIN:
+            await client.query("ROLLBACK");
+
             return res.status(400).json({
               message: "Admin is already the last approval stage.",
             });
 
           default:
+            await client.query("ROLLBACK");
+
             return res.status(400).json({
               message: "Cannot bypass this stage.",
             });
@@ -865,7 +1144,11 @@ router.put(
           });
         }
 
-        nextStatus = STATUS_AREA;
+        nextStatus = await getNextActiveStatus(
+          client,
+          currentStatus,
+          approvalStaff
+        );
         approverField = "branch_manager_approved_by";
         approverAtField = "branch_manager_approved_at";
       } else if (isAreaManager(req)) {
@@ -896,7 +1179,11 @@ router.put(
           });
         }
 
-        nextStatus = STATUS_RM;
+        nextStatus = await getNextActiveStatus(
+          client,
+          currentStatus,
+          approvalStaff
+        );
         approverField = "area_manager_approved_by";
         approverAtField = "area_manager_approved_at";
       } else if (isRegionalManager(req)) {
@@ -908,12 +1195,6 @@ router.put(
         });
       }
 
-      /*
-        Get the Regional Manager's latest region from the staff table.
-
-        First try employee_no from the logged-in user.
-        If no staff record is found, fall back to the region inside the login token.
-      */
       let managerRegion = clean(getUserRegion(req));
 
       const loggedInEmployeeNo = clean(
@@ -979,7 +1260,11 @@ router.put(
         });
       }
 
-      nextStatus = STATUS_AVP;
+      nextStatus = await getNextActiveStatus(
+        client,
+        currentStatus,
+        approvalStaff
+      );
       approverField = "regional_manager_approved_by";
       approverAtField = "regional_manager_approved_at";
     } else if (isAssistantVicePresident(req)) {
@@ -991,7 +1276,11 @@ router.put(
           });
         }
 
-        nextStatus = STATUS_VP;
+        nextStatus = await getNextActiveStatus(
+          client,
+          currentStatus,
+          approvalStaff
+        );
         approverField = "avp_approved_by";
         approverAtField = "avp_approved_at";
       } else if (isVicePresident(req)) {

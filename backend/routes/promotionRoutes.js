@@ -219,11 +219,15 @@ async function hasApproverAccount(client, stage, staff) {
       `
       SELECT id
       FROM public.users
-      WHERE LOWER(TRIM(COALESCE(department,''))) LIKE '%tread%'
-         OR LOWER(TRIM(COALESCE(role,''))) = 'tread'
+      WHERE (
+        LOWER(TRIM(COALESCE(department, ''))) LIKE '%tread%'
+        OR LOWER(TRIM(COALESCE(role, ''))) = 'tread'
+      )
+        AND LOWER(TRIM(COALESCE(status, 'Active'))) = 'active'
       LIMIT 1
       `
     );
+
     return r.rowCount > 0;
   }
 
@@ -302,6 +306,52 @@ async function getNextApprovalStage(client, staff, currentStage) {
   if (idx >= chain.length - 1) return "approved";
 
   return chain[idx + 1];
+}
+
+async function resolveCurrentActiveStage(
+  client,
+  staff,
+  savedStage
+) {
+  const currentStage = norm(savedStage);
+  const activeChain = await getPromotionChain(client, staff);
+
+  if (!currentStage) {
+    return activeChain[0] || "final";
+  }
+
+  const currentStillActive = await hasApproverAccount(
+    client,
+    currentStage,
+    staff
+  );
+
+  if (currentStillActive) {
+    return currentStage;
+  }
+
+  const rawChain = getRawPromotionChain(
+    staff.department,
+    staff.position
+  );
+
+  const currentIndex = rawChain.findIndex(
+    (stage) => norm(stage) === currentStage
+  );
+
+  const nextActiveStage = activeChain.find((stage) => {
+    const stageIndex = rawChain.findIndex(
+      (rawStage) => norm(rawStage) === norm(stage)
+    );
+
+    return stageIndex > currentIndex;
+  });
+
+  return (
+    nextActiveStage ||
+    activeChain[0] ||
+    "final"
+  );
 }
 
 const canCreatePromotionForStaff = (req, staffRow) => {
@@ -920,7 +970,24 @@ router.put(
       staff.department = order.department || staff.department;
       staff.position = order.old_position || staff.position;
 
-      let currentStage = norm(order.approval_stage) || (await getInitialApprovalStage(client, staff));
+      let currentStage = await resolveCurrentActiveStage(
+        client,
+        staff,
+        order.approval_stage
+      );
+
+      if (
+        norm(order.approval_stage) !== norm(currentStage)
+      ) {
+        await client.query(
+          `
+          UPDATE public.promotion_orders
+          SET approval_stage = $2
+          WHERE id = $1
+          `,
+          [id, currentStage]
+        );
+      }
 
       if (!canRoleActAtStage(req, currentStage)) {
         await client.query("ROLLBACK");
@@ -1081,7 +1148,58 @@ router.put(
         return res.status(400).json({ message: "Order already finalized" });
       }
 
-      const currentStage = norm(order.approval_stage);
+      const staffRes = await client.query(
+        `
+        SELECT
+          id,
+          branch_id,
+          area,
+          region,
+          division,
+          department,
+          position
+        FROM public.staff
+        WHERE id = $1
+        LIMIT 1
+        `,
+        [order.employee_id]
+      );
+
+      const staff = staffRes.rows[0] || {
+        id: order.employee_id,
+        branch_id: order.prev_branch_id,
+        area: order.area,
+        region: order.region,
+        division: order.division,
+        department: order.department,
+        position: order.old_position,
+      };
+
+      staff.department =
+        order.department || staff.department;
+
+      staff.position =
+        order.old_position || staff.position;
+
+      const currentStage =
+        await resolveCurrentActiveStage(
+          client,
+          staff,
+          order.approval_stage
+        );
+
+      if (
+        norm(order.approval_stage) !== norm(currentStage)
+      ) {
+        await client.query(
+          `
+          UPDATE public.promotion_orders
+          SET approval_stage = $2
+          WHERE id = $1
+          `,
+          [id, currentStage]
+        );
+      }
 
       if (!canRoleActAtStage(req, currentStage)) {
         await client.query("ROLLBACK");

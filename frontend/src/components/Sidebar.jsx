@@ -315,12 +315,6 @@ const Sidebar = ({ collapsed }) => {
         module: "schedule_balance",
       },
       {
-        to: "/opening-loan-balances",
-        label: "Opening Loan Balances",
-        icon: PiHandCoinsBold,
-        module: "staff_loan_opening_balance",
-      },
-      {
         to: "/transactions",
         label: "HRIS Transactions",
         icon: FaExchangeAlt,

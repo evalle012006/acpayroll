@@ -762,8 +762,63 @@ router.put(
         });
       }
 
-      const currentStage =
-        clean(row.approval_stage) || (await getInitialStage(client, staff));
+      let currentStage =
+        clean(row.approval_stage) ||
+        (await getInitialStage(client, staff));
+
+      const currentStageHasActiveApprover =
+        await hasApproverAccount(
+          client,
+          currentStage,
+          staff
+        );
+
+      if (!currentStageHasActiveApprover) {
+        const rawChain = uniq(
+          getRawApprovalChain(
+            staff.department,
+            staff.position
+          )
+        );
+
+        const activeChain = await getApprovalChain(
+          client,
+          staff
+        );
+
+        const currentIndex = rawChain.findIndex(
+          (stage) =>
+            norm(stage) === norm(currentStage)
+        );
+
+        const nextActiveStage = activeChain.find(
+          (stage) => {
+            const stageIndex = rawChain.findIndex(
+              (rawStage) =>
+                norm(rawStage) === norm(stage)
+            );
+
+            return stageIndex > currentIndex;
+          }
+        );
+
+        currentStage =
+          nextActiveStage ||
+          activeChain[0] ||
+          ACCOUNTING_FINAL;
+
+        await client.query(
+          `
+          UPDATE public.cbu_withdrawals
+          SET
+            approval_stage = $2,
+            updated_at = NOW()
+          WHERE id = $1
+          `,
+          [id, currentStage]
+        );
+      }
+
       const col = stageColumn(currentStage);
 
       if (!canApproveCurrentStage(req, currentStage)) {

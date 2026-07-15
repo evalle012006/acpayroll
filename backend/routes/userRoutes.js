@@ -11,6 +11,7 @@ const USER_RETURN_FIELDS = `
   id,
   username,
   role,
+  status,
   created_at,
   branch_id,
   area,
@@ -64,6 +65,11 @@ router.post(
       const last_name = clean(req.body?.last_name) || null;
       const department = clean(req.body?.department) || null;
 
+      const status =
+        clean(req.body?.status).toLowerCase() === "inactive"
+          ? "Inactive"
+          : "Active";
+
       if (!username || !password || !role) {
         return res.status(400).json({
           message: "username, password, role are required",
@@ -100,9 +106,10 @@ router.post(
           middle_name,
           last_name,
           department,
+          status,
           created_at
         )
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,NOW())
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,NOW())
         RETURNING ${USER_RETURN_FIELDS}
         `,
         [
@@ -117,6 +124,7 @@ router.post(
           middle_name,
           last_name,
           department,
+          status,
         ]
       );
 
@@ -155,6 +163,11 @@ router.put(
       const middle_name = clean(req.body?.middle_name) || null;
       const last_name = clean(req.body?.last_name) || null;
       const department = clean(req.body?.department) || null;
+
+      const status =
+        clean(req.body?.status).toLowerCase() === "inactive"
+          ? "Inactive"
+          : "Active";
 
       if (!username || !role) {
         return res.status(400).json({
@@ -198,9 +211,10 @@ router.put(
           middle_name = $8,
           last_name = $9,
           department = $10,
-          password = COALESCE($11, password),
+          status = $11,
+          password = COALESCE($12, password),
           updated_at = NOW()
-        WHERE id = $12
+          WHERE id = $13
         RETURNING ${USER_RETURN_FIELDS}
         `,
         [
@@ -214,6 +228,7 @@ router.put(
           middle_name,
           last_name,
           department,
+          status,
           hashed,
           id,
         ]
@@ -230,6 +245,69 @@ router.put(
     } catch (e) {
       console.error("PUT /api/users/:id ERROR:", e.message);
       return res.status(500).json({ message: "Server error" });
+    }
+  }
+);
+
+
+router.put(
+  "/:id/status",
+  requireAuth,
+  requirePermission("users", "edit"),
+  async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      const requestedStatus = clean(req.body?.status).toLowerCase();
+
+      if (!Number.isFinite(id) || id <= 0) {
+        return res.status(400).json({
+          message: "Invalid user id",
+        });
+      }
+
+      if (!["active", "inactive"].includes(requestedStatus)) {
+        return res.status(400).json({
+          message: "Status must be Active or Inactive",
+        });
+      }
+
+      if (Number(req.user?.id) === id && requestedStatus === "inactive") {
+        return res.status(400).json({
+          message: "You cannot deactivate your own account.",
+        });
+      }
+
+      const status =
+        requestedStatus === "inactive" ? "Inactive" : "Active";
+
+      const result = await pool.query(
+        `
+        UPDATE public.users
+        SET
+          status = $2,
+          updated_at = NOW()
+        WHERE id = $1
+        RETURNING ${USER_RETURN_FIELDS}
+        `,
+        [id, status]
+      );
+
+      if (result.rowCount === 0) {
+        return res.status(404).json({
+          message: "User not found",
+        });
+      }
+
+      return res.json({
+        message: `User marked as ${status}`,
+        user: result.rows[0],
+      });
+    } catch (e) {
+      console.error("PUT /api/users/:id/status ERROR:", e.message);
+
+      return res.status(500).json({
+        message: "Server error",
+      });
     }
   }
 );

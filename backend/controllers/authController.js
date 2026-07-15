@@ -31,7 +31,8 @@ const login = async (req, res) => {
         first_name,
         middle_name,
         last_name,
-        department
+        department,
+        status
       FROM public.users
       WHERE lower(trim(username)) = lower(trim($1))
       LIMIT 1
@@ -44,6 +45,14 @@ const login = async (req, res) => {
     }
 
     const user = result.rows[0];
+
+    if (
+      String(user.status || "Active").trim().toLowerCase() === "inactive"
+    ) {
+      return res.status(403).json({
+        message: "This account is inactive. Please contact the administrator.",
+      });
+    }
 
     const ok = await bcrypt.compare(String(password), String(user.password || ""));
     if (!ok) {
@@ -62,6 +71,7 @@ const login = async (req, res) => {
       middle_name: user.middle_name ?? null,
       last_name: user.last_name ?? null,
       department: user.department ?? null,
+      status: user.status || "Active",
     };
 
     const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: "8h" });

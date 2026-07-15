@@ -32,6 +32,7 @@ const emptyForm = {
   middle_name: "",
   last_name: "",
   department: "",
+  status: "Active",
 };
 
 const toStr = (v) => String(v ?? "").trim();
@@ -227,6 +228,7 @@ const Users = () => {
       middle_name: u.middle_name || "",
       last_name: u.last_name || "",
       department: u.department || "",
+      status: u.status || "Active",
     });
 
     setBranchSearch(u.branch_name || "");
@@ -291,6 +293,7 @@ const Users = () => {
         middle_name: String(form.middle_name || "").trim(),
         last_name: String(form.last_name || "").trim(),
         department: String(form.department || "").trim(),
+        status: form.status,
       };
 
       if (!editId) {
@@ -316,6 +319,38 @@ const Users = () => {
       alert(err?.response?.data?.message || "Failed to save user");
     } finally {
       setSaving(false);
+    }
+  };
+
+  const toggleStatus = async (user) => {
+    const newStatus =
+      user.status === "Active"
+        ? "Inactive"
+        : "Active";
+
+    if (
+      !window.confirm(
+        `Change ${user.username} to ${newStatus}?`
+      )
+    ) {
+      return;
+    }
+
+    try {
+      await api.put(`/users/${user.id}/status`, {
+        status: newStatus,
+      });
+
+      await fetchUsers();
+    } catch (err) {
+      const status = err?.response?.status;
+
+      if (status === 401) return handle401();
+
+      alert(
+        err?.response?.data?.message ||
+          "Failed to update status."
+      );
     }
   };
 
@@ -419,6 +454,7 @@ const Users = () => {
                   <th style={{ width: 160 }}>Area</th>
                   <th style={{ width: 160 }}>Region</th>
                   <th style={{ width: 180 }}>Division</th>
+                  <th style={{ width: 120 }}>Status</th>
                   <th style={{ width: 240 }}>Created</th>
                   <th style={{ width: 170 }}>Actions</th>
                 </tr>
@@ -446,11 +482,33 @@ const Users = () => {
                       <td>{u.region ?? "-"}</td>
                       <td>{u.division ?? "-"}</td>
                       <td>
+                        <span
+                          className={
+                            u.status === "Inactive"
+                              ? "status-badge inactive"
+                              : "status-badge active"
+                          }
+                        >
+                          {u.status || "Active"}
+                        </span>
+                      </td>
+
+                      <td>
                         {u.created_at ? String(u.created_at).split("T")[0] : "-"}
                       </td>
 
                       <td>
                         <div className="row-actions">
+                          <label className="users-switch">
+                            <input
+                              type="checkbox"
+                              checked={(u.status || "Active") === "Active"}
+                              onChange={() => toggleStatus(u)}
+                            />
+
+                            <span className="users-slider"></span>
+                          </label>
+
                           <button
                             className="users-icon-btn edit"
                             type="button"

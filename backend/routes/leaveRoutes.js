@@ -283,6 +283,7 @@ const approverRoleExistsInDepartment = async (roleKey, department) => {
     FROM public.users
     WHERE LOWER(TRIM(COALESCE(department,''))) = LOWER(TRIM($1))
       AND LOWER(TRIM(COALESCE(role,''))) IN (${rolePlaceholders})
+      AND LOWER(TRIM(COALESCE(status,'Active'))) = 'active'
     LIMIT 1
     `,
     [dept, ...roles]

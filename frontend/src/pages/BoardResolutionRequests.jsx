@@ -48,15 +48,19 @@ export default function BoardResolutionRequests() {
     ].includes(role);
 
   const isAdmin = ["admin", "it"].includes(role);
-  
+
+  const isHrDepartment =
+    department === "hr department";
+
+  const isAccountingDepartment =
+    department === "accounting department";
+
   const canApprove =
     isAdmin ||
     isHrDepartment ||
     isAccountingDepartment ||
     isITDepartment;
 
-  const isHrDepartment = department === "hr department";
-  const isAccountingDepartment = department === "accounting department";
   const isAreaManager = role === "area manager";
   const isRegionalManager = role === "regional manager";
   const isAssistantVicePresident = role === "assistant vice president";
