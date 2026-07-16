@@ -22,10 +22,10 @@ export default function TravelPlan() {
   const [month, setMonth] = useState(today.getMonth());
   const [year, setYear] = useState(today.getFullYear());
   const [visitRange, setVisitRange] = useState("month");
-  const [view, setView] = useState("Month");
   const [activeMenu, setActiveMenu] = useState("Travel Plan");
   const [activities, setActivities] = useState([]);
   const [branchSearch, setBranchSearch] = useState("");
+  const [historyPlans, setHistoryPlans] = useState([]);
 
   const [selectedPlan, setSelectedPlan] = useState(null);
   const [detailTab, setDetailTab] = useState("photos");
@@ -51,7 +51,6 @@ export default function TravelPlan() {
     title: "",
     date_from: "",
     date_to: "",
-    days: "",
     subject: "",
     venue: "",
     description: "",
@@ -120,13 +119,6 @@ export default function TravelPlan() {
       (s) => String(s.position || "") === staffPositionFilter
     );
   }, [staffRows, staffPositionFilter]);
-
-  const selectedDateText = planForm.plan_date;
-
-  const selectedDatePlans = plans.filter((p) => {
-    const d = String(p.plan_date || "").slice(0, 10);
-    return d === selectedDateText;
-  });
 
   const filteredActivityPlans = useMemo(() => {
     if (!activityDateFilter) return plans;
@@ -228,6 +220,17 @@ const selectedBranchPlans = useMemo(() => {
     1,
     ...mostVisitedBranches.map((b) => b.count)
   );
+
+  const fetchHistoryPlans = async () => {
+    try {
+      const res = await api.get("/travel-plans/history/completed");
+
+      setHistoryPlans(Array.isArray(res.data) ? res.data : []);
+    } catch (err) {
+      console.error("Fetch travel history error:", err);
+      setHistoryPlans([]);
+    }
+  };
 
   const fetchActivities = async () => {
     try {
@@ -336,7 +339,6 @@ const selectedBranchPlans = useMemo(() => {
         title: "",
         date_from: "",
         date_to: "",
-        days: "",
         subject: "",
         venue: "",
         description: "",
@@ -666,6 +668,8 @@ const selectedBranchPlans = useMemo(() => {
       const res = await api.put(`/travel-plans/${selectedPlan.id}`, {
         title: selectedPlan.title,
         plan_date: String(selectedPlan.plan_date).slice(0, 10),
+        employee_name: selectedPlan.employee_name,
+        position: selectedPlan.position,
         branch_name: selectedPlan.branch_name,
         description: selectedPlan.description,
       });
@@ -718,7 +722,13 @@ const selectedBranchPlans = useMemo(() => {
                 key={menu}
                 type="button"
                 className={activeMenu === menu ? "active" : ""}
-                onClick={() => setActiveMenu(menu)}
+                onClick={() => {
+                  setActiveMenu(menu);
+
+                  if (menu === "History") {
+                    fetchHistoryPlans();
+                  }
+                }}
               >
                 {menu}
               </button>
@@ -729,16 +739,9 @@ const selectedBranchPlans = useMemo(() => {
         <main className="travel-calendar-main">
           <div className="travel-topbar">
             <div className="travel-view-tabs">
-              {["Year", "Month", "Week"].map((v) => (
-                <button
-                  key={v}
-                  className={view === v ? "active" : ""}
-                  onClick={() => setView(v)}
-                  type="button"
-                >
-                  {v}
-                </button>
-              ))}
+              <button className="active" type="button">
+                Month
+              </button>
             </div>
 
             <div className="travel-view-selects">
@@ -1105,9 +1108,49 @@ const selectedBranchPlans = useMemo(() => {
           )}
 
 
-          {["History"].includes(activeMenu) && (
+          {activeMenu === "History" && (
             <div className="travel-dashboard-card">
-              <div className="travel-empty">No data yet.</div>
+              <div className="travel-dashboard-head">
+                <div>
+                  <h3>Travel Plan History</h3>
+                  <p>Completed travel plans.</p>
+                </div>
+
+                <span>{historyPlans.length} Records</span>
+              </div>
+
+              {historyPlans.length === 0 ? (
+                <div className="travel-empty">
+                  No completed travel plans yet.
+                </div>
+              ) : (
+                <div className="travel-activity-list">
+                  {historyPlans.map((plan) => (
+                    <div
+                      key={plan.id}
+                      className="travel-activity-card"
+                      onClick={() => openPlan(plan)}
+                    >
+                      <div>
+                        <strong>{plan.title}</strong>
+                        <p>{plan.employee_name || "No employee"}</p>
+                        <small>
+                          {plan.branch_name || "No branch"} •{" "}
+                          {plan.duration_label || "Not complete"}
+                        </small>
+                      </div>
+
+                      <div className="travel-activity-right">
+                        <span>{plan.plan_date}</span>
+
+                        <b className="travel-status completed">
+                          Completed
+                        </b>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 
@@ -1151,17 +1194,6 @@ const selectedBranchPlans = useMemo(() => {
                       value={activityForm.date_to}
                       onChange={(e) =>
                         setActivityForm((p) => ({ ...p, date_to: e.target.value }))
-                      }
-                    />
-                  </label>
-
-                  <label>
-                    Days
-                    <input
-                      type="number"
-                      value={activityForm.days}
-                      onChange={(e) =>
-                        setActivityForm((p) => ({ ...p, days: e.target.value }))
                       }
                     />
                   </label>

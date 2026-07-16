@@ -140,6 +140,31 @@ const canCreateDemotion = (req) => {
   );
 };
 
+const canVoidOrDeleteDemotion = (req) => {
+  const dept = norm(req.user?.department);
+
+  const isHRDepartment =
+    dept === "hr" ||
+    dept === "hr department" ||
+    dept === "human resources" ||
+    dept === "human resources department";
+
+  const isITDepartment =
+    dept === "it" ||
+    dept === "it department";
+
+  const isAccountingDepartment =
+    dept === "accounting" ||
+    dept === "accounting department";
+
+  return (
+    isAdmin(req) ||
+    isHRDepartment ||
+    isITDepartment ||
+    isAccountingDepartment
+  );
+};
+
 const getUserArea = (req) => toStr(req.user?.area);
 const getUserRegion = (req) => toStr(req.user?.region);
 const getUserDivision = (req) => toStr(req.user?.division);
@@ -1413,6 +1438,295 @@ router.post(
 
       console.error("POST /api/demotion-orders/:id/approved-file ERROR:", e);
       return res.status(500).json({ message: e?.message || "Server error" });
+    } finally {
+      client.release();
+    }
+  }
+);
+
+/*
+|--------------------------------------------------------------------------
+| VOID APPROVED DEMOTION ORDER
+|--------------------------------------------------------------------------
+*/
+
+router.put(
+  "/demotion-orders/:id/void",
+  requireAuth,
+  requirePermission("demotion_order", "void"),
+  async (req, res) => {
+    const client = await pool.connect();
+
+    try {
+      const id = toInt(req.params.id);
+      const reason = toStr(req.body?.reason);
+
+      if (!id) {
+        return res.status(400).json({
+          message: "Invalid demotion order ID",
+        });
+      }
+
+      if (!reason) {
+        return res.status(400).json({
+          message: "Void reason is required",
+        });
+      }
+
+      if (!canVoidOrDeleteDemotion(req)) {
+        return res.status(403).json({
+          message:
+            "Only Admin, HR Department, IT Department, and Accounting Department can void demotion orders.",
+        });
+      }
+
+      await client.query("BEGIN");
+
+      const result = await client.query(
+        `
+        SELECT *
+        FROM public.demotion_orders
+        WHERE id = $1
+        FOR UPDATE
+        `,
+        [id]
+      );
+
+      if (!result.rowCount) {
+        await client.query("ROLLBACK");
+
+        return res.status(404).json({
+          message: "Demotion order not found",
+        });
+      }
+
+      const order = result.rows[0];
+
+      if (norm(order.status) !== "approved") {
+        await client.query("ROLLBACK");
+
+        return res.status(400).json({
+          message: "Only approved demotion orders can be voided",
+        });
+      }
+
+      const previousBranchId = toInt(order.prev_branch_id);
+
+      if (!previousBranchId) {
+        await client.query("ROLLBACK");
+
+        return res.status(400).json({
+          message:
+            "Previous branch is missing. The demotion cannot be restored safely.",
+        });
+      }
+
+      if (!toStr(order.old_position)) {
+        await client.query("ROLLBACK");
+
+        return res.status(400).json({
+          message:
+            "Previous position is missing. The demotion cannot be restored safely.",
+        });
+      }
+
+      // Restore the employee's previous position and previous branch.
+      await client.query(
+        `
+        UPDATE public.staff
+        SET
+          "position" = $1,
+          branch_id = $2
+        WHERE id = $3
+        `,
+        [
+          toStr(order.old_position),
+          previousBranchId,
+          Number(order.employee_id),
+        ]
+      );
+
+      // Restore the corresponding staff balance position.
+      await client.query(
+        `
+        UPDATE public.staff_balances
+        SET
+          fullname = $1,
+          "position" = $2,
+          updated_at = NOW()
+        WHERE employee_no = (
+          SELECT employee_no
+          FROM public.staff
+          WHERE id = $3
+          LIMIT 1
+        )
+        `,
+        [
+          toStr(order.employee_name),
+          toStr(order.old_position),
+          Number(order.employee_id),
+        ]
+      );
+
+      await client.query(
+        `
+        UPDATE public.demotion_orders
+        SET
+          status = 'Voided',
+          approval_stage = 'voided',
+          voided_by = $2,
+          voided_at = NOW(),
+          void_reason = $3
+        WHERE id = $1
+        RETURNING *
+        `,
+        [
+          id,
+          req.user?.id ?? null,
+          reason,
+        ]
+      );
+
+      await client.query("COMMIT");
+
+      return res.json({
+        message:
+          "Demotion order voided successfully. The employee's previous position and branch were restored.",
+      });
+    } catch (e) {
+      try {
+        await client.query("ROLLBACK");
+      } catch {}
+
+      console.error(
+        "PUT /api/demotion-orders/:id/void ERROR:",
+        e
+      );
+
+      return res.status(500).json({
+        message: e?.message || "Server error",
+      });
+    } finally {
+      client.release();
+    }
+  }
+);
+
+/*
+|--------------------------------------------------------------------------
+| DELETE REJECTED OR VOIDED DEMOTION ORDER
+|--------------------------------------------------------------------------
+*/
+
+router.delete(
+  "/demotion-orders/:id",
+  requireAuth,
+  requirePermission("demotion_order", "delete"),
+  async (req, res) => {
+    const client = await pool.connect();
+
+    try {
+      const id = toInt(req.params.id);
+
+      if (!id) {
+        return res.status(400).json({
+          message: "Invalid demotion order ID",
+        });
+      }
+
+      if (!canVoidOrDeleteDemotion(req)) {
+        return res.status(403).json({
+          message:
+            "Only Admin, HR Department, IT Department, and Accounting Department can delete demotion orders.",
+        });
+      }
+
+      await client.query("BEGIN");
+
+      const result = await client.query(
+        `
+        SELECT *
+        FROM public.demotion_orders
+        WHERE id = $1
+        FOR UPDATE
+        `,
+        [id]
+      );
+
+      if (!result.rowCount) {
+        await client.query("ROLLBACK");
+
+        return res.status(404).json({
+          message: "Demotion order not found",
+        });
+      }
+
+      const order = result.rows[0];
+      const status = norm(order.status);
+
+      if (!["rejected", "voided"].includes(status)) {
+        await client.query("ROLLBACK");
+
+        return res.status(400).json({
+          message:
+            "Only rejected or voided demotion orders can be deleted",
+        });
+      }
+
+      await client.query(
+        `
+        DELETE FROM public.demotion_orders
+        WHERE id = $1
+        `,
+        [id]
+      );
+
+      await client.query("COMMIT");
+
+      const possiblePaths = [
+        order.attachment_path,
+        order.approved_attachment_path,
+      ]
+        .filter(Boolean)
+        .map((filePath) =>
+          path.join(
+            __dirname,
+            "..",
+            "uploads",
+            String(filePath).replace(/^\/uploads\//, "")
+          )
+        );
+
+      for (const filePath of [...new Set(possiblePaths)]) {
+        try {
+          if (fs.existsSync(filePath)) {
+            fs.unlinkSync(filePath);
+          }
+        } catch (fileError) {
+          console.error(
+            "Failed to delete demotion attachment:",
+            filePath,
+            fileError
+          );
+        }
+      }
+
+      return res.json({
+        message: "Demotion order deleted successfully",
+      });
+    } catch (e) {
+      try {
+        await client.query("ROLLBACK");
+      } catch {}
+
+      console.error(
+        "DELETE /api/demotion-orders/:id ERROR:",
+        e
+      );
+
+      return res.status(500).json({
+        message: e?.message || "Server error",
+      });
     } finally {
       client.release();
     }

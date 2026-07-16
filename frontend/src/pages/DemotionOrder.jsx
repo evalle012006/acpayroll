@@ -175,6 +175,12 @@ export default function DemotionOrder() {
     isITDepartment ||
     isAccountingDepartment;
 
+  const canVoidOrDelete =
+    isAdmin ||
+    isHRDepartment ||
+    isITDepartment ||
+    isAccountingDepartment;
+
   const canDownloadFile =
     isAdmin ||
     isIt ||
@@ -332,8 +338,17 @@ export default function DemotionOrder() {
   const badgeClass = (status) => {
     const s = norm(status || "Pending");
 
-    if (s === "approved") return "po-badge po-approved";
-    if (s === "rejected") return "po-badge po-rejected";
+    if (s === "approved") {
+      return "po-badge po-approved";
+    }
+
+    if (s === "rejected") {
+      return "po-badge po-rejected";
+    }
+
+    if (s === "voided") {
+      return "po-badge po-voided";
+    }
 
     return "po-badge po-pending";
   };
@@ -592,6 +607,96 @@ export default function DemotionOrder() {
     }
   };
 
+  const voidOrder = async (order) => {
+    const id = order?.id;
+
+    if (!id) {
+      return alert("Invalid demotion order.");
+    }
+
+    if (!canVoidOrDelete) {
+      return alert(
+        "Only Admin, HR, IT, and Accounting can void demotion orders."
+      );
+    }
+
+    const reason = window.prompt(
+      `Enter the reason for voiding ${
+        order.order_no || id
+      }:`
+    );
+
+    if (reason === null) return;
+
+    if (!clean(reason)) {
+      return alert("Void reason is required.");
+    }
+
+    const confirmed = window.confirm(
+      "Void this approved demotion? The employee's previous position and branch will be restored."
+    );
+
+    if (!confirmed) return;
+
+    try {
+      setProcessingId(`${id}-void`);
+
+      await api.put(`/demotion-orders/${id}/void`, {
+        reason: clean(reason),
+      });
+
+      await loadData();
+
+      alert("Demotion order voided successfully.");
+    } catch (e) {
+      setErr(
+        e?.response?.data?.message ||
+          "Failed to void demotion order."
+      );
+    } finally {
+      setProcessingId("");
+    }
+  };
+
+  const deleteOrder = async (order) => {
+    const id = order?.id;
+
+    if (!id) {
+      return alert("Invalid demotion order.");
+    }
+
+    if (!canVoidOrDelete) {
+      return alert(
+        "Only Admin, HR, IT, and Accounting can delete demotion orders."
+      );
+    }
+
+    const confirmed = window.confirm(
+      `Permanently delete demotion order ${
+        order.order_no || id
+      }? This cannot be undone.`
+    );
+
+    if (!confirmed) return;
+
+    try {
+      setProcessingId(`${id}-delete`);
+
+      await api.delete(`/demotion-orders/${id}`);
+
+      await loadData();
+
+      alert("Demotion order deleted successfully.");
+    } catch (e) {
+      setErr(
+        e?.response?.data?.message ||
+          "Failed to delete demotion order."
+      );
+    } finally {
+      setProcessingId("");
+    }
+  };
+
   const downloadFile = async (order, type = "latest") => {
     try {
       const res = await api.get(`/demotion-orders/${order.id}/download/${type}`, {
@@ -718,9 +823,14 @@ export default function DemotionOrder() {
                   const statusLower = norm(o.status || "Pending");
                   const approved = statusLower === "approved";
                   const rejected = statusLower === "rejected";
+                  const voided = statusLower === "voided";
                   const currentStage = getCurrentStage(o);
                   const canAct = canActOnStage(o);
-                  const waitingFinal = isWaitingFinalUpload(o) && !approved && !rejected;
+                  const waitingFinal =
+                    isWaitingFinalUpload(o) &&
+                    !approved &&
+                    !rejected &&
+                    !voided;
 
                   return (
                     <tr key={o.id}>
@@ -748,6 +858,8 @@ export default function DemotionOrder() {
                           <span>Approved</span>
                         ) : rejected ? (
                           <span>Rejected</span>
+                        ) : voided ? (
+                          <span>Voided</span>
                         ) : (
                           <span>
                             Pending: {STAGE_LABELS[currentStage] || currentStage || "-"}
@@ -785,7 +897,7 @@ export default function DemotionOrder() {
                             View
                           </button>
 
-                          {canAct && !waitingFinal && !approved && !rejected ? (
+                          {canAct && !waitingFinal && !approved && !rejected && !voided ? (
                             <>
                               <label className="po-mini-btn" style={{ cursor: "pointer" }}>
                                 {approvalFiles[o.id]?.name ? "Change File" : "Upload File"}
@@ -864,21 +976,53 @@ export default function DemotionOrder() {
                             </>
                           ) : null}
 
-                          {!canAct && !waitingFinal && !approved && !rejected ? (
+                          {!canAct && !waitingFinal && !approved && !rejected && !voided ? (
                             <span className="po-dash" style={{ fontSize: 12 }}>
                               Waiting
                             </span>
                           ) : null}
 
-                          {approved ? (
+                          {approved && canVoidOrDelete ? (
+                            <button
+                              className="po-mini-btn po-reject"
+                              type="button"
+                              disabled={processingId === `${o.id}-void`}
+                              onClick={() => voidOrder(o)}
+                            >
+                              {processingId === `${o.id}-void`
+                                ? "Voiding..."
+                                : "Void"}
+                            </button>
+                          ) : null}
+
+                          {(rejected || voided) && canVoidOrDelete ? (
+                            <button
+                              className="po-mini-btn po-reject"
+                              type="button"
+                              disabled={processingId === `${o.id}-delete`}
+                              onClick={() => deleteOrder(o)}
+                            >
+                              {processingId === `${o.id}-delete`
+                                ? "Deleting..."
+                                : "Delete"}
+                            </button>
+                          ) : null}
+
+                          {approved && !canVoidOrDelete ? (
                             <span className="po-dash" style={{ fontSize: 12 }}>
                               Approved
                             </span>
                           ) : null}
 
-                          {rejected ? (
+                          {rejected && !canVoidOrDelete ? (
                             <span className="po-dash" style={{ fontSize: 12 }}>
                               Rejected
+                            </span>
+                          ) : null}
+
+                          {voided && !canVoidOrDelete ? (
+                            <span className="po-dash" style={{ fontSize: 12 }}>
+                              Voided
                             </span>
                           ) : null}
                         </div>
