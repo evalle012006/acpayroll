@@ -593,12 +593,10 @@ router.get(
 
       if (!year || year < 2000 || year > 2100) {
         return res.status(400).json({
-          message: "A valid year is required",
+          message: "Invalid year",
         });
       }
 
-      // Apply the same Branch Manager and Area Manager
-      // scope used by the main Schedule of Balances routes.
       const scope = await resolveBranchScope(req);
 
       if (scope.error) {
@@ -613,50 +611,33 @@ router.get(
         SELECT
           id,
           employee_no,
-
           COALESCE(
-            NULLIF(TRIM(fullname), ''),
-
+            NULLIF(TRIM(fullname),''),
             NULLIF(
-              TRIM(
-                CONCAT_WS(
-                  ' ',
-                  last_name,
-                  first_name,
-                  middle_name
-                )
-              ),
+              TRIM(CONCAT_WS(' ',
+                last_name,
+                first_name,
+                middle_name
+              )),
               ''
             ),
-
             employee_no
           ) AS fullname,
-
           position,
           branch_id
-
         FROM public.staff
-
         WHERE id = $1
       `;
 
       if (scope.branchIds) {
         staffParams.push(scope.branchIds);
-
-        staffSql += `
-          AND branch_id = ANY($2::int[])
-        `;
+        staffSql += ` AND branch_id = ANY($2::int[])`;
       } else if (scope.branchId) {
         staffParams.push(scope.branchId);
-
-        staffSql += `
-          AND branch_id = $2::int
-        `;
+        staffSql += ` AND branch_id = $2::int`;
       }
 
-      staffSql += `
-        LIMIT 1
-      `;
+      staffSql += ` LIMIT 1`;
 
       const staffResult = await pool.query(
         staffSql,
@@ -665,8 +646,7 @@ router.get(
 
       if (!staffResult.rowCount) {
         return res.status(404).json({
-          message:
-            "Staff not found or outside your permitted scope.",
+          message: "Staff not found."
         });
       }
 
@@ -675,179 +655,188 @@ router.get(
       const result = await pool.query(
         `
         WITH months AS (
-          SELECT
-            month_number,
-            MAKE_DATE(
-              $2,
-              month_number,
-              1
-            ) AS month_date
 
-          FROM GENERATE_SERIES(
-            1,
-            12
-          ) AS months(month_number)
+            SELECT
+                month_number,
+                MAKE_DATE($2, month_number, 1) AS month_date
+
+            FROM generate_series(1,12) month_number
+
         ),
 
         historical AS (
-          SELECT
-            id AS snapshot_id,
-            snapshot_month,
-            staff_id,
-            cbu,
-            cashbond,
-            utility,
-            updated_at
 
-          FROM public.schedule_balance_snapshots
+            SELECT
+                id AS snapshot_id,
+                snapshot_month,
+                cbu,
+                cashbond,
+                utility
 
-          WHERE staff_id = $1
-            AND EXTRACT(
-              YEAR FROM snapshot_month
-            )::int = $2
+            FROM public.schedule_balance_snapshots
+
+            WHERE
+                staff_id = $1
+            AND EXTRACT(YEAR FROM snapshot_month)= $2
+
         ),
 
         current_balance AS (
-          SELECT
-            sb.cbu,
-            sb.cashbond,
-            sb.utility,
-            sb.updated_at
 
-          FROM public.staff_balances sb
+            SELECT
+                cbu,
+                cashbond,
+                utility
 
-          WHERE sb.employee_no = $3
+            FROM public.staff_balances
 
-          LIMIT 1
+            WHERE employee_no = $3
+
+            LIMIT 1
+
         ),
 
-        manila_today AS (
-          SELECT
-            (
-              NOW() AT TIME ZONE 'Asia/Manila'
-            )::date AS today
+        today_cte AS (
+
+            SELECT
+                DATE_TRUNC(
+                    'month',
+                    NOW() AT TIME ZONE 'Asia/Manila'
+                )::date AS current_month
+
         )
 
         SELECT
-          m.month_number,
 
-          TO_CHAR(
-            m.month_date,
-            'YYYY-MM'
-          ) AS month_label,
+            m.month_number,
 
-          TO_CHAR(
-            m.month_date,
-            'Month'
-          ) AS month_name,
+            TO_CHAR(
+                m.month_date,
+                'YYYY-MM'
+            ) AS month_label,
 
-          m.month_date,
-          h.snapshot_id,
-
-          CASE
-            WHEN DATE_TRUNC(
-              'month',
-              m.month_date
-            ) = DATE_TRUNC(
-              'month',
-              (
-                SELECT today
-                FROM manila_today
-              )
-            )
-            THEN COALESCE(
-              (
-                SELECT cbu
-                FROM current_balance
-              ),
-              h.cbu,
-              0
-            )
-
-            ELSE h.cbu
-          END AS cbu,
-
-          CASE
-            WHEN DATE_TRUNC(
-              'month',
-              m.month_date
-            ) = DATE_TRUNC(
-              'month',
-              (
-                SELECT today
-                FROM manila_today
-              )
-            )
-            THEN COALESCE(
-              (
-                SELECT cashbond
-                FROM current_balance
-              ),
-              h.cashbond,
-              0
-            )
-
-            ELSE h.cashbond
-          END AS cashbond,
-
-          CASE
-            WHEN DATE_TRUNC(
-              'month',
-              m.month_date
-            ) = DATE_TRUNC(
-              'month',
-              (
-                SELECT today
-                FROM manila_today
-              )
-            )
-            THEN COALESCE(
-              (
-                SELECT utility
-                FROM current_balance
-              ),
-              h.utility,
-              0
-            )
-
-            ELSE h.utility
-          END AS utility,
-
-          CASE
-            WHEN m.month_date >
-              DATE_TRUNC(
-                'month',
-                (
-                  SELECT today
-                  FROM manila_today
+            TRIM(
+                TO_CHAR(
+                    m.month_date,
+                    'Month'
                 )
-              )::date
-            THEN 'future'
+            ) AS month_name,
 
-            WHEN DATE_TRUNC(
-              'month',
-              m.month_date
-            ) = DATE_TRUNC(
-              'month',
-              (
-                SELECT today
-                FROM manila_today
-              )
-            )
-            THEN 'current'
+            m.month_date,
 
-            WHEN h.snapshot_id IS NOT NULL
-            THEN 'historical'
+            h.snapshot_id,
 
-            ELSE 'missing'
-          END AS balance_source
+            CASE
+
+                WHEN m.month_date >
+                    (
+                        SELECT current_month
+                        FROM today_cte
+                    )
+                THEN NULL
+
+                WHEN m.month_date =
+                    (
+                        SELECT current_month
+                        FROM today_cte
+                    )
+                THEN COALESCE(
+                    (
+                        SELECT cbu
+                        FROM current_balance
+                    ),
+                    h.cbu,
+                    0
+                )
+
+                ELSE h.cbu
+
+            END AS cbu,
+
+            CASE
+
+                WHEN m.month_date >
+                    (
+                        SELECT current_month
+                        FROM today_cte
+                    )
+                THEN NULL
+
+                WHEN m.month_date =
+                    (
+                        SELECT current_month
+                        FROM today_cte
+                    )
+                THEN COALESCE(
+                    (
+                        SELECT cashbond
+                        FROM current_balance
+                    ),
+                    h.cashbond,
+                    0
+                )
+
+                ELSE h.cashbond
+
+            END AS cashbond,
+
+            CASE
+
+                WHEN m.month_date >
+                    (
+                        SELECT current_month
+                        FROM today_cte
+                    )
+                THEN NULL
+
+                WHEN m.month_date =
+                    (
+                        SELECT current_month
+                        FROM today_cte
+                    )
+                THEN COALESCE(
+                    (
+                        SELECT utility
+                        FROM current_balance
+                    ),
+                    h.utility,
+                    0
+                )
+
+                ELSE h.utility
+
+            END AS utility,
+
+            CASE
+
+                WHEN m.month_date >
+                    (
+                        SELECT current_month
+                        FROM today_cte
+                    )
+                THEN 'future'
+
+                WHEN m.month_date =
+                    (
+                        SELECT current_month
+                        FROM today_cte
+                    )
+                THEN 'current'
+
+                WHEN h.snapshot_id IS NOT NULL
+                THEN 'historical'
+
+                ELSE 'missing'
+
+            END AS balance_source
 
         FROM months m
 
         LEFT JOIN historical h
-          ON h.snapshot_month = m.month_date
+            ON h.snapshot_month = m.month_date
 
-        ORDER BY m.month_number ASC
+        ORDER BY
+            m.month_number
         `,
         [
           staffId,
@@ -861,17 +850,20 @@ router.get(
         year,
         months: result.rows,
       });
+
     } catch (error) {
+
       console.error(
-        "GET /api/schedule-balances/staff/:staffId/yearly-savings ERROR:",
+        "GET yearly-savings ERROR:",
         error
       );
 
       return res.status(500).json({
         message:
           error.message ||
-          "Failed to load yearly staff savings",
+          "Failed to load yearly savings",
       });
+
     }
   }
 );
@@ -961,7 +953,6 @@ router.put(
           employee_no,
           fullname,
           position,
-          branch_id,
           cbu,
           cashbond,
           utility,
@@ -976,7 +967,6 @@ router.put(
           $4,
           $5,
           $6,
-          $7,
           NOW(),
           NOW()
         )
@@ -993,11 +983,6 @@ router.put(
             public.staff_balances.position
           ),
 
-          branch_id = COALESCE(
-            EXCLUDED.branch_id,
-            public.staff_balances.branch_id
-          ),
-
           cbu = EXCLUDED.cbu,
           cashbond = EXCLUDED.cashbond,
           utility = EXCLUDED.utility,
@@ -1009,7 +994,6 @@ router.put(
           staff.employee_no,
           toStr(staff.fullname) || null,
           toStr(staff.position) || null,
-          staff.branch_id || null,
           cbu,
           cashbond,
           utility,
