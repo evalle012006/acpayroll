@@ -572,6 +572,478 @@ router.post(
   }
 );
 
+// =====================================================
+// UPDATE CURRENT CBU, CASHBOND, AND UTILITY
+// =====================================================
+
+router.get(
+  "/staff/:staffId/yearly-savings",
+  requireAuth,
+  requirePermission("schedule_balance", "view"),
+  async (req, res) => {
+    try {
+      const staffId = toInt(req.params.staffId);
+      const year = toInt(req.query.year);
+
+      if (!staffId) {
+        return res.status(400).json({
+          message: "Invalid staff ID",
+        });
+      }
+
+      if (!year || year < 2000 || year > 2100) {
+        return res.status(400).json({
+          message: "A valid year is required",
+        });
+      }
+
+      // Apply the same Branch Manager and Area Manager
+      // scope used by the main Schedule of Balances routes.
+      const scope = await resolveBranchScope(req);
+
+      if (scope.error) {
+        return res.status(scope.error.status).json({
+          message: scope.error.message,
+        });
+      }
+
+      const staffParams = [staffId];
+
+      let staffSql = `
+        SELECT
+          id,
+          employee_no,
+
+          COALESCE(
+            NULLIF(TRIM(fullname), ''),
+
+            NULLIF(
+              TRIM(
+                CONCAT_WS(
+                  ' ',
+                  last_name,
+                  first_name,
+                  middle_name
+                )
+              ),
+              ''
+            ),
+
+            employee_no
+          ) AS fullname,
+
+          position,
+          branch_id
+
+        FROM public.staff
+
+        WHERE id = $1
+      `;
+
+      if (scope.branchIds) {
+        staffParams.push(scope.branchIds);
+
+        staffSql += `
+          AND branch_id = ANY($2::int[])
+        `;
+      } else if (scope.branchId) {
+        staffParams.push(scope.branchId);
+
+        staffSql += `
+          AND branch_id = $2::int
+        `;
+      }
+
+      staffSql += `
+        LIMIT 1
+      `;
+
+      const staffResult = await pool.query(
+        staffSql,
+        staffParams
+      );
+
+      if (!staffResult.rowCount) {
+        return res.status(404).json({
+          message:
+            "Staff not found or outside your permitted scope.",
+        });
+      }
+
+      const staff = staffResult.rows[0];
+
+      const result = await pool.query(
+        `
+        WITH months AS (
+          SELECT
+            month_number,
+            MAKE_DATE(
+              $2,
+              month_number,
+              1
+            ) AS month_date
+
+          FROM GENERATE_SERIES(
+            1,
+            12
+          ) AS months(month_number)
+        ),
+
+        historical AS (
+          SELECT
+            id AS snapshot_id,
+            snapshot_month,
+            staff_id,
+            cbu,
+            cashbond,
+            utility,
+            updated_at
+
+          FROM public.schedule_balance_snapshots
+
+          WHERE staff_id = $1
+            AND EXTRACT(
+              YEAR FROM snapshot_month
+            )::int = $2
+        ),
+
+        current_balance AS (
+          SELECT
+            sb.cbu,
+            sb.cashbond,
+            sb.utility,
+            sb.updated_at
+
+          FROM public.staff_balances sb
+
+          WHERE sb.employee_no = $3
+
+          LIMIT 1
+        ),
+
+        manila_today AS (
+          SELECT
+            (
+              NOW() AT TIME ZONE 'Asia/Manila'
+            )::date AS today
+        )
+
+        SELECT
+          m.month_number,
+
+          TO_CHAR(
+            m.month_date,
+            'YYYY-MM'
+          ) AS month_label,
+
+          TO_CHAR(
+            m.month_date,
+            'Month'
+          ) AS month_name,
+
+          m.month_date,
+          h.snapshot_id,
+
+          CASE
+            WHEN DATE_TRUNC(
+              'month',
+              m.month_date
+            ) = DATE_TRUNC(
+              'month',
+              (
+                SELECT today
+                FROM manila_today
+              )
+            )
+            THEN COALESCE(
+              (
+                SELECT cbu
+                FROM current_balance
+              ),
+              h.cbu,
+              0
+            )
+
+            ELSE h.cbu
+          END AS cbu,
+
+          CASE
+            WHEN DATE_TRUNC(
+              'month',
+              m.month_date
+            ) = DATE_TRUNC(
+              'month',
+              (
+                SELECT today
+                FROM manila_today
+              )
+            )
+            THEN COALESCE(
+              (
+                SELECT cashbond
+                FROM current_balance
+              ),
+              h.cashbond,
+              0
+            )
+
+            ELSE h.cashbond
+          END AS cashbond,
+
+          CASE
+            WHEN DATE_TRUNC(
+              'month',
+              m.month_date
+            ) = DATE_TRUNC(
+              'month',
+              (
+                SELECT today
+                FROM manila_today
+              )
+            )
+            THEN COALESCE(
+              (
+                SELECT utility
+                FROM current_balance
+              ),
+              h.utility,
+              0
+            )
+
+            ELSE h.utility
+          END AS utility,
+
+          CASE
+            WHEN m.month_date >
+              DATE_TRUNC(
+                'month',
+                (
+                  SELECT today
+                  FROM manila_today
+                )
+              )::date
+            THEN 'future'
+
+            WHEN DATE_TRUNC(
+              'month',
+              m.month_date
+            ) = DATE_TRUNC(
+              'month',
+              (
+                SELECT today
+                FROM manila_today
+              )
+            )
+            THEN 'current'
+
+            WHEN h.snapshot_id IS NOT NULL
+            THEN 'historical'
+
+            ELSE 'missing'
+          END AS balance_source
+
+        FROM months m
+
+        LEFT JOIN historical h
+          ON h.snapshot_month = m.month_date
+
+        ORDER BY m.month_number ASC
+        `,
+        [
+          staffId,
+          year,
+          staff.employee_no,
+        ]
+      );
+
+      return res.json({
+        staff,
+        year,
+        months: result.rows,
+      });
+    } catch (error) {
+      console.error(
+        "GET /api/schedule-balances/staff/:staffId/yearly-savings ERROR:",
+        error
+      );
+
+      return res.status(500).json({
+        message:
+          error.message ||
+          "Failed to load yearly staff savings",
+      });
+    }
+  }
+);
+
+// =====================================================
+// UPDATE CURRENT CBU, CASHBOND, AND UTILITY
+// =====================================================
+
+router.put(
+  "/current/:staffId/manual-edit",
+  requireAuth,
+  requirePermission("schedule_balance", "edit"),
+  async (req, res) => {
+    const client = await pool.connect();
+
+    try {
+      const staffId = toInt(req.params.staffId);
+      const cbu = Number(req.body?.cbu);
+      const cashbond = Number(req.body?.cashbond);
+      const utility = Number(req.body?.utility);
+
+      if (!staffId) {
+        return res.status(400).json({
+          message: "Invalid staff ID",
+        });
+      }
+
+      if (
+        !Number.isFinite(cbu) ||
+        !Number.isFinite(cashbond) ||
+        !Number.isFinite(utility)
+      ) {
+        return res.status(400).json({
+          message:
+            "CBU, Cashbond, and Utility must be valid numbers",
+        });
+      }
+
+      if (cbu < 0 || cashbond < 0 || utility < 0) {
+        return res.status(400).json({
+          message:
+            "CBU, Cashbond, and Utility cannot be negative",
+        });
+      }
+
+      await client.query("BEGIN");
+
+      const staffResult = await client.query(
+        `
+        SELECT
+          id,
+          employee_no,
+          fullname,
+          position,
+          branch_id
+        FROM public.staff
+        WHERE id = $1
+        LIMIT 1
+        FOR UPDATE
+        `,
+        [staffId]
+      );
+
+      if (!staffResult.rowCount) {
+        await client.query("ROLLBACK");
+
+        return res.status(404).json({
+          message: "Staff not found",
+        });
+      }
+
+      const staff = staffResult.rows[0];
+
+      if (!toStr(staff.employee_no)) {
+        await client.query("ROLLBACK");
+
+        return res.status(400).json({
+          message:
+            "Staff employee number is missing.",
+        });
+      }
+
+      const updatedResult = await client.query(
+        `
+        INSERT INTO public.staff_balances
+        (
+          employee_no,
+          fullname,
+          position,
+          branch_id,
+          cbu,
+          cashbond,
+          utility,
+          created_at,
+          updated_at
+        )
+        VALUES
+        (
+          $1,
+          $2,
+          $3,
+          $4,
+          $5,
+          $6,
+          $7,
+          NOW(),
+          NOW()
+        )
+
+        ON CONFLICT (employee_no)
+        DO UPDATE SET
+          fullname = COALESCE(
+            NULLIF(EXCLUDED.fullname, ''),
+            public.staff_balances.fullname
+          ),
+
+          position = COALESCE(
+            NULLIF(EXCLUDED.position, ''),
+            public.staff_balances.position
+          ),
+
+          branch_id = COALESCE(
+            EXCLUDED.branch_id,
+            public.staff_balances.branch_id
+          ),
+
+          cbu = EXCLUDED.cbu,
+          cashbond = EXCLUDED.cashbond,
+          utility = EXCLUDED.utility,
+          updated_at = NOW()
+
+        RETURNING *
+        `,
+        [
+          staff.employee_no,
+          toStr(staff.fullname) || null,
+          toStr(staff.position) || null,
+          staff.branch_id || null,
+          cbu,
+          cashbond,
+          utility,
+        ]
+      );
+
+      await client.query("COMMIT");
+
+      return res.json({
+        message:
+          "Current staff balance updated successfully",
+        balance: updatedResult.rows[0],
+      });
+    } catch (error) {
+      try {
+        await client.query("ROLLBACK");
+      } catch {}
+
+      console.error(
+        "PUT /api/schedule-balances/current/:staffId/manual-edit ERROR:",
+        error
+      );
+
+      return res.status(500).json({
+        message:
+          error.message ||
+          "Failed to update current staff balance",
+      });
+    } finally {
+      client.release();
+    }
+  }
+);
+
 router.put(
   "/snapshot/:id/manual-edit",
   requireAuth,

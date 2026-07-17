@@ -3,9 +3,34 @@ const router = express.Router();
 const pool = require("../db");
 const { requireAuth } = require("../middlewares/authMiddleware");
 const { requirePermission } = require("../middlewares/permissionMiddleware");
+const { getUserPermissionMap } = require("../middlewares/permissionMiddleware");
 
 const norm = (v) => String(v ?? "").trim().toLowerCase();
 const toStr = (v) => String(v ?? "").trim();
+
+console.log("ROLE PERMISSION ROUTES LOADED");
+
+router.get(
+  "/me/permissions",
+  requireAuth,
+  async (req, res) => {
+    try {
+      const permissions =
+        await getUserPermissionMap(req.user);
+
+      return res.json(permissions);
+    } catch (err) {
+      console.error(
+        "GET /me/permissions ERROR:",
+        err
+      );
+
+      return res.status(500).json({
+        message: "Failed to load permissions",
+      });
+    }
+  }
+);
 
 router.get("/role-permissions",
   requireAuth,

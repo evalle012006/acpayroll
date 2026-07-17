@@ -134,15 +134,27 @@ export default function ScheduleBalances() {
   const [branches, setBranches] = useState([]);
   const [selectedBranch, setSelectedBranch] = useState("");
   const [month, setMonth] = useState(getCurrentMonth());
-
   const [loading, setLoading] = useState(false);
-
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
-
   const [viewBranch, setViewBranch] = useState(null);
-
+  const [branchStaffSearch, setBranchStaffSearch] = useState("");
   const [editingHistory, setEditingHistory] = useState(null);
+
+  const [viewingYearlySavings, setViewingYearlySavings] =
+    useState(null);
+
+  const [yearlySavingsRows, setYearlySavingsRows] =
+    useState([]);
+
+  const [yearlySavingsLoading, setYearlySavingsLoading] =
+    useState(false);
+
+  const [yearlySavingsError, setYearlySavingsError] =
+    useState("");
+
+  const [yearlySavingsYear, setYearlySavingsYear] =
+    useState(new Date().getFullYear());
 
   const [historyForm, setHistoryForm] = useState({
     cbu: "",
@@ -177,6 +189,34 @@ export default function ScheduleBalances() {
       setBranches([]);
     }
   }, [logout]);
+
+  const filteredViewBranchStaff = useMemo(() => {
+    const staffRows = Array.isArray(viewBranch?.staff_rows)
+      ? viewBranch.staff_rows
+      : [];
+
+    const q = toStr(branchStaffSearch).toLowerCase();
+
+    if (!q) {
+      return staffRows;
+    }
+
+    return staffRows.filter((row) => {
+      const searchableText = [
+        row.employee_no,
+        row.fullname,
+        displayName(row),
+        row.first_name,
+        row.middle_name,
+        row.last_name,
+        row.position,
+      ]
+        .map((value) => toStr(value).toLowerCase())
+        .join(" ");
+
+      return searchableText.includes(q);
+    });
+  }, [viewBranch, branchStaffSearch]);
 
   const branchMap = useMemo(() => {
     const m = new Map();
@@ -330,7 +370,10 @@ export default function ScheduleBalances() {
     if (!viewBranch) return;
 
     const onKeyDown = (e) => {
-      if (e.key === "Escape") setViewBranch(null);
+      if (e.key === "Escape") {
+        setViewBranch(null);
+        setBranchStaffSearch("");
+      }
     };
 
     document.addEventListener("keydown", onKeyDown);
@@ -455,6 +498,54 @@ export default function ScheduleBalances() {
     openingLoanForm.months_paid,
   ]);
 
+  const openYearlySavings = async (row) => {
+    const staffId = row?.staff_id || row?.id;
+
+    if (!staffId) {
+      alert("Staff ID is missing.");
+      return;
+    }
+
+    const selectedYear = Number(
+      String(month || getCurrentMonth()).slice(0, 4)
+    );
+
+    try {
+      setYearlySavingsLoading(true);
+      setYearlySavingsError("");
+      setYearlySavingsRows([]);
+      setYearlySavingsYear(selectedYear);
+      setViewingYearlySavings(row);
+
+      const response = await api.get(
+        `/schedule-balances/staff/${staffId}/yearly-savings`,
+        {
+          params: {
+            year: selectedYear,
+          },
+        }
+      );
+
+      setYearlySavingsRows(
+        Array.isArray(response.data?.months)
+          ? response.data.months
+          : []
+      );
+    } catch (error) {
+      if (error?.response?.status === 401) {
+        logout();
+        return;
+      }
+
+      setYearlySavingsError(
+        error?.response?.data?.message ||
+          "Failed to load yearly savings."
+      );
+    } finally {
+      setYearlySavingsLoading(false);
+    }
+  };
+
   const openHistoryEdit = async (row) => {
     const staffId = row?.staff_id || row?.id;
 
@@ -481,6 +572,126 @@ export default function ScheduleBalances() {
     await fetchOpeningLoans(staffId);
   };
 
+  const reloadYearlySavings = async (
+    staffRow = viewingYearlySavings,
+    yearValue = yearlySavingsYear
+  ) => {
+    const staffId = staffRow?.staff_id || staffRow?.id;
+
+    if (!staffId) return;
+
+    try {
+      setYearlySavingsLoading(true);
+      setYearlySavingsError("");
+
+      const response = await api.get(
+        `/schedule-balances/staff/${staffId}/yearly-savings`,
+        {
+          params: {
+            year: yearValue,
+          },
+        }
+      );
+
+      setYearlySavingsRows(
+        Array.isArray(response.data?.months)
+          ? response.data.months
+          : []
+      );
+    } catch (error) {
+      setYearlySavingsError(
+        error?.response?.data?.message ||
+          "Failed to reload yearly savings."
+      );
+    } finally {
+      setYearlySavingsLoading(false);
+    }
+  };
+
+  const editYearlySavingsMonth = async (yearRow) => {
+    if (!viewingYearlySavings) return;
+
+    const source = String(
+      yearRow?.balance_source || ""
+    )
+      .trim()
+      .toLowerCase();
+
+    if (source === "future") {
+      alert("Future months cannot be edited.");
+      return;
+    }
+
+    if (source === "missing") {
+      alert(
+        "No historical snapshot exists for this month."
+      );
+      return;
+    }
+
+    const currentStaffId =
+      viewingYearlySavings.staff_id ||
+      viewingYearlySavings.id;
+
+    if (!currentStaffId) {
+      alert("Staff ID is missing.");
+      return;
+    }
+
+    if (
+      source === "historical" &&
+      !yearRow.snapshot_id
+    ) {
+      alert("Historical snapshot ID is missing.");
+      return;
+    }
+
+    setHistoryForm({
+      cbu: String(toNum(yearRow.cbu)),
+      cashbond: String(toNum(yearRow.cashbond)),
+      utility: String(toNum(yearRow.utility)),
+    });
+
+    setHistoryError("");
+
+    resetOpeningLoanForm(currentStaffId);
+    await fetchOpeningLoans(currentStaffId);
+
+    setMonth(yearRow.month_label);
+
+    if (source === "current") {
+      setEditingHistory({
+        ...viewingYearlySavings,
+
+        id: currentStaffId,
+        staff_id: currentStaffId,
+
+        cbu: yearRow.cbu,
+        cashbond: yearRow.cashbond,
+        utility: yearRow.utility,
+
+        yearly_source: "current",
+        yearly_month_label: yearRow.month_label,
+      });
+
+      return;
+    }
+
+    setEditingHistory({
+      ...viewingYearlySavings,
+
+      id: yearRow.snapshot_id,
+      staff_id: currentStaffId,
+
+      cbu: yearRow.cbu,
+      cashbond: yearRow.cashbond,
+      utility: yearRow.utility,
+
+      yearly_source: "historical",
+      yearly_month_label: yearRow.month_label,
+    });
+  };
+
   const closeHistoryEdit = () => {
     if (historySaving || openingLoanSaving) return;
 
@@ -495,6 +706,93 @@ export default function ScheduleBalances() {
     setHistoryError("");
     setOpeningLoanRows([]);
     resetOpeningLoanForm("");
+  };
+
+  const saveCurrentBalanceEdit = async (e) => {
+    e.preventDefault();
+
+    if (
+      !isCurrentMonth(month) ||
+      !editingHistory ||
+      historySaving
+    ) {
+      return;
+    }
+
+    const staffId =
+      editingHistory.staff_id ||
+      editingHistory.id;
+
+    if (!staffId) {
+      setHistoryError("Staff ID is missing.");
+      return;
+    }
+
+    const cbu = Number(historyForm.cbu);
+    const cashbond = Number(historyForm.cashbond);
+    const utility = Number(historyForm.utility);
+
+    if (
+      !Number.isFinite(cbu) ||
+      !Number.isFinite(cashbond) ||
+      !Number.isFinite(utility)
+    ) {
+      setHistoryError(
+        "CBU, Cashbond, and Utility must be valid numbers."
+      );
+      return;
+    }
+
+    if (cbu < 0 || cashbond < 0 || utility < 0) {
+      setHistoryError(
+        "CBU, Cashbond, and Utility cannot be negative."
+      );
+      return;
+    }
+
+    try {
+      setHistorySaving(true);
+      setHistoryError("");
+
+      await api.put(
+        `/schedule-balances/current/${staffId}/manual-edit`,
+        {
+          cbu,
+          cashbond,
+          utility,
+        }
+      );
+
+      setEditingHistory((previous) => ({
+        ...previous,
+        cbu,
+        cashbond,
+        utility,
+      }));
+
+      await fetchLiveBalances(effectiveBranchId, month);
+
+      if (viewingYearlySavings) {
+        await reloadYearlySavings(
+          viewingYearlySavings,
+          yearlySavingsYear
+        );
+      }
+
+      alert("Current staff balance updated successfully.");
+    } catch (err) {
+      if (err?.response?.status === 401) {
+        logout();
+        return;
+      }
+
+      setHistoryError(
+        err?.response?.data?.message ||
+          "Failed to update current staff balance."
+      );
+    } finally {
+      setHistorySaving(false);
+    }
   };
 
   const saveHistoryEdit = async (e) => {
@@ -546,7 +844,17 @@ export default function ScheduleBalances() {
         utility,
       }));
 
-      await fetchLiveBalances(effectiveBranchId, month);
+      await fetchLiveBalances(
+        effectiveBranchId,
+        month
+      );
+
+      if (viewingYearlySavings) {
+        await reloadYearlySavings(
+          viewingYearlySavings,
+          yearlySavingsYear
+        );
+      }
     } catch (err) {
       if (err?.response?.status === 401) {
         logout();
@@ -974,7 +1282,10 @@ export default function ScheduleBalances() {
                       <button
                         className="btn-secondary"
                         type="button"
-                        onClick={() => setViewBranch(item)}
+                        onClick={() => {
+                          setBranchStaffSearch("");
+                          setViewBranch(item);
+                        }}
                       >
                         View
                       </button>
@@ -990,9 +1301,12 @@ export default function ScheduleBalances() {
       {viewBranch && (
         <div
           className="modal-overlay"
-          onMouseDown={(e) =>
-            e.target.classList.contains("modal-overlay") && setViewBranch(null)
-          }
+          onMouseDown={(e) => {
+            if (e.target.classList.contains("modal-overlay")) {
+              setViewBranch(null);
+              setBranchStaffSearch("");
+            }
+          }}
         >
           <div
             className="modal saas-modal"
@@ -1004,9 +1318,43 @@ export default function ScheduleBalances() {
                 <h3 className="modal-title">{viewBranch.branch_label}</h3>
                 <p className="modal-subtitle">Staff assigned to this branch</p>
               </div>
-              <button className="modal-x" type="button" onClick={() => setViewBranch(null)}>
+
+              <button
+                className="modal-x"
+                type="button"
+                onClick={() => {
+                  setViewBranch(null);
+                  setBranchStaffSearch("");
+                }}
+              >
                 ✕
               </button>
+            </div>
+
+            <div className="branch-staff-search-bar">
+              <input
+                className="branch-staff-search-input"
+                type="text"
+                placeholder="Search employee number, staff name, or position..."
+                value={branchStaffSearch}
+                onChange={(e) => setBranchStaffSearch(e.target.value)}
+                autoFocus
+              />
+
+              {branchStaffSearch ? (
+                <button
+                  className="btn-secondary"
+                  type="button"
+                  onClick={() => setBranchStaffSearch("")}
+                >
+                  Clear
+                </button>
+              ) : null}
+
+              <span className="branch-staff-search-count">
+                Showing {filteredViewBranchStaff.length} of{" "}
+                {viewBranch.staff_rows.length}
+              </span>
             </div>
 
             <div className="table-card">
@@ -1027,18 +1375,25 @@ export default function ScheduleBalances() {
                   </thead>
 
                   <tbody>
-                    {viewBranch.staff_rows.length === 0 ? (
+                    {filteredViewBranchStaff.length === 0 ? (
                       <tr>
-                        <td colSpan={MONEY_COLS.length + 4} className="empty-state">
-                          No staff found.
+                        <td
+                          colSpan={MONEY_COLS.length + 4}
+                          className="empty-state"
+                        >
+                          {branchStaffSearch
+                            ? "No staff matched your search."
+                            : "No staff found."}
                         </td>
                       </tr>
                     ) : (
-                      viewBranch.staff_rows.map((r, idx) => (
+                      filteredViewBranchStaff.map((r, idx) => (
                         <tr key={`${r.employee_no || idx}-${idx}`}>
                           <td>{r.employee_no ?? "-"}</td>
 
-                          <td className="td-strong">{displayName(r)}</td>
+                          <td className="td-strong">
+                            {displayName(r)}
+                          </td>
 
                           <td>{r.position ?? "-"}</td>
 
@@ -1049,21 +1404,36 @@ export default function ScheduleBalances() {
                           ))}
 
                           <td>
-                            {canEditHistory || canManageOpeningLoans ? (
+                            <div className="staff-action-cell">
                               <button
                                 type="button"
-                                className="staff-edit-btn"
-                                onClick={() => openHistoryEdit(r)}
+                                className="staff-view-btn"
+                                onClick={() => openYearlySavings(r)}
                               >
-                                {isCurrentMonth(month)
-                                  ? "Opening Loans"
-                                  : "Edit History"}
+                                View
                               </button>
-                            ) : (
-                              <span style={{ fontSize: 12, opacity: 0.7 }}>
-                                View only
-                              </span>
-                            )}
+
+                              {canEditHistory || canManageOpeningLoans ? (
+                                <button
+                                  type="button"
+                                  className="staff-edit-btn"
+                                  onClick={() => openHistoryEdit(r)}
+                                >
+                                  {isCurrentMonth(month)
+                                    ? "Edit Current"
+                                    : "Edit History"}
+                                </button>
+                              ) : (
+                                <span
+                                  style={{
+                                    fontSize: 12,
+                                    opacity: 0.7,
+                                  }}
+                                >
+                                  View only
+                                </span>
+                              )}
+                            </div>
                           </td>
                         </tr>
                       ))
@@ -1074,13 +1444,241 @@ export default function ScheduleBalances() {
             </div>
 
             <div className="modal-buttons">
-              <button className="btn-secondary" type="button" onClick={() => setViewBranch(null)}>
+              <button
+                className="btn-secondary"
+                type="button"
+                onClick={() => {
+                  setViewBranch(null);
+                  setBranchStaffSearch("");
+                }}
+              >
                 Close
               </button>
             </div>
           </div>
         </div>
       )}
+
+      {viewingYearlySavings && !editingHistory && (
+        <div
+          className="modal-overlay"
+          onMouseDown={(event) => {
+            if (
+              event.target.classList.contains(
+                "modal-overlay"
+              )
+            ) {
+              setViewingYearlySavings(null);
+              setYearlySavingsRows([]);
+              setYearlySavingsError("");
+            }
+          }}
+        >
+          <div
+            className="modal saas-modal yearly-savings-modal"
+            onMouseDown={(event) =>
+              event.stopPropagation()
+            }
+          >
+            <div className="modal-head">
+              <div>
+                <h3 className="modal-title">
+                  Yearly Savings
+                </h3>
+
+                <p className="modal-subtitle">
+                  {viewingYearlySavings.employee_no || "-"}
+                  {" — "}
+                  {displayName(viewingYearlySavings)}
+                </p>
+              </div>
+
+              <button
+                className="modal-x"
+                type="button"
+                onClick={() => {
+                  setViewingYearlySavings(null);
+                  setYearlySavingsRows([]);
+                  setYearlySavingsError("");
+                }}
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="yearly-savings-toolbar">
+              <label>
+                Year
+                <input
+                  type="number"
+                  min="2000"
+                  max="2100"
+                  value={yearlySavingsYear}
+                  onChange={(event) => {
+                    const nextYear = Number(
+                      event.target.value
+                    );
+
+                    setYearlySavingsYear(nextYear);
+                  }}
+                />
+              </label>
+
+              <button
+                className="btn-secondary"
+                type="button"
+                disabled={yearlySavingsLoading}
+                onClick={() =>
+                  reloadYearlySavings(
+                    viewingYearlySavings,
+                    yearlySavingsYear
+                  )
+                }
+              >
+                {yearlySavingsLoading
+                  ? "Loading..."
+                  : "Load Year"}
+              </button>
+            </div>
+
+            {yearlySavingsError && (
+              <div className="yearly-savings-error">
+                {yearlySavingsError}
+              </div>
+            )}
+
+            <div className="table-wrap yearly-savings-table-wrap">
+              <table className="table yearly-savings-table">
+                <thead>
+                  <tr>
+                    <th>Month</th>
+                    <th>CBU</th>
+                    <th>Cashbond</th>
+                    <th>Utility</th>
+                    <th>Record Type</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+
+                <tbody>
+                  {yearlySavingsLoading ? (
+                    <tr>
+                      <td
+                        colSpan={6}
+                        className="empty-state"
+                      >
+                        Loading yearly savings...
+                      </td>
+                    </tr>
+                  ) : yearlySavingsRows.length === 0 ? (
+                    <tr>
+                      <td
+                        colSpan={6}
+                        className="empty-state"
+                      >
+                        No yearly savings data found.
+                      </td>
+                    </tr>
+                  ) : (
+                    yearlySavingsRows.map((row) => {
+                      const source =
+                        String(
+                          row.balance_source || ""
+                        ).toLowerCase();
+
+                      const canEditRow =
+                        canEditHistory &&
+                        ["current", "historical"].includes(
+                          source
+                        );
+
+                      return (
+                        <tr key={row.month_label}>
+                          <td className="td-strong">
+                            {String(
+                              row.month_name || ""
+                            ).trim()}
+                          </td>
+
+                          <td className="td-money">
+                            {row.cbu === null
+                              ? "-"
+                              : fmtMoney(row.cbu)}
+                          </td>
+
+                          <td className="td-money">
+                            {row.cashbond === null
+                              ? "-"
+                              : fmtMoney(row.cashbond)}
+                          </td>
+
+                          <td className="td-money">
+                            {row.utility === null
+                              ? "-"
+                              : fmtMoney(row.utility)}
+                          </td>
+
+                          <td>
+                            <span
+                              className={`yearly-source-badge ${source}`}
+                            >
+                              {source === "current"
+                                ? "Current"
+                                : source === "historical"
+                                  ? "Historical"
+                                  : source === "future"
+                                    ? "Future"
+                                    : "No Snapshot"}
+                            </span>
+                          </td>
+
+                          <td>
+                            {canEditRow ? (
+                              <button
+                                className="staff-edit-btn"
+                                type="button"
+                                onClick={() =>
+                                  editYearlySavingsMonth(row)
+                                }
+                              >
+                                Edit
+                              </button>
+                            ) : (
+                              <span
+                                style={{
+                                  color: "var(--muted)",
+                                  fontSize: 12,
+                                }}
+                              >
+                                —
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="modal-buttons">
+              <button
+                className="btn-secondary"
+                type="button"
+                onClick={() => {
+                  setViewingYearlySavings(null);
+                  setYearlySavingsRows([]);
+                  setYearlySavingsError("");
+                }}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {editingHistory && (
         <div
           className="modal-overlay"
@@ -1108,7 +1706,7 @@ export default function ScheduleBalances() {
               <div>
                 <h3 className="modal-title">
                   {isCurrentMonth(month)
-                    ? "Opening Loan Balances"
+                    ? "Current Balances and Opening Loans"
                     : "Edit Historical Balance"}
                 </h3>
 
@@ -1127,6 +1725,103 @@ export default function ScheduleBalances() {
                 ✕
               </button>
             </div>
+
+            {isCurrentMonth(month) && canEditHistory && (
+              <form onSubmit={saveCurrentBalanceEdit}>
+                <h4 style={{ margin: "0 0 6px" }}>
+                  Current Staff Savings and Utility
+                </h4>
+
+                <p
+                  style={{
+                    margin: "0 0 14px",
+                    color: "var(--muted)",
+                    fontSize: 12,
+                    fontWeight: 700,
+                  }}
+                >
+                  Updating these values changes the staff&apos;s current
+                  CBU, Cashbond, and Utility balance.
+                </p>
+
+                <div className="form-grid">
+                  <div className="field">
+                    <label>Current CBU</label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={historyForm.cbu}
+                      onChange={(e) =>
+                        setHistoryForm((previous) => ({
+                          ...previous,
+                          cbu: e.target.value,
+                        }))
+                      }
+                      required
+                    />
+                  </div>
+
+                  <div className="field">
+                    <label>Current Cashbond</label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={historyForm.cashbond}
+                      onChange={(e) =>
+                        setHistoryForm((previous) => ({
+                          ...previous,
+                          cashbond: e.target.value,
+                        }))
+                      }
+                      required
+                    />
+                  </div>
+
+                  <div className="field">
+                    <label>Current Utility</label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={historyForm.utility}
+                      onChange={(e) =>
+                        setHistoryForm((previous) => ({
+                          ...previous,
+                          utility: e.target.value,
+                        }))
+                      }
+                      required
+                    />
+                  </div>
+                </div>
+
+                {historyError && (
+                  <div
+                    style={{
+                      marginTop: 12,
+                      color: "#ef4444",
+                      fontWeight: 800,
+                    }}
+                  >
+                    {historyError}
+                  </div>
+                )}
+
+                <div className="modal-buttons">
+                  <button
+                    className="btn-primary"
+                    type="submit"
+                    disabled={historySaving}
+                  >
+                    {historySaving
+                      ? "Saving..."
+                      : "Save Current Balances"}
+                  </button>
+                </div>
+              </form>
+            )}
 
             {!isCurrentMonth(month) && canEditHistory && (
               <form onSubmit={saveHistoryEdit}>
@@ -1215,11 +1910,9 @@ export default function ScheduleBalances() {
 
             <div
               style={{
-                borderTop: !isCurrentMonth(month)
-                  ? "1px solid var(--border)"
-                  : "none",
-                marginTop: !isCurrentMonth(month) ? 18 : 0,
-                paddingTop: !isCurrentMonth(month) ? 18 : 0,
+                borderTop: "1px solid var(--border)",
+                marginTop: 18,
+                paddingTop: 18,
               }}
             >
               <h4 style={{ margin: "0 0 12px" }}>
