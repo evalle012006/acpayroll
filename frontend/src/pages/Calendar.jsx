@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import api from "../api/axiosClient";
 import "../styles/Calendar.css";
 import Select from "react-select";
@@ -12,7 +13,7 @@ const DAYS = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
 
 const emptyNoteForm = {
   title: "",
-  involved_staff: "",
+  involved_staff: [],
   content: "",
 };
 
@@ -22,7 +23,21 @@ export default function TravelPlan() {
   const [month, setMonth] = useState(today.getMonth());
   const [year, setYear] = useState(today.getFullYear());
   const [visitRange, setVisitRange] = useState("month");
-  const [activeMenu, setActiveMenu] = useState("Travel Plan");
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  const currentTab =
+    new URLSearchParams(location.search).get("tab") || "travel-plan";
+
+  const activeMenu =
+    currentTab === "calendar"
+      ? "Calendar"
+      : currentTab === "forecast"
+      ? "Forecast"
+      : currentTab === "history"
+      ? "History"
+      : "Travel Plan";
+
   const [activities, setActivities] = useState([]);
   const [branchSearch, setBranchSearch] = useState("");
   const [historyPlans, setHistoryPlans] = useState([]);
@@ -131,6 +146,39 @@ export default function TravelPlan() {
       (s) => String(s.position || "") === staffPositionFilter
     );
   }, [staffRows, staffPositionFilter]);
+
+  const staffCounts = useMemo(() => {
+    const rows = filteredStaffRows;
+
+    return {
+      total: rows.length,
+
+      submitted: rows.filter(
+        (s) =>
+          String(s.travel_status || "")
+            .trim()
+            .toLowerCase() === "submitted"
+      ).length,
+
+      pending: rows.filter(
+        (s) =>
+          String(s.travel_status || "")
+            .trim()
+            .toLowerCase() === "pending"
+      ).length,
+
+      onLeave: rows.filter((s) => {
+        const status = String(s.travel_status || "")
+          .trim()
+          .toLowerCase();
+
+        return (
+          status === "on leave" ||
+          status === "indefinite leave"
+        );
+      }).length,
+    };
+  }, [filteredStaffRows]);
 
   const filteredActivityPlans = useMemo(() => {
     const search = String(activitySearch || "")
@@ -490,9 +538,9 @@ const selectedBranchPlans = useMemo(() => {
     try {
       await api.post(`/travel-plans/${selectedPlan.id}/notes`, {
         note_type: type,
-        title: noteForm.title,
-        involved_staff: noteForm.involved_staff,
-        content: noteForm.content,
+        title: noteForm.title.trim(),
+        involved_staff: noteForm.involved_staff.join(", "),
+        content: noteForm.content.trim(),
       });
 
       setNoteForm(emptyNoteForm);
@@ -616,9 +664,23 @@ const selectedBranchPlans = useMemo(() => {
               </div>
 
               {note.involved_staff && (
-                <p>
-                  <b>Involved:</b> {note.involved_staff}
-                </p>
+                <div className="travel-involved-list">
+                  <b>Involved Staff:</b>
+
+                  <div className="travel-involved-tags">
+                    {String(note.involved_staff)
+                      .split(", ")
+                      .filter(Boolean)
+                      .map((staffName, index) => (
+                        <span
+                          key={`${staffName}-${index}`}
+                          className="travel-involved-tag"
+                        >
+                          {staffName}
+                        </span>
+                      ))}
+                  </div>
+                </div>
               )}
 
               {note.content && <p>{note.content}</p>}
@@ -664,22 +726,27 @@ const selectedBranchPlans = useMemo(() => {
             </label>
 
             <label>
-              Involved
+              Involved Staff
               <Select
                 className="travel-staff-search"
                 classNamePrefix="select"
                 options={staffOptions}
-                placeholder="Search staff..."
+                placeholder="Search and select staff..."
+                isMulti
                 isClearable
-                value={
-                  staffOptions.find((o) => o.value === noteForm.involved_staff) || null
-                }
-                onChange={(option) =>
-                  setNoteForm((p) => ({
-                    ...p,
-                    involved_staff: option?.value || "",
+                closeMenuOnSelect={false}
+                value={staffOptions.filter((option) =>
+                  noteForm.involved_staff.includes(option.value)
+                )}
+                onChange={(selectedOptions) =>
+                  setNoteForm((previous) => ({
+                    ...previous,
+                    involved_staff: Array.isArray(selectedOptions)
+                      ? selectedOptions.map((option) => option.value)
+                      : [],
                   }))
                 }
+                noOptionsMessage={() => "No staff found"}
               />
             </label>
 
@@ -767,37 +834,6 @@ const selectedBranchPlans = useMemo(() => {
   return (
     <div className="travel-modern-page">
       <div className="travel-modern-layout">
-        <aside className="travel-side-panel">
-          <div className="travel-big-day">{selectedDay || 1}</div>
-
-          <div className="travel-big-month">
-            {MONTHS[month]} {year}
-          </div>
-
-          <div className="travel-side-menu">
-            {[
-              "Travel Plan",
-              "Calendar",
-              "History",
-            ].map((menu) => (
-              <button
-                key={menu}
-                type="button"
-                className={activeMenu === menu ? "active" : ""}
-                onClick={() => {
-                  setActiveMenu(menu);
-
-                  if (menu === "History") {
-                    fetchHistoryPlans();
-                  }
-                }}
-              >
-                {menu}
-              </button>
-            ))}
-          </div>
-        </aside>
-
         <main className="travel-calendar-main">
           <div className="travel-topbar">
             <div className="travel-view-tabs">
@@ -1138,7 +1174,25 @@ const selectedBranchPlans = useMemo(() => {
                       ))}
                     </select>
 
-                    <span>{filteredStaffRows.length} Staff</span>
+                    <div className="travel-staff-counts">
+                      <span className="travel-count-pill">
+                        {staffCounts.total} Staff
+                      </span>
+
+                      <span className="travel-count-pill submitted">
+                        {staffCounts.submitted} Submitted
+                      </span>
+
+                      <span className="travel-count-pill pending">
+                        {staffCounts.pending} Pending
+                      </span>
+
+                      {staffCounts.onLeave > 0 && (
+                        <span className="travel-count-pill leave">
+                          {staffCounts.onLeave} On Leave
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </div>
 
@@ -1163,15 +1217,32 @@ const selectedBranchPlans = useMemo(() => {
 
                         <div className="travel-staff-right">
                           <span>{staff.area}</span>
+
                           <span>{staff.region}</span>
-                          <div
-                            className={
-                              staff.travel_status === "Submitted"
-                                ? "travel-staff-status submitted"
-                                : "travel-staff-status pending"
-                            }
-                          >
-                            {staff.travel_status}
+
+                          <div className="travel-staff-status-wrap">
+                            <div
+                              className={`travel-staff-status ${String(
+                                staff.travel_status || "Pending"
+                              )
+                                .trim()
+                                .toLowerCase()
+                                .replace(/\s+/g, "-")}`}
+                            >
+                              {staff.travel_status || "Pending"}
+                            </div>
+
+                            {staff.travel_status === "On Leave" && (
+                              <small className="travel-staff-leave-date">
+                                {staff.leave_start_date} - {staff.leave_end_date}
+                              </small>
+                            )}
+
+                            {staff.travel_status === "Indefinite Leave" && (
+                              <small className="travel-staff-leave-date">
+                                No Return Date
+                              </small>
+                            )}
                           </div>
                         </div>
                       </div>
@@ -1940,11 +2011,11 @@ const selectedBranchPlans = useMemo(() => {
 
                 <div className="travel-activity-list">
                   {selectedBranchPlans.length === 0 ? (
-  <div className="travel-empty">
-    No visits found for this period.
-  </div>
-) : (
-  selectedBranchPlans.map((plan) => (
+                    <div className="travel-empty">
+                      No visits found for this period.
+                    </div>
+                  ) : (
+                    selectedBranchPlans.map((plan) => (
                       <div key={plan.id} className="travel-activity-card">
                         <div>
                           <strong>{plan.employee_name || "No employee"}</strong>

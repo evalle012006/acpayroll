@@ -2333,7 +2333,7 @@ router.get(
 //
 // Only Admin and IT can reopen a completed plan.
 //
-  
+
 
 router.put(
   "/travel-plans/:id/reopen",
@@ -2729,45 +2729,75 @@ router.get(
         SELECT
           s.id,
           s.employee_no,
-          s.fullname AS employee_name,
-          s.position,
 
+          COALESCE(
+            NULLIF(TRIM(s.fullname), ''),
+            NULLIF(
+              TRIM(
+                CONCAT_WS(
+                  ' ',
+                  s.last_name,
+                  s.first_name,
+                  s.middle_name
+                )
+              ),
+              ''
+            ),
+            s.employee_no
+          ) AS employee_name,
+
+          s.position,
           b.name AS branch_name,
           b.code AS branch_code,
-
-          COALESCE(
-            NULLIF(TRIM(s.area), ''),
-            NULLIF(TRIM(b.area), '')
-          ) AS area,
-
-          COALESCE(
-            NULLIF(TRIM(s.region), ''),
-            NULLIF(TRIM(b.region), '')
-          ) AS region,
-
-          COALESCE(
-            NULLIF(TRIM(s.division), ''),
-            NULLIF(TRIM(b.division), '')
-          ) AS division,
-
+          s.area,
+          s.region,
+          s.division,
           s.department,
 
+          active_leave.leave_type,
+          active_leave.start_date AS leave_start_date,
+          active_leave.end_date AS leave_end_date,
+
           CASE
+            /*
+              Priority 1:
+              Approved indefinite leave.
+            */
+            WHEN active_leave.leave_type = 'Indefinite Leave'
+            THEN 'Indefinite Leave'
+
+            /*
+              Priority 2:
+              Approved normal leave covering the selected date.
+            */
+            WHEN active_leave.id IS NOT NULL
+            THEN 'On Leave'
+
+            /*
+              Priority 3:
+              Staff submitted a travel plan for the selected date.
+            */
             WHEN EXISTS (
               SELECT 1
               FROM public.travel_plans tp
-              WHERE LOWER(
-                TRIM(
-                  COALESCE(tp.employee_name, '')
+              WHERE tp.plan_date = $1::date
+                AND (
+                  tp.employee_name = s.fullname
+                  OR LOWER(TRIM(COALESCE(tp.employee_name, ''))) =
+                    LOWER(
+                      TRIM(
+                        CONCAT_WS(
+                          ' ',
+                          s.last_name,
+                          s.first_name,
+                          s.middle_name
+                        )
+                      )
+                    )
                 )
-              ) = LOWER(
-                TRIM(
-                  COALESCE(s.fullname, '')
-                )
-              )
-                AND tp.plan_date = $1::date
             )
             THEN 'Submitted'
+
             ELSE 'Pending'
           END AS travel_status
 
@@ -2776,11 +2806,86 @@ router.get(
         LEFT JOIN public.branches b
           ON b.id = s.branch_id
 
-        WHERE LOWER(
-          TRIM(
-            COALESCE(s.status, 'active')
-          )
-        ) = 'active'
+        /*
+          Finds an approved leave that applies to the selected date.
+        */
+        LEFT JOIN LATERAL (
+          SELECT
+            lr.id,
+            lr.leave_type,
+            lr.start_date,
+            lr.end_date,
+            lr.date_created,
+            lr.status
+
+          FROM public.leave_requests lr
+
+          WHERE lr.employee_id = s.id
+
+            AND LOWER(TRIM(COALESCE(lr.status, ''))) = 'approved'
+
+            AND (
+              /*
+                Normal leave:
+                selected date must be within start and end date.
+              */
+              (
+                LOWER(TRIM(COALESCE(lr.leave_type, '')))
+                  <> 'indefinite leave'
+
+                AND lr.start_date IS NOT NULL
+                AND lr.end_date IS NOT NULL
+
+                AND $1::date BETWEEN
+                  lr.start_date::date
+                  AND lr.end_date::date
+              )
+
+              OR
+
+              /*
+                Indefinite leave:
+                starts from date_created and remains active
+                until its status is changed to Returned to Work.
+              */
+              (
+                LOWER(TRIM(COALESCE(lr.leave_type, '')))
+                  = 'indefinite leave'
+
+                AND $1::date >= COALESCE(
+                  lr.start_date::date,
+                  lr.date_created::date,
+                  lr.entry_date::date
+                )
+              )
+            )
+
+          ORDER BY
+            CASE
+              WHEN LOWER(TRIM(COALESCE(lr.leave_type, '')))
+                = 'indefinite leave'
+              THEN 0
+              ELSE 1
+            END,
+            lr.id DESC
+
+          LIMIT 1
+        ) active_leave ON TRUE
+
+        WHERE (
+          /*
+            Normal active staff.
+          */
+          LOWER(TRIM(COALESCE(s.status, 'active'))) = 'active'
+
+          OR
+
+          /*
+            Include inactive staff when they are currently
+            on approved Indefinite Leave.
+          */
+          active_leave.leave_type = 'Indefinite Leave'
+        )
       `;
 
       let sql = "";

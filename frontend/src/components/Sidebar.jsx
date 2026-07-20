@@ -327,10 +327,27 @@ const Sidebar = ({ collapsed }) => {
         anyModule: ["loan_request", "cbu_withdrawal", "reimbursement_request"],
       },
       {
-        to: "/transactions/travel-plan",
         label: "Calendar",
         icon: FaCalendarAlt,
         module: "travel_plan",
+        children: [
+          {
+            to: "/transactions/travel-plan?tab=travel-plan",
+            label: "Travel Plan",
+          },
+          {
+            to: "/transactions/travel-plan?tab=calendar",
+            label: "Calendar",
+          },
+          {
+            to: "/transactions/travel-plan?tab=forecast",
+            label: "Forecast",
+          },
+          {
+            to: "/transactions/travel-plan?tab=history",
+            label: "History",
+          },
+        ],
       },
       {
         to: "/branches",
@@ -411,7 +428,7 @@ const Sidebar = ({ collapsed }) => {
         }
       }
 
-      if (item.to === "/transactions/travel-plan") {
+      if (item.label === "Calendar") {
         if (isSuperUser) return true;
 
         return (
@@ -489,8 +506,15 @@ const Sidebar = ({ collapsed }) => {
         const Icon = item.icon;
 
         if (item.children) {
-          const isActiveParent = pathname.startsWith("/reports");
-          const isOpen = Boolean(openMenus[item.label]);  
+          const isCalendarMenu = item.label === "Calendar";
+
+          const isActiveParent = isCalendarMenu
+            ? pathname.startsWith("/transactions/travel-plan")
+            : pathname.startsWith("/reports");
+
+          const isOpen =
+            Boolean(openMenus[item.label]) ||
+            isActiveParent;
 
           return (
             <div key={item.label} className="sidebar-dropdown">
@@ -533,7 +557,31 @@ const Sidebar = ({ collapsed }) => {
                     <NavLink
                       key={child.to}
                       to={child.to}
-                      className="sidebar-sub-link"
+                      className={({ isActive }) => {
+                        const childUrl = new URL(
+                          child.to,
+                          window.location.origin
+                        );
+
+                        const childTab = childUrl.searchParams.get("tab");
+                        const currentTab = new URLSearchParams(
+                          window.location.search
+                        ).get("tab");
+
+                        const tabMatches =
+                          pathname === childUrl.pathname &&
+                          (
+                            currentTab === childTab ||
+                            (
+                              !currentTab &&
+                              childTab === "travel-plan"
+                            )
+                          );
+
+                        return `sidebar-sub-link ${
+                          isActive && tabMatches ? "active" : ""
+                        }`;
+                      }}
                     >
                       <span>{child.label}</span>
 
