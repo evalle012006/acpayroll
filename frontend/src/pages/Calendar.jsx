@@ -38,6 +38,7 @@ export default function TravelPlan() {
   const [showCreatePlan, setShowCreatePlan] = useState(false);
   const [plans, setPlans] = useState([]);
   const [activityDateFilter, setActivityDateFilter] = useState("");
+  const [activitySearch, setActivitySearch] = useState("");
   const [planPhotos, setPlanPhotos] = useState([]);
   const [planNotes, setPlanNotes] = useState([]);
   const [selectedCalendarDate, setSelectedCalendarDate] = useState("");
@@ -129,13 +130,38 @@ export default function TravelPlan() {
   }, [staffRows, staffPositionFilter]);
 
   const filteredActivityPlans = useMemo(() => {
-    if (!activityDateFilter) return plans;
+    const search = String(activitySearch || "")
+      .trim()
+      .toLowerCase();
 
-    return plans.filter((p) => {
-      const d = String(p.plan_date || "").slice(0, 10);
-      return d === activityDateFilter;
+    return plans.filter((plan) => {
+      const matchesDate =
+        !activityDateFilter ||
+        String(plan.plan_date || "") === activityDateFilter;
+
+      const searchableText = [
+        plan.title,
+        plan.employee_name,
+        plan.position,
+        plan.branch_name,
+        plan.description,
+        plan.status,
+        plan.plan_date,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+
+      const matchesSearch =
+        !search || searchableText.includes(search);
+
+      return matchesDate && matchesSearch;
     });
-  }, [plans, activityDateFilter]);
+  }, [
+    plans,
+    activityDateFilter,
+    activitySearch,
+  ]);
 
   const mostVisitedBranches = useMemo(() => {
     const now = new Date();
@@ -954,29 +980,56 @@ const selectedBranchPlans = useMemo(() => {
               {/* ACTIVITIES */}
               <div className="travel-dashboard-card travel-activities-card">
 
-                <div className="travel-dashboard-head">
+                <div className="travel-dashboard-card-head">
                   <div>
                     <h3>Activities & Events</h3>
-                    <p>All travel plans for your scope.</p>
+
+                    <p>
+                      Travel plans visible within your account scope.
+                    </p>
                   </div>
 
-                  <div className="travel-activity-filter">
+                  <div className="travel-activity-filters">
                     <input
-                      type="date"
-                      value={activityDateFilter}
-                      onChange={(e) => setActivityDateFilter(e.target.value)}
+                      type="search"
+                      className="travel-activity-search"
+                      placeholder="Search name, position, branch, or plan..."
+                      value={activitySearch}
+                      onChange={(e) =>
+                        setActivitySearch(e.target.value)
+                      }
                     />
 
-                    {activityDateFilter && (
-                      <button
-                        type="button"
-                        onClick={() => setActivityDateFilter("")}
-                      >
-                        Clear
-                      </button>
-                    )}
+                    <input
+                      type="date"
+                      className="travel-activity-date"
+                      value={activityDateFilter}
+                      onChange={(e) =>
+                        setActivityDateFilter(e.target.value)
+                      }
+                    />
 
-                    <span>{filteredActivityPlans.length} Plans</span>
+                    <button
+                      type="button"
+                      className="travel-activity-clear"
+                      onClick={() => {
+                        setActivitySearch("");
+                        setActivityDateFilter("");
+                      }}
+                      disabled={
+                        !activitySearch &&
+                        !activityDateFilter
+                      }
+                    >
+                      Clear
+                    </button>
+
+                    <span className="travel-count-pill">
+                      {filteredActivityPlans.length}{" "}
+                      {filteredActivityPlans.length === 1
+                        ? "Plan"
+                        : "Plans"}
+                    </span>
                   </div>
                 </div>
 
@@ -992,12 +1045,38 @@ const selectedBranchPlans = useMemo(() => {
                         className="travel-activity-card"
                         onClick={() => openPlan(plan)}
                       >
-                        <div>
-                          <strong>{plan.title}</strong>
-                          <p>{plan.branch_name || "No Branch"}</p>
-                          <small>
-                            {plan.description || "No description"}
-                          </small>
+                        <div className="travel-activity-plan-main">
+                          <div className="travel-activity-plan-title">
+                            {plan.title || "Untitled Travel Plan"}
+                          </div>
+
+                          <div className="travel-activity-employee">
+                            <span className="travel-activity-employee-name">
+                              {plan.employee_name || "No employee assigned"}
+                            </span>
+
+                            {plan.position && (
+                              <>
+                                <span className="travel-activity-separator">
+                                  •
+                                </span>
+
+                                <span className="travel-activity-position">
+                                  {plan.position}
+                                </span>
+                              </>
+                            )}
+                          </div>
+
+                          <div className="travel-activity-branch">
+                            {plan.branch_name || "No branch selected"}
+                          </div>
+
+                          {plan.description && (
+                            <div className="travel-activity-description">
+                              {plan.description}
+                            </div>
+                          )}
                         </div>
 
                         <div className="travel-activity-right">

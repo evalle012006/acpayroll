@@ -175,6 +175,17 @@ const sendServerError = (res, routeName, error) => {
   });
 };
 
+const manilaTimestampSql = (columnName) => `
+  CASE
+    WHEN ${columnName} IS NULL THEN NULL
+    ELSE
+      TO_CHAR(
+        ${columnName},
+        'YYYY-MM-DD"T"HH24:MI:SS.MS'
+      ) || '+08:00'
+  END
+`;
+
 const travelPlanSelect = `
   id,
   title,
@@ -190,60 +201,525 @@ const travelPlanSelect = `
   findings,
 
   photo_url,
-  photo_uploaded_at,
+  ${manilaTimestampSql("photo_uploaded_at")} AS photo_uploaded_at,
   photo_latitude,
   photo_longitude,
 
   check_in_photo_url,
-  check_in_at,
+  ${manilaTimestampSql("check_in_at")} AS check_in_at,
   check_in_latitude,
   check_in_longitude,
 
   check_out_photo_url,
-  check_out_at,
+  ${manilaTimestampSql("check_out_at")} AS check_out_at,
   check_out_latitude,
   check_out_longitude,
 
   created_by,
 
   status,
-  submitted_at,
+  ${manilaTimestampSql("submitted_at")} AS submitted_at,
   submitted_by,
 
-  created_at,
-  updated_at
+  ${manilaTimestampSql("created_at")} AS created_at,
+  ${manilaTimestampSql("updated_at")} AS updated_at
 `;
 
 // =====================================================
-// GET ALL TRAVEL PLANS
+// GET TRAVEL PLANS BASED ON ACCOUNT SCOPE
 // =====================================================
 
-router.get("/travel-plans", requireAuth, async (req, res) => {
-  try {
-    if (!canViewTravelModule(req)) {
-      return res.status(403).json({
-        message: "You are not allowed to view travel plans.",
-      });
+router.get(
+  "/travel-plans",
+  requireAuth,
+  async (req, res) => {
+    try {
+      if (!canViewTravelModule(req)) {
+        return res.status(403).json({
+          message:
+            "You are not allowed to view travel plans.",
+        });
+      }
+
+      const role = normalizeRole(req.user?.role);
+
+      const department = normalizeDepartment(
+        req.user?.department
+      );
+
+      const userArea = toStr(req.user?.area);
+      const userRegion = toStr(req.user?.region);
+      const userDivision = toStr(req.user?.division);
+
+      /*
+        The inner query first formats every travel plan
+        using travelPlanSelect.
+
+        The lateral staff lookup finds the staff member
+        assigned to the travel plan.
+
+        The branch lookup provides area, region, and
+        division when those values are stored in branches.
+      */
+
+      const baseSql = `
+        SELECT
+          tp_data.*
+
+        FROM (
+          SELECT
+            ${travelPlanSelect}
+          FROM public.travel_plans
+        ) tp_data
+
+        LEFT JOIN LATERAL (
+          SELECT
+            s.id,
+            s.employee_no,
+            s.fullname,
+            s.position,
+            s.department,
+            s.area,
+            s.region,
+            s.division,
+            s.branch_id
+
+          FROM public.staff s
+
+          LEFT JOIN public.branches staff_branch
+            ON staff_branch.id = s.branch_id
+
+          WHERE LOWER(
+            TRIM(
+              COALESCE(
+                NULLIF(TRIM(s.fullname), ''),
+                NULLIF(
+                  TRIM(
+                    CONCAT_WS(
+                      ' ',
+                      s.last_name,
+                      s.first_name,
+                      s.middle_name
+                    )
+                  ),
+                  ''
+                ),
+                ''
+              )
+            )
+          ) = LOWER(
+            TRIM(
+              COALESCE(
+                tp_data.employee_name,
+                ''
+              )
+            )
+          )
+
+          ORDER BY
+            CASE
+              WHEN LOWER(
+                TRIM(
+                  COALESCE(
+                    staff_branch.name,
+                    ''
+                  )
+                )
+              ) = LOWER(
+                TRIM(
+                  COALESCE(
+                    tp_data.branch_name,
+                    ''
+                  )
+                )
+              )
+              THEN 0
+              ELSE 1
+            END,
+
+            s.id ASC
+
+          LIMIT 1
+        ) matched_staff
+          ON TRUE
+
+        LEFT JOIN LATERAL (
+          SELECT
+            b.id,
+            b.name,
+            b.code,
+            b.area,
+            b.region,
+            b.division
+
+          FROM public.branches b
+
+          WHERE LOWER(
+            TRIM(
+              COALESCE(b.name, '')
+            )
+          ) = LOWER(
+            TRIM(
+              COALESCE(
+                tp_data.branch_name,
+                ''
+              )
+            )
+          )
+
+          ORDER BY b.id ASC
+          LIMIT 1
+        ) matched_branch
+          ON TRUE
+
+        WHERE 1 = 1
+      `;
+
+      let sql = "";
+      let params = [];
+
+      // =================================================
+      // ADMIN / IT
+      // =================================================
+      // Can see every travel plan.
+      // =================================================
+
+      if (isAdminOrIT(req)) {
+        sql = `
+          ${baseSql}
+
+          ORDER BY
+            tp_data.plan_date DESC,
+            tp_data.id DESC
+        `;
+      }
+
+      // =================================================
+      // TREAD DEPARTMENT
+      // =================================================
+      // Existing rule: allowed TREAD roles can see all.
+      // =================================================
+
+      else if (
+        department === "tread department" &&
+        TREAD_TRAVEL_PLAN_ROLES.includes(role)
+      ) {
+        sql = `
+          ${baseSql}
+
+          ORDER BY
+            tp_data.plan_date DESC,
+            tp_data.id DESC
+        `;
+      }
+
+      // =================================================
+      // AREA MANAGER / ACTING AREA MANAGER
+      // =================================================
+      //
+      // Same area only.
+      // Can see Area Manager and lower positions.
+      // Cannot see RM, AVP, VP, or SVP.
+      // =================================================
+
+      else if (
+        department === "operation department" &&
+        [
+          "area manager",
+          "acting area manager",
+        ].includes(role)
+      ) {
+        if (!userArea) {
+          return res.json([]);
+        }
+
+        sql = `
+          ${baseSql}
+
+          AND LOWER(
+            TRIM(
+              COALESCE(
+                NULLIF(
+                  TRIM(matched_staff.area),
+                  ''
+                ),
+                NULLIF(
+                  TRIM(matched_branch.area),
+                  ''
+                ),
+                ''
+              )
+            )
+          ) = LOWER(TRIM($1))
+
+          AND LOWER(
+            TRIM(
+              COALESCE(
+                matched_staff.department,
+                ''
+              )
+            )
+          ) = 'operation department'
+
+          AND LOWER(
+            TRIM(
+              COALESCE(
+                matched_staff.position,
+                tp_data.position,
+                ''
+              )
+            )
+          ) NOT IN (
+            'regional manager',
+            'acting regional manager',
+            'assistant vice president',
+            'vice president',
+            'senior vice president',
+            'president'
+          )
+
+          ORDER BY
+            tp_data.plan_date DESC,
+            tp_data.id DESC
+        `;
+
+        params = [userArea];
+      }
+
+      // =================================================
+      // REGIONAL MANAGER / ACTING REGIONAL MANAGER
+      // =================================================
+      //
+      // Same region only.
+      // Can see Regional Manager and lower positions.
+      // Cannot see AVP, VP, or SVP.
+      // =================================================
+
+      else if (
+        department === "operation department" &&
+        [
+          "regional manager",
+          "acting regional manager",
+        ].includes(role)
+      ) {
+        if (!userRegion) {
+          return res.json([]);
+        }
+
+        sql = `
+          ${baseSql}
+
+          AND LOWER(
+            TRIM(
+              COALESCE(
+                NULLIF(
+                  TRIM(matched_staff.region),
+                  ''
+                ),
+                NULLIF(
+                  TRIM(matched_branch.region),
+                  ''
+                ),
+                ''
+              )
+            )
+          ) = LOWER(TRIM($1))
+
+          AND LOWER(
+            TRIM(
+              COALESCE(
+                matched_staff.department,
+                ''
+              )
+            )
+          ) = 'operation department'
+
+          AND LOWER(
+            TRIM(
+              COALESCE(
+                matched_staff.position,
+                tp_data.position,
+                ''
+              )
+            )
+          ) NOT IN (
+            'assistant vice president',
+            'vice president',
+            'senior vice president',
+            'president'
+          )
+
+          ORDER BY
+            tp_data.plan_date DESC,
+            tp_data.id DESC
+        `;
+
+        params = [userRegion];
+      }
+
+      // =================================================
+      // ASSISTANT VICE PRESIDENT
+      // =================================================
+      //
+      // Same division only.
+      // Can see AVP and lower positions.
+      // Cannot see VP or SVP.
+      // =================================================
+
+      else if (
+        department === "operation department" &&
+        role === "assistant vice president"
+      ) {
+        if (!userDivision) {
+          return res.json([]);
+        }
+
+        sql = `
+          ${baseSql}
+
+          AND LOWER(
+            TRIM(
+              COALESCE(
+                NULLIF(
+                  TRIM(matched_staff.division),
+                  ''
+                ),
+                NULLIF(
+                  TRIM(matched_branch.division),
+                  ''
+                ),
+                ''
+              )
+            )
+          ) = LOWER(TRIM($1))
+
+          AND LOWER(
+            TRIM(
+              COALESCE(
+                matched_staff.department,
+                ''
+              )
+            )
+          ) = 'operation department'
+
+          AND LOWER(
+            TRIM(
+              COALESCE(
+                matched_staff.position,
+                tp_data.position,
+                ''
+              )
+            )
+          ) NOT IN (
+            'vice president',
+            'senior vice president',
+            'president'
+          )
+
+          ORDER BY
+            tp_data.plan_date DESC,
+            tp_data.id DESC
+        `;
+
+        params = [userDivision];
+      }
+
+      // =================================================
+      // VICE PRESIDENT
+      // =================================================
+      //
+      // Can see Operation Department plans from
+      // Vice President downward.
+      // Cannot see Senior Vice President or President.
+      // =================================================
+
+      else if (
+        department === "operation department" &&
+        role === "vice president"
+      ) {
+        sql = `
+          ${baseSql}
+
+          AND LOWER(
+            TRIM(
+              COALESCE(
+                matched_staff.department,
+                ''
+              )
+            )
+          ) = 'operation department'
+
+          AND LOWER(
+            TRIM(
+              COALESCE(
+                matched_staff.position,
+                tp_data.position,
+                ''
+              )
+            )
+          ) NOT IN (
+            'senior vice president',
+            'president'
+          )
+
+          ORDER BY
+            tp_data.plan_date DESC,
+            tp_data.id DESC
+        `;
+      }
+
+      // =================================================
+      // SENIOR VICE PRESIDENT
+      // =================================================
+      //
+      // Can see all Operation Department travel plans.
+      // =================================================
+
+      else if (
+        department === "operation department" &&
+        role === "senior vice president"
+      ) {
+        sql = `
+          ${baseSql}
+
+          AND LOWER(
+            TRIM(
+              COALESCE(
+                matched_staff.department,
+                ''
+              )
+            )
+          ) = 'operation department'
+
+          ORDER BY
+            tp_data.plan_date DESC,
+            tp_data.id DESC
+        `;
+      }
+
+      // =================================================
+      // NO MATCHING SCOPE
+      // =================================================
+
+      else {
+        return res.json([]);
+      }
+
+      const result = await pool.query(
+        sql,
+        params
+      );
+
+      return res.json(result.rows);
+    } catch (error) {
+      return sendServerError(
+        res,
+        "GET /travel-plans",
+        error
+      );
     }
-
-    const result = await pool.query(`
-      SELECT
-        ${travelPlanSelect}
-      FROM public.travel_plans
-      ORDER BY
-        plan_date DESC,
-        id DESC
-    `);
-
-    return res.json(result.rows);
-  } catch (error) {
-    return sendServerError(
-      res,
-      "GET /travel-plans",
-      error
-    );
   }
-});
+);
 
 // =====================================================
 // CREATE TRAVEL PLAN
@@ -1029,9 +1505,26 @@ router.post(
             photo_url,
             latitude,
             longitude,
-            captured_at,
+
+            CASE
+              WHEN captured_at IS NULL THEN NULL
+              ELSE
+                TO_CHAR(
+                  captured_at,
+                  'YYYY-MM-DD"T"HH24:MI:SS.MS'
+                ) || '+08:00'
+            END AS captured_at,
+
             uploaded_by,
-            created_at
+
+            CASE
+              WHEN created_at IS NULL THEN NULL
+              ELSE
+                TO_CHAR(
+                  created_at,
+                  'YYYY-MM-DD"T"HH24:MI:SS.MS'
+                ) || '+08:00'
+            END AS created_at
           `,
           [
             travelPlanId,
@@ -1198,9 +1691,27 @@ router.get("/travel-plans/:id/photos", requireAuth, async (req, res) => {
         photo_url,
         latitude,
         longitude,
-        captured_at,
+
+        CASE
+          WHEN captured_at IS NULL THEN NULL
+          ELSE
+            TO_CHAR(
+              captured_at,
+              'YYYY-MM-DD"T"HH24:MI:SS.MS'
+            ) || '+08:00'
+        END AS captured_at,
+
         uploaded_by,
-        created_at
+
+        CASE
+          WHEN created_at IS NULL THEN NULL
+          ELSE
+            TO_CHAR(
+              created_at,
+              'YYYY-MM-DD"T"HH24:MI:SS.MS'
+            ) || '+08:00'
+        END AS created_at
+
       FROM public.travel_plan_photos
       WHERE travel_plan_id = $1
       ORDER BY

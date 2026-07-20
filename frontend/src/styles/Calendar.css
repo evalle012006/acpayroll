@@ -255,8 +255,7 @@
 }
 
 .travel-activities-card {
-  width: 100%;
-  max-width: none;
+  min-height: 650px;
 }
 
 /* =========================================================
@@ -605,9 +604,9 @@
 .travel-activity-list {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  max-height: 300px;
-  padding-right: 4px;
+  gap: 12px;
+  max-height: 650px;   /* around 4 full cards */
+  padding-right: 6px;
   overflow-y: auto;
 }
 
@@ -1767,5 +1766,216 @@
   .travel-note-actions,
   .travel-tabs {
     grid-template-columns: 1fr;
+  }
+}
+
+/* =====================================
+   ACTIVITIES & EVENTS FILTERS
+===================================== */
+
+.travel-activity-filters {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.travel-activity-search,
+.travel-activity-date {
+  height: 38px;
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  background: var(--panel-2);
+  color: var(--text);
+  outline: none;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.travel-activity-search {
+  width: min(330px, 100%);
+  padding: 0 12px;
+}
+
+.travel-activity-date {
+  padding: 0 10px;
+}
+
+.travel-activity-search::placeholder {
+  color: var(--muted);
+}
+
+.travel-activity-search:focus,
+.travel-activity-date:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px
+    color-mix(
+      in srgb,
+      var(--primary) 18%,
+      transparent
+    );
+}
+
+.travel-activity-clear {
+  height: 38px;
+  padding: 0 13px;
+  border-radius: 11px;
+  border: 1px solid var(--border);
+  background: var(--panel-2);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.travel-activity-clear:hover:not(:disabled) {
+  background: var(--row-hover);
+}
+
+.travel-activity-clear:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* =====================================
+   ACTIVITIES & EVENTS CARDS
+===================================== */
+
+.travel-activity-item {
+  width: 100%;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 13px;
+  background: var(--panel-2);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease,
+    transform 0.15s ease;
+}
+
+.travel-activity-item:hover {
+  border-color: color-mix(
+    in srgb,
+    var(--primary) 55%,
+    var(--border)
+  );
+  background: var(--row-hover);
+  transform: translateY(-1px);
+}
+
+.travel-activity-plan-main {
+  min-width: 0;
+  flex: 1;
+}
+
+.travel-activity-plan-title {
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 900;
+  line-height: 1.35;
+}
+
+.travel-activity-employee {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.travel-activity-employee-name {
+  color: var(--primary);
+  font-weight: 900;
+}
+
+.travel-activity-position {
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.travel-activity-separator {
+  color: var(--muted);
+}
+
+.travel-activity-branch {
+  margin-top: 3px;
+  color: var(--text-2);
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.travel-activity-description {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.travel-activity-plan-side {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 7px;
+}
+
+.travel-activity-date-label {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.travel-activity-empty {
+  padding: 24px 14px;
+  border: 1px dashed var(--border);
+  border-radius: 13px;
+  color: var(--muted);
+  text-align: center;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+@media (max-width: 768px) {
+  .travel-dashboard-card-head {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .travel-activity-filters {
+    width: 100%;
+    justify-content: stretch;
+  }
+
+  .travel-activity-search {
+    width: 100%;
+  }
+
+  .travel-activity-date {
+    flex: 1;
+    min-width: 150px;
+  }
+
+  .travel-activity-item {
+    flex-direction: column;
+  }
+
+  .travel-activity-plan-side {
+    width: 100%;
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
   }
 }
