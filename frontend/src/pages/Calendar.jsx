@@ -48,6 +48,9 @@ export default function TravelPlan() {
   const [showNoteForm, setShowNoteForm] = useState(false);
   const [noteForm, setNoteForm] = useState(emptyNoteForm);
   const [showCreateActivity, setShowCreateActivity] = useState(false);
+  const [staffScopeDate, setStaffScopeDate] = useState(
+    new Date().toISOString().slice(0, 10)
+  );
 
   const [activityForm, setActivityForm] = useState({
     title: "",
@@ -278,7 +281,7 @@ const selectedBranchPlans = useMemo(() => {
 
   const fetchScopedStaff = async () => {
     try {
-      const res = await api.get("/travel-plans/staff-scope");
+      const res = await api.get(`/travel-plans/staff-scope?date=${staffScopeDate}`);
       setStaffRows(Array.isArray(res.data) ? res.data : []);
     } catch (err) {
       console.error("Fetch travel staff scope error:", err);
@@ -349,11 +352,14 @@ const selectedBranchPlans = useMemo(() => {
 
   useEffect(() => {
     fetchActivities();
-    fetchScopedStaff();
     fetchStaffDropdown();
     fetchScopedBranches();
     fetchPlans();
   }, []);
+
+  useEffect(() => {
+    fetchScopedStaff();
+  }, [staffScopeDate]);
 
   const saveTravelPlan = async () => {
     if (!planForm.title || !planForm.plan_date) {
@@ -1110,6 +1116,16 @@ const selectedBranchPlans = useMemo(() => {
                   </div>
 
                   <div className="travel-staff-filter">
+
+                    <div className="travel-staff-date">
+                      <input
+                        type="date"
+                        className="travel-date-input"
+                        value={staffScopeDate}
+                        onChange={(e) => setStaffScopeDate(e.target.value)}
+                      />
+                    </div>
+
                     <select
                       value={staffPositionFilter}
                       onChange={(e) => setStaffPositionFilter(e.target.value)}
@@ -1866,7 +1882,7 @@ const selectedBranchPlans = useMemo(() => {
                     <div className="travel-tab-content">
                       {selectedPlan.status !== "Completed" && (
                         <label className="travel-photo-upload-btn">
-                          Take Check In Picture
+                          Take Time In Picture
                           <input
                             type="file"
                             hidden
@@ -1886,7 +1902,7 @@ const selectedBranchPlans = useMemo(() => {
                   {detailTab === "checkout" && (
                     <div className="travel-tab-content">
                       <label className="travel-photo-upload-btn">
-                        Take Check Out Picture
+                        Take Time Out Picture
                         <input
                           type="file"
                           hidden

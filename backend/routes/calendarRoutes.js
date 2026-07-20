@@ -2231,18 +2231,7 @@ router.put(
 
 // =====================================================
 // COMPLETED TRAVEL PLAN HISTORY
-// =====================================================
-//
-// Important:
-// Do not use GET /travel-plans/history because Part 2 already has:
-//
-// GET /travel-plans/:id
-//
-// Express would interpret "history" as the ID.
-// This two-segment URL avoids that conflict.
-//
-// Frontend URL:
-// GET /travel-plans/history/completed
+// ONLY THE LOGGED-IN ACCOUNT'S OWN COMPLETED PLANS
 // =====================================================
 
 router.get(
@@ -2254,6 +2243,15 @@ router.get(
         return res.status(403).json({
           message:
             "You are not allowed to view travel plan history.",
+        });
+      }
+
+      const userId = Number(req.user?.id);
+
+      if (!Number.isInteger(userId) || userId <= 0) {
+        return res.status(401).json({
+          message:
+            "Unable to identify the logged-in account.",
         });
       }
 
@@ -2307,11 +2305,14 @@ router.get(
           )
         ) = 'completed'
 
+          AND created_by = $1
+
         ORDER BY
           submitted_at DESC NULLS LAST,
           plan_date DESC,
           id DESC
-        `
+        `,
+        [userId]
       );
 
       return res.json(result.rows);
@@ -2328,12 +2329,11 @@ router.get(
 // =====================================================
 // REOPEN COMPLETED TRAVEL PLAN
 // =====================================================
+
 //
 // Only Admin and IT can reopen a completed plan.
 //
-// Frontend URL:
-// PUT /travel-plans/:id/reopen
-// =====================================================
+  
 
 router.put(
   "/travel-plans/:id/reopen",
@@ -2704,6 +2704,18 @@ router.get(
         });
       }
 
+            const selectedDate = toStr(req.query.date);
+
+            const targetDate =
+              /^\d{4}-\d{2}-\d{2}$/.test(selectedDate)
+                ? selectedDate
+                : new Intl.DateTimeFormat("en-CA", {
+                    timeZone: "Asia/Manila",
+                    year: "numeric",
+                    month: "2-digit",
+                    day: "2-digit",
+                  }).format(new Date());
+
       const role = normalizeRole(req.user?.role);
       const department = normalizeDepartment(
         req.user?.department
@@ -2753,10 +2765,7 @@ router.get(
                   COALESCE(s.fullname, '')
                 )
               )
-                AND tp.plan_date =
-                  (
-                    NOW() AT TIME ZONE 'Asia/Manila'
-                  )::date
+                AND tp.plan_date = $1::date
             )
             THEN 'Submitted'
             ELSE 'Pending'
@@ -2775,7 +2784,7 @@ router.get(
       `;
 
       let sql = "";
-      let params = [];
+      let params = [targetDate];
 
       // =================================================
       // ADMIN AND IT
@@ -2913,14 +2922,14 @@ router.get(
                 ''
               )
             )
-          ) = LOWER(TRIM($1))
+          ) = LOWER(TRIM($2))
 
           ORDER BY
             b.name ASC NULLS LAST,
             s.fullname ASC
         `;
 
-        params = [userArea];
+        params = [targetDate, userArea];
       }
 
       // =================================================
@@ -2953,7 +2962,7 @@ router.get(
                 ''
               )
             )
-          ) = LOWER(TRIM($1))
+          ) = LOWER(TRIM($2))
 
           AND LOWER(
             TRIM(
@@ -2983,7 +2992,7 @@ router.get(
             s.fullname ASC
         `;
 
-        params = [userRegion];
+        params = [targetDate, userRegion];
       }
 
       // =================================================
@@ -3013,7 +3022,7 @@ router.get(
                 ''
               )
             )
-          ) = LOWER(TRIM($1))
+          ) = LOWER(TRIM($2))
 
           AND LOWER(
             TRIM(
@@ -3047,7 +3056,7 @@ router.get(
             s.fullname ASC
         `;
 
-        params = [userDivision];
+        params = [targetDate, userDivision];
       }
 
       // =================================================

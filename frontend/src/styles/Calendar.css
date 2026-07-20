@@ -1979,3 +1979,54 @@
     align-items: center;
   }
 }
+
+/* ==========================================
+   Staff Scope Date Picker
+========================================== */
+
+.travel-staff-date{
+  display:flex;
+  align-items:center;
+}
+
+.travel-date-input{
+  width:170px;
+  height:42px;
+
+  padding:0 16px;
+
+  background:var(--panel);
+
+  color:var(--text);
+
+  border:1px solid var(--border);
+
+  border-radius:12px;
+
+  font-size:14px;
+  font-weight:700;
+
+  outline:none;
+
+  transition:.25s;
+}
+
+.travel-date-input:hover{
+  border-color:#4c7dff;
+}
+
+.travel-date-input:focus{
+  border-color:#5b8cff;
+  box-shadow:0 0 0 3px rgba(91,140,255,.18);
+}
+
+.travel-date-input::-webkit-calendar-picker-indicator{
+  cursor:pointer;
+  opacity:.8;
+  filter:invert(1);
+}
+
+.travel-date-input::-webkit-calendar-picker-indicator:hover{
+  opacity:1;
+}
+
