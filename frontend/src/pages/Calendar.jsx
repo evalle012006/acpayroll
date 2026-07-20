@@ -32,6 +32,7 @@ export default function TravelPlan() {
   const [previewPhoto, setPreviewPhoto] = useState(null);
 
   const [staffRows, setStaffRows] = useState([]);
+  const [staffDropdownRows, setStaffDropdownRows] = useState([]);
   const [staffPositionFilter, setStaffPositionFilter] = useState("");
   const [branchScopeRows, setBranchScopeRows] = useState([]);
   const [showCreatePlan, setShowCreatePlan] = useState(false);
@@ -101,11 +102,18 @@ export default function TravelPlan() {
 
   const staffOptions = useMemo(
     () =>
-      staffRows.map((staff) => ({
+      staffDropdownRows.map((staff) => ({
         value: staff.employee_name,
-        label: `${staff.employee_name} • ${staff.position} • ${staff.branch_name}`,
+
+        label: [
+          staff.employee_name,
+          staff.position,
+          staff.branch_name,
+        ]
+          .filter(Boolean)
+          .join(" • "),
       })),
-    [staffRows]
+    [staffDropdownRows]
   );
 
   const staffPositionOptions = useMemo(() => {
@@ -252,6 +260,27 @@ const selectedBranchPlans = useMemo(() => {
     }
   };
 
+  const fetchStaffDropdown = async () => {
+    try {
+      const res = await api.get(
+        "/travel-plans/staff-dropdown"
+      );
+
+      setStaffDropdownRows(
+        Array.isArray(res.data)
+          ? res.data
+          : []
+      );
+    } catch (err) {
+      console.error(
+        "Fetch travel staff dropdown error:",
+        err
+      );
+
+      setStaffDropdownRows([]);
+    }
+  };
+
   const fetchScopedBranches = async () => {
     try {
       const res = await api.get("/travel-plans/branch-scope");
@@ -295,6 +324,7 @@ const selectedBranchPlans = useMemo(() => {
   useEffect(() => {
     fetchActivities();
     fetchScopedStaff();
+    fetchStaffDropdown();
     fetchScopedBranches();
     fetchPlans();
   }, []);
@@ -1281,23 +1311,38 @@ const selectedBranchPlans = useMemo(() => {
                       isClearable
                       placeholder="Search employee..."
 
-                      options={staffRows.map((staff) => ({
+                      options={staffDropdownRows.map((staff) => ({
                         value: staff.employee_no,
-                        label: `${staff.employee_name} • ${staff.position}`,
+
+                        label: [
+                          staff.employee_name,
+                          staff.position,
+                          staff.branch_name,
+                        ]
+                          .filter(Boolean)
+                          .join(" • "),
                       }))}
 
                       value={
-                        staffRows
+                        staffDropdownRows
                           .filter((s) => s.employee_name === planForm.employee_name)
                           .map((s) => ({
                             value: s.employee_no,
-                            label: `${s.employee_name} • ${s.position}`,
+                            label: [
+                              s.employee_name,
+                              s.position,
+                              s.branch_name,
+                            ]
+                              .filter(Boolean)
+                              .join(" • "),
                           }))[0] || null
                       }
 
                       onChange={(option) => {
-                        const staff = staffRows.find(
-                          (s) => s.employee_no === option?.value
+                        const staff = staffDropdownRows.find(
+                          (s) =>
+                            String(s.employee_no) ===
+                            String(option?.value)
                         );
 
                         setPlanForm((prev) => ({

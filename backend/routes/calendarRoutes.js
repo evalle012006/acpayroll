@@ -1905,6 +1905,282 @@ router.put(
 // GET STAFF SCOPE
 // =====================================================
 
+// =====================================================
+// GET ALL STAFF FOR TRAVEL PLAN DROPDOWNS
+// =====================================================
+//
+// Used by:
+// 1. Create Travel Plan - Employee
+// 2. Review - Involved
+// 3. Findings - Involved
+//
+// This is separate from /travel-plans/staff-scope.
+// The Staff Scope dashboard keeps its original manager rules.
+// =====================================================
+
+router.get(
+  "/travel-plans/staff-dropdown",
+  requireAuth,
+  async (req, res) => {
+    try {
+      if (!canViewTravelModule(req)) {
+        return res.status(403).json({
+          message:
+            "You are not allowed to view travel plan staff.",
+        });
+      }
+
+      const role = normalizeRole(req.user?.role);
+
+      const department = normalizeDepartment(
+        req.user?.department
+      );
+
+      const userArea = toStr(req.user?.area);
+      const userRegion = toStr(req.user?.region);
+      const userDivision = toStr(req.user?.division);
+
+      const baseSelect = `
+        SELECT
+          s.id,
+          s.employee_no,
+
+          COALESCE(
+            NULLIF(TRIM(s.fullname), ''),
+            NULLIF(
+              TRIM(
+                CONCAT_WS(
+                  ' ',
+                  s.last_name,
+                  s.first_name,
+                  s.middle_name
+                )
+              ),
+              ''
+            ),
+            s.employee_no
+          ) AS employee_name,
+
+          s.position,
+
+          b.name AS branch_name,
+          b.code AS branch_code,
+
+          COALESCE(
+            NULLIF(TRIM(s.area), ''),
+            NULLIF(TRIM(b.area), '')
+          ) AS area,
+
+          COALESCE(
+            NULLIF(TRIM(s.region), ''),
+            NULLIF(TRIM(b.region), '')
+          ) AS region,
+
+          COALESCE(
+            NULLIF(TRIM(s.division), ''),
+            NULLIF(TRIM(b.division), '')
+          ) AS division,
+
+          s.department
+
+        FROM public.staff s
+
+        LEFT JOIN public.branches b
+          ON b.id = s.branch_id
+
+        WHERE LOWER(
+          TRIM(
+            COALESCE(s.status, 'active')
+          )
+        ) = 'active'
+
+          AND s.employee_no IS NOT NULL
+
+          AND TRIM(s.employee_no) <> ''
+      `;
+
+      let sql = "";
+      let params = [];
+
+      // ADMIN AND IT:
+      // Show every active staff member.
+      if (isAdminOrIT(req)) {
+        sql = `
+          ${baseSelect}
+
+          ORDER BY
+            s.department ASC NULLS LAST,
+            b.name ASC NULLS LAST,
+            employee_name ASC
+        `;
+      }
+
+      // TREAD:
+      // Show every active staff member.
+      else if (
+        department === "tread department" &&
+        TREAD_TRAVEL_PLAN_ROLES.includes(role)
+      ) {
+        sql = `
+          ${baseSelect}
+
+          ORDER BY
+            s.department ASC NULLS LAST,
+            b.name ASC NULLS LAST,
+            employee_name ASC
+        `;
+      }
+
+      // AREA MANAGER:
+      // Show every active staff member within the same area.
+      else if (
+        department === "operation department" &&
+        [
+          "area manager",
+          "acting area manager",
+        ].includes(role)
+      ) {
+        if (!userArea) {
+          return res.json([]);
+        }
+
+        sql = `
+          ${baseSelect}
+
+          AND LOWER(
+            TRIM(
+              COALESCE(
+                NULLIF(TRIM(s.area), ''),
+                NULLIF(TRIM(b.area), ''),
+                ''
+              )
+            )
+          ) = LOWER(TRIM($1))
+
+          ORDER BY
+            b.name ASC NULLS LAST,
+            employee_name ASC
+        `;
+
+        params = [userArea];
+      }
+
+      // REGIONAL MANAGER:
+      // Show every active staff member within the same region.
+      else if (
+        department === "operation department" &&
+        [
+          "regional manager",
+          "acting regional manager",
+        ].includes(role)
+      ) {
+        if (!userRegion) {
+          return res.json([]);
+        }
+
+        sql = `
+          ${baseSelect}
+
+          AND LOWER(
+            TRIM(
+              COALESCE(
+                NULLIF(TRIM(s.region), ''),
+                NULLIF(TRIM(b.region), ''),
+                ''
+              )
+            )
+          ) = LOWER(TRIM($1))
+
+          ORDER BY
+            area ASC NULLS LAST,
+            b.name ASC NULLS LAST,
+            employee_name ASC
+        `;
+
+        params = [userRegion];
+      }
+
+      // ASSISTANT VICE PRESIDENT:
+      // Show every active staff member within the same division.
+      else if (
+        department === "operation department" &&
+        role === "assistant vice president"
+      ) {
+        if (!userDivision) {
+          return res.json([]);
+        }
+
+        sql = `
+          ${baseSelect}
+
+          AND LOWER(
+            TRIM(
+              COALESCE(
+                NULLIF(TRIM(s.division), ''),
+                NULLIF(TRIM(b.division), ''),
+                ''
+              )
+            )
+          ) = LOWER(TRIM($1))
+
+          ORDER BY
+            region ASC NULLS LAST,
+            area ASC NULLS LAST,
+            b.name ASC NULLS LAST,
+            employee_name ASC
+        `;
+
+        params = [userDivision];
+      }
+
+      // VP AND SVP:
+      // Show every active Operation Department staff member.
+      else if (
+        department === "operation department" &&
+        [
+          "vice president",
+          "senior vice president",
+        ].includes(role)
+      ) {
+        sql = `
+          ${baseSelect}
+
+          AND LOWER(
+            TRIM(
+              COALESCE(s.department, '')
+            )
+          ) = 'operation department'
+
+          ORDER BY
+            division ASC NULLS LAST,
+            region ASC NULLS LAST,
+            area ASC NULLS LAST,
+            b.name ASC NULLS LAST,
+            employee_name ASC
+        `;
+      }
+
+      // No matching access.
+      else {
+        return res.json([]);
+      }
+
+      const result = await pool.query(
+        sql,
+        params
+      );
+
+      return res.json(result.rows);
+    } catch (error) {
+      return sendServerError(
+        res,
+        "GET /travel-plans/staff-dropdown",
+        error
+      );
+    }
+  }
+);
+
 router.get(
   "/travel-plans/staff-scope",
   requireAuth,
