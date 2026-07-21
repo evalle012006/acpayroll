@@ -81,6 +81,18 @@ const OPERATION_TRAVEL_PLAN_ROLES = [
   "senior vice president",
 ];
 
+const AUDIT_TRAVEL_PLAN_ROLES = [
+  "branch manager",
+  "acting branch manager",
+  "area manager",
+  "acting area manager",
+  "regional manager",
+  "acting regional manager",
+  "assistant vice president",
+  "vice president",
+  "senior vice president",
+];
+
 const TREAD_TRAVEL_PLAN_ROLES = [
   "branch manager",
   "acting branch manager",
@@ -93,10 +105,48 @@ const TREAD_TRAVEL_PLAN_ROLES = [
   "senior vice president",
 ];
 
+const isOperationDepartment = (department) =>
+  normalizeDepartment(department) === "operation department";
+
+const isAuditDepartment = (department) =>
+  normalizeDepartment(department) === "audit department";
+
+const isOperationStyleTravelDepartment = (department) =>
+  isOperationDepartment(department) ||
+  isAuditDepartment(department);
+
+const hasOperationStyleTravelRole = (department, role) => {
+  const normalizedDepartment = normalizeDepartment(department);
+  const normalizedRole = normalizeRole(role);
+
+  if (normalizedDepartment === "operation department") {
+    return OPERATION_TRAVEL_PLAN_ROLES.includes(normalizedRole);
+  }
+
+  if (normalizedDepartment === "audit department") {
+    return AUDIT_TRAVEL_PLAN_ROLES.includes(normalizedRole);
+  }
+
+  return false;
+};
+
 const isAdminOrIT = (req) => {
   const role = normalizeRole(req.user?.role);
 
   return role === "admin" || role === "it";
+};
+
+const canManageCalendarActivity = (req) => {
+  const role = normalizeRole(req.user?.role);
+
+  const department = normalizeDepartment(
+    req.user?.department
+  );
+
+  return (
+    role === "admin" ||
+    department === "tread department"
+  );
 };
 
 // =====================================================
@@ -105,19 +155,26 @@ const isAdminOrIT = (req) => {
 
 const canCreatePlan = (req) => {
   const role = normalizeRole(req.user?.role);
-  const department = normalizeDepartment(req.user?.department);
+  const department = normalizeDepartment(
+    req.user?.department
+  );
 
   if (isAdminOrIT(req)) {
     return true;
   }
 
-  if (
-    department === "operation department" &&
-    OPERATION_TRAVEL_PLAN_ROLES.includes(role)
-  ) {
+  /*
+    Operation and Audit use the same hierarchy:
+    Area Manager up to Senior Vice President.
+  */
+  if (hasOperationStyleTravelRole(department, role)) {
     return true;
   }
 
+  /*
+    TREAD keeps its existing access:
+    Branch Manager up to Senior Vice President.
+  */
   if (
     department === "tread department" &&
     TREAD_TRAVEL_PLAN_ROLES.includes(role)
@@ -134,8 +191,13 @@ const canUploadPlanPhoto = (req) => canCreatePlan(req);
 
 const canDeleteTravelRecord = (req) => {
   const role = normalizeRole(req.user?.role);
+  const department = normalizeDepartment(req.user?.department);
 
-  return role === "admin";
+  return (
+    role === "admin" ||
+    role === "it" ||
+    department === "tread department"
+  );
 };
 
 const canViewTravelModule = (req) => {
@@ -146,10 +208,7 @@ const canViewTravelModule = (req) => {
     return true;
   }
 
-  if (
-    department === "operation department" &&
-    OPERATION_TRAVEL_PLAN_ROLES.includes(role)
-  ) {
+  if (hasOperationStyleTravelRole(department, role)) {
     return true;
   }
 
@@ -250,6 +309,7 @@ router.get(
       const userArea = toStr(req.user?.area);
       const userRegion = toStr(req.user?.region);
       const userDivision = toStr(req.user?.division);
+      const userBranchId = Number(req.user?.branch_id);
 
       /*
         The inner query first formats every travel plan
@@ -413,6 +473,50 @@ router.get(
         `;
       }
 
+      // AREA MANAGER / ACTING AREA MANAGER
+      // =================================================
+      // AUDIT BRANCH MANAGER / ACTING BRANCH MANAGER
+      // =================================================
+      // Can see Audit Department travel plans assigned
+      // to staff from the same branch only.
+      // =================================================
+
+      else if (
+        isAuditDepartment(department) &&
+        [
+          "branch manager",
+          "acting branch manager",
+        ].includes(role)
+      ) {
+        if (!Number.isInteger(userBranchId) || userBranchId <= 0) {
+          return res.json([]);
+        }
+
+        sql = `
+          ${baseSql}
+
+          AND COALESCE(
+            matched_staff.branch_id,
+            matched_branch.id
+          ) = $1
+
+          AND LOWER(
+            TRIM(
+              COALESCE(
+                matched_staff.department,
+                ''
+              )
+            )
+          ) = LOWER(TRIM($2))
+
+          ORDER BY
+            tp_data.plan_date DESC,
+            tp_data.id DESC
+        `;
+
+        params = [userBranchId, department];
+      }
+
       // =================================================
       // AREA MANAGER / ACTING AREA MANAGER
       // =================================================
@@ -423,11 +527,11 @@ router.get(
       // =================================================
 
       else if (
-        department === "operation department" &&
-        [
-          "area manager",
-          "acting area manager",
-        ].includes(role)
+        isOperationStyleTravelDepartment(department) &&
+          [
+            "area manager",
+            "acting area manager",
+          ].includes(role)
       ) {
         if (!userArea) {
           return res.json([]);
@@ -459,7 +563,7 @@ router.get(
                 ''
               )
             )
-          ) = 'operation department'
+          ) = LOWER(TRIM($2))
 
           AND LOWER(
             TRIM(
@@ -483,7 +587,7 @@ router.get(
             tp_data.id DESC
         `;
 
-        params = [userArea];
+        params = [userArea, department];
       }
 
       // =================================================
@@ -496,11 +600,11 @@ router.get(
       // =================================================
 
       else if (
-        department === "operation department" &&
-        [
-          "regional manager",
-          "acting regional manager",
-        ].includes(role)
+        isOperationStyleTravelDepartment(department) &&
+          [
+            "regional manager",
+            "acting regional manager",
+          ].includes(role)
       ) {
         if (!userRegion) {
           return res.json([]);
@@ -532,7 +636,7 @@ router.get(
                 ''
               )
             )
-          ) = 'operation department'
+          ) = LOWER(TRIM($2))
 
           AND LOWER(
             TRIM(
@@ -554,7 +658,7 @@ router.get(
             tp_data.id DESC
         `;
 
-        params = [userRegion];
+        params = [userRegion, department];
       }
 
       // =================================================
@@ -567,7 +671,7 @@ router.get(
       // =================================================
 
       else if (
-        department === "operation department" &&
+        isOperationStyleTravelDepartment(department) &&
         role === "assistant vice president"
       ) {
         if (!userDivision) {
@@ -600,7 +704,7 @@ router.get(
                 ''
               )
             )
-          ) = 'operation department'
+          ) = LOWER(TRIM($2))
 
           AND LOWER(
             TRIM(
@@ -621,7 +725,7 @@ router.get(
             tp_data.id DESC
         `;
 
-        params = [userDivision];
+        params = [userDivision, department];
       }
 
       // =================================================
@@ -634,7 +738,7 @@ router.get(
       // =================================================
 
       else if (
-        department === "operation department" &&
+        isOperationStyleTravelDepartment(department) &&
         role === "vice president"
       ) {
         sql = `
@@ -647,7 +751,7 @@ router.get(
                 ''
               )
             )
-          ) = 'operation department'
+          ) = LOWER(TRIM($1))
 
           AND LOWER(
             TRIM(
@@ -666,6 +770,7 @@ router.get(
             tp_data.plan_date DESC,
             tp_data.id DESC
         `;
+        params = [department];
       }
 
       // =================================================
@@ -676,7 +781,7 @@ router.get(
       // =================================================
 
       else if (
-        department === "operation department" &&
+        isOperationStyleTravelDepartment(department) &&
         role === "senior vice president"
       ) {
         sql = `
@@ -689,12 +794,13 @@ router.get(
                 ''
               )
             )
-          ) = 'operation department'
+          ) = LOWER(TRIM($1))
 
           ORDER BY
             tp_data.plan_date DESC,
             tp_data.id DESC
         `;
+        params = [department];
       }
 
       // =================================================
@@ -947,7 +1053,7 @@ router.delete("/travel-plans/:id", requireAuth, async (req, res) => {
     if (!canDeleteTravelRecord(req)) {
       return res.status(403).json({
         message:
-          "Only Admin can delete travel plans.",
+          "Only Admin, IT, and TREAD Department can delete travel plans.",
       });
     }
 
@@ -2343,7 +2449,7 @@ router.put(
       if (!canDeleteTravelRecord(req)) {
         return res.status(403).json({
           message:
-            "Only Admin can reopen completed travel plans.",
+            "Only Admin, IT, and TREAD Department can reopen completed travel plans.",
         });
       }
 
@@ -2450,6 +2556,7 @@ router.get(
       const userArea = toStr(req.user?.area);
       const userRegion = toStr(req.user?.region);
       const userDivision = toStr(req.user?.division);
+      const userBranchId = Number(req.user?.branch_id);
 
       const baseSelect = `
         SELECT
@@ -2543,9 +2650,41 @@ router.get(
       }
 
       // AREA MANAGER:
+      // AUDIT BRANCH MANAGER:
+      // Show active Audit Department staff from the same branch.
+      else if (
+        isAuditDepartment(department) &&
+        [
+          "branch manager",
+          "acting branch manager",
+        ].includes(role)
+      ) {
+        if (!Number.isInteger(userBranchId) || userBranchId <= 0) {
+          return res.json([]);
+        }
+
+        sql = `
+          ${baseSelect}
+
+          AND s.branch_id = $1
+
+          AND LOWER(
+            TRIM(
+              COALESCE(s.department, '')
+            )
+          ) = LOWER(TRIM($2))
+
+          ORDER BY
+            employee_name ASC
+        `;
+
+        params = [userBranchId, department];
+      }
+
+      // AREA MANAGER:
       // Show every active staff member within the same area.
       else if (
-        department === "operation department" &&
+        isOperationStyleTravelDepartment(department) &&
         [
           "area manager",
           "acting area manager",
@@ -2568,18 +2707,24 @@ router.get(
             )
           ) = LOWER(TRIM($1))
 
+          AND LOWER(
+            TRIM(
+              COALESCE(s.department, '')
+            )
+          ) = LOWER(TRIM($2))
+
           ORDER BY
             b.name ASC NULLS LAST,
             employee_name ASC
         `;
 
-        params = [userArea];
+        params = [userArea, department];
       }
 
       // REGIONAL MANAGER:
       // Show every active staff member within the same region.
       else if (
-        department === "operation department" &&
+        isOperationStyleTravelDepartment(department) &&
         [
           "regional manager",
           "acting regional manager",
@@ -2602,19 +2747,25 @@ router.get(
             )
           ) = LOWER(TRIM($1))
 
+          AND LOWER(
+            TRIM(
+              COALESCE(s.department, '')
+            )
+          ) = LOWER(TRIM($2))
+
           ORDER BY
             area ASC NULLS LAST,
             b.name ASC NULLS LAST,
             employee_name ASC
         `;
 
-        params = [userRegion];
+        params = [userRegion, department];
       }
 
       // ASSISTANT VICE PRESIDENT:
       // Show every active staff member within the same division.
       else if (
-        department === "operation department" &&
+        isOperationStyleTravelDepartment(department) &&
         role === "assistant vice president"
       ) {
         if (!userDivision) {
@@ -2634,6 +2785,12 @@ router.get(
             )
           ) = LOWER(TRIM($1))
 
+          AND LOWER(
+            TRIM(
+              COALESCE(s.department, '')
+            )
+          ) = LOWER(TRIM($2))
+
           ORDER BY
             region ASC NULLS LAST,
             area ASC NULLS LAST,
@@ -2641,13 +2798,13 @@ router.get(
             employee_name ASC
         `;
 
-        params = [userDivision];
+        params = [userDivision, department];
       }
 
       // VP AND SVP:
       // Show every active Operation Department staff member.
       else if (
-        department === "operation department" &&
+        isOperationStyleTravelDepartment(department) &&
         [
           "vice president",
           "senior vice president",
@@ -2660,7 +2817,7 @@ router.get(
             TRIM(
               COALESCE(s.department, '')
             )
-          ) = 'operation department'
+          ) = LOWER(TRIM($1))
 
           ORDER BY
             division ASC NULLS LAST,
@@ -2669,6 +2826,8 @@ router.get(
             b.name ASC NULLS LAST,
             employee_name ASC
         `;
+
+        params = [department];
       }
 
       // No matching access.
@@ -2724,6 +2883,7 @@ router.get(
       const userArea = toStr(req.user?.area);
       const userRegion = toStr(req.user?.region);
       const userDivision = toStr(req.user?.division);
+      const userBranchId = Number(req.user?.branch_id);
 
       const baseSelect = `
         SELECT
@@ -2759,31 +2919,20 @@ router.get(
           active_leave.end_date AS leave_end_date,
 
           CASE
-            /*
-              Priority 1:
-              Approved indefinite leave.
-            */
+
             WHEN active_leave.leave_type = 'Indefinite Leave'
             THEN 'Indefinite Leave'
 
-            /*
-              Priority 2:
-              Approved normal leave covering the selected date.
-            */
             WHEN active_leave.id IS NOT NULL
             THEN 'On Leave'
 
-            /*
-              Priority 3:
-              Staff submitted a travel plan for the selected date.
-            */
             WHEN EXISTS (
               SELECT 1
               FROM public.travel_plans tp
               WHERE tp.plan_date = $1::date
                 AND (
                   tp.employee_name = s.fullname
-                  OR LOWER(TRIM(COALESCE(tp.employee_name, ''))) =
+                  OR LOWER(TRIM(COALESCE(tp.employee_name,''))) =
                     LOWER(
                       TRIM(
                         CONCAT_WS(
@@ -2798,7 +2947,13 @@ router.get(
             )
             THEN 'Submitted'
 
+            WHEN $1::date < (
+                NOW() AT TIME ZONE 'Asia/Manila'
+              )::date
+            THEN 'Not Submitted'
+
             ELSE 'Pending'
+
           END AS travel_status
 
         FROM public.staff s
@@ -2998,6 +3153,47 @@ router.get(
         `;
       }
 
+      // AREA MANAGER / ACTING AREA MANAGER
+      // =================================================
+      // AUDIT BRANCH MANAGER / ACTING BRANCH MANAGER
+      // =================================================
+      // Shows active Audit Department staff from the
+      // logged-in manager's branch.
+      // =================================================
+
+      else if (
+        isAuditDepartment(department) &&
+        [
+          "branch manager",
+          "acting branch manager",
+        ].includes(role)
+      ) {
+        if (!Number.isInteger(userBranchId) || userBranchId <= 0) {
+          return res.json([]);
+        }
+
+        sql = `
+          ${baseSelect}
+
+          AND s.branch_id = $2
+
+          AND LOWER(
+            TRIM(
+              COALESCE(s.department, '')
+            )
+          ) = LOWER(TRIM($3))
+
+          ORDER BY
+            s.fullname ASC
+        `;
+
+        params = [
+          targetDate,
+          userBranchId,
+          department,
+        ];
+      }
+
       // =================================================
       // AREA MANAGER / ACTING AREA MANAGER
       // =================================================
@@ -3006,7 +3202,7 @@ router.get(
       // =================================================
 
       else if (
-        department === "operation department" &&
+        isOperationStyleTravelDepartment(department) &&
         [
           "area manager",
           "acting area manager",
@@ -3029,12 +3225,18 @@ router.get(
             )
           ) = LOWER(TRIM($2))
 
+          AND LOWER(
+            TRIM(
+              COALESCE(s.department, '')
+            )
+          ) = LOWER(TRIM($3))
+
           ORDER BY
             b.name ASC NULLS LAST,
             s.fullname ASC
         `;
 
-        params = [targetDate, userArea];
+        params = [targetDate, userArea, department];
       }
 
       // =================================================
@@ -3046,7 +3248,7 @@ router.get(
       // =================================================
 
       else if (
-        department === "operation department" &&
+        isOperationStyleTravelDepartment(department) &&
         [
           "regional manager",
           "acting regional manager",
@@ -3078,6 +3280,12 @@ router.get(
             'acting area manager'
           )
 
+          AND LOWER(
+            TRIM(
+              COALESCE(s.department, '')
+            )
+          ) = LOWER(TRIM($3))
+
           ORDER BY
             COALESCE(
               NULLIF(TRIM(s.area), ''),
@@ -3097,7 +3305,7 @@ router.get(
             s.fullname ASC
         `;
 
-        params = [targetDate, userRegion];
+        params = [targetDate, userRegion, department];
       }
 
       // =================================================
@@ -3109,7 +3317,7 @@ router.get(
       // =================================================
 
       else if (
-        department === "operation department" &&
+        isOperationStyleTravelDepartment(department) &&
         role === "assistant vice president"
       ) {
         if (!userDivision) {
@@ -3140,6 +3348,12 @@ router.get(
             'acting area manager'
           )
 
+          AND LOWER(
+            TRIM(
+              COALESCE(s.department, '')
+            )
+          ) = LOWER(TRIM($3))
+
           ORDER BY
             CASE LOWER(
               TRIM(
@@ -3161,7 +3375,7 @@ router.get(
             s.fullname ASC
         `;
 
-        params = [targetDate, userDivision];
+        params = [targetDate, userDivision, department];
       }
 
       // =================================================
@@ -3173,7 +3387,7 @@ router.get(
       // =================================================
 
       else if (
-        department === "operation department" &&
+        isOperationStyleTravelDepartment(department) &&
         role === "vice president"
       ) {
         sql = `
@@ -3183,7 +3397,7 @@ router.get(
             TRIM(
               COALESCE(s.department, '')
             )
-          ) = 'operation department'
+          ) = LOWER(TRIM($2))
 
           AND LOWER(
             TRIM(
@@ -3213,6 +3427,7 @@ router.get(
 
             s.fullname ASC
         `;
+        params = [targetDate, department];
       }
 
       // =================================================
@@ -3224,7 +3439,7 @@ router.get(
       // =================================================
 
       else if (
-        department === "operation department" &&
+        isOperationStyleTravelDepartment(department) &&
         role === "senior vice president"
       ) {
         sql = `
@@ -3234,7 +3449,7 @@ router.get(
             TRIM(
               COALESCE(s.department, '')
             )
-          ) = 'operation department'
+          ) = LOWER(TRIM($2))
 
           AND LOWER(
             TRIM(
@@ -3266,6 +3481,8 @@ router.get(
 
             s.fullname ASC
         `;
+
+        params = [targetDate, department];
       }
 
       // =================================================
@@ -3313,6 +3530,7 @@ router.get(
       const userArea = toStr(req.user?.area);
       const userRegion = toStr(req.user?.region);
       const userDivision = toStr(req.user?.division);
+      const userBranchId = Number(req.user?.branch_id);
 
       const baseSelect = `
         SELECT DISTINCT
@@ -3378,6 +3596,37 @@ router.get(
         `;
       }
 
+      // AREA MANAGER / ACTING AREA MANAGER
+      // =================================================
+      // AUDIT BRANCH MANAGER / ACTING BRANCH MANAGER
+      // =================================================
+      // Can select and view only the logged-in account's
+      // assigned branch.
+      // =================================================
+
+      else if (
+        isAuditDepartment(department) &&
+        [
+          "branch manager",
+          "acting branch manager",
+        ].includes(role)
+      ) {
+        if (!Number.isInteger(userBranchId) || userBranchId <= 0) {
+          return res.json([]);
+        }
+
+        sql = `
+          ${baseSelect}
+
+          AND b.id = $1
+
+          ORDER BY
+            b.name ASC
+        `;
+
+        params = [userBranchId];
+      }
+
       // =================================================
       // AREA MANAGER / ACTING AREA MANAGER
       // =================================================
@@ -3386,7 +3635,7 @@ router.get(
       // =================================================
 
       else if (
-        department === "operation department" &&
+        isOperationStyleTravelDepartment(department) &&
         [
           "area manager",
           "acting area manager",
@@ -3420,7 +3669,7 @@ router.get(
       // =================================================
 
       else if (
-        department === "operation department" &&
+        isOperationStyleTravelDepartment(department) &&
         [
           "regional manager",
           "acting regional manager",
@@ -3455,7 +3704,7 @@ router.get(
       // =================================================
 
       else if (
-        department === "operation department" &&
+        isOperationStyleTravelDepartment(department) &&
         role === "assistant vice president"
       ) {
         if (!userDivision) {
@@ -3488,7 +3737,7 @@ router.get(
       // =================================================
 
       else if (
-        department === "operation department" &&
+        isOperationStyleTravelDepartment(department) &&
         role === "vice president"
       ) {
         sql = `
@@ -3510,7 +3759,7 @@ router.get(
       // =================================================
 
       else if (
-        department === "operation department" &&
+        isOperationStyleTravelDepartment(department) &&
         role === "senior vice president"
       ) {
         sql = `
@@ -3686,10 +3935,10 @@ router.post(
   requireAuth,
   async (req, res) => {
     try {
-      if (!canCreatePlan(req)) {
+      if (!canManageCalendarActivity(req)) {
         return res.status(403).json({
           message:
-            "You are not allowed to create calendar activities.",
+            "Only Admin and TREAD Department can create calendar activities.",
         });
       }
 
@@ -3814,10 +4063,10 @@ router.put(
   requireAuth,
   async (req, res) => {
     try {
-      if (!canEditPlan(req)) {
+      if (!canManageCalendarActivity(req)) {
         return res.status(403).json({
           message:
-            "You are not allowed to edit calendar activities.",
+            "Only Admin and TREAD Department can edit calendar activities.",
         });
       }
 
@@ -3948,10 +4197,10 @@ router.delete(
   requireAuth,
   async (req, res) => {
     try {
-      if (!canDeleteTravelRecord(req)) {
+      if (!canManageCalendarActivity(req)) {
         return res.status(403).json({
           message:
-            "Only Admin can delete calendar activities.",
+            "Only Admin and TREAD Department can delete calendar activities.",
         });
       }
 

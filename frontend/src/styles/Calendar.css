@@ -2044,23 +2044,452 @@
 }
 
 .travel-count-pill.submitted{
-    background:#163926;
-    border-color:#22c55e;
-    color:#4ade80;
+    background:#143d29;
+    color:#22c55e;
+    border:1px solid #22c55e;
 }
 
 .travel-count-pill.pending{
-    background:#3b2a12;
-    border-color:#f59e0b;
+    background:#3b2b08;
     color:#fbbf24;
+    border:1px solid #fbbf24;
 }
 
 .travel-count-pill.leave{
-    background:#1d2d4d;
-    border-color:#3b82f6;
+    background:#102b52;
     color:#60a5fa;
+    border:1px solid #60a5fa;
 }
 
-.travel-count-pill:hover{
-    transform:translateY(-1px);
+/* =========================================================
+   MOST VISITED BRANCH LOCATION FILTERS
+========================================================= */
+
+.travel-branch-location-filters {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.travel-branch-location-filters select {
+  width: 100%;
+  min-height: 38px;
+  padding: 8px 34px 8px 11px;
+
+  border: 1px solid var(--border);
+  border-radius: 9px;
+
+  background: var(--panel);
+  color: var(--text);
+
+  font-size: 12px;
+  font-weight: 700;
+  outline: none;
+}
+
+.travel-branch-location-filters select:focus {
+  border-color: #6366f1;
+}
+
+.travel-branch-filter-clear {
+  width: 100%;
+  min-height: 34px;
+  margin-top: 8px;
+
+  border: 1px solid var(--border);
+  border-radius: 8px;
+
+  background: transparent;
+  color: var(--muted);
+
+  font-size: 11px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.travel-branch-filter-clear:hover {
+  color: var(--text);
+  background: var(--panel);
+}
+
+/* =========================================================
+   TRAVEL PLAN AND ACTIVITY ACTIONS
+========================================================= */
+
+.travel-record-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 7px;
+  margin-top: 8px;
+}
+
+.travel-record-actions button,
+.travel-activity-detail-actions button {
+  min-height: 30px;
+  padding: 6px 12px;
+  border-radius: 8px;
+  font-size: 11px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.travel-record-edit {
+  border: 1px solid rgba(96, 165, 250, 0.55);
+  background: rgba(37, 99, 235, 0.16);
+  color: #93c5fd;
+}
+
+.travel-record-edit:hover {
+  border-color: #60a5fa;
+  background: rgba(37, 99, 235, 0.28);
+}
+
+.travel-record-delete {
+  border: 1px solid rgba(248, 113, 113, 0.55);
+  background: rgba(220, 38, 38, 0.14);
+  color: #fca5a5;
+}
+
+.travel-record-delete:hover {
+  border-color: #f87171;
+  background: rgba(220, 38, 38, 0.26);
+}
+
+.travel-activity-detail-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+@media (max-width: 700px) {
+  .travel-record-actions,
+  .travel-activity-detail-actions {
+    width: 100%;
+    justify-content: stretch;
+  }
+
+  .travel-record-actions button,
+  .travel-activity-detail-actions button {
+    flex: 1;
+  }
+}
+
+.travel-branch-location-filters {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
+  gap: 8px;
+  align-items: end;
+  margin-top: 10px;
+}
+
+.travel-branch-location-filters label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.travel-branch-location-filters label > span {
+  padding-left: 2px;
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.travel-branch-location-filters select {
+  width: 100%;
+  min-width: 0;
+  height: 36px;
+  padding: 0 28px 0 10px;
+
+  border: 1px solid var(--border);
+  border-radius: 9px;
+
+  background: var(--panel);
+  color: var(--text);
+
+  font-size: 10px;
+  font-weight: 800;
+  outline: none;
+}
+
+.travel-branch-location-filters select:hover,
+.travel-branch-location-filters select:focus {
+  border-color: #4f67a4;
+}
+
+.travel-branch-filter-clear {
+  height: 36px;
+  padding: 0 12px;
+
+  border: 1px solid var(--border);
+  border-radius: 9px;
+
+  background: transparent;
+  color: var(--muted);
+
+  font-size: 10px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.travel-branch-filter-clear:hover {
+  background: var(--panel);
+  color: var(--text);
+}
+
+@media (max-width: 1100px) {
+  .travel-branch-location-filters {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .travel-branch-filter-clear {
+    width: 100%;
+  }
+}
+
+@media (max-width: 700px) {
+  .travel-branch-location-filters {
+    grid-template-columns: 1fr;
+  }
+}
+
+.travel-forecast-page {
+  min-height: 650px;
+  display: grid;
+  grid-template-columns: 230px minmax(0, 1fr);
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 22px;
+  background:
+    linear-gradient(
+      90deg,
+      rgba(7, 23, 35, 0.96),
+      rgba(7, 20, 31, 0.78)
+    ),
+    radial-gradient(
+      circle at 75% 20%,
+      rgba(70, 129, 132, 0.35),
+      transparent 42%
+    );
+  box-shadow: var(--shadow-soft);
+}
+
+.travel-forecast-sidebar {
+  padding: 26px 20px;
+  background: rgba(6, 24, 34, 0.72);
+  border-right: 1px solid rgba(255, 255, 255, 0.12);
+  backdrop-filter: blur(16px);
+}
+
+.travel-forecast-brand {
+  margin-bottom: 42px;
+  font-size: 20px;
+  font-weight: 900;
+  color: #ffffff;
+}
+
+.travel-forecast-current {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: #ffffff;
+}
+
+.travel-forecast-current span {
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.travel-forecast-current strong {
+  font-size: 72px;
+  line-height: 1;
+}
+
+.travel-forecast-current small {
+  color: rgba(255, 255, 255, 0.65);
+}
+
+.travel-forecast-summary {
+  margin-top: 34px;
+  display: grid;
+  gap: 12px;
+}
+
+.travel-forecast-summary > div {
+  padding: 13px 14px;
+  display: flex;
+  justify-content: space-between;
+  gap: 15px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.05);
+  color: #ffffff;
+}
+
+.travel-forecast-main {
+  min-width: 0;
+  padding: 42px;
+  display: flex;
+  flex-direction: column;
+}
+
+.travel-forecast-hero {
+  min-height: 210px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 28px;
+  color: #ffffff;
+}
+
+.travel-forecast-date {
+  font-size: 13px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: rgba(255, 255, 255, 0.65);
+}
+
+.travel-forecast-hero h1 {
+  max-width: 720px;
+  margin: 12px 0;
+  font-size: clamp(38px, 6vw, 78px);
+  line-height: 0.98;
+}
+
+.travel-forecast-hero p {
+  max-width: 630px;
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.travel-forecast-count {
+  min-width: 120px;
+  height: 120px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.07);
+  font-size: 48px;
+  font-weight: 900;
+  color: #ffffff;
+}
+
+.travel-forecast-plan-list {
+  max-height: 260px;
+  display: grid;
+  gap: 10px;
+  overflow-y: auto;
+}
+
+.travel-forecast-plan-card {
+  width: 100%;
+  padding: 15px 17px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 20px;
+  text-align: left;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 13px;
+  background: rgba(255, 255, 255, 0.06);
+  color: #ffffff;
+  cursor: pointer;
+}
+
+.travel-forecast-plan-card > div {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.travel-forecast-plan-card strong,
+.travel-forecast-plan-card span,
+.travel-forecast-plan-card small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.travel-forecast-plan-card span,
+.travel-forecast-plan-card small {
+  color: rgba(255, 255, 255, 0.65);
+}
+
+.travel-forecast-empty {
+  min-height: 130px;
+  display: grid;
+  place-items: center;
+  border: 1px dashed rgba(255, 255, 255, 0.2);
+  border-radius: 14px;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.travel-forecast-week {
+  margin-top: auto;
+  padding-top: 30px;
+  display: grid;
+  grid-template-columns: repeat(7, minmax(90px, 1fr));
+  gap: 12px;
+}
+
+.travel-forecast-day {
+  min-height: 115px;
+  padding: 15px 10px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(255, 255, 255, 0.7);
+  cursor: pointer;
+}
+
+.travel-forecast-day strong {
+  font-size: 30px;
+  color: #ffffff;
+}
+
+.travel-forecast-day.active {
+  transform: translateY(-6px);
+  background: rgba(101, 168, 170, 0.25);
+  border-color: rgba(155, 226, 225, 0.65);
+  color: #ffffff;
+}
+
+@media (max-width: 900px) {
+  .travel-forecast-page {
+    grid-template-columns: 1fr;
+  }
+
+  .travel-forecast-sidebar {
+    border-right: 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+  }
+
+  .travel-forecast-current strong {
+    font-size: 50px;
+  }
+
+  .travel-forecast-main {
+    padding: 25px;
+  }
+
+  .travel-forecast-week {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .travel-forecast-count {
+    display: none;
+  }
 }

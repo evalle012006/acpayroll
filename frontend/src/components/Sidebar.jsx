@@ -435,10 +435,17 @@ const Sidebar = ({ collapsed }) => {
           can("travel_plan", "view") &&
           (
             (
-              dept.includes("operation") &&
+              (
+                dept.includes("operation") ||
+                dept.includes("audit")
+              ) &&
               [
+                "branch manager",
+                "acting branch manager",
                 "area manager",
+                "acting area manager",
                 "regional manager",
+                "acting regional manager",
                 "assistant vice president",
                 "vice president",
                 "senior vice president",

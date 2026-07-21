@@ -17,8 +17,39 @@ const emptyNoteForm = {
   content: "",
 };
 
+const readUser = () => {
+  try {
+    const raw = localStorage.getItem("user");
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+};
+
+const normalizeValue = (value) =>
+  String(value ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ");
+
 export default function TravelPlan() {
   const today = new Date();
+
+  const loggedInUser = readUser();
+
+  const loggedInRole = normalizeValue(loggedInUser?.role);
+
+  const loggedInDepartment = normalizeValue(
+    loggedInUser?.department ||
+      loggedInUser?.department_name ||
+      loggedInUser?.user_department ||
+      loggedInUser?.departmentName ||
+      loggedInUser?.dept
+  );
+
+  const canManageCalendarActivities =
+    loggedInRole === "admin" ||
+    loggedInDepartment === "tread department";
 
   const [month, setMonth] = useState(today.getMonth());
   const [year, setYear] = useState(today.getFullYear());
@@ -40,6 +71,9 @@ export default function TravelPlan() {
 
   const [activities, setActivities] = useState([]);
   const [branchSearch, setBranchSearch] = useState("");
+  const [branchDivisionFilter, setBranchDivisionFilter] = useState("");
+  const [branchRegionFilter, setBranchRegionFilter] = useState("");
+  const [branchAreaFilter, setBranchAreaFilter] = useState("");
   const [historyPlans, setHistoryPlans] = useState([]);
 
   const [selectedPlan, setSelectedPlan] = useState(null);
@@ -63,6 +97,7 @@ export default function TravelPlan() {
   const [showNoteForm, setShowNoteForm] = useState(false);
   const [noteForm, setNoteForm] = useState(emptyNoteForm);
   const [showCreateActivity, setShowCreateActivity] = useState(false);
+  const [editingActivityId, setEditingActivityId] = useState(null);
   const [staffScopeDate, setStaffScopeDate] = useState(
     new Date().toISOString().slice(0, 10)
   );
@@ -84,6 +119,108 @@ export default function TravelPlan() {
     branch_name: "",
     description: "",
   });
+
+  const getManilaDateString = (date) =>
+    new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Manila",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(date);
+
+  const getStartOfWeek = (date) => {
+    const result = new Date(date);
+    const currentDay = result.getDay();
+
+    const distanceFromMonday =
+      currentDay === 0 ? -6 : 1 - currentDay;
+
+    result.setDate(result.getDate() + distanceFromMonday);
+    result.setHours(0, 0, 0, 0);
+
+    return result;
+  };
+
+  const [forecastSelectedDate, setForecastSelectedDate] =
+    useState(getManilaDateString(new Date()));
+
+  const forecastWeek = useMemo(() => {
+    const selected = new Date(
+      `${forecastSelectedDate}T00:00:00`
+    );
+
+    const monday = getStartOfWeek(selected);
+
+    return Array.from({ length: 7 }).map((_, index) => {
+      const current = new Date(monday);
+      current.setDate(monday.getDate() + index);
+
+      const date = getManilaDateString(current);
+
+      const dayPlans = plans.filter(
+        (plan) =>
+          String(plan.plan_date || "").slice(0, 10) === date
+      );
+
+      return {
+        date,
+        shortName: current.toLocaleDateString("en-US", {
+          weekday: "short",
+        }),
+        fullName: current.toLocaleDateString("en-US", {
+          weekday: "long",
+        }),
+        dayNumber: current.getDate(),
+        total: dayPlans.length,
+        completed: dayPlans.filter(
+          (plan) => plan.status === "Completed"
+        ).length,
+        pending: dayPlans.filter(
+          (plan) => plan.status !== "Completed"
+        ).length,
+        plans: dayPlans,
+      };
+    });
+  }, [plans, forecastSelectedDate]);
+
+  const forecastSelectedDay = useMemo(() => {
+    const selectedDay =
+      forecastWeek.find(
+        (day) => day.date === forecastSelectedDate
+      ) || forecastWeek[0];
+
+    if (!selectedDay) {
+      return {
+        dayName: "",
+        dayNumber: "",
+        monthName: "",
+        fullDate: "",
+        total: 0,
+        completed: 0,
+        pending: 0,
+        plans: [],
+      };
+    }
+
+    const date = new Date(`${selectedDay.date}T00:00:00`);
+
+    return {
+      ...selectedDay,
+      dayName: date.toLocaleDateString("en-US", {
+        weekday: "long",
+      }),
+      monthName: date.toLocaleDateString("en-US", {
+        month: "long",
+        year: "numeric",
+      }),
+      fullDate: date.toLocaleDateString("en-US", {
+        weekday: "long",
+        month: "long",
+        day: "numeric",
+        year: "numeric",
+      }),
+    };
+  }, [forecastWeek, forecastSelectedDate]);
 
   const calendarDays = useMemo(() => {
     const firstDay = new Date(year, month, 1);
@@ -118,6 +255,59 @@ export default function TravelPlan() {
   const branchRows = useMemo(() => {
     return branchScopeRows;
   }, [branchScopeRows]);
+
+  const divisionOptions = useMemo(() => {
+    return [
+      ...new Set(
+        branchRows
+          .map((branch) => String(branch.division || "").trim())
+          .filter(Boolean)
+      ),
+    ].sort();
+  }, [branchRows]);
+
+  const regionOptions = useMemo(() => {
+    return [
+      ...new Set(
+        branchRows
+          .filter(
+            (branch) =>
+              !branchDivisionFilter ||
+              String(branch.division || "").trim() ===
+                branchDivisionFilter
+          )
+          .map((branch) => String(branch.region || "").trim())
+          .filter(Boolean)
+      ),
+    ].sort();
+  }, [branchRows, branchDivisionFilter]);
+
+  const areaOptions = useMemo(() => {
+    return [
+      ...new Set(
+        branchRows
+          .filter((branch) => {
+            const matchesDivision =
+              !branchDivisionFilter ||
+              String(branch.division || "").trim() ===
+                branchDivisionFilter;
+
+            const matchesRegion =
+              !branchRegionFilter ||
+              String(branch.region || "").trim() ===
+                branchRegionFilter;
+
+            return matchesDivision && matchesRegion;
+          })
+          .map((branch) => String(branch.area || "").trim())
+          .filter(Boolean)
+      ),
+    ].sort();
+  }, [
+    branchRows,
+    branchDivisionFilter,
+    branchRegionFilter,
+  ]);
 
   const staffOptions = useMemo(
     () =>
@@ -295,11 +485,43 @@ const selectedBranchPlans = useMemo(() => {
   return filtered.filter((p) => p.branch_name === selectedBranchVisit);
 }, [plans, selectedBranchVisit, visitRange, month, year]);
 
-  const filteredMostVisitedBranches = mostVisitedBranches.filter((branch) =>
-    (branch.branch || "")
+  const filteredMostVisitedBranches = mostVisitedBranches.filter((item) => {
+    const branchInfo = branchRows.find(
+      (branch) =>
+        String(branch.branch_name || "")
+          .trim()
+          .toLowerCase() ===
+        String(item.branch || "")
+          .trim()
+          .toLowerCase()
+    );
+
+    const matchesSearch = String(item.branch || "")
       .toLowerCase()
-      .includes(branchSearch.toLowerCase())
-  );
+      .includes(branchSearch.trim().toLowerCase());
+
+    const matchesDivision =
+      !branchDivisionFilter ||
+      String(branchInfo?.division || "").trim() ===
+        branchDivisionFilter;
+
+    const matchesRegion =
+      !branchRegionFilter ||
+      String(branchInfo?.region || "").trim() ===
+        branchRegionFilter;
+
+    const matchesArea =
+      !branchAreaFilter ||
+      String(branchInfo?.area || "").trim() ===
+        branchAreaFilter;
+
+    return (
+      matchesSearch &&
+      matchesDivision &&
+      matchesRegion &&
+      matchesArea
+    );
+  });
 
   const maxBranchVisits = Math.max(
     1,
@@ -436,15 +658,35 @@ const selectedBranchPlans = useMemo(() => {
   };
 
   const saveActivity = async () => {
-    if (!activityForm.title || !activityForm.date_from || !activityForm.date_to) {
+    if (!canManageCalendarActivities) {
+      alert("Only Admin and TREAD Department can manage calendar activities.");
+      return;
+    }
+    if (
+      !activityForm.title ||
+      !activityForm.date_from ||
+      !activityForm.date_to
+    ) {
       alert("Title, Date From, and Date To are required.");
       return;
     }
 
     try {
-      await api.post("/calendar-activities", activityForm);
+      if (editingActivityId) {
+        await api.put(
+          `/calendar-activities/${editingActivityId}`,
+          activityForm
+        );
+      } else {
+        await api.post(
+          "/calendar-activities",
+          activityForm
+        );
+      }
 
       setShowCreateActivity(false);
+      setEditingActivityId(null);
+
       setActivityForm({
         title: "",
         date_from: "",
@@ -454,12 +696,120 @@ const selectedBranchPlans = useMemo(() => {
         description: "",
       });
 
-      fetchActivities();
+      await fetchActivities();
 
-      alert("Activity saved successfully.");
+      alert(
+        editingActivityId
+          ? "Activity updated successfully."
+          : "Activity saved successfully."
+      );
     } catch (err) {
       console.error("Save activity error:", err);
-      alert(err.response?.data?.message || "Failed to save activity.");
+
+      alert(
+        err.response?.data?.message ||
+          "Failed to save activity."
+      );
+    }
+  };
+
+  const openEditActivity = (activity) => {
+    if (!canManageCalendarActivities) {
+      return;
+    }
+    setEditingActivityId(activity.id);
+
+    setActivityForm({
+      title: activity.title || "",
+      date_from: String(
+        activity.date_from || ""
+      ).slice(0, 10),
+      date_to: String(
+        activity.date_to || ""
+      ).slice(0, 10),
+      subject: activity.subject || "",
+      venue: activity.venue || "",
+      description: activity.description || "",
+    });
+
+    setSelectedActivity(null);
+    setSelectedCalendarDate("");
+    setShowCreateActivity(true);
+  };
+
+  const deleteActivity = async (activityId) => {
+    if (!canManageCalendarActivities) {
+      alert("Only Admin and TREAD Department can delete calendar activities.");
+      return;
+    }
+    if (!activityId) return;
+
+    if (
+      !window.confirm(
+        "Delete this calendar activity?"
+      )
+    ) {
+      return;
+    }
+
+    try {
+      await api.delete(
+        `/calendar-activities/${activityId}`
+      );
+
+      setSelectedActivity(null);
+      setSelectedCalendarDate("");
+
+      await fetchActivities();
+
+      alert("Activity deleted successfully.");
+    } catch (err) {
+      console.error(
+        "Delete calendar activity error:",
+        err
+      );
+
+      alert(
+        err.response?.data?.message ||
+          "Failed to delete activity."
+      );
+    }
+  };
+
+  const deleteTravelPlan = async (planId) => {
+    if (!planId) return;
+
+    if (
+      !window.confirm(
+        "Delete this travel plan? This will also delete its notes and photos."
+      )
+    ) {
+      return;
+    }
+
+    try {
+      await api.delete(
+        `/travel-plans/${planId}`
+      );
+
+      if (selectedPlan?.id === planId) {
+        closePlan();
+      }
+
+      await fetchPlans();
+      await fetchScopedStaff();
+
+      alert("Travel plan deleted successfully.");
+    } catch (err) {
+      console.error(
+        "Delete travel plan error:",
+        err
+      );
+
+      alert(
+        err.response?.data?.message ||
+          "Failed to delete travel plan."
+      );
     }
   };
 
@@ -890,13 +1240,28 @@ const selectedBranchPlans = useMemo(() => {
                 + Create Plan
               </button>
 
-              <button
-                className="travel-create-btn secondary"
-                type="button"
-                onClick={() => setShowCreateActivity(true)}
-              >
-                + Create Activity
-              </button>
+              {canManageCalendarActivities && (
+                <button
+                  className="travel-create-btn secondary"
+                  type="button"
+                  onClick={() => {
+                    setEditingActivityId(null);
+
+                    setActivityForm({
+                      title: "",
+                      date_from: "",
+                      date_to: "",
+                      subject: "",
+                      venue: "",
+                      description: "",
+                    });
+
+                    setShowCreateActivity(true);
+                  }}
+                >
+                  + Create Activity
+                </button>
+              )}
 
             </div>
           </div>
@@ -957,6 +1322,83 @@ const selectedBranchPlans = useMemo(() => {
                           onChange={(e) => setBranchSearch(e.target.value)}
                           className="travel-branch-search"
                         />
+                        <div className="travel-branch-location-filters">
+                          <label>
+                            <span>Division</span>
+
+                            <select
+                              value={branchDivisionFilter}
+                              onChange={(e) => {
+                                setBranchDivisionFilter(e.target.value);
+                                setBranchRegionFilter("");
+                                setBranchAreaFilter("");
+                              }}
+                            >
+                              <option value="">All</option>
+
+                              {divisionOptions.map((division) => (
+                                <option key={division} value={division}>
+                                  {division}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+
+                          <label>
+                            <span>Region</span>
+
+                            <select
+                              value={branchRegionFilter}
+                              onChange={(e) => {
+                                setBranchRegionFilter(e.target.value);
+                                setBranchAreaFilter("");
+                              }}
+                            >
+                              <option value="">All</option>
+
+                              {regionOptions.map((region) => (
+                                <option key={region} value={region}>
+                                  {region}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+
+                          <label>
+                            <span>Area</span>
+
+                            <select
+                              value={branchAreaFilter}
+                              onChange={(e) =>
+                                setBranchAreaFilter(e.target.value)
+                              }
+                            >
+                              <option value="">All</option>
+
+                              {areaOptions.map((area) => (
+                                <option key={area} value={area}>
+                                  {area}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+
+                          {(branchDivisionFilter ||
+                            branchRegionFilter ||
+                            branchAreaFilter) && (
+                            <button
+                              type="button"
+                              className="travel-branch-filter-clear"
+                              onClick={() => {
+                                setBranchDivisionFilter("");
+                                setBranchRegionFilter("");
+                                setBranchAreaFilter("");
+                              }}
+                            >
+                              Clear
+                            </button>
+                          )}
+                        </div>
                       </div>
 
                       <select
@@ -1135,7 +1577,34 @@ const selectedBranchPlans = useMemo(() => {
                           >
                             {plan.status || "Pending"}
                           </b>
+
+                          <div className="travel-record-actions">
+                            {plan.status !== "Completed" && (
+                              <button
+                                type="button"
+                                className="travel-record-edit"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  openPlan(plan);
+                                }}
+                              >
+                                Edit
+                              </button>
+                            )}
+
+                            <button
+                              type="button"
+                              className="travel-record-delete"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                deleteTravelPlan(plan.id);
+                              }}
+                            >
+                              Delete
+                            </button>
+                          </div>
                         </div>
+
                       </div>
                     ))}
                   </div>
@@ -1303,6 +1772,140 @@ const selectedBranchPlans = useMemo(() => {
             </div>
           )}
 
+          {activeMenu === "Forecast" && (
+            <div className="travel-forecast-page">
+              <div className="travel-forecast-sidebar">
+                <div className="travel-forecast-brand">
+                  Travel Forecast
+                </div>
+
+                <div className="travel-forecast-current">
+                  <span>{forecastSelectedDay.dayName}</span>
+
+                  <strong>
+                    {forecastSelectedDay.dayNumber}
+                  </strong>
+
+                  <small>
+                    {forecastSelectedDay.monthName}
+                  </small>
+                </div>
+
+                <div className="travel-forecast-summary">
+                  <div>
+                    <span>Total Plans</span>
+                    <b>{forecastSelectedDay.total}</b>
+                  </div>
+
+                  <div>
+                    <span>Completed</span>
+                    <b>{forecastSelectedDay.completed}</b>
+                  </div>
+
+                  <div>
+                    <span>Pending</span>
+                    <b>{forecastSelectedDay.pending}</b>
+                  </div>
+                </div>
+              </div>
+
+              <div className="travel-forecast-main">
+                <div className="travel-forecast-hero">
+                  <div>
+                    <span className="travel-forecast-date">
+                      {forecastSelectedDay.fullDate}
+                    </span>
+
+                    <h1>
+                      {forecastSelectedDay.total === 0
+                        ? "No Travel Plans"
+                        : forecastSelectedDay.total === 1
+                        ? "1 Travel Plan"
+                        : `${forecastSelectedDay.total} Travel Plans`}
+                    </h1>
+
+                    <p>
+                      {forecastSelectedDay.total === 0
+                        ? "No scheduled branch visits for this day."
+                        : "Scheduled branch visits and activities for the selected day."}
+                    </p>
+                  </div>
+
+                  <div className="travel-forecast-count">
+                    {forecastSelectedDay.total}
+                  </div>
+                </div>
+
+                <div className="travel-forecast-plan-list">
+                  {forecastSelectedDay.plans.length === 0 ? (
+                    <div className="travel-forecast-empty">
+                      No travel plans scheduled.
+                    </div>
+                  ) : (
+                    forecastSelectedDay.plans.map((plan) => (
+                      <button
+                        key={plan.id}
+                        type="button"
+                        className="travel-forecast-plan-card"
+                        onClick={() => openPlan(plan)}
+                      >
+                        <div>
+                          <strong>
+                            {plan.title || "Untitled Travel Plan"}
+                          </strong>
+
+                          <span>
+                            {plan.employee_name || "No employee assigned"}
+                          </span>
+
+                          <small>
+                            {plan.branch_name || "No branch selected"}
+                          </small>
+                        </div>
+
+                        <b
+                          className={`travel-status ${
+                            plan.status === "Completed"
+                              ? "completed"
+                              : "pending"
+                          }`}
+                        >
+                          {plan.status || "Pending"}
+                        </b>
+                      </button>
+                    ))
+                  )}
+                </div>
+
+                <div className="travel-forecast-week">
+                  {forecastWeek.map((day) => (
+                    <button
+                      key={day.date}
+                      type="button"
+                      className={`travel-forecast-day ${
+                        forecastSelectedDate === day.date
+                          ? "active"
+                          : ""
+                      }`}
+                      onClick={() =>
+                        setForecastSelectedDate(day.date)
+                      }
+                    >
+                      <span>{day.shortName}</span>
+
+                      <strong>{day.dayNumber}</strong>
+
+                      <small>
+                        {day.total}{" "}
+                        {day.total === 1 ? "Plan" : "Plans"}
+                      </small>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
 
           {activeMenu === "History" && (
             <div className="travel-dashboard-card">
@@ -1350,12 +1953,22 @@ const selectedBranchPlans = useMemo(() => {
             </div>
           )}
 
-          {showCreateActivity && (
+          {showCreateActivity && canManageCalendarActivities && (
             <div className="travel-plan-modal-backdrop">
               <div className="travel-plan-modal">
                 <div className="travel-plan-modal-head">
-                  <h3>Create Activity</h3>
-                  <button type="button" onClick={() => setShowCreateActivity(false)}>
+                  <h3>
+                    {editingActivityId
+                      ? "Edit Activity"
+                      : "Create Activity"}
+                  </h3>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowCreateActivity(false);
+                      setEditingActivityId(null);
+                    }}
+                  >
                     ×
                   </button>
                 </div>
@@ -1429,12 +2042,24 @@ const selectedBranchPlans = useMemo(() => {
                 </div>
 
                 <div className="travel-plan-modal-actions">
-                  <button type="button" onClick={() => setShowCreateActivity(false)}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowCreateActivity(false);
+                      setEditingActivityId(null);
+                    }}
+                  >
                     Cancel
                   </button>
 
-                  <button type="button" className="primary" onClick={saveActivity}>
-                    Save Activity
+                  <button 
+                    type="button" 
+                    className="primary" 
+                    onClick={saveActivity}
+                  >
+                    {editingActivityId
+                      ? "Update Activity"
+                      : "Save Activity"}
                   </button>
                 </div>
               </div>
@@ -1664,10 +2289,39 @@ const selectedBranchPlans = useMemo(() => {
                             <span>
                               {activity.date_from} to {activity.date_to}
                             </span>
+
                             <b className="travel-status pending">
-                              {activity.days || 0} day{Number(activity.days) > 1 ? "s" : ""}
+                              {activity.days || 0} day
+                              {Number(activity.days) > 1 ? "s" : ""}
                             </b>
+
+                            {canManageCalendarActivities && (
+                              <div className="travel-record-actions">
+                                <button
+                                  type="button"
+                                  className="travel-record-edit"
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    openEditActivity(activity);
+                                  }}
+                                >
+                                  Edit
+                                </button>
+
+                                <button
+                                  type="button"
+                                  className="travel-record-delete"
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    deleteActivity(activity.id);
+                                  }}
+                                >
+                                  Delete
+                                </button>
+                              </div>
+                            )}
                           </div>
+
                         </div>
                       ))}
                   </div>
@@ -1721,6 +2375,31 @@ const selectedBranchPlans = useMemo(() => {
                       <small>Description</small>
                       <p>{selectedActivity.description || "No description"}</p>
                     </div>
+
+                    {canManageCalendarActivities && (
+                      <div className="travel-activity-detail-actions">
+                        <button
+                          type="button"
+                          className="travel-record-edit"
+                          onClick={() =>
+                            openEditActivity(selectedActivity)
+                          }
+                        >
+                          Edit Activity
+                        </button>
+
+                        <button
+                          type="button"
+                          className="travel-record-delete"
+                          onClick={() =>
+                            deleteActivity(selectedActivity.id)
+                          }
+                        >
+                          Delete Activity
+                        </button>
+                      </div>
+                    )}
+
                   </div>
                 </div>
               </div>

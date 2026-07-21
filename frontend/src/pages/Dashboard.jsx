@@ -71,16 +71,6 @@ const emptyStats = {
 
 const getStaffStatus = (s) => String(s?.status || "Active").trim().toLowerCase();
 
-const slideshowImages = [
-  "/images/slide1.jpg",
-  "/images/slide2.jpg",
-  "/images/slide3.jpg",
-  "/images/slide4.jpg",
-  "/images/slide5.jpg",
-  "/images/slide6.jpg",
-  "/images/slide7.jpg",
-];
-
 const balanceDonutColors = [
   "#3b82f6",
   "#22c55e",
@@ -92,12 +82,43 @@ const balanceDonutColors = [
   "#64748b",
 ];
 
+const getManilaDateString = (date = new Date()) =>
+  new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Manila",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(date);
+
+const getMondayOfWeek = (dateValue) => {
+  const date = new Date(dateValue);
+  const day = date.getDay();
+
+  const distanceFromMonday =
+    day === 0 ? -6 : 1 - day;
+
+  date.setDate(date.getDate() + distanceFromMonday);
+  date.setHours(0, 0, 0, 0);
+
+  return date;
+};
+
+const normalizeStatus = (value) =>
+  String(value ?? "")
+    .trim()
+    .toLowerCase();
+
 export default function Dashboard() {
   const navigate = useNavigate();
 
   const [loading, setLoading] = useState(false);
   const [stats, setStats] = useState(emptyStats);
-  const [slideIndex, setSlideIndex] = useState(0);
+
+  const [travelPlans, setTravelPlans] = useState([]);
+
+  const [selectedTravelDate, setSelectedTravelDate] = useState(
+    getManilaDateString()
+  );
 
   const token = localStorage.getItem("token");
   const user = useMemo(() => readUser(), [token]);
@@ -160,13 +181,27 @@ export default function Dashboard() {
 
   const fetchDashboardData = useCallback(async () => {
     setLoading(true);
+
     try {
-      const [staffData, leaveData, loanData, balances] = await Promise.all([
+      const [
+        staffData,
+        leaveData,
+        loanData,
+        balances,
+        travelPlanData,
+      ] = await Promise.all([
         safeGet("/staff"),
         safeGet("/leave-requests"),
         safeGet("/loan-requests"),
         safeGet("/staff-balances"),
+        safeGet("/travel-plans"),
       ]);
+
+      setTravelPlans(
+        Array.isArray(travelPlanData)
+          ? travelPlanData
+          : []
+      );
 
       const activeEmployees = (staffData || []).filter((s) => getStaffStatus(s) !== "inactive").length;
       const inactiveEmployees = (staffData || []).filter((s) => getStaffStatus(s) === "inactive").length;
@@ -246,13 +281,6 @@ export default function Dashboard() {
     fetchDashboardData();
   }, [token, user, fetchDashboardData, navigate]);
 
-  useEffect(() => {
-    if (!slideshowImages.length) return;
-    const timer = setInterval(() => {
-      setSlideIndex((prev) => (prev + 1) % slideshowImages.length);
-    }, 4000);
-    return () => clearInterval(timer);
-  }, []);
 
   const pct = (a, b) => {
     const denom = Math.max(1, toNum(b));
@@ -283,6 +311,107 @@ export default function Dashboard() {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
     })}`;
+
+    const travelWeek = useMemo(() => {
+    const selectedDate = new Date(
+      `${selectedTravelDate}T00:00:00`
+    );
+
+    const monday = getMondayOfWeek(selectedDate);
+
+    return Array.from({ length: 7 }).map((_, index) => {
+      const date = new Date(monday);
+
+      date.setDate(monday.getDate() + index);
+
+      const dateString = getManilaDateString(date);
+
+      const dayPlans = travelPlans.filter(
+        (plan) =>
+          String(plan.plan_date || "").slice(0, 10) ===
+          dateString
+      );
+
+      const completed = dayPlans.filter(
+        (plan) =>
+          normalizeStatus(plan.status) === "completed"
+      ).length;
+
+      const pending = dayPlans.filter(
+        (plan) =>
+          normalizeStatus(plan.status) !== "completed"
+      ).length;
+
+      return {
+        date: dateString,
+
+        dayName: date.toLocaleDateString("en-US", {
+          weekday: "long",
+        }),
+
+        shortDay: date.toLocaleDateString("en-US", {
+          weekday: "short",
+        }),
+
+        monthName: date.toLocaleDateString("en-US", {
+          month: "long",
+        }),
+
+        dateNumber: date.getDate(),
+
+        plans: dayPlans,
+        total: dayPlans.length,
+        completed,
+        pending,
+      };
+    });
+  }, [travelPlans, selectedTravelDate]);
+
+  const selectedTravelDay = useMemo(() => {
+    return (
+      travelWeek.find(
+        (day) => day.date === selectedTravelDate
+      ) ||
+      travelWeek[0] || {
+        date: "",
+        dayName: "",
+        shortDay: "",
+        monthName: "",
+        dateNumber: "",
+        plans: [],
+        total: 0,
+        completed: 0,
+        pending: 0,
+      }
+    );
+  }, [travelWeek, selectedTravelDate]);
+
+  const totalWeeklyPlans = useMemo(
+    () =>
+      travelWeek.reduce(
+        (total, day) => total + day.total,
+        0
+      ),
+    [travelWeek]
+  );
+
+  const completedWeeklyPlans = useMemo(
+    () =>
+      travelWeek.reduce(
+        (total, day) => total + day.completed,
+        0
+      ),
+    [travelWeek]
+  );
+
+  const pendingWeeklyPlans = useMemo(
+    () =>
+      travelWeek.reduce(
+        (total, day) => total + day.pending,
+        0
+      ),
+    [travelWeek]
+  );
 
   return (
     <div className="dash" data-theme={isDark ? "dark" : "light"}>
@@ -340,62 +469,152 @@ export default function Dashboard() {
       </div>
 
       <div className="dash__panels">
-        <div className="card card--panel">
-          <div className="card__head">
-            <div>
-              <div className="card__title">Company Activities:</div>
-              <div className="card__sub">Events and Workshop Moments</div>
+        <div className="card card--panel dashTravel">
+          <div className="dashTravel__side">
+            <div className="dashTravel__brand">
+              Travel Forecast
             </div>
+
+            <div className="dashTravel__selectedDate">
+              <span>{selectedTravelDay.dayName}</span>
+
+              <strong>
+                {selectedTravelDay.dateNumber}
+              </strong>
+
+              <small>
+                {selectedTravelDay.monthName}
+              </small>
+            </div>
+
+            <div className="dashTravel__weekStats">
+              <div>
+                <span>Weekly Plans</span>
+                <b>{totalWeeklyPlans}</b>
+              </div>
+
+              <div>
+                <span>Completed</span>
+                <b>{completedWeeklyPlans}</b>
+              </div>
+
+              <div>
+                <span>Pending</span>
+                <b>{pendingWeeklyPlans}</b>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              className="dashTravel__openButton"
+              onClick={() =>
+                navigate(
+                  "/transactions/travel-plan?tab=forecast"
+                )
+              }
+            >
+              Open Forecast
+            </button>
           </div>
 
-          <div
-            style={{
-              width: "100%",
-              height: 450,
-              overflow: "hidden",
-              borderRadius: 16,
-              position: "relative",
-              background: "#0f172a",
-            }}
-          >
-            <img
-              src={slideshowImages[slideIndex]}
-              alt={`Slide ${slideIndex + 1}`}
-              style={{
-                width: "100%",
-                height: "100%",
-                objectFit: "cover",
-                display: "block",
-              }}
-              onError={(e) => {
-                e.currentTarget.src =
-                  "https://via.placeholder.com/1200x500?text=Add+your+image+in+public%2Fimages";
-              }}
-            />
+          <div className="dashTravel__main">
+            <div className="dashTravel__hero">
+              <div>
+                <span className="dashTravel__dateLabel">
+                  {selectedTravelDay.date}
+                </span>
 
-            <div
-              style={{
-                position: "absolute",
-                left: 12,
-                bottom: 12,
-                display: "flex",
-                gap: 8,
-              }}
-            >
-              {slideshowImages.map((_, idx) => (
+                <h2>
+                  {selectedTravelDay.total === 0
+                    ? "No Travel Plans"
+                    : selectedTravelDay.total === 1
+                    ? "1 Travel Plan"
+                    : `${selectedTravelDay.total} Travel Plans`}
+                </h2>
+
+                <p>
+                  {selectedTravelDay.total === 0
+                    ? "There are no scheduled branch visits for this date."
+                    : "Scheduled travel plans and branch visits for the selected day."}
+                </p>
+              </div>
+
+              <div className="dashTravel__heroCount">
+                {selectedTravelDay.total}
+              </div>
+            </div>
+
+            <div className="dashTravel__planList">
+              {selectedTravelDay.plans.length === 0 ? (
+                <div className="dashTravel__empty">
+                  No travel plans scheduled.
+                </div>
+              ) : (
+                selectedTravelDay.plans.map((plan) => (
+                  <button
+                    key={plan.id}
+                    type="button"
+                    className="dashTravel__plan"
+                    onClick={() =>
+                      navigate(
+                        "/transactions/travel-plan?tab=travel-plan"
+                      )
+                    }
+                  >
+                    <div className="dashTravel__planInfo">
+                      <strong>
+                        {plan.title || "Untitled Travel Plan"}
+                      </strong>
+
+                      <span>
+                        {plan.employee_name ||
+                          "No employee assigned"}
+                      </span>
+
+                      <small>
+                        {plan.branch_name ||
+                          "No branch selected"}
+                      </small>
+                    </div>
+
+                    <span
+                      className={`dashTravel__status ${
+                        normalizeStatus(plan.status) ===
+                        "completed"
+                          ? "completed"
+                          : "pending"
+                      }`}
+                    >
+                      {plan.status || "Pending"}
+                    </span>
+                  </button>
+                ))
+              )}
+            </div>
+
+            <div className="dashTravel__week">
+              {travelWeek.map((day) => (
                 <button
-                  key={idx}
+                  key={day.date}
                   type="button"
-                  onClick={() => setSlideIndex(idx)}
-                  style={{
-                    width: 10,
-                    height: 10,
-                    borderRadius: "50%",
-                    border: "none",
-                    cursor: "pointer",
-                    background: idx === slideIndex ? "#fff" : "rgba(255,255,255,0.45)",
-                  }}
-                />
+                  className={`dashTravel__day ${
+                    selectedTravelDate === day.date
+                      ? "active"
+                      : ""
+                  }`}
+                  onClick={() =>
+                    setSelectedTravelDate(day.date)
+                  }
+                >
+                  <span>{day.shortDay}</span>
+
+                  <strong>{day.dateNumber}</strong>
+
+                  <small>
+                    {day.total}{" "}
+                    {day.total === 1 ? "Plan" : "Plans"}
+                  </small>
+                </button>
               ))}
             </div>
           </div>

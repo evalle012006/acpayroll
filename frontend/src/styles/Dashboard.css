@@ -524,3 +524,335 @@
     grid-template-columns: 1fr;
   }
 }
+
+.dash__panels > .dashTravel {
+  min-width: 0;
+}
+
+/* =====================================================
+   DASHBOARD TRAVEL PLAN FORECAST
+===================================================== */
+
+.dashTravel {
+  min-width: 0;
+  min-height: 470px;
+  padding: 0;
+  display: grid;
+  grid-template-columns: 190px minmax(0, 1fr);
+  overflow: hidden;
+  background:
+    radial-gradient(
+      circle at 78% 18%,
+      rgba(45, 127, 249, 0.24),
+      transparent 38%
+    ),
+    linear-gradient(
+      125deg,
+      #10283c 0%,
+      #0c1c2e 45%,
+      #091522 100%
+    );
+  color: #ffffff;
+}
+
+.dashTravel__side {
+  padding: 22px 18px;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(5, 21, 33, 0.68);
+  backdrop-filter: blur(12px);
+}
+
+.dashTravel__brand {
+  font-size: 18px;
+  font-weight: 1000;
+  letter-spacing: 0.2px;
+}
+
+.dashTravel__selectedDate {
+  margin-top: 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.dashTravel__selectedDate span {
+  font-size: 15px;
+  font-weight: 900;
+}
+
+.dashTravel__selectedDate strong {
+  font-size: 64px;
+  line-height: 1;
+}
+
+.dashTravel__selectedDate small {
+  color: rgba(255, 255, 255, 0.62);
+  font-weight: 700;
+}
+
+.dashTravel__weekStats {
+  margin-top: 26px;
+  display: grid;
+  gap: 9px;
+}
+
+.dashTravel__weekStats > div {
+  padding: 10px 11px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.055);
+}
+
+.dashTravel__weekStats span {
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.dashTravel__weekStats b {
+  font-size: 15px;
+}
+
+.dashTravel__openButton {
+  margin-top: auto;
+  padding: 10px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #ffffff;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.dashTravel__openButton:hover {
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.dashTravel__main {
+  min-width: 0;
+  padding: 25px;
+  display: flex;
+  flex-direction: column;
+}
+
+.dashTravel__hero {
+  min-height: 125px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 22px;
+}
+
+.dashTravel__dateLabel {
+  color: rgba(255, 255, 255, 0.58);
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+
+.dashTravel__hero h2 {
+  margin: 8px 0 7px;
+  font-size: clamp(27px, 4vw, 47px);
+  line-height: 1;
+}
+
+.dashTravel__hero p {
+  max-width: 590px;
+  margin: 0;
+  color: rgba(255, 255, 255, 0.66);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.dashTravel__heroCount {
+  flex: 0 0 82px;
+  width: 82px;
+  height: 82px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.07);
+  font-size: 32px;
+  font-weight: 1000;
+}
+
+.dashTravel__planList {
+  min-height: 115px;
+  max-height: 145px;
+  display: grid;
+  gap: 7px;
+  overflow-y: auto;
+}
+
+.dashTravel__plan {
+  width: 100%;
+  padding: 10px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  text-align: left;
+  border: 1px solid rgba(255, 255, 255, 0.11);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.055);
+  color: #ffffff;
+  cursor: pointer;
+}
+
+.dashTravel__plan:hover {
+  background: rgba(255, 255, 255, 0.095);
+}
+
+.dashTravel__planInfo {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.dashTravel__planInfo strong,
+.dashTravel__planInfo span,
+.dashTravel__planInfo small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dashTravel__planInfo span,
+.dashTravel__planInfo small {
+  color: rgba(255, 255, 255, 0.62);
+  font-size: 11px;
+}
+
+.dashTravel__status {
+  flex: 0 0 auto;
+  padding: 5px 9px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 1000;
+}
+
+.dashTravel__status.completed {
+  border: 1px solid rgba(40, 199, 111, 0.42);
+  background: rgba(40, 199, 111, 0.14);
+  color: #65e7a1;
+}
+
+.dashTravel__status.pending {
+  border: 1px solid rgba(255, 159, 67, 0.42);
+  background: rgba(255, 159, 67, 0.14);
+  color: #ffc078;
+}
+
+.dashTravel__empty {
+  min-height: 110px;
+  display: grid;
+  place-items: center;
+  border: 1px dashed rgba(255, 255, 255, 0.17);
+  border-radius: 11px;
+  color: rgba(255, 255, 255, 0.56);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.dashTravel__week {
+  margin-top: auto;
+  padding-top: 17px;
+  display: grid;
+  grid-template-columns: repeat(7, minmax(62px, 1fr));
+  gap: 7px;
+}
+
+.dashTravel__day {
+  min-width: 0;
+  min-height: 83px;
+  padding: 9px 5px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.11);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.035);
+  color: rgba(255, 255, 255, 0.65);
+  cursor: pointer;
+}
+
+.dashTravel__day span {
+  font-size: 10px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.dashTravel__day strong {
+  color: #ffffff;
+  font-size: 22px;
+}
+
+.dashTravel__day small {
+  font-size: 9px;
+  font-weight: 800;
+}
+
+.dashTravel__day.active {
+  transform: translateY(-3px);
+  border-color: rgba(125, 211, 252, 0.68);
+  background: rgba(45, 127, 249, 0.2);
+  color: #ffffff;
+}
+
+@media (max-width: 1050px) {
+  .dashTravel {
+    grid-template-columns: 155px minmax(0, 1fr);
+  }
+
+  .dashTravel__side {
+    padding: 18px 14px;
+  }
+
+  .dashTravel__main {
+    padding: 20px;
+  }
+
+  .dashTravel__selectedDate strong {
+    font-size: 50px;
+  }
+
+  .dashTravel__week {
+    grid-template-columns: repeat(4, minmax(60px, 1fr));
+  }
+}
+
+@media (max-width: 720px) {
+  .dashTravel {
+    grid-template-columns: 1fr;
+  }
+
+  .dashTravel__side {
+    border-right: 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+  }
+
+  .dashTravel__weekStats {
+    grid-template-columns: repeat(3, 1fr);
+  }
+
+  .dashTravel__openButton {
+    margin-top: 18px;
+  }
+
+  .dashTravel__heroCount {
+    display: none;
+  }
+
+  .dashTravel__week {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
