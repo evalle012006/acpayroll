@@ -59,6 +59,16 @@
   white-space: nowrap;
 }
 
+.btn-warning {
+  background: #f59e0b;
+  color: #ffffff;
+  border: none;
+}
+
+.btn-warning:hover {
+  background: #d97706;
+}
+
 .btn-primary {
   background: var(--primary);
   color: white;
@@ -510,6 +520,7 @@
 .row-actions .btn-secondary,
 .row-actions .btn-success,
 .row-actions .btn-danger,
+.row-actions .btn-warning,
 .row-actions label.btn-secondary {
   width: 120px;
   height: 34px;
@@ -533,13 +544,13 @@
 }
 
 .row-actions .btn-success {
-  background: #10b981;
-  color: #ffffff;
+  background: var(--primary);
+  color: var(--text);
 }
 
 .row-actions .btn-danger {
-  background: #ef4444;
-  color: #ffffff;
+  background: var(--primary);
+  color: var(--text);
 }
 
 .leave-sub-info {

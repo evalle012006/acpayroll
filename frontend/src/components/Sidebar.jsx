@@ -345,7 +345,7 @@ const Sidebar = ({ collapsed }) => {
           },
           {
             to: "/transactions/travel-plan?tab=history",
-            label: "History",
+            label: "Comply",
           },
         ],
       },
@@ -429,39 +429,54 @@ const Sidebar = ({ collapsed }) => {
       }
 
       if (item.label === "Calendar") {
-        if (isSuperUser) return true;
+        if (isSuperUser) {
+          return true;
+        }
+
+        if (!can("travel_plan", "view")) {
+          return false;
+        }
+
+        /*
+          Any role under Office of the President
+          may see the Calendar menu.
+        */
+        if (
+          dept === "office of the president" ||
+          dept ===
+            "office of the president department"
+        ) {
+          return true;
+        }
 
         return (
-          can("travel_plan", "view") &&
           (
             (
-              (
-                dept.includes("operation") ||
-                dept.includes("audit")
-              ) &&
-              [
-                "branch manager",
-                "acting branch manager",
-                "area manager",
-                "acting area manager",
-                "regional manager",
-                "acting regional manager",
-                "assistant vice president",
-                "vice president",
-                "senior vice president",
-              ].includes(role)
-            ) ||
-            (
-              dept.includes("tread") &&
-              [
-                "branch manager",
-                "area manager",
-                "regional manager",
-                "assistant vice president",
-                "vice president",
-                "senior vice president",
-              ].includes(role)
-            )
+              dept.includes("operation") ||
+              dept.includes("audit")
+            ) &&
+            [
+              "branch manager",
+              "acting branch manager",
+              "area manager",
+              "acting area manager",
+              "regional manager",
+              "acting regional manager",
+              "assistant vice president",
+              "vice president",
+              "senior vice president",
+            ].includes(role)
+          ) ||
+          (
+            dept.includes("tread") &&
+            [
+              "branch manager",
+              "area manager",
+              "regional manager",
+              "assistant vice president",
+              "vice president",
+              "senior vice president",
+            ].includes(role)
           )
         );
       }

@@ -68,6 +68,390 @@ const calculateInclusiveDays = (dateFrom, dateTo) => {
 };
 
 // =====================================================
+// TRAVEL PLAN COMPLIANCE HELPERS
+// =====================================================
+
+const normalizeName = (value) =>
+  String(value ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[.,]/g, " ")
+    .replace(/\s+/g, " ");
+
+const buildUserNameCandidates = (user) => {
+  const firstName = toStr(user?.first_name);
+  const middleName = toStr(user?.middle_name);
+  const lastName = toStr(user?.last_name);
+
+  const candidates = [
+    toStr(user?.fullname),
+    toStr(user?.full_name),
+    [firstName, middleName, lastName]
+      .filter(Boolean)
+      .join(" "),
+    [lastName, firstName, middleName]
+      .filter(Boolean)
+      .join(" "),
+    lastName && firstName
+      ? `${lastName}, ${firstName}${
+          middleName ? ` ${middleName}` : ""
+        }`
+      : "",
+  ];
+
+  return [
+    ...new Set(
+      candidates
+        .map(normalizeName)
+        .filter(Boolean)
+    ),
+  ];
+};
+
+const resolveLoggedInStaff = async (client, req) => {
+  const userCandidates = buildUserNameCandidates(
+    req.user || {}
+  );
+
+  if (userCandidates.length === 0) {
+    return null;
+  }
+
+  const result = await client.query(
+    `
+    SELECT
+      s.id,
+      s.employee_no,
+      s.first_name,
+      s.middle_name,
+      s.last_name,
+
+      COALESCE(
+        NULLIF(TRIM(s.fullname), ''),
+        NULLIF(
+          TRIM(
+            CONCAT_WS(
+              ' ',
+              s.last_name,
+              s.first_name,
+              s.middle_name
+            )
+          ),
+          ''
+        ),
+        s.employee_no
+      ) AS employee_name,
+
+      s.position,
+      s.department,
+      s.branch_id,
+      s.area,
+      s.region,
+      s.division,
+
+      b.name AS branch_name
+
+    FROM public.staff s
+
+    LEFT JOIN public.branches b
+      ON b.id = s.branch_id
+
+    WHERE LOWER(
+      TRIM(
+        COALESCE(s.status, 'active')
+      )
+    ) IN (
+      'active',
+      'inactive'
+    )
+
+    ORDER BY
+      CASE
+        WHEN s.branch_id = $1 THEN 0
+        ELSE 1
+      END,
+
+      s.id ASC
+    `,
+    [
+      Number(req.user?.branch_id) || null,
+    ]
+  );
+
+  return (
+    result.rows.find((staff) => {
+      const staffCandidates = [
+        staff.employee_name,
+
+        [
+          staff.first_name,
+          staff.middle_name,
+          staff.last_name,
+        ]
+          .filter(Boolean)
+          .join(" "),
+      ]
+        .map(normalizeName)
+        .filter(Boolean);
+
+      return staffCandidates.some((staffName) =>
+        userCandidates.includes(staffName)
+      );
+    }) || null
+  );
+};
+
+const findInvolvedStaff = async (
+  client,
+  involvedStaffText,
+  involvedStaffIds = []
+) => {
+  const validIds = Array.isArray(involvedStaffIds)
+    ? involvedStaffIds
+        .map(Number)
+        .filter(
+          (id) =>
+            Number.isInteger(id) &&
+            id > 0
+        )
+    : [];
+
+  const result = await client.query(
+    `
+    SELECT
+      s.id,
+      s.employee_no,
+
+      COALESCE(
+        NULLIF(TRIM(s.fullname), ''),
+        NULLIF(
+          TRIM(
+            CONCAT_WS(
+              ' ',
+              s.last_name,
+              s.first_name,
+              s.middle_name
+            )
+          ),
+          ''
+        ),
+        s.employee_no
+      ) AS employee_name,
+
+      s.position,
+      s.department,
+
+      s.branch_id,
+      b.name AS branch_name,
+
+      COALESCE(
+        NULLIF(TRIM(s.area), ''),
+        NULLIF(TRIM(b.area), '')
+      ) AS area,
+
+      COALESCE(
+        NULLIF(TRIM(s.region), ''),
+        NULLIF(TRIM(b.region), '')
+      ) AS region,
+
+      COALESCE(
+        NULLIF(TRIM(s.division), ''),
+        NULLIF(TRIM(b.division), '')
+      ) AS division
+
+    FROM public.staff s
+
+    LEFT JOIN public.branches b
+      ON b.id = s.branch_id
+
+    WHERE LOWER(
+      TRIM(
+        COALESCE(s.status, 'active')
+      )
+    ) = 'active'
+
+    ORDER BY s.id ASC
+    `
+  );
+
+  if (validIds.length > 0) {
+    return result.rows.filter((staff) =>
+      validIds.includes(Number(staff.id))
+    );
+  }
+
+  const normalizedInvolvedText =
+    normalizeName(involvedStaffText);
+
+  if (!normalizedInvolvedText) {
+    return [];
+  }
+
+  /*
+    The existing frontend sends names as one text value.
+    Some names contain commas, so we do not split by comma.
+    Instead, we check whether the full employee name appears
+    inside the complete involved-staff text.
+  */
+  return result.rows.filter((staff) => {
+    const normalizedEmployeeName =
+      normalizeName(staff.employee_name);
+
+    return (
+      normalizedEmployeeName &&
+      normalizedInvolvedText.includes(
+        normalizedEmployeeName
+      )
+    );
+  });
+};
+
+const syncFindingCompliances = async (
+  client,
+  {
+    travelPlanId,
+    findingNoteId,
+    findingTitle,
+    findingDetails,
+    involvedStaffText,
+    involvedStaffIds,
+    dueDate,
+    createdBy,
+  }
+) => {
+  const involvedStaff = await findInvolvedStaff(
+    client,
+    involvedStaffText,
+    involvedStaffIds
+  );
+
+  /*
+    Findings can only be edited before the plan is completed.
+    Recreate the pending assignments whenever Findings changes.
+  */
+  await client.query(
+    `
+    DELETE FROM public.travel_plan_compliances
+    WHERE finding_note_id = $1
+      AND status = 'Pending'
+    `,
+    [findingNoteId]
+  );
+
+  for (const staff of involvedStaff) {
+    await client.query(
+      `
+      INSERT INTO public.travel_plan_compliances
+      (
+        travel_plan_id,
+        finding_note_id,
+
+        employee_id,
+        employee_no,
+        employee_name,
+        position,
+
+        branch_id,
+        branch_name,
+
+        department,
+        area,
+        region,
+        division,
+
+        finding_title,
+        finding_details,
+
+        due_date,
+        status,
+
+        created_by,
+        created_at,
+        updated_at
+      )
+      VALUES
+      (
+        $1,
+        $2,
+
+        $3,
+        $4,
+        $5,
+        $6,
+
+        $7,
+        $8,
+
+        $9,
+        $10,
+        $11,
+        $12,
+
+        $13,
+        $14,
+
+        $15::date,
+        'Pending',
+
+        $16,
+        NOW() AT TIME ZONE 'Asia/Manila',
+        NOW() AT TIME ZONE 'Asia/Manila'
+      )
+      ON CONFLICT (
+        finding_note_id,
+        employee_id
+      )
+      WHERE employee_id IS NOT NULL
+      DO UPDATE SET
+        employee_no = EXCLUDED.employee_no,
+        employee_name = EXCLUDED.employee_name,
+        position = EXCLUDED.position,
+
+        branch_id = EXCLUDED.branch_id,
+        branch_name = EXCLUDED.branch_name,
+
+        department = EXCLUDED.department,
+        area = EXCLUDED.area,
+        region = EXCLUDED.region,
+        division = EXCLUDED.division,
+
+        finding_title = EXCLUDED.finding_title,
+        finding_details = EXCLUDED.finding_details,
+        due_date = EXCLUDED.due_date,
+
+        updated_at =
+          NOW() AT TIME ZONE 'Asia/Manila'
+      `,
+      [
+        travelPlanId,
+        findingNoteId,
+
+        staff.id,
+        staff.employee_no || null,
+        staff.employee_name,
+        staff.position || null,
+
+        staff.branch_id || null,
+        staff.branch_name || null,
+
+        staff.department || null,
+        staff.area || null,
+        staff.region || null,
+        staff.division || null,
+
+        findingTitle,
+        findingDetails || null,
+
+        dueDate || null,
+        createdBy || null,
+      ]
+    );
+  }
+
+  return involvedStaff.length;
+};
+
+// =====================================================
 // ROLE HELPERS
 // =====================================================
 
@@ -111,6 +495,18 @@ const isOperationDepartment = (department) =>
 const isAuditDepartment = (department) =>
   normalizeDepartment(department) === "audit department";
 
+const isOfficeOfPresidentDepartment = (department) => {
+  const normalizedDepartment =
+    normalizeDepartment(department);
+
+  return (
+    normalizedDepartment ===
+      "office of the president" ||
+    normalizedDepartment ===
+      "office of the president department"
+  );
+};
+
 const isOperationStyleTravelDepartment = (department) =>
   isOperationDepartment(department) ||
   isAuditDepartment(department);
@@ -150,11 +546,61 @@ const canManageCalendarActivity = (req) => {
 };
 
 // =====================================================
+// COMPLIANCE CHECK HELPERS
+// =====================================================
+
+const COMPLIANCE_REVIEW_LEVELS = {
+  "area manager": 2,
+  "acting area manager": 2,
+
+  "regional manager": 3,
+  "acting regional manager": 3,
+
+  "assistant vice president": 4,
+
+  "vice president": 5,
+
+  "senior vice president": 6,
+};
+
+const getComplianceReviewLevel = (req) => {
+  const role = normalizeRole(req.user?.role);
+
+  if (role === "admin" || role === "it") {
+    return 6;
+  }
+
+  return COMPLIANCE_REVIEW_LEVELS[role] || null;
+};
+
+const canCheckCompliance = (req) =>
+  getComplianceReviewLevel(req) !== null;
+
+const getLoggedInUserDisplayName = (req) => {
+  return (
+    toStr(req.user?.fullname) ||
+    toStr(req.user?.full_name) ||
+    [
+      toStr(req.user?.first_name),
+      toStr(req.user?.middle_name),
+      toStr(req.user?.last_name),
+    ]
+      .filter(Boolean)
+      .join(" ") ||
+    toStr(req.user?.email) ||
+    `User ${req.user?.id || ""}`
+  );
+};
+
+// =====================================================
 // TRAVEL PLAN ACCESS
 // =====================================================
 
 const canCreatePlan = (req) => {
-  const role = normalizeRole(req.user?.role);
+  const role = normalizeRole(
+    req.user?.role
+  );
+
   const department = normalizeDepartment(
     req.user?.department
   );
@@ -164,20 +610,38 @@ const canCreatePlan = (req) => {
   }
 
   /*
-    Operation and Audit use the same hierarchy:
-    Area Manager up to Senior Vice President.
+    Operation and Audit use their existing
+    role hierarchy.
   */
-  if (hasOperationStyleTravelRole(department, role)) {
+  if (
+    hasOperationStyleTravelRole(
+      department,
+      role
+    )
+  ) {
     return true;
   }
 
   /*
-    TREAD keeps its existing access:
+    TREAD:
     Branch Manager up to Senior Vice President.
   */
   if (
     department === "tread department" &&
     TREAD_TRAVEL_PLAN_ROLES.includes(role)
+  ) {
+    return true;
+  }
+
+  /*
+    Office of the President:
+    Any role under the department may create
+    and manage travel plans.
+  */
+  if (
+    isOfficeOfPresidentDepartment(
+      department
+    )
   ) {
     return true;
   }
@@ -201,20 +665,42 @@ const canDeleteTravelRecord = (req) => {
 };
 
 const canViewTravelModule = (req) => {
-  const role = normalizeRole(req.user?.role);
-  const department = normalizeDepartment(req.user?.department);
+  const role = normalizeRole(
+    req.user?.role
+  );
+
+  const department = normalizeDepartment(
+    req.user?.department
+  );
 
   if (isAdminOrIT(req)) {
     return true;
   }
 
-  if (hasOperationStyleTravelRole(department, role)) {
+  if (
+    hasOperationStyleTravelRole(
+      department,
+      role
+    )
+  ) {
     return true;
   }
 
   if (
     department === "tread department" &&
     TREAD_TRAVEL_PLAN_ROLES.includes(role)
+  ) {
+    return true;
+  }
+
+  /*
+    Any role under Office of the President
+    can open the Travel Plan/Calendar module.
+  */
+  if (
+    isOfficeOfPresidentDepartment(
+      department
+    )
   ) {
     return true;
   }
@@ -445,6 +931,27 @@ router.get(
       // =================================================
 
       if (isAdminOrIT(req)) {
+        sql = `
+          ${baseSql}
+
+          ORDER BY
+            tp_data.plan_date DESC,
+            tp_data.id DESC
+        `;
+      }
+
+      // =================================================
+      // OFFICE OF THE PRESIDENT
+      // =================================================
+      // Any role under this department can see all
+      // travel plans.
+      // =================================================
+
+      else if (
+        isOfficeOfPresidentDepartment(
+          department
+        )
+      ) {
         sql = `
           ${baseSql}
 
@@ -1196,226 +1703,404 @@ router.get("/travel-plans/:id/notes", requireAuth, async (req, res) => {
 // CREATE TRAVEL PLAN NOTE
 // =====================================================
 
-router.post("/travel-plans/:id/notes", requireAuth, async (req, res) => {
-  try {
-    if (!canEditPlan(req)) {
-      return res.status(403).json({
-        message: "You are not allowed to create travel plan notes.",
+router.post(
+  "/travel-plans/:id/notes",
+  requireAuth,
+  async (req, res) => {
+    const client = await pool.connect();
+
+    try {
+      if (!canEditPlan(req)) {
+        return res.status(403).json({
+          message:
+            "You are not allowed to create travel plan notes.",
+        });
+      }
+
+      const travelPlanId = Number(req.params.id);
+
+      if (!isValidId(travelPlanId)) {
+        return res.status(400).json({
+          message: "Invalid travel plan ID.",
+        });
+      }
+
+      const noteType = toStr(
+        req.body.note_type
+      ).toUpperCase();
+
+      const title = toStr(req.body.title);
+
+      const involvedStaff = toStr(
+        req.body.involved_staff
+      );
+
+      const involvedStaffIds =
+        Array.isArray(req.body.involved_staff_ids)
+          ? req.body.involved_staff_ids
+          : [];
+
+      const content = toStr(req.body.content);
+      const dueDate = toStr(req.body.due_date);
+
+      if (
+        !["REVIEW", "FINDINGS"].includes(noteType)
+      ) {
+        return res.status(400).json({
+          message:
+            "Note type must be REVIEW or FINDINGS.",
+        });
+      }
+
+      if (!title) {
+        return res.status(400).json({
+          message: "Title is required.",
+        });
+      }
+
+      if (
+        dueDate &&
+        !/^\d{4}-\d{2}-\d{2}$/.test(dueDate)
+      ) {
+        return res.status(400).json({
+          message:
+            "Due date must use YYYY-MM-DD format.",
+        });
+      }
+
+      await client.query("BEGIN");
+
+      const planResult = await client.query(
+        `
+        SELECT
+          id,
+          status
+        FROM public.travel_plans
+        WHERE id = $1
+        LIMIT 1
+        FOR UPDATE
+        `,
+        [travelPlanId]
+      );
+
+      if (!planResult.rowCount) {
+        await client.query("ROLLBACK");
+
+        return res.status(404).json({
+          message: "Travel plan not found.",
+        });
+      }
+
+      if (
+        norm(planResult.rows[0].status) ===
+        "completed"
+      ) {
+        await client.query("ROLLBACK");
+
+        return res.status(400).json({
+          message:
+            "Completed travel plans can no longer be changed.",
+        });
+      }
+
+      const result = await client.query(
+        `
+        INSERT INTO public.travel_plan_notes
+        (
+          travel_plan_id,
+          note_type,
+          title,
+          involved_staff,
+          content,
+          created_by,
+          created_at
+        )
+        VALUES
+        (
+          $1,
+          $2,
+          $3,
+          $4,
+          $5,
+          $6,
+          NOW() AT TIME ZONE 'Asia/Manila'
+        )
+        RETURNING
+          id,
+          travel_plan_id,
+          note_type,
+          title,
+          involved_staff,
+          content,
+          created_by,
+          created_at
+        `,
+        [
+          travelPlanId,
+          noteType,
+          title,
+          involvedStaff || null,
+          content || null,
+          req.user?.id || null,
+        ]
+      );
+
+      const note = result.rows[0];
+
+      let assignedComplianceCount = 0;
+
+      if (noteType === "FINDINGS") {
+        if (
+          !involvedStaff &&
+          involvedStaffIds.length === 0
+        ) {
+          await client.query("ROLLBACK");
+
+          return res.status(400).json({
+            message:
+              "At least one involved staff member is required for Findings.",
+          });
+        }
+
+        assignedComplianceCount =
+          await syncFindingCompliances(client, {
+            travelPlanId,
+            findingNoteId: note.id,
+            findingTitle: title,
+            findingDetails: content,
+            involvedStaffText: involvedStaff,
+            involvedStaffIds,
+            dueDate: dueDate || null,
+            createdBy: req.user?.id || null,
+          });
+
+        if (assignedComplianceCount === 0) {
+          await client.query("ROLLBACK");
+
+          return res.status(400).json({
+            message:
+              "The involved staff could not be matched to an active staff record.",
+          });
+        }
+      }
+
+      await client.query("COMMIT");
+
+      return res.status(201).json({
+        message:
+          noteType === "REVIEW"
+            ? "Review created successfully."
+            : `Findings created and assigned to ${assignedComplianceCount} staff member(s).`,
+
+        note,
+        assigned_compliance_count:
+          assignedComplianceCount,
       });
+    } catch (error) {
+      await client.query("ROLLBACK");
+
+      return sendServerError(
+        res,
+        "POST /travel-plans/:id/notes",
+        error
+      );
+    } finally {
+      client.release();
     }
-
-    const travelPlanId = Number(req.params.id);
-
-    if (!isValidId(travelPlanId)) {
-      return res.status(400).json({
-        message: "Invalid travel plan ID.",
-      });
-    }
-
-    const noteType = toStr(req.body.note_type).toUpperCase();
-    const title = toStr(req.body.title);
-    const involvedStaff = toStr(req.body.involved_staff);
-    const content = toStr(req.body.content);
-
-    if (!["REVIEW", "FINDINGS"].includes(noteType)) {
-      return res.status(400).json({
-        message: "Note type must be REVIEW or FINDINGS.",
-      });
-    }
-
-    if (!title) {
-      return res.status(400).json({
-        message: "Title is required.",
-      });
-    }
-
-    const planResult = await pool.query(
-      `
-      SELECT
-        id,
-        status
-      FROM public.travel_plans
-      WHERE id = $1
-      LIMIT 1
-      `,
-      [travelPlanId]
-    );
-
-    if (!planResult.rowCount) {
-      return res.status(404).json({
-        message: "Travel plan not found.",
-      });
-    }
-
-    const plan = planResult.rows[0];
-
-    if (norm(plan.status) === "completed") {
-      return res.status(400).json({
-        message: "Completed travel plans can no longer be changed.",
-      });
-    }
-
-    const result = await pool.query(
-      `
-      INSERT INTO public.travel_plan_notes
-      (
-        travel_plan_id,
-        note_type,
-        title,
-        involved_staff,
-        content,
-        created_by,
-        created_at
-      )
-      VALUES
-      (
-        $1,
-        $2,
-        $3,
-        $4,
-        $5,
-        $6,
-        NOW() AT TIME ZONE 'Asia/Manila'
-      )
-      RETURNING
-        id,
-        travel_plan_id,
-        note_type,
-        title,
-        involved_staff,
-        content,
-        created_by,
-        created_at
-      `,
-      [
-        travelPlanId,
-        noteType,
-        title,
-        involvedStaff || null,
-        content || null,
-        req.user?.id || null,
-      ]
-    );
-
-    return res.status(201).json({
-      message: `${
-        noteType === "REVIEW" ? "Review" : "Findings"
-      } created successfully.`,
-      note: result.rows[0],
-    });
-  } catch (error) {
-    return sendServerError(
-      res,
-      "POST /travel-plans/:id/notes",
-      error
-    );
   }
-});
+);
 
 // =====================================================
 // UPDATE TRAVEL PLAN NOTE
 // =====================================================
 
-router.put("/travel-plans/notes/:noteId", requireAuth, async (req, res) => {
-  try {
-    if (!canEditPlan(req)) {
-      return res.status(403).json({
-        message: "You are not allowed to edit travel plan notes.",
+router.put(
+  "/travel-plans/notes/:noteId",
+  requireAuth,
+  async (req, res) => {
+    const client = await pool.connect();
+
+    try {
+      if (!canEditPlan(req)) {
+        return res.status(403).json({
+          message:
+            "You are not allowed to edit travel plan notes.",
+        });
+      }
+
+      const noteId = Number(req.params.noteId);
+
+      if (!isValidId(noteId)) {
+        return res.status(400).json({
+          message: "Invalid note ID.",
+        });
+      }
+
+      const noteType = toStr(
+        req.body.note_type
+      ).toUpperCase();
+
+      const title = toStr(req.body.title);
+
+      const involvedStaff = toStr(
+        req.body.involved_staff
+      );
+
+      const involvedStaffIds =
+        Array.isArray(req.body.involved_staff_ids)
+          ? req.body.involved_staff_ids
+          : [];
+
+      const content = toStr(req.body.content);
+      const dueDate = toStr(req.body.due_date);
+
+      if (
+        !["REVIEW", "FINDINGS"].includes(noteType)
+      ) {
+        return res.status(400).json({
+          message:
+            "Note type must be REVIEW or FINDINGS.",
+        });
+      }
+
+      if (!title) {
+        return res.status(400).json({
+          message: "Title is required.",
+        });
+      }
+
+      await client.query("BEGIN");
+
+      const existingResult = await client.query(
+        `
+        SELECT
+          n.id,
+          n.travel_plan_id,
+          n.note_type,
+          tp.status
+        FROM public.travel_plan_notes n
+
+        INNER JOIN public.travel_plans tp
+          ON tp.id = n.travel_plan_id
+
+        WHERE n.id = $1
+        LIMIT 1
+        FOR UPDATE
+        `,
+        [noteId]
+      );
+
+      if (!existingResult.rowCount) {
+        await client.query("ROLLBACK");
+
+        return res.status(404).json({
+          message:
+            "Travel plan note not found.",
+        });
+      }
+
+      const existingNote =
+        existingResult.rows[0];
+
+      if (
+        norm(existingNote.status) ===
+        "completed"
+      ) {
+        await client.query("ROLLBACK");
+
+        return res.status(400).json({
+          message:
+            "Notes from completed travel plans cannot be edited.",
+        });
+      }
+
+      const result = await client.query(
+        `
+        UPDATE public.travel_plan_notes
+        SET
+          note_type = $2,
+          title = $3,
+          involved_staff = $4,
+          content = $5
+        WHERE id = $1
+        RETURNING
+          id,
+          travel_plan_id,
+          note_type,
+          title,
+          involved_staff,
+          content,
+          created_by,
+          created_at
+        `,
+        [
+          noteId,
+          noteType,
+          title,
+          involvedStaff || null,
+          content || null,
+        ]
+      );
+
+      let assignedComplianceCount = 0;
+
+      if (noteType === "FINDINGS") {
+        assignedComplianceCount =
+          await syncFindingCompliances(client, {
+            travelPlanId:
+              existingNote.travel_plan_id,
+
+            findingNoteId: noteId,
+            findingTitle: title,
+            findingDetails: content,
+
+            involvedStaffText:
+              involvedStaff,
+
+            involvedStaffIds,
+
+            dueDate: dueDate || null,
+            createdBy: req.user?.id || null,
+          });
+      } else {
+        /*
+          If Findings is changed into Review,
+          remove its pending compliance assignments.
+        */
+        await client.query(
+          `
+          DELETE FROM public.travel_plan_compliances
+          WHERE finding_note_id = $1
+            AND status = 'Pending'
+          `,
+          [noteId]
+        );
+      }
+
+      await client.query("COMMIT");
+
+      return res.json({
+        message:
+          "Travel plan note updated successfully.",
+
+        note: result.rows[0],
+
+        assigned_compliance_count:
+          assignedComplianceCount,
       });
+    } catch (error) {
+      await client.query("ROLLBACK");
+
+      return sendServerError(
+        res,
+        "PUT /travel-plans/notes/:noteId",
+        error
+      );
+    } finally {
+      client.release();
     }
-
-    const noteId = Number(req.params.noteId);
-
-    if (!isValidId(noteId)) {
-      return res.status(400).json({
-        message: "Invalid note ID.",
-      });
-    }
-
-    const noteType = toStr(req.body.note_type).toUpperCase();
-    const title = toStr(req.body.title);
-    const involvedStaff = toStr(req.body.involved_staff);
-    const content = toStr(req.body.content);
-
-    if (!["REVIEW", "FINDINGS"].includes(noteType)) {
-      return res.status(400).json({
-        message: "Note type must be REVIEW or FINDINGS.",
-      });
-    }
-
-    if (!title) {
-      return res.status(400).json({
-        message: "Title is required.",
-      });
-    }
-
-    const existingResult = await pool.query(
-      `
-      SELECT
-        n.id,
-        n.travel_plan_id,
-        tp.status
-      FROM public.travel_plan_notes n
-      INNER JOIN public.travel_plans tp
-        ON tp.id = n.travel_plan_id
-      WHERE n.id = $1
-      LIMIT 1
-      `,
-      [noteId]
-    );
-
-    if (!existingResult.rowCount) {
-      return res.status(404).json({
-        message: "Travel plan note not found.",
-      });
-    }
-
-    if (norm(existingResult.rows[0].status) === "completed") {
-      return res.status(400).json({
-        message: "Notes from completed travel plans cannot be edited.",
-      });
-    }
-
-    const result = await pool.query(
-      `
-      UPDATE public.travel_plan_notes
-      SET
-        note_type = $2,
-        title = $3,
-        involved_staff = $4,
-        content = $5
-      WHERE id = $1
-      RETURNING
-        id,
-        travel_plan_id,
-        note_type,
-        title,
-        involved_staff,
-        content,
-        created_by,
-        created_at
-      `,
-      [
-        noteId,
-        noteType,
-        title,
-        involvedStaff || null,
-        content || null,
-      ]
-    );
-
-    return res.json({
-      message: "Travel plan note updated successfully.",
-      note: result.rows[0],
-    });
-  } catch (error) {
-    return sendServerError(
-      res,
-      "PUT /travel-plans/notes/:noteId",
-      error
-    );
   }
-});
+);
 
 // =====================================================
 // DELETE TRAVEL PLAN NOTE
@@ -2681,8 +3366,15 @@ router.get(
         params = [userBranchId, department];
       }
 
-      // AREA MANAGER:
-      // Show every active staff member within the same area.
+      // =================================================
+      // AREA MANAGER / ACTING AREA MANAGER
+      // =================================================
+      //
+      // Employee dropdown:
+      // Show only Area Manager through Senior Vice President.
+      // Exclude Branch Manager, Loan Officer, and all lower staff.
+      // =================================================
+
       else if (
         isOperationStyleTravelDepartment(department) &&
         [
@@ -2713,12 +3405,43 @@ router.get(
             )
           ) = LOWER(TRIM($2))
 
+          AND LOWER(
+            TRIM(
+              COALESCE(s.position, '')
+            )
+          ) IN (
+            'area manager',
+            'acting area manager',
+            'regional manager',
+            'acting regional manager',
+            'assistant vice president',
+            'vice president',
+            'senior vice president'
+          )
+
           ORDER BY
-            b.name ASC NULLS LAST,
+            CASE LOWER(
+              TRIM(
+                COALESCE(s.position, '')
+              )
+            )
+              WHEN 'area manager' THEN 1
+              WHEN 'acting area manager' THEN 2
+              WHEN 'regional manager' THEN 3
+              WHEN 'acting regional manager' THEN 4
+              WHEN 'assistant vice president' THEN 5
+              WHEN 'vice president' THEN 6
+              WHEN 'senior vice president' THEN 7
+              ELSE 99
+            END,
+
             employee_name ASC
         `;
 
-        params = [userArea, department];
+        params = [
+          userArea,
+          department,
+        ];
       }
 
       // REGIONAL MANAGER:
@@ -3198,7 +3921,10 @@ router.get(
       // AREA MANAGER / ACTING AREA MANAGER
       // =================================================
       //
-      // Shows all active staff under the same area.
+      // Show only Area Manager or Acting Area Manager
+      // assigned to the same area.
+      // Branch Managers, Loan Officers, and other staff
+      // are excluded.
       // =================================================
 
       else if (
@@ -3231,12 +3957,34 @@ router.get(
             )
           ) = LOWER(TRIM($3))
 
+          AND LOWER(
+            TRIM(
+              COALESCE(s.position, '')
+            )
+          ) IN (
+            'area manager',
+            'acting area manager'
+          )
+
           ORDER BY
-            b.name ASC NULLS LAST,
+            CASE LOWER(
+              TRIM(
+                COALESCE(s.position, '')
+              )
+            )
+              WHEN 'area manager' THEN 1
+              WHEN 'acting area manager' THEN 2
+              ELSE 99
+            END,
+
             s.fullname ASC
         `;
 
-        params = [targetDate, userArea, department];
+        params = [
+          targetDate,
+          userArea,
+          department,
+        ];
       }
 
       // =================================================
@@ -4462,7 +5210,1510 @@ router.get(
 );
 
 // =====================================================
-// EXPORT ROUTER
+// MY PENDING COMPLIANCE COUNT
+// Used by the Sidebar red badge.
 // =====================================================
+
+router.get(
+  "/travel-plan-compliances/my-pending-count",
+  requireAuth,
+  async (req, res) => {
+    const client = await pool.connect();
+
+    try {
+      const staff = await resolveLoggedInStaff(
+        client,
+        req
+      );
+
+      if (!staff) {
+        return res.json({
+          pending_count: 0,
+        });
+      }
+
+      const result = await client.query(
+        `
+        SELECT COUNT(*)::INTEGER AS pending_count
+        FROM public.travel_plan_compliances
+        WHERE employee_id = $1
+          AND status = 'Pending'
+        `,
+        [staff.id]
+      );
+
+      return res.json({
+        pending_count:
+          Number(
+            result.rows[0]?.pending_count
+          ) || 0,
+      });
+    } catch (error) {
+      return sendServerError(
+        res,
+        "GET /travel-plan-compliances/my-pending-count",
+        error
+      );
+    } finally {
+      client.release();
+    }
+  }
+);
+
+// =====================================================
+// MY COMPLIANCE RECORDS
+// =====================================================
+
+router.get(
+  "/travel-plan-compliances/my",
+  requireAuth,
+  async (req, res) => {
+    const client = await pool.connect();
+
+    try {
+      const staff = await resolveLoggedInStaff(
+        client,
+        req
+      );
+
+      if (!staff) {
+        return res.json([]);
+      }
+
+      const result = await client.query(
+        `
+        SELECT
+          c.id,
+          c.travel_plan_id,
+          c.finding_note_id,
+
+          c.employee_id,
+          c.employee_no,
+          c.employee_name,
+          c.position,
+
+          c.branch_id,
+          c.branch_name,
+
+          c.department,
+          c.area,
+          c.region,
+          c.division,
+
+          c.finding_title,
+          c.finding_details,
+
+          TO_CHAR(
+            c.due_date,
+            'YYYY-MM-DD'
+          ) AS due_date,
+
+          c.status,
+          c.review_level,
+
+          c.compliance_response,
+
+          c.latest_checked_by_user_id,
+          c.latest_checked_by_name,
+          c.latest_checked_by_role,
+          c.latest_checked_by_department,
+
+          ${manilaTimestampSql(
+            "c.latest_checked_at"
+          )} AS latest_checked_at,
+
+          c.latest_check_remarks,
+
+          ${manilaTimestampSql(
+            "c.complied_at"
+          )} AS complied_at,
+
+          c.complied_by,
+
+          ${manilaTimestampSql(
+            "c.created_at"
+          )} AS created_at,
+
+          ${manilaTimestampSql(
+            "c.updated_at"
+          )} AS updated_at,
+
+          tp.title AS travel_plan_title,
+
+          TO_CHAR(
+            tp.plan_date,
+            'YYYY-MM-DD'
+          ) AS travel_plan_date,
+
+          tp.branch_name AS visited_branch_name,
+
+          creator.id AS finding_created_by_id,
+
+          TRIM(
+            CONCAT_WS(
+              ' ',
+              creator.first_name,
+              creator.middle_name,
+              creator.last_name
+            )
+          ) AS finding_created_by_name
+
+        FROM public.travel_plan_compliances c
+
+        INNER JOIN public.travel_plans tp
+          ON tp.id = c.travel_plan_id
+
+        LEFT JOIN public.users creator
+          ON creator.id = c.created_by
+
+        WHERE c.employee_id = $1
+
+        ORDER BY
+          CASE c.status
+            WHEN 'Pending' THEN 1
+            WHEN 'Submitted' THEN 2
+            WHEN 'Checked' THEN 3
+            WHEN 'Complied' THEN 4
+            WHEN 'Cancelled' THEN 5
+            ELSE 99
+          END,
+
+          c.created_at DESC,
+          c.id DESC
+        `,
+        [staff.id]
+      );
+
+      return res.json(result.rows);
+    } catch (error) {
+      return sendServerError(
+        res,
+        "GET /travel-plan-compliances/my",
+        error
+      );
+    } finally {
+      client.release();
+    }
+  }
+);
+
+// =====================================================
+// SUBMIT COMPLIANCE
+// Only the involved staff account can submit.
+// =====================================================
+
+router.put(
+  "/travel-plan-compliances/:id/comply",
+  requireAuth,
+  async (req, res) => {
+    const client = await pool.connect();
+
+    try {
+      const complianceId = Number(
+        req.params.id
+      );
+
+      if (!isValidId(complianceId)) {
+        return res.status(400).json({
+          message:
+            "Invalid compliance ID.",
+        });
+      }
+
+      const responseText = toStr(
+        req.body.compliance_response
+      );
+
+      if (!responseText) {
+        return res.status(400).json({
+          message:
+            "Compliance response is required.",
+        });
+      }
+
+      const staff = await resolveLoggedInStaff(
+        client,
+        req
+      );
+
+      if (!staff) {
+        return res.status(403).json({
+          message:
+            "Your account could not be matched to a staff record.",
+        });
+      }
+
+      await client.query("BEGIN");
+
+      const existingResult =
+        await client.query(
+          `
+          SELECT
+            id,
+            employee_id,
+            status
+          FROM public.travel_plan_compliances
+          WHERE id = $1
+          LIMIT 1
+          FOR UPDATE
+          `,
+          [complianceId]
+        );
+
+      if (!existingResult.rowCount) {
+        await client.query("ROLLBACK");
+
+        return res.status(404).json({
+          message:
+            "Compliance record not found.",
+        });
+      }
+
+      const compliance =
+        existingResult.rows[0];
+
+      if (
+        Number(compliance.employee_id) !==
+        Number(staff.id)
+      ) {
+        await client.query("ROLLBACK");
+
+        return res.status(403).json({
+          message:
+            "This compliance record is assigned to another staff member.",
+        });
+      }
+
+      if (
+        compliance.status === "Cancelled"
+      ) {
+        await client.query("ROLLBACK");
+
+        return res.status(400).json({
+          message:
+            "Cancelled compliance cannot be submitted.",
+        });
+      }
+
+      const result = await client.query(
+        `
+        UPDATE public.travel_plan_compliances
+        SET
+          compliance_response = $2,
+            status = 'Submitted',
+            review_level = 1,
+
+          complied_at =
+            NOW() AT TIME ZONE 'Asia/Manila',
+
+          complied_by = $3,
+
+          updated_at =
+            NOW() AT TIME ZONE 'Asia/Manila'
+
+        WHERE id = $1
+
+        RETURNING *
+        `,
+        [
+          complianceId,
+          responseText,
+          req.user?.id || null,
+        ]
+      );
+
+      await client.query("COMMIT");
+
+      return res.json({
+        message:
+          "Compliance submitted successfully and is now waiting for manager checking.",
+
+        compliance: result.rows[0],
+      });
+    } catch (error) {
+      await client.query("ROLLBACK");
+
+      return sendServerError(
+        res,
+        "PUT /travel-plan-compliances/:id/comply",
+        error
+      );
+    } finally {
+      client.release();
+    }
+  }
+);
+
+// =====================================================
+// CHECK STAFF COMPLIANCE
+// AM → RM → AVP → VP → SVP
+// Admin and IT may perform the final check.
+// =====================================================
+
+router.put(
+  "/travel-plan-compliances/:id/check",
+  requireAuth,
+  async (req, res) => {
+    const client = await pool.connect();
+
+    try {
+      if (!canCheckCompliance(req)) {
+        return res.status(403).json({
+          message:
+            "You are not allowed to check staff compliance.",
+        });
+      }
+
+      const complianceId = Number(req.params.id);
+
+      if (!isValidId(complianceId)) {
+        return res.status(400).json({
+          message: "Invalid compliance ID.",
+        });
+      }
+
+      const remarks = toStr(req.body.remarks);
+
+      const checkerLevel =
+        getComplianceReviewLevel(req);
+
+      const checkerRole =
+        normalizeRole(req.user?.role);
+
+      const checkerDepartment =
+        normalizeDepartment(
+          req.user?.department
+        );
+
+      const checkerName =
+        getLoggedInUserDisplayName(req);
+
+      await client.query("BEGIN");
+
+      const existingResult =
+        await client.query(
+          `
+          SELECT
+            c.id,
+            c.status,
+            c.review_level,
+            c.employee_id,
+            c.employee_name,
+            c.department,
+            c.area,
+            c.region,
+            c.division,
+
+            c.compliance_response
+
+          FROM public.travel_plan_compliances c
+
+          WHERE c.id = $1
+
+          LIMIT 1
+          FOR UPDATE
+          `,
+          [complianceId]
+        );
+
+      if (!existingResult.rowCount) {
+        await client.query("ROLLBACK");
+
+        return res.status(404).json({
+          message:
+            "Compliance record not found.",
+        });
+      }
+
+      const compliance =
+        existingResult.rows[0];
+
+      if (
+        !compliance.compliance_response ||
+        !toStr(compliance.compliance_response)
+      ) {
+        await client.query("ROLLBACK");
+
+        return res.status(400).json({
+          message:
+            "The involved staff must submit a compliance response before it can be checked.",
+        });
+      }
+
+      if (
+        ["pending", "cancelled"].includes(
+          normalizeRole(compliance.status)
+        )
+      ) {
+        await client.query("ROLLBACK");
+
+        return res.status(400).json({
+          message:
+            "Only submitted compliance records can be checked.",
+        });
+      }
+
+      if (
+        normalizeRole(compliance.status) ===
+        "complied"
+      ) {
+        await client.query("ROLLBACK");
+
+        return res.status(400).json({
+          message:
+            "This compliance has already completed all checking.",
+        });
+      }
+
+      const currentLevel =
+        Number(compliance.review_level) || 0;
+
+      if (checkerLevel <= currentLevel) {
+        await client.query("ROLLBACK");
+
+        return res.status(400).json({
+          message:
+            "This compliance has already been checked at your level or a higher level.",
+        });
+      }
+
+      /*
+        Do not allow a manager to skip a required lower
+        review level.
+
+        Level 2: AM can check after employee submission.
+        Level 3: RM requires AM check.
+        Level 4: AVP requires RM check.
+        Level 5: VP requires AVP check.
+        Level 6: SVP requires VP check.
+      */
+      if (checkerLevel > currentLevel + 1) {
+        await client.query("ROLLBACK");
+
+        return res.status(400).json({
+          message:
+            "The previous checking level must be completed first.",
+        });
+      }
+
+      const duplicateCheckResult =
+        await client.query(
+          `
+          SELECT id
+          FROM public.travel_plan_compliance_checks
+          WHERE compliance_id = $1
+            AND LOWER(
+              TRIM(
+                COALESCE(
+                  checked_by_role,
+                  ''
+                )
+              )
+            ) = LOWER(TRIM($2))
+          LIMIT 1
+          `,
+          [
+            complianceId,
+            checkerRole,
+          ]
+        );
+
+      if (duplicateCheckResult.rowCount) {
+        await client.query("ROLLBACK");
+
+        return res.status(400).json({
+          message:
+            "Your role has already checked this compliance.",
+        });
+      }
+
+      await client.query(
+        `
+        INSERT INTO public.travel_plan_compliance_checks
+        (
+          compliance_id,
+
+          checked_by_user_id,
+          checked_by_name,
+          checked_by_role,
+          checked_by_department,
+
+          review_level,
+          remarks,
+
+          checked_at,
+          created_at
+        )
+        VALUES
+        (
+          $1,
+
+          $2,
+          $3,
+          $4,
+          $5,
+
+          $6,
+          $7,
+
+          NOW() AT TIME ZONE 'Asia/Manila',
+          NOW() AT TIME ZONE 'Asia/Manila'
+        )
+        `,
+        [
+          complianceId,
+
+          req.user?.id || null,
+          checkerName,
+          checkerRole,
+          checkerDepartment || null,
+
+          checkerLevel,
+          remarks || null,
+        ]
+      );
+
+      const finalStatus =
+        checkerLevel >= 6
+          ? "Complied"
+          : "Checked";
+
+      const result = await client.query(
+        `
+        UPDATE public.travel_plan_compliances
+        SET
+          review_level = $2,
+          status = $3,
+
+          latest_checked_by_user_id = $4,
+          latest_checked_by_name = $5,
+          latest_checked_by_role = $6,
+          latest_checked_by_department = $7,
+
+          latest_checked_at =
+            NOW() AT TIME ZONE 'Asia/Manila',
+
+          latest_check_remarks = $8,
+
+          updated_at =
+            NOW() AT TIME ZONE 'Asia/Manila'
+
+        WHERE id = $1
+
+        RETURNING *
+        `,
+        [
+          complianceId,
+          checkerLevel,
+          finalStatus,
+
+          req.user?.id || null,
+          checkerName,
+          checkerRole,
+          checkerDepartment || null,
+
+          remarks || null,
+        ]
+      );
+
+      await client.query("COMMIT");
+
+      return res.json({
+        message:
+          finalStatus === "Complied"
+            ? "Compliance checking completed."
+            : `Compliance checked by ${checkerRole}.`,
+
+        compliance: result.rows[0],
+      });
+    } catch (error) {
+      await client.query("ROLLBACK");
+
+      if (
+        error?.code === "23505"
+      ) {
+        return res.status(400).json({
+          message:
+            "This checking role has already reviewed the compliance.",
+        });
+      }
+
+      return sendServerError(
+        res,
+        "PUT /travel-plan-compliances/:id/check",
+        error
+      );
+    } finally {
+      client.release();
+    }
+  }
+);
+
+// =====================================================
+// GET COMPLIANCE CHECK HISTORY
+// =====================================================
+
+router.get(
+  "/travel-plan-compliances/:id/checks",
+  requireAuth,
+  async (req, res) => {
+    try {
+      const complianceId = Number(
+        req.params.id
+      );
+
+      if (!isValidId(complianceId)) {
+        return res.status(400).json({
+          message: "Invalid compliance ID.",
+        });
+      }
+
+      const complianceResult =
+        await pool.query(
+          `
+          SELECT id
+          FROM public.travel_plan_compliances
+          WHERE id = $1
+          LIMIT 1
+          `,
+          [complianceId]
+        );
+
+      if (!complianceResult.rowCount) {
+        return res.status(404).json({
+          message:
+            "Compliance record not found.",
+        });
+      }
+
+      const result = await pool.query(
+        `
+        SELECT
+          id,
+          compliance_id,
+
+          checked_by_user_id,
+          checked_by_name,
+          checked_by_role,
+          checked_by_department,
+
+          review_level,
+          remarks,
+
+          ${manilaTimestampSql(
+            "checked_at"
+          )} AS checked_at,
+
+          ${manilaTimestampSql(
+            "created_at"
+          )} AS created_at
+
+        FROM public.travel_plan_compliance_checks
+
+        WHERE compliance_id = $1
+
+        ORDER BY
+          review_level ASC,
+          checked_at ASC,
+          id ASC
+        `,
+        [complianceId]
+      );
+
+      return res.json(result.rows);
+    } catch (error) {
+      return sendServerError(
+        res,
+        "GET /travel-plan-compliances/:id/checks",
+        error
+      );
+    }
+  }
+);
+
+// =====================================================
+// MANAGER COMPLIANCE REVIEW SCOPE
+// =====================================================
+//
+// Area Manager:
+//   Submitted records in the same area, review_level = 1.
+//
+// Regional Manager:
+//   Same region, already checked by AM, review_level = 2.
+//
+// Assistant Vice President:
+//   Same division, already checked by RM, review_level = 3.
+//
+// Vice President:
+//   Same department, already checked by AVP, review_level = 4.
+//
+// Senior Vice President:
+//   Same department, already checked by VP, review_level = 5.
+//
+// Admin / IT:
+//   All records waiting for any manager check.
+//
+// =====================================================
+
+router.get(
+  "/travel-plan-compliances/review-scope",
+  requireAuth,
+  async (req, res) => {
+    try {
+      if (!canCheckCompliance(req)) {
+        return res.status(403).json({
+          message:
+            "You are not allowed to review staff compliance.",
+        });
+      }
+
+      const role = normalizeRole(
+        req.user?.role
+      );
+
+      const department =
+        normalizeDepartment(
+          req.user?.department
+        );
+
+      const userArea = toStr(
+        req.user?.area
+      );
+
+      const userRegion = toStr(
+        req.user?.region
+      );
+
+      const userDivision = toStr(
+        req.user?.division
+      );
+
+      const reviewerLevel =
+        getComplianceReviewLevel(req);
+
+      if (
+        !Number.isInteger(reviewerLevel) ||
+        reviewerLevel < 1
+      ) {
+        return res.json([]);
+      }
+
+      const baseSql = `
+        SELECT
+          c.id,
+          c.travel_plan_id,
+          c.finding_note_id,
+
+          c.employee_id,
+          c.employee_no,
+          c.employee_name,
+          c.position,
+
+          c.branch_id,
+          c.branch_name,
+
+          c.department,
+          c.area,
+          c.region,
+          c.division,
+
+          c.finding_title,
+          c.finding_details,
+
+          TO_CHAR(
+            c.due_date,
+            'YYYY-MM-DD'
+          ) AS due_date,
+
+          c.status,
+          c.review_level,
+
+          c.compliance_response,
+
+          ${manilaTimestampSql(
+            "c.complied_at"
+          )} AS complied_at,
+
+          c.complied_by,
+
+          c.latest_checked_by_user_id,
+          c.latest_checked_by_name,
+          c.latest_checked_by_role,
+          c.latest_checked_by_department,
+
+          ${manilaTimestampSql(
+            "c.latest_checked_at"
+          )} AS latest_checked_at,
+
+          c.latest_check_remarks,
+
+          ${manilaTimestampSql(
+            "c.created_at"
+          )} AS created_at,
+
+          ${manilaTimestampSql(
+            "c.updated_at"
+          )} AS updated_at,
+
+          tp.title AS travel_plan_title,
+
+          TO_CHAR(
+            tp.plan_date,
+            'YYYY-MM-DD'
+          ) AS travel_plan_date,
+
+          tp.branch_name
+            AS visited_branch_name,
+
+          finding_creator.id
+            AS finding_created_by_id,
+
+          TRIM(
+            CONCAT_WS(
+              ' ',
+              finding_creator.first_name,
+              finding_creator.middle_name,
+              finding_creator.last_name
+            )
+          ) AS finding_created_by_name
+
+        FROM public.travel_plan_compliances c
+
+        INNER JOIN public.travel_plans tp
+          ON tp.id = c.travel_plan_id
+
+        LEFT JOIN public.users finding_creator
+          ON finding_creator.id = c.created_by
+
+        WHERE c.status IN (
+          'Submitted',
+          'Checked'
+        )
+
+          AND COALESCE(
+            c.review_level,
+            0
+          ) = $1
+      `;
+
+      let sql = "";
+      let params = [];
+
+      // =================================================
+      // ADMIN / IT
+      // =================================================
+      //
+      // Can see all compliance records that are waiting
+      // for their next checking level.
+      // =================================================
+
+      if (isAdminOrIT(req)) {
+        sql = `
+          SELECT
+            c.id,
+            c.travel_plan_id,
+            c.finding_note_id,
+
+            c.employee_id,
+            c.employee_no,
+            c.employee_name,
+            c.position,
+
+            c.branch_id,
+            c.branch_name,
+
+            c.department,
+            c.area,
+            c.region,
+            c.division,
+
+            c.finding_title,
+            c.finding_details,
+
+            TO_CHAR(
+              c.due_date,
+              'YYYY-MM-DD'
+            ) AS due_date,
+
+            c.status,
+            c.review_level,
+
+            c.compliance_response,
+
+            ${manilaTimestampSql(
+              "c.complied_at"
+            )} AS complied_at,
+
+            c.complied_by,
+
+            c.latest_checked_by_user_id,
+            c.latest_checked_by_name,
+            c.latest_checked_by_role,
+            c.latest_checked_by_department,
+
+            ${manilaTimestampSql(
+              "c.latest_checked_at"
+            )} AS latest_checked_at,
+
+            c.latest_check_remarks,
+
+            ${manilaTimestampSql(
+              "c.created_at"
+            )} AS created_at,
+
+            ${manilaTimestampSql(
+              "c.updated_at"
+            )} AS updated_at,
+
+            tp.title
+              AS travel_plan_title,
+
+            TO_CHAR(
+              tp.plan_date,
+              'YYYY-MM-DD'
+            ) AS travel_plan_date,
+
+            tp.branch_name
+              AS visited_branch_name
+
+          FROM public.travel_plan_compliances c
+
+          INNER JOIN public.travel_plans tp
+            ON tp.id = c.travel_plan_id
+
+          WHERE c.status IN (
+            'Submitted',
+            'Checked'
+          )
+
+            AND COALESCE(
+              c.review_level,
+              0
+            ) BETWEEN 1 AND 5
+
+          ORDER BY
+            c.review_level ASC,
+            c.due_date ASC NULLS LAST,
+            c.created_at ASC,
+            c.id ASC
+        `;
+
+        params = [];
+      }
+
+      // =================================================
+      // AREA MANAGER / ACTING AREA MANAGER
+      // =================================================
+      //
+      // Employee has already submitted:
+      // review_level must be 1.
+      // Same area and same department only.
+      // =================================================
+
+      else if (
+        [
+          "area manager",
+          "acting area manager",
+        ].includes(role)
+      ) {
+        if (!userArea) {
+          return res.json([]);
+        }
+
+        sql = `
+          ${baseSql}
+
+          AND LOWER(
+            TRIM(
+              COALESCE(
+                c.area,
+                ''
+              )
+            )
+          ) = LOWER(TRIM($2))
+
+          AND LOWER(
+            TRIM(
+              COALESCE(
+                c.department,
+                ''
+              )
+            )
+          ) = LOWER(TRIM($3))
+
+          ORDER BY
+            c.due_date ASC NULLS LAST,
+            c.created_at ASC,
+            c.id ASC
+        `;
+
+        params = [
+          reviewerLevel - 1,
+          userArea,
+          department,
+        ];
+      }
+
+      // =================================================
+      // REGIONAL MANAGER / ACTING REGIONAL MANAGER
+      // =================================================
+      //
+      // Must already be checked by Area Manager:
+      // review_level must be 2.
+      // Same region and same department only.
+      // =================================================
+
+      else if (
+        [
+          "regional manager",
+          "acting regional manager",
+        ].includes(role)
+      ) {
+        if (!userRegion) {
+          return res.json([]);
+        }
+
+        sql = `
+          ${baseSql}
+
+          AND LOWER(
+            TRIM(
+              COALESCE(
+                c.region,
+                ''
+              )
+            )
+          ) = LOWER(TRIM($2))
+
+          AND LOWER(
+            TRIM(
+              COALESCE(
+                c.department,
+                ''
+              )
+            )
+          ) = LOWER(TRIM($3))
+
+          ORDER BY
+            c.due_date ASC NULLS LAST,
+            c.created_at ASC,
+            c.id ASC
+        `;
+
+        params = [
+          reviewerLevel - 1,
+          userRegion,
+          department,
+        ];
+      }
+
+      // =================================================
+      // ASSISTANT VICE PRESIDENT
+      // =================================================
+      //
+      // Must already be checked by RM:
+      // review_level must be 3.
+      // Same division and same department only.
+      // =================================================
+
+      else if (
+        role ===
+        "assistant vice president"
+      ) {
+        if (!userDivision) {
+          return res.json([]);
+        }
+
+        sql = `
+          ${baseSql}
+
+          AND LOWER(
+            TRIM(
+              COALESCE(
+                c.division,
+                ''
+              )
+            )
+          ) = LOWER(TRIM($2))
+
+          AND LOWER(
+            TRIM(
+              COALESCE(
+                c.department,
+                ''
+              )
+            )
+          ) = LOWER(TRIM($3))
+
+          ORDER BY
+            c.due_date ASC NULLS LAST,
+            c.created_at ASC,
+            c.id ASC
+        `;
+
+        params = [
+          reviewerLevel - 1,
+          userDivision,
+          department,
+        ];
+      }
+
+      // =================================================
+      // VICE PRESIDENT
+      // =================================================
+      //
+      // Must already be checked by AVP:
+      // review_level must be 4.
+      // Same department only.
+      // =================================================
+
+      else if (
+        role === "vice president"
+      ) {
+        sql = `
+          ${baseSql}
+
+          AND LOWER(
+            TRIM(
+              COALESCE(
+                c.department,
+                ''
+              )
+            )
+          ) = LOWER(TRIM($2))
+
+          ORDER BY
+            c.due_date ASC NULLS LAST,
+            c.created_at ASC,
+            c.id ASC
+        `;
+
+        params = [
+          reviewerLevel - 1,
+          department,
+        ];
+      }
+
+      // =================================================
+      // SENIOR VICE PRESIDENT
+      // =================================================
+      //
+      // Must already be checked by VP:
+      // review_level must be 5.
+      // Same department only.
+      // =================================================
+
+      else if (
+        role ===
+        "senior vice president"
+      ) {
+        sql = `
+          ${baseSql}
+
+          AND LOWER(
+            TRIM(
+              COALESCE(
+                c.department,
+                ''
+              )
+            )
+          ) = LOWER(TRIM($2))
+
+          ORDER BY
+            c.due_date ASC NULLS LAST,
+            c.created_at ASC,
+            c.id ASC
+        `;
+
+        params = [
+          reviewerLevel - 1,
+          department,
+        ];
+      }
+
+      else {
+        return res.json([]);
+      }
+
+      const result = await pool.query(
+        sql,
+        params
+      );
+
+      return res.json(result.rows);
+    } catch (error) {
+      console.error("========== REVIEW SCOPE ERROR ==========");
+      console.error(error);
+      console.error(error.stack);
+
+      return res.status(500).json({
+        message: error.message,
+        stack: error.stack,
+      });
+    }
+  }
+);
+
+// =====================================================
+// MANAGER PENDING REVIEW COUNT
+// Used for the red Comply badge.
+// =====================================================
+
+router.get(
+  "/travel-plan-compliances/review-pending-count",
+  requireAuth,
+  async (req, res) => {
+    try {
+      if (!canCheckCompliance(req)) {
+        return res.json({
+          pending_count: 0,
+        });
+      }
+
+      const role = normalizeRole(
+        req.user?.role
+      );
+
+      const department =
+        normalizeDepartment(
+          req.user?.department
+        );
+
+      const userArea = toStr(
+        req.user?.area
+      );
+
+      const userRegion = toStr(
+        req.user?.region
+      );
+
+      const userDivision = toStr(
+        req.user?.division
+      );
+
+      const reviewerLevel =
+        getComplianceReviewLevel(req);
+
+      let sql = "";
+      let params = [];
+
+      if (isAdminOrIT(req)) {
+        sql = `
+          SELECT
+            COUNT(*)::INTEGER
+              AS pending_count
+
+          FROM public.travel_plan_compliances
+
+          WHERE status IN (
+            'Submitted',
+            'Checked'
+          )
+
+            AND COALESCE(
+              review_level,
+              0
+            ) BETWEEN 1 AND 5
+        `;
+      }
+
+      else if (
+        [
+          "area manager",
+          "acting area manager",
+        ].includes(role)
+      ) {
+        if (!userArea) {
+          return res.json({
+            pending_count: 0,
+          });
+        }
+
+        sql = `
+          SELECT
+            COUNT(*)::INTEGER
+              AS pending_count
+
+          FROM public.travel_plan_compliances
+
+          WHERE status = 'Submitted'
+
+            AND review_level = $1
+
+            AND LOWER(
+              TRIM(
+                COALESCE(area, '')
+              )
+            ) = LOWER(TRIM($2))
+
+            AND LOWER(
+              TRIM(
+                COALESCE(
+                  department,
+                  ''
+                )
+              )
+            ) = LOWER(TRIM($3))
+        `;
+
+        params = [
+          reviewerLevel - 1,
+          userArea,
+          department,
+        ];
+      }
+
+      else if (
+        [
+          "regional manager",
+          "acting regional manager",
+        ].includes(role)
+      ) {
+        if (!userRegion) {
+          return res.json({
+            pending_count: 0,
+          });
+        }
+
+        sql = `
+          SELECT
+            COUNT(*)::INTEGER
+              AS pending_count
+
+          FROM public.travel_plan_compliances
+
+          WHERE status = 'Checked'
+
+            AND review_level = $1
+
+            AND LOWER(
+              TRIM(
+                COALESCE(region, '')
+              )
+            ) = LOWER(TRIM($2))
+
+            AND LOWER(
+              TRIM(
+                COALESCE(
+                  department,
+                  ''
+                )
+              )
+            ) = LOWER(TRIM($3))
+        `;
+
+        params = [
+          reviewerLevel - 1,
+          userRegion,
+          department,
+        ];
+      }
+
+      else if (
+        role ===
+        "assistant vice president"
+      ) {
+        if (!userDivision) {
+          return res.json({
+            pending_count: 0,
+          });
+        }
+
+        sql = `
+          SELECT
+            COUNT(*)::INTEGER
+              AS pending_count
+
+          FROM public.travel_plan_compliances
+
+          WHERE status = 'Checked'
+
+            AND review_level = $1
+
+            AND LOWER(
+              TRIM(
+                COALESCE(
+                  division,
+                  ''
+                )
+              )
+            ) = LOWER(TRIM($2))
+
+            AND LOWER(
+              TRIM(
+                COALESCE(
+                  department,
+                  ''
+                )
+              )
+            ) = LOWER(TRIM($3))
+        `;
+
+        params = [
+          reviewerLevel - 1,
+          userDivision,
+          department,
+        ];
+      }
+
+      else if (
+        [
+          "vice president",
+          "senior vice president",
+        ].includes(role)
+      ) {
+        sql = `
+          SELECT
+            COUNT(*)::INTEGER
+              AS pending_count
+
+          FROM public.travel_plan_compliances
+
+          WHERE status = 'Checked'
+
+            AND review_level = $1
+
+            AND LOWER(
+              TRIM(
+                COALESCE(
+                  department,
+                  ''
+                )
+              )
+            ) = LOWER(TRIM($2))
+        `;
+
+        params = [
+          reviewerLevel - 1,
+          department,
+        ];
+      }
+
+      else {
+        return res.json({
+          pending_count: 0,
+        });
+      }
+
+      const result = await pool.query(
+        sql,
+        params
+      );
+
+      return res.json({
+        pending_count:
+          Number(
+            result.rows[0]?.pending_count
+          ) || 0,
+      });
+    } catch (error) {
+      return sendServerError(
+        res,
+        "GET /travel-plan-compliances/review-pending-count",
+        error
+      );
+    }
+  }
+);
 
 module.exports = router;

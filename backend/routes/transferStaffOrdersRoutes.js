@@ -439,13 +439,6 @@
           });
         }
 
-        if (Number(prev_branch_id) === Number(to_branch_id)) {
-          return res.status(400).json({
-            message:
-              "Previous branch and transfer branch cannot be the same.",
-          });
-        }
-
         if (!department || !division || !area || !region) {
           return res.status(400).json({
             message:

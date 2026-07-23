@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { useLocation } from "react-router-dom";
 import api from "../api/axiosClient";
 import "../styles/Calendar.css";
 import Select from "react-select";
@@ -14,6 +14,8 @@ const DAYS = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
 const emptyNoteForm = {
   title: "",
   involved_staff: [],
+  involved_staff_ids: [],
+  due_date: "",
   content: "",
 };
 
@@ -51,11 +53,32 @@ export default function TravelPlan() {
     loggedInRole === "admin" ||
     loggedInDepartment === "tread department";
 
+  const canDeleteTravelPlans =
+    loggedInRole === "admin" ||
+    loggedInRole === "it" ||
+    loggedInDepartment === "tread department";
+
+  const complianceReviewerRoles = [
+    "area manager",
+    "acting area manager",
+    "regional manager",
+    "acting regional manager",
+    "assistant vice president",
+    "vice president",
+    "senior vice president",
+  ];
+
+  const canReviewCompliance =
+    loggedInRole === "admin" ||
+    loggedInRole === "it" ||
+    complianceReviewerRoles.includes(
+      loggedInRole
+    );
+
   const [month, setMonth] = useState(today.getMonth());
   const [year, setYear] = useState(today.getFullYear());
   const [visitRange, setVisitRange] = useState("month");
   const location = useLocation();
-  const navigate = useNavigate();
 
   const currentTab =
     new URLSearchParams(location.search).get("tab") || "travel-plan";
@@ -66,7 +89,7 @@ export default function TravelPlan() {
       : currentTab === "forecast"
       ? "Forecast"
       : currentTab === "history"
-      ? "History"
+      ? "Comply"
       : "Travel Plan";
 
   const [activities, setActivities] = useState([]);
@@ -74,7 +97,40 @@ export default function TravelPlan() {
   const [branchDivisionFilter, setBranchDivisionFilter] = useState("");
   const [branchRegionFilter, setBranchRegionFilter] = useState("");
   const [branchAreaFilter, setBranchAreaFilter] = useState("");
-  const [historyPlans, setHistoryPlans] = useState([]);
+  const [complianceRows, setComplianceRows] = useState([]);
+  const [complianceLoading, setComplianceLoading] = useState(false);
+  const [complianceSearch, setComplianceSearch] = useState("");
+  const [complianceStatusFilter, setComplianceStatusFilter] =
+    useState("");
+
+  const [selectedCompliance, setSelectedCompliance] =
+    useState(null);
+
+  const [complianceResponse, setComplianceResponse] =
+    useState("");
+
+  const [complyView, setComplyView] =
+    useState("my");
+
+  const [reviewComplianceRows, setReviewComplianceRows] =
+    useState([]);
+
+  const [reviewComplianceLoading, setReviewComplianceLoading] =
+    useState(false);
+
+  const [
+    selectedReviewCompliance,
+    setSelectedReviewCompliance,
+  ] = useState(null);
+
+  const [reviewRemarks, setReviewRemarks] =
+    useState("");
+
+  const [complianceCheckHistory, setComplianceCheckHistory] =
+    useState([]);
+
+  const [checkHistoryLoading, setCheckHistoryLoading] =
+    useState(false);
 
   const [selectedPlan, setSelectedPlan] = useState(null);
   const [detailTab, setDetailTab] = useState("photos");
@@ -83,16 +139,21 @@ export default function TravelPlan() {
   const [staffRows, setStaffRows] = useState([]);
   const [staffDropdownRows, setStaffDropdownRows] = useState([]);
   const [staffPositionFilter, setStaffPositionFilter] = useState("");
+  const [staffSearch, setStaffSearch] = useState("");
+
   const [branchScopeRows, setBranchScopeRows] = useState([]);
   const [showCreatePlan, setShowCreatePlan] = useState(false);
   const [plans, setPlans] = useState([]);
-  const [activityDateFilter, setActivityDateFilter] = useState("");
-  const [activitySearch, setActivitySearch] = useState("");
+  
   const [planPhotos, setPlanPhotos] = useState([]);
   const [planNotes, setPlanNotes] = useState([]);
   const [selectedCalendarDate, setSelectedCalendarDate] = useState("");
   const [selectedActivity, setSelectedActivity] = useState(null);
   const [selectedBranchVisit, setSelectedBranchVisit] = useState(null);
+
+  const [selectedStaffScope, setSelectedStaffScope] = useState(null);
+  const [staffPlanSearch, setStaffPlanSearch] = useState("");
+  const [staffPlanDateFilter, setStaffPlanDateFilter] = useState("");
 
   const [showNoteForm, setShowNoteForm] = useState(false);
   const [noteForm, setNoteForm] = useState(emptyNoteForm);
@@ -222,6 +283,135 @@ export default function TravelPlan() {
     };
   }, [forecastWeek, forecastSelectedDate]);
 
+  const filteredComplianceRows = useMemo(() => {
+    const search = normalizeValue(complianceSearch);
+
+    return complianceRows.filter((row) => {
+      const matchesStatus =
+        !complianceStatusFilter ||
+        normalizeValue(row.status) ===
+          normalizeValue(complianceStatusFilter);
+
+      const searchableText = normalizeValue(
+        [
+          row.finding_title,
+          row.finding_details,
+          row.travel_plan_title,
+          row.employee_name,
+          row.employee_no,
+          row.position,
+          row.branch_name,
+          row.visited_branch_name,
+          row.status,
+          row.due_date,
+          row.compliance_response,
+        ]
+          .filter(Boolean)
+          .join(" ")
+      );
+
+      const matchesSearch =
+        !search ||
+        searchableText.includes(search);
+
+      return matchesStatus && matchesSearch;
+    });
+  }, [
+    complianceRows,
+    complianceSearch,
+    complianceStatusFilter,
+  ]);
+
+  const complianceCounts = useMemo(() => {
+    return {
+      total: complianceRows.length,
+
+      pending: complianceRows.filter(
+        (row) =>
+          normalizeValue(row.status) === "pending"
+      ).length,
+
+      submitted: complianceRows.filter(
+        (row) =>
+          normalizeValue(row.status) === "submitted"
+      ).length,
+
+      checked: complianceRows.filter(
+        (row) =>
+          normalizeValue(row.status) === "checked"
+      ).length,
+
+      complied: complianceRows.filter(
+        (row) =>
+          normalizeValue(row.status) === "complied"
+      ).length,
+    };
+  }, [complianceRows]);
+
+  const filteredReviewComplianceRows = useMemo(() => {
+    const search = normalizeValue(
+      complianceSearch
+    );
+
+    return reviewComplianceRows.filter((row) => {
+      const matchesStatus =
+        !complianceStatusFilter ||
+        normalizeValue(row.status) ===
+          normalizeValue(
+            complianceStatusFilter
+          );
+
+      const searchableText =
+        normalizeValue(
+          [
+            row.finding_title,
+            row.finding_details,
+            row.travel_plan_title,
+            row.employee_name,
+            row.employee_no,
+            row.position,
+            row.branch_name,
+            row.visited_branch_name,
+            row.status,
+            row.latest_checked_by_name,
+            row.latest_checked_by_role,
+            row.due_date,
+            row.compliance_response,
+          ]
+            .filter(Boolean)
+            .join(" ")
+        );
+
+      const matchesSearch =
+        !search ||
+        searchableText.includes(search);
+
+      return matchesStatus && matchesSearch;
+    });
+  }, [
+    reviewComplianceRows,
+    complianceSearch,
+    complianceStatusFilter,
+  ]);
+
+  const reviewComplianceCounts = useMemo(() => {
+    return {
+      total: reviewComplianceRows.length,
+
+      submitted: reviewComplianceRows.filter(
+        (row) =>
+          normalizeValue(row.status) ===
+          "submitted"
+      ).length,
+
+      checked: reviewComplianceRows.filter(
+        (row) =>
+          normalizeValue(row.status) ===
+          "checked"
+      ).length,
+    };
+  }, [reviewComplianceRows]);
+
   const calendarDays = useMemo(() => {
     const firstDay = new Date(year, month, 1);
     const lastDay = new Date(year, month + 1, 0);
@@ -312,7 +502,12 @@ export default function TravelPlan() {
   const staffOptions = useMemo(
     () =>
       staffDropdownRows.map((staff) => ({
-        value: staff.employee_name,
+        value: Number(staff.id),
+
+        employee_name: staff.employee_name,
+        employee_no: staff.employee_no,
+        position: staff.position,
+        branch_name: staff.branch_name,
 
         label: [
           staff.employee_name,
@@ -330,12 +525,39 @@ export default function TravelPlan() {
   }, [staffRows]);
 
   const filteredStaffRows = useMemo(() => {
-    if (!staffPositionFilter) return staffRows;
+    const search = normalizeValue(staffSearch);
 
-    return staffRows.filter(
-      (s) => String(s.position || "") === staffPositionFilter
-    );
-  }, [staffRows, staffPositionFilter]);
+    return staffRows.filter((staff) => {
+      const matchesPosition =
+        !staffPositionFilter ||
+        String(staff.position || "") ===
+          staffPositionFilter;
+
+      const searchableText = normalizeValue(
+        [
+          staff.employee_no,
+          staff.employee_name,
+          staff.position,
+          staff.branch_name,
+          staff.area,
+          staff.region,
+          staff.department,
+          staff.travel_status,
+        ]
+          .filter(Boolean)
+          .join(" ")
+      );
+
+      const matchesSearch =
+        !search || searchableText.includes(search);
+
+      return matchesPosition && matchesSearch;
+    });
+  }, [
+    staffRows,
+    staffPositionFilter,
+    staffSearch,
+  ]);
 
   const staffCounts = useMemo(() => {
     const rows = filteredStaffRows;
@@ -370,38 +592,65 @@ export default function TravelPlan() {
     };
   }, [filteredStaffRows]);
 
-  const filteredActivityPlans = useMemo(() => {
-    const search = String(activitySearch || "")
-      .trim()
-      .toLowerCase();
+  const selectedStaffPlans = useMemo(() => {
+    if (!selectedStaffScope) {
+      return [];
+    }
 
-    return plans.filter((plan) => {
-      const matchesDate =
-        !activityDateFilter ||
-        String(plan.plan_date || "") === activityDateFilter;
+    const selectedEmployeeName = normalizeValue(
+      selectedStaffScope.employee_name
+    );
 
-      const searchableText = [
-        plan.title,
-        plan.employee_name,
-        plan.position,
-        plan.branch_name,
-        plan.description,
-        plan.status,
-        plan.plan_date,
-      ]
-        .filter(Boolean)
-        .join(" ")
-        .toLowerCase();
+    const search = normalizeValue(staffPlanSearch);
 
-      const matchesSearch =
-        !search || searchableText.includes(search);
+    return plans
+      .filter((plan) => {
+        const planEmployeeName = normalizeValue(
+          plan.employee_name
+        );
 
-      return matchesDate && matchesSearch;
-    });
+        const belongsToSelectedStaff =
+          planEmployeeName === selectedEmployeeName;
+
+        const matchesDate =
+          !staffPlanDateFilter ||
+          String(plan.plan_date || "").slice(0, 10) ===
+            staffPlanDateFilter;
+
+        const searchableText = normalizeValue(
+          [
+            plan.title,
+            plan.employee_name,
+            plan.position,
+            plan.branch_name,
+            plan.description,
+            plan.status,
+            plan.plan_date,
+          ]
+            .filter(Boolean)
+            .join(" ")
+        );
+
+        const matchesSearch =
+          !search || searchableText.includes(search);
+
+        return (
+          belongsToSelectedStaff &&
+          matchesDate &&
+          matchesSearch
+        );
+      })
+      .sort((a, b) => {
+        const dateA = String(a.plan_date || "");
+        const dateB = String(b.plan_date || "");
+
+        return dateB.localeCompare(dateA);
+      });
   }, [
     plans,
-    activityDateFilter,
-    activitySearch,
+    selectedStaffScope,
+    staffPlanSearch,
+    staffPlanDateFilter,
   ]);
 
   const mostVisitedBranches = useMemo(() => {
@@ -528,14 +777,90 @@ const selectedBranchPlans = useMemo(() => {
     ...mostVisitedBranches.map((b) => b.count)
   );
 
-  const fetchHistoryPlans = async () => {
-    try {
-      const res = await api.get("/travel-plans/history/completed");
+  const fetchMyCompliances = async () => {
+    setComplianceLoading(true);
 
-      setHistoryPlans(Array.isArray(res.data) ? res.data : []);
+    try {
+      const res = await api.get(
+        "/travel-plan-compliances/my"
+      );
+
+      setComplianceRows(
+        Array.isArray(res.data)
+          ? res.data
+          : []
+      );
     } catch (err) {
-      console.error("Fetch travel history error:", err);
-      setHistoryPlans([]);
+      console.error(
+        "Fetch compliance records error:",
+        err
+      );
+
+      setComplianceRows([]);
+    } finally {
+      setComplianceLoading(false);
+    }
+  };
+
+  const fetchReviewCompliances = async () => {
+    if (!canReviewCompliance) {
+      setReviewComplianceRows([]);
+      return;
+    }
+
+    setReviewComplianceLoading(true);
+
+    try {
+      const res = await api.get(
+        "/travel-plan-compliances/review-scope"
+      );
+
+      setReviewComplianceRows(
+        Array.isArray(res.data)
+          ? res.data
+          : []
+      );
+    } catch (err) {
+      console.error(
+        "Fetch compliance review scope error:",
+        err
+      );
+
+      setReviewComplianceRows([]);
+    } finally {
+      setReviewComplianceLoading(false);
+    }
+  };
+
+  const fetchComplianceCheckHistory = async (
+    complianceId
+  ) => {
+    if (!complianceId) {
+      setComplianceCheckHistory([]);
+      return;
+    }
+
+    setCheckHistoryLoading(true);
+
+    try {
+      const res = await api.get(
+        `/travel-plan-compliances/${complianceId}/checks`
+      );
+
+      setComplianceCheckHistory(
+        Array.isArray(res.data)
+          ? res.data
+          : []
+      );
+    } catch (err) {
+      console.error(
+        "Fetch compliance check history error:",
+        err
+      );
+
+      setComplianceCheckHistory([]);
+    } finally {
+      setCheckHistoryLoading(false);
     }
   };
 
@@ -621,15 +946,33 @@ const selectedBranchPlans = useMemo(() => {
   };
 
   useEffect(() => {
+    if (activeMenu === "Comply") {
+      fetchMyCompliances();
+
+      if (canReviewCompliance) {
+        fetchReviewCompliances();
+      }
+
+      return;
+    }
+
     fetchActivities();
     fetchStaffDropdown();
     fetchScopedBranches();
     fetchPlans();
-  }, []);
+  }, [
+    activeMenu,
+    canReviewCompliance,
+  ]);
 
   useEffect(() => {
-    fetchScopedStaff();
-  }, [staffScopeDate]);
+    if (activeMenu === "Travel Plan") {
+      fetchScopedStaff();
+    }
+  }, [
+    activeMenu,
+    staffScopeDate,
+  ]);
 
   const saveTravelPlan = async () => {
     if (!planForm.title || !planForm.plan_date) {
@@ -776,25 +1119,36 @@ const selectedBranchPlans = useMemo(() => {
     }
   };
 
-  const deleteTravelPlan = async (planId) => {
-    if (!planId) return;
 
-    if (
-      !window.confirm(
-        "Delete this travel plan? This will also delete its notes and photos."
-      )
-    ) {
+  const deleteTravelPlan = async (planId) => {
+    if (!planId) {
+      return;
+    }
+
+    const confirmed = window.confirm(
+      "Delete this travel plan? This will also delete its notes and photos."
+    );
+
+    if (!confirmed) {
       return;
     }
 
     try {
-      await api.delete(
-        `/travel-plans/${planId}`
-      );
+      await api.delete(`/travel-plans/${planId}`);
 
       if (selectedPlan?.id === planId) {
         closePlan();
       }
+
+      setSelectedStaffScope((currentStaff) => {
+        if (!currentStaff) {
+          return null;
+        }
+
+        return {
+          ...currentStaff,
+        };
+      });
 
       await fetchPlans();
       await fetchScopedStaff();
@@ -885,13 +1239,39 @@ const selectedBranchPlans = useMemo(() => {
       return;
     }
 
+    if (
+      type === "FINDINGS" &&
+      noteForm.involved_staff_ids.length === 0
+    ) {
+      alert(
+        "Select at least one involved staff member."
+      );
+
+      return;
+    }
+
     try {
-      await api.post(`/travel-plans/${selectedPlan.id}/notes`, {
-        note_type: type,
-        title: noteForm.title.trim(),
-        involved_staff: noteForm.involved_staff.join(", "),
-        content: noteForm.content.trim(),
-      });
+      await api.post(
+        `/travel-plans/${selectedPlan.id}/notes`,
+        {
+          note_type: type,
+
+          title: noteForm.title.trim(),
+
+          involved_staff:
+            noteForm.involved_staff.join(", "),
+
+          involved_staff_ids:
+            noteForm.involved_staff_ids,
+
+          due_date:
+            type === "FINDINGS"
+              ? noteForm.due_date || null
+              : null,
+
+          content: noteForm.content.trim(),
+        }
+      );
 
       setNoteForm(emptyNoteForm);
       setShowNoteForm(false);
@@ -1086,19 +1466,52 @@ const selectedBranchPlans = useMemo(() => {
                 isClearable
                 closeMenuOnSelect={false}
                 value={staffOptions.filter((option) =>
-                  noteForm.involved_staff.includes(option.value)
+                  noteForm.involved_staff_ids.includes(
+                    Number(option.value)
+                  )
                 )}
-                onChange={(selectedOptions) =>
+                onChange={(selectedOptions) => {
+                  const selected = Array.isArray(
+                    selectedOptions
+                  )
+                    ? selectedOptions
+                    : [];
+
                   setNoteForm((previous) => ({
                     ...previous,
-                    involved_staff: Array.isArray(selectedOptions)
-                      ? selectedOptions.map((option) => option.value)
-                      : [],
-                  }))
-                }
+
+                    involved_staff_ids:
+                      selected.map((option) =>
+                        Number(option.value)
+                      ),
+
+                    involved_staff:
+                      selected.map(
+                        (option) =>
+                          option.employee_name
+                      ),
+                  }));
+                }}
                 noOptionsMessage={() => "No staff found"}
               />
             </label>
+
+            {!isReview && (
+              <label>
+                Compliance Due Date
+
+                <input
+                  type="date"
+                  value={noteForm.due_date}
+                  onChange={(event) =>
+                    setNoteForm((previous) => ({
+                      ...previous,
+                      due_date: event.target.value,
+                    }))
+                  }
+                />
+              </label>
+            )}
 
             <label>
               Write
@@ -1181,6 +1594,108 @@ const selectedBranchPlans = useMemo(() => {
     }
   };
 
+  const submitCompliance = async () => {
+    if (!selectedCompliance?.id) {
+      return;
+    }
+
+    if (!complianceResponse.trim()) {
+      alert(
+        "Compliance response is required."
+      );
+
+      return;
+    }
+
+    try {
+      await api.put(
+        `/travel-plan-compliances/${selectedCompliance.id}/comply`,
+        {
+          compliance_response:
+            complianceResponse.trim(),
+        }
+      );
+
+      setSelectedCompliance(null);
+      setComplianceResponse("");
+
+      await fetchMyCompliances();
+
+      window.dispatchEvent(
+        new Event("travel-compliance-updated")
+      );
+
+      alert(
+        "Compliance submitted successfully."
+      );
+    } catch (err) {
+      console.error(
+        "Submit compliance error:",
+        err
+      );
+
+      alert(
+        err.response?.data?.message ||
+          "Failed to submit compliance."
+      );
+    }
+  };
+
+  const checkCompliance = async () => {
+    if (!selectedReviewCompliance?.id) {
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Check the compliance submitted by ${
+        selectedReviewCompliance.employee_name ||
+        "this employee"
+      }?`
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      await api.put(
+        `/travel-plan-compliances/${selectedReviewCompliance.id}/check`,
+        {
+          remarks: reviewRemarks.trim() || null,
+        }
+      );
+
+      setSelectedReviewCompliance(null);
+      setReviewRemarks("");
+      setComplianceCheckHistory([]);
+
+      await Promise.all([
+        fetchReviewCompliances(),
+        fetchMyCompliances(),
+      ]);
+
+      window.dispatchEvent(
+        new Event(
+          "travel-compliance-updated"
+        )
+      );
+
+      alert(
+        "Compliance checked successfully."
+      );
+    } catch (err) {
+      console.error(
+        "Check compliance error:",
+        err
+      );
+
+      alert(
+        err.response?.data?.message ||
+          "Failed to check compliance."
+      );
+    }
+  };
+
   return (
     <div className="travel-modern-page">
       <div className="travel-modern-layout">
@@ -1222,47 +1737,51 @@ const selectedBranchPlans = useMemo(() => {
             </div>
 
             <div className="travel-top-actions">
-              <button
-                className="travel-create-btn"
-                type="button"
-                onClick={() => {
-                  setPlanForm({
-                    title: "",
-                    plan_date: "",
-                    employee_name: "",
-                    position: "",
-                    branch_name: "",
-                    description: "",
-                  });
-                  setShowCreatePlan(true);
-                }}
-              >
-                + Create Plan
-              </button>
+              {activeMenu !== "Comply" && (
+                <>
+                  <button
+                    className="travel-create-btn"
+                    type="button"
+                    onClick={() => {
+                      setPlanForm({
+                        title: "",
+                        plan_date: "",
+                        employee_name: "",
+                        position: "",
+                        branch_name: "",
+                        description: "",
+                      });
 
-              {canManageCalendarActivities && (
-                <button
-                  className="travel-create-btn secondary"
-                  type="button"
-                  onClick={() => {
-                    setEditingActivityId(null);
+                      setShowCreatePlan(true);
+                    }}
+                  >
+                    + Create Plan
+                  </button>
 
-                    setActivityForm({
-                      title: "",
-                      date_from: "",
-                      date_to: "",
-                      subject: "",
-                      venue: "",
-                      description: "",
-                    });
+                  {canManageCalendarActivities && (
+                    <button
+                      className="travel-create-btn secondary"
+                      type="button"
+                      onClick={() => {
+                        setEditingActivityId(null);
 
-                    setShowCreateActivity(true);
-                  }}
-                >
-                  + Create Activity
-                </button>
+                        setActivityForm({
+                          title: "",
+                          date_from: "",
+                          date_to: "",
+                          subject: "",
+                          venue: "",
+                          description: "",
+                        });
+
+                        setShowCreateActivity(true);
+                      }}
+                    >
+                      + Create Activity
+                    </button>
+                  )}
+                </>
               )}
-
             </div>
           </div>
 
@@ -1456,269 +1975,133 @@ const selectedBranchPlans = useMemo(() => {
                       </div>
                     )}
                   </div>
-
                 </div>
-
               </div>
 
-              {/* ACTIVITIES */}
-              <div className="travel-dashboard-card travel-activities-card">
-
-                <div className="travel-dashboard-card-head">
-                  <div>
-                    <h3>Activities & Events</h3>
-
-                    <p>
-                      Travel plans visible within your account scope.
-                    </p>
-                  </div>
-
-                  <div className="travel-activity-filters">
-                    <input
-                      type="search"
-                      className="travel-activity-search"
-                      placeholder="Search name, position, branch, or plan..."
-                      value={activitySearch}
-                      onChange={(e) =>
-                        setActivitySearch(e.target.value)
-                      }
-                    />
-
-                    <input
-                      type="date"
-                      className="travel-activity-date"
-                      value={activityDateFilter}
-                      onChange={(e) =>
-                        setActivityDateFilter(e.target.value)
-                      }
-                    />
-
-                    <button
-                      type="button"
-                      className="travel-activity-clear"
-                      onClick={() => {
-                        setActivitySearch("");
-                        setActivityDateFilter("");
-                      }}
-                      disabled={
-                        !activitySearch &&
-                        !activityDateFilter
-                      }
-                    >
-                      Clear
-                    </button>
-
-                    <span className="travel-count-pill">
-                      {filteredActivityPlans.length}{" "}
-                      {filteredActivityPlans.length === 1
-                        ? "Plan"
-                        : "Plans"}
-                    </span>
-                  </div>
-                </div>
-
-                {filteredActivityPlans.length === 0 ? (
-                  <div className="travel-empty">
-                    No activities yet.
-                  </div>
-                ) : (
-                  <div className="travel-activity-list">
-                    {filteredActivityPlans.map((plan) => (
-                      <div
-                        key={plan.id}
-                        className="travel-activity-card"
-                        onClick={() => openPlan(plan)}
-                      >
-                        <div className="travel-activity-plan-main">
-                          <div className="travel-activity-plan-title">
-                            {plan.title || "Untitled Travel Plan"}
-                          </div>
-
-                          <div className="travel-activity-employee">
-                            <span className="travel-activity-employee-name">
-                              {plan.employee_name || "No employee assigned"}
-                            </span>
-
-                            {plan.position && (
-                              <>
-                                <span className="travel-activity-separator">
-                                  •
-                                </span>
-
-                                <span className="travel-activity-position">
-                                  {plan.position}
-                                </span>
-                              </>
-                            )}
-                          </div>
-
-                          <div className="travel-activity-branch">
-                            {plan.branch_name || "No branch selected"}
-                          </div>
-
-                          {plan.description && (
-                            <div className="travel-activity-description">
-                              {plan.description}
-                            </div>
-                          )}
-                        </div>
-
-                        <div className="travel-activity-right">
-                          <span>
-                            {String(plan.plan_date).slice(0, 10)}
-                          </span>
-
-                          <b
-                            className={`travel-status ${
-                              plan.status === "Completed"
-                                ? "completed"
-                                : "pending"
-                            }`}
-                          >
-                            {plan.status || "Pending"}
-                          </b>
-
-                          <div className="travel-record-actions">
-                            {plan.status !== "Completed" && (
-                              <button
-                                type="button"
-                                className="travel-record-edit"
-                                onClick={(event) => {
-                                  event.stopPropagation();
-                                  openPlan(plan);
-                                }}
-                              >
-                                Edit
-                              </button>
-                            )}
-
-                            <button
-                              type="button"
-                              className="travel-record-delete"
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                deleteTravelPlan(plan.id);
-                              }}
-                            >
-                              Delete
-                            </button>
-                          </div>
-                        </div>
-
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-              </div>
 
               {/* STAFF SCOPE */}
-              <div className="travel-dashboard-card">
-                <div className="travel-dashboard-head">
-                  <div>
-                    <h3>Staff Scope</h3>
-                    <p>Staff visible based on your position.</p>
-                  </div>
+                <div className="travel-dashboard-card">
+                  <div className="travel-dashboard-head">
+                    <div>
+                      <h3>Staff Scope</h3>
+                      <p>Staff visible based on your position.</p>
+                    </div>
 
-                  <div className="travel-staff-filter">
+                    <div className="travel-staff-filter">
 
-                    <div className="travel-staff-date">
                       <input
-                        type="date"
-                        className="travel-date-input"
-                        value={staffScopeDate}
-                        onChange={(e) => setStaffScopeDate(e.target.value)}
+                        type="search"
+                        className="travel-staff-search-input"
+                        placeholder="Search staff, position, branch..."
+                        value={staffSearch}
+                        onChange={(event) =>
+                          setStaffSearch(event.target.value)
+                        }
                       />
-                    </div>
 
-                    <select
-                      value={staffPositionFilter}
-                      onChange={(e) => setStaffPositionFilter(e.target.value)}
-                    >
-                      <option value="">All Positions</option>
-                      {staffPositionOptions.map((pos) => (
-                        <option key={pos} value={pos}>
-                          {pos}
-                        </option>
-                      ))}
-                    </select>
-
-                    <div className="travel-staff-counts">
-                      <span className="travel-count-pill">
-                        {staffCounts.total} Staff
-                      </span>
-
-                      <span className="travel-count-pill submitted">
-                        {staffCounts.submitted} Submitted
-                      </span>
-
-                      <span className="travel-count-pill pending">
-                        {staffCounts.pending} Pending
-                      </span>
-
-                      {staffCounts.onLeave > 0 && (
-                        <span className="travel-count-pill leave">
-                          {staffCounts.onLeave} On Leave
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                </div>
-
-                {filteredStaffRows.length === 0 ? (
-                  <div className="travel-empty">
-                    No staff found.
-                  </div>
-                ) : (
-                  <div className="travel-staff-list">
-                    {filteredStaffRows.map((staff) => (
-                      <div
-                        key={staff.employee_no}
-                        className="travel-staff-card"
-                      >
-                        <div>
-                          <strong>{staff.employee_name}</strong>
-
-                          <p>{staff.position}</p>
-
-                          <small>{staff.branch_name}</small>
-                        </div>
-
-                        <div className="travel-staff-right">
-                          <span>{staff.area}</span>
-
-                          <span>{staff.region}</span>
-
-                          <div className="travel-staff-status-wrap">
-                            <div
-                              className={`travel-staff-status ${String(
-                                staff.travel_status || "Pending"
-                              )
-                                .trim()
-                                .toLowerCase()
-                                .replace(/\s+/g, "-")}`}
-                            >
-                              {staff.travel_status || "Pending"}
-                            </div>
-
-                            {staff.travel_status === "On Leave" && (
-                              <small className="travel-staff-leave-date">
-                                {staff.leave_start_date} - {staff.leave_end_date}
-                              </small>
-                            )}
-
-                            {staff.travel_status === "Indefinite Leave" && (
-                              <small className="travel-staff-leave-date">
-                                No Return Date
-                              </small>
-                            )}
-                          </div>
-                        </div>
+                      <div className="travel-staff-date">
+                        <input
+                          type="date"
+                          className="travel-date-input"
+                          value={staffScopeDate}
+                          onChange={(e) => setStaffScopeDate(e.target.value)}
+                        />
                       </div>
-                    ))}
+
+                      <select
+                        value={staffPositionFilter}
+                        onChange={(e) => setStaffPositionFilter(e.target.value)}
+                      >
+                        <option value="">All Positions</option>
+                        {staffPositionOptions.map((pos) => (
+                          <option key={pos} value={pos}>
+                            {pos}
+                          </option>
+                        ))}
+                      </select>
+
+                      <div className="travel-staff-counts">
+                        <span className="travel-count-pill">
+                          {staffCounts.total} Staff
+                        </span>
+
+                        <span className="travel-count-pill submitted">
+                          {staffCounts.submitted} Submitted
+                        </span>
+
+                        <span className="travel-count-pill pending">
+                          {staffCounts.pending} Pending
+                        </span>
+
+                        {staffCounts.onLeave > 0 && (
+                          <span className="travel-count-pill leave">
+                            {staffCounts.onLeave} On Leave
+                          </span>
+                        )}
+                      </div>
+                    </div>
                   </div>
-                )}
-              </div>
+
+                  {filteredStaffRows.length === 0 ? (
+                    <div className="travel-empty">
+                      No staff found.
+                    </div>
+                  ) : (
+                    <div className="travel-staff-list">
+                      {filteredStaffRows.map((staff) => (
+                        <button
+                          key={staff.employee_no}
+                          type="button"
+                          className="travel-staff-card travel-staff-card-button"
+                          onClick={() => {
+                            setSelectedStaffScope(staff);
+                            setStaffPlanSearch("");
+                            setStaffPlanDateFilter("");
+                          }}
+                        >
+                          <div>
+                            <strong>{staff.employee_name}</strong>
+
+                            <p>{staff.position}</p>
+
+                            <small>{staff.branch_name}</small>
+                          </div>
+
+                          <div className="travel-staff-right">
+                            <span>{staff.area}</span>
+
+                            <span>{staff.region}</span>
+
+                            <div className="travel-staff-status-wrap">
+                              <div
+                                className={`travel-staff-status ${String(
+                                  staff.travel_status || "Pending"
+                                )
+                                  .trim()
+                                  .toLowerCase()
+                                  .replace(/\s+/g, "-")}`}
+                              >
+                                {staff.travel_status || "Pending"}
+                              </div>
+
+                              {staff.travel_status === "On Leave" && (
+                                <small className="travel-staff-leave-date">
+                                  {staff.leave_start_date} - {staff.leave_end_date}
+                                </small>
+                              )}
+
+                              {staff.travel_status === "Indefinite Leave" && (
+                                <small className="travel-staff-leave-date">
+                                  No Return Date
+                                </small>
+                              )}
+                            </div>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
             </>
           )}
 
@@ -1906,50 +2289,689 @@ const selectedBranchPlans = useMemo(() => {
             </div>
           )}
 
-
-          {activeMenu === "History" && (
+          {activeMenu === "Comply" && (
             <div className="travel-dashboard-card">
               <div className="travel-dashboard-head">
                 <div>
-                  <h3>Travel Plan History</h3>
-                  <p>Completed travel plans.</p>
+                  <h3>Travel Plan Comply</h3>
+
+                  <p>
+                    Submit assigned findings and check staff compliance.
+                  </p>
                 </div>
 
-                <span>{historyPlans.length} Records</span>
+                <div className="travel-comply-counts">
+                  {complyView === "my" ? (
+                    <>
+                      <span className="travel-count-pill">
+                        {complianceCounts.total} Records
+                      </span>
+
+                      <span className="travel-count-pill pending">
+                        {complianceCounts.pending} Pending
+                      </span>
+
+                      <span className="travel-count-pill submitted">
+                        {complianceCounts.submitted} Submitted
+                      </span>
+
+                      <span className="travel-count-pill checked">
+                        {complianceCounts.checked} Checked
+                      </span>
+
+                      <span className="travel-count-pill completed">
+                        {complianceCounts.complied} Complied
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      <span className="travel-count-pill">
+                        {reviewComplianceCounts.total} For Checking
+                      </span>
+
+                      <span className="travel-count-pill pending">
+                        {reviewComplianceCounts.submitted} Submitted
+                      </span>
+
+                      <span className="travel-count-pill submitted">
+                        {reviewComplianceCounts.checked} Checked
+                      </span>
+                    </>
+                  )}
+                </div>
               </div>
 
-              {historyPlans.length === 0 ? (
-                <div className="travel-empty">
-                  No completed travel plans yet.
-                </div>
-              ) : (
-                <div className="travel-activity-list">
-                  {historyPlans.map((plan) => (
-                    <div
-                      key={plan.id}
-                      className="travel-activity-card"
-                      onClick={() => openPlan(plan)}
-                    >
-                      <div>
-                        <strong>{plan.title}</strong>
-                        <p>{plan.employee_name || "No employee"}</p>
-                        <small>
-                          {plan.branch_name || "No branch"} •{" "}
-                          {plan.duration_label || "Not complete"}
-                        </small>
-                      </div>
+              {canReviewCompliance && (
+                <div className="travel-comply-view-tabs">
+                  <button
+                    type="button"
+                    className={complyView === "my" ? "active" : ""}
+                    onClick={() => setComplyView("my")}
+                  >
+                    My Compliance
+                  </button>
 
-                      <div className="travel-activity-right">
-                        <span>{plan.plan_date}</span>
-
-                        <b className="travel-status completed">
-                          Completed
-                        </b>
-                      </div>
-                    </div>
-                  ))}
+                  <button
+                    type="button"
+                    className={complyView === "review" ? "active" : ""}
+                    onClick={() => setComplyView("review")}
+                  >
+                    For Checking
+                  </button>
                 </div>
               )}
+
+              <div className="travel-comply-filters">
+                <input
+                  type="search"
+                  placeholder={
+                    complyView === "my"
+                      ? "Search finding, branch, travel plan..."
+                      : "Search staff, branch, finding..."
+                  }
+                  value={complianceSearch}
+                  onChange={(event) =>
+                    setComplianceSearch(
+                      event.target.value
+                    )
+                  }
+                />
+
+                <select
+                  value={complianceStatusFilter}
+                  onChange={(event) =>
+                    setComplianceStatusFilter(
+                      event.target.value
+                    )
+                  }
+                >
+                  <option value="">
+                    All Statuses
+                  </option>
+
+                  {complyView === "my" ? (
+                    <>
+                      <option value="Pending">
+                        Pending
+                      </option>
+
+                      <option value="Submitted">
+                        Submitted
+                      </option>
+
+                      <option value="Checked">
+                        Checked
+                      </option>
+
+                      <option value="Complied">
+                        Complied
+                      </option>
+                    </>
+                  ) : (
+                    <>
+                      <option value="Submitted">
+                        Submitted
+                      </option>
+
+                      <option value="Checked">
+                        Checked
+                      </option>
+                    </>
+                  )}
+                </select>
+
+                {(complianceSearch ||
+                  complianceStatusFilter) && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setComplianceSearch("");
+                      setComplianceStatusFilter("");
+                    }}
+                  >
+                    Clear
+                  </button>
+                )}
+              </div>
+
+              {complyView === "my" ? (
+                complianceLoading ? (
+                  <div className="travel-empty">
+                    Loading compliance records...
+                  </div>
+                ) : filteredComplianceRows.length === 0 ? (
+                  <div className="travel-empty">
+                    No compliance findings assigned to your account.
+                  </div>
+                ) : (
+                  <div className="travel-comply-list">
+                    {filteredComplianceRows.map(
+                      (item) => {
+                        const status =
+                          normalizeValue(item.status);
+
+                        return (
+                          <button
+                            key={item.id}
+                            type="button"
+                            className="travel-comply-card"
+                            onClick={() => {
+                              setSelectedCompliance(item);
+
+                              setComplianceResponse(
+                                item.compliance_response ||
+                                  ""
+                              );
+                            }}
+                          >
+                            <div className="travel-comply-main">
+                              <div className="travel-comply-title-row">
+                                <strong>
+                                  {item.finding_title ||
+                                    "Untitled Finding"}
+                                </strong>
+
+                                <span
+                                  className={`travel-status ${status}`}
+                                >
+                                  {item.status}
+                                </span>
+                              </div>
+
+                              <p>
+                                {item.travel_plan_title ||
+                                  "No travel plan title"}
+                              </p>
+
+                              <small>
+                                Staff:{" "}
+                                {item.employee_name || "-"}
+                                {" • "}
+                                Branch:{" "}
+                                {item.branch_name || "-"}
+                              </small>
+
+                              {item.latest_checked_by_role && (
+                                <div className="travel-checked-by">
+                                  ✓ Checked by{" "}
+                                  {item.latest_checked_by_role}
+
+                                  {item.latest_checked_by_name && (
+                                    <>
+                                      {" — "}
+                                      {item.latest_checked_by_name}
+                                    </>
+                                  )}
+                                </div>
+                              )}
+
+                              {item.finding_details && (
+                                <div className="travel-comply-preview">
+                                  {item.finding_details}
+                                </div>
+                              )}
+                            </div>
+
+                            <div className="travel-comply-meta">
+                              <span>
+                                Assigned:{" "}
+                                {String(
+                                  item.created_at || ""
+                                ).slice(0, 10)}
+                              </span>
+
+                              <span>
+                                Due:{" "}
+                                {item.due_date ||
+                                  "No due date"}
+                              </span>
+
+                              <b>
+                                {status === "pending"
+                                  ? "Submit Compliance"
+                                  : "View Compliance"}
+                              </b>
+                            </div>
+                          </button>
+                        );
+                      }
+                    )}
+                  </div>
+                )
+              ) : reviewComplianceLoading ? (
+                <div className="travel-empty">
+                  Loading records for checking...
+                </div>
+              ) : filteredReviewComplianceRows.length === 0 ? (
+                <div className="travel-empty">
+                  No staff compliance is currently waiting for your checking level.
+                </div>
+              ) : (
+                <div className="travel-comply-list">
+                  {filteredReviewComplianceRows.map(
+                    (item) => (
+                      <button
+                        key={item.id}
+                        type="button"
+                        className="travel-comply-card travel-comply-review-card"
+                        onClick={() => {
+                          setSelectedReviewCompliance(
+                            item
+                          );
+
+                          setReviewRemarks("");
+
+                          fetchComplianceCheckHistory(
+                            item.id
+                          );
+                        }}
+                      >
+                        <div className="travel-comply-main">
+                          <div className="travel-comply-title-row">
+                            <strong>
+                              {item.finding_title ||
+                                "Untitled Finding"}
+                            </strong>
+
+                            <span className="travel-status pending">
+                              For Checking
+                            </span>
+                          </div>
+
+                          <p>
+                            {item.employee_name ||
+                              "No employee"}
+                          </p>
+
+                          <small>
+                            {item.position || "No position"}
+                            {" • "}
+                            Staff Branch:{" "}
+                            {item.branch_name || "-"}
+                            {" • "}
+                            Visited Branch:{" "}
+                            {item.visited_branch_name ||
+                              "-"}
+                          </small>
+
+                          {item.latest_checked_by_role && (
+                            <div className="travel-checked-by">
+                              Latest: Checked by{" "}
+                              {item.latest_checked_by_role}
+
+                              {item.latest_checked_by_name && (
+                                <>
+                                  {" — "}
+                                  {item.latest_checked_by_name}
+                                </>
+                              )}
+                            </div>
+                          )}
+
+                          {item.compliance_response && (
+                            <div className="travel-comply-preview">
+                              Response:{" "}
+                              {item.compliance_response}
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="travel-comply-meta">
+                          <span>
+                            Current Level:{" "}
+                            {item.review_level || 1}
+                          </span>
+
+                          <span>
+                            Due:{" "}
+                            {item.due_date ||
+                              "No due date"}
+                          </span>
+
+                          <b>Open and Check</b>
+                        </div>
+                      </button>
+                    )
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {selectedCompliance && (
+            <div className="travel-plan-modal-backdrop">
+              <div className="travel-plan-modal travel-comply-modal">
+                <div className="travel-plan-modal-head">
+                  <div>
+                    <h3>
+                      {selectedCompliance.finding_title}
+                    </h3>
+
+                    <p className="travel-staff-modal-subtitle">
+                      {selectedCompliance.travel_plan_title ||
+                        "Travel Plan Finding"}
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedCompliance(null);
+                      setComplianceResponse("");
+                    }}
+                  >
+                    ×
+                  </button>
+                </div>
+
+                <div className="travel-comply-detail-grid">
+                  <div>
+                    <span>Assigned Staff</span>
+
+                    <b>
+                      {selectedCompliance.employee_name ||
+                        "-"}
+                    </b>
+                  </div>
+
+                  <div>
+                    <span>Staff Branch</span>
+
+                    <b>
+                      {selectedCompliance.branch_name ||
+                        "-"}
+                    </b>
+                  </div>
+
+                  <div>
+                    <span>Visited Branch</span>
+
+                    <b>
+                      {selectedCompliance.visited_branch_name ||
+                        "-"}
+                    </b>
+                  </div>
+
+                  <div>
+                    <span>Due Date</span>
+
+                    <b>
+                      {selectedCompliance.due_date ||
+                        "No due date"}
+                    </b>
+                  </div>
+
+                  <div>
+                    <span>Status</span>
+
+                    <b>
+                      {selectedCompliance.status}
+                    </b>
+                  </div>
+
+                  <div>
+                    <span>Travel Plan Date</span>
+
+                    <b>
+                      {selectedCompliance.travel_plan_date ||
+                        "-"}
+                    </b>
+                  </div>
+                </div>
+
+                <div className="travel-comply-finding">
+                  <span>Finding Details</span>
+
+                  <p>
+                    {selectedCompliance.finding_details ||
+                      "No finding details."}
+                  </p>
+                </div>
+
+                <label className="travel-comply-response">
+                  Compliance Response
+
+                  <textarea
+                    rows={7}
+                    placeholder="Write the action taken or your compliance response..."
+                    value={complianceResponse}
+                    disabled={
+                      normalizeValue(
+                        selectedCompliance.status
+                      ) !== "pending"
+                    }
+                    onChange={(event) =>
+                      setComplianceResponse(
+                        event.target.value
+                      )
+                    }
+                  />
+                </label>
+
+                {selectedCompliance.complied_at && (
+                  <div className="travel-comply-submitted-at">
+                    Submitted:{" "}
+                    {formatTime(
+                      selectedCompliance.complied_at
+                    )}
+                  </div>
+                )}
+
+                <div className="travel-plan-modal-actions">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedCompliance(null);
+                      setComplianceResponse("");
+                    }}
+                  >
+                    Close
+                  </button>
+
+                  {normalizeValue(
+                    selectedCompliance.status
+                  ) === "pending" && (
+                    <button
+                      type="button"
+                      className="primary"
+                      onClick={submitCompliance}
+                    >
+                      Submit Compliance
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {selectedReviewCompliance && canReviewCompliance && (
+            <div className="travel-plan-modal-backdrop">
+              <div className="travel-plan-modal travel-comply-modal">
+                <div className="travel-plan-modal-head">
+                  <div>
+                    <h3>
+                      Check Staff Compliance
+                    </h3>
+
+                    <p className="travel-staff-modal-subtitle">
+                      {selectedReviewCompliance.finding_title ||
+                        "Travel Plan Finding"}
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedReviewCompliance(null);
+                      setReviewRemarks("");
+                      setComplianceCheckHistory([]);
+                    }}
+                  >
+                    ×
+                  </button>
+                </div>
+
+                <div className="travel-comply-detail-grid">
+                  <div>
+                    <span>Staff</span>
+
+                    <b>
+                      {selectedReviewCompliance.employee_name ||
+                        "-"}
+                    </b>
+                  </div>
+
+                  <div>
+                    <span>Position</span>
+
+                    <b>
+                      {selectedReviewCompliance.position ||
+                        "-"}
+                    </b>
+                  </div>
+
+                  <div>
+                    <span>Staff Branch</span>
+
+                    <b>
+                      {selectedReviewCompliance.branch_name ||
+                        "-"}
+                    </b>
+                  </div>
+
+                  <div>
+                    <span>Visited Branch</span>
+
+                    <b>
+                      {selectedReviewCompliance.visited_branch_name ||
+                        "-"}
+                    </b>
+                  </div>
+
+                  <div>
+                    <span>Current Status</span>
+
+                    <b>
+                      {selectedReviewCompliance.status}
+                    </b>
+                  </div>
+
+                  <div>
+                    <span>Current Level</span>
+
+                    <b>
+                      Level{" "}
+                      {selectedReviewCompliance.review_level ||
+                        1}
+                    </b>
+                  </div>
+                </div>
+
+                <div className="travel-comply-finding">
+                  <span>Finding Details</span>
+
+                  <p>
+                    {selectedReviewCompliance.finding_details ||
+                      "No finding details."}
+                  </p>
+                </div>
+
+                <div className="travel-comply-finding">
+                  <span>Staff Compliance Response</span>
+
+                  <p>
+                    {selectedReviewCompliance.compliance_response ||
+                      "No compliance response."}
+                  </p>
+                </div>
+
+                <div className="travel-check-history">
+                  <h4>Checking History</h4>
+
+                  {checkHistoryLoading ? (
+                    <div className="travel-empty">
+                      Loading checking history...
+                    </div>
+                  ) : complianceCheckHistory.length === 0 ? (
+                    <div className="travel-empty">
+                      No manager has checked this yet.
+                    </div>
+                  ) : (
+                    <div className="travel-check-history-list">
+                      {complianceCheckHistory.map(
+                        (check) => (
+                          <div
+                            key={check.id}
+                            className="travel-check-history-item"
+                          >
+                            <div>
+                              <strong>
+                                ✓ Checked by{" "}
+                                {check.checked_by_role}
+                              </strong>
+
+                              <span>
+                                {check.checked_by_name ||
+                                  "Unknown checker"}
+                              </span>
+                            </div>
+
+                            <div>
+                              <span>
+                                {formatTime(
+                                  check.checked_at
+                                )}
+                              </span>
+
+                              {check.remarks && (
+                                <small>
+                                  {check.remarks}
+                                </small>
+                              )}
+                            </div>
+                          </div>
+                        )
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                <label className="travel-comply-response">
+                  Checking Remarks
+
+                  <textarea
+                    rows={5}
+                    placeholder="Add remarks about the staff compliance..."
+                    value={reviewRemarks}
+                    onChange={(event) =>
+                      setReviewRemarks(
+                        event.target.value
+                      )
+                    }
+                  />
+                </label>
+
+                <div className="travel-plan-modal-actions">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedReviewCompliance(null);
+                      setReviewRemarks("");
+                      setComplianceCheckHistory([]);
+                    }}
+                  >
+                    Cancel
+                  </button>
+
+                  <button
+                    type="button"
+                    className="primary"
+                    onClick={checkCompliance}
+                  >
+                    ✓ Check Compliance
+                  </button>
+                </div>
+              </div>
             </div>
           )}
 
@@ -2308,20 +3330,21 @@ const selectedBranchPlans = useMemo(() => {
                                   Edit
                                 </button>
 
-                                <button
-                                  type="button"
-                                  className="travel-record-delete"
-                                  onClick={(event) => {
-                                    event.stopPropagation();
-                                    deleteActivity(activity.id);
-                                  }}
-                                >
-                                  Delete
-                                </button>
+                                {canDeleteTravelPlans && (
+                                  <button
+                                    type="button"
+                                    className="travel-record-delete"
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      deleteActivity(activity.id);
+                                    }}
+                                  >
+                                    Delete
+                                  </button>
+                                )}
                               </div>
                             )}
                           </div>
-
                         </div>
                       ))}
                   </div>
@@ -2668,6 +3691,175 @@ const selectedBranchPlans = useMemo(() => {
                     </div>
                   )}
                 </div>
+              </div>
+            </div>
+          )}
+
+          {selectedStaffScope && (
+            <div className="travel-plan-modal-backdrop">
+              <div className="travel-plan-modal travel-staff-plans-modal">
+                <div className="travel-plan-modal-head">
+                  <div>
+                    <h3>
+                      {selectedStaffScope.employee_name}
+                    </h3>
+
+                    <p className="travel-staff-modal-subtitle">
+                      {selectedStaffScope.position || "No position"}
+                      {" • "}
+                      {selectedStaffScope.branch_name || "No branch"}
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedStaffScope(null);
+                      setStaffPlanSearch("");
+                      setStaffPlanDateFilter("");
+                    }}
+                  >
+                    ×
+                  </button>
+                </div>
+
+                <div className="travel-staff-plan-summary">
+                  <div>
+                    <span>Employee No.</span>
+                    <b>
+                      {selectedStaffScope.employee_no || "-"}
+                    </b>
+                  </div>
+
+                  <div>
+                    <span>Status</span>
+                    <b>
+                      {selectedStaffScope.travel_status || "Pending"}
+                    </b>
+                  </div>
+
+                  <div>
+                    <span>Total Plans</span>
+                    <b>{selectedStaffPlans.length}</b>
+                  </div>
+                </div>
+
+                <div className="travel-staff-plan-filters">
+                  <input
+                    type="search"
+                    placeholder="Search title, branch, description, status..."
+                    value={staffPlanSearch}
+                    onChange={(event) =>
+                      setStaffPlanSearch(event.target.value)
+                    }
+                  />
+
+                  <input
+                    type="date"
+                    value={staffPlanDateFilter}
+                    onChange={(event) =>
+                      setStaffPlanDateFilter(event.target.value)
+                    }
+                  />
+
+                  <button
+                    type="button"
+                    disabled={
+                      !staffPlanSearch &&
+                      !staffPlanDateFilter
+                    }
+                    onClick={() => {
+                      setStaffPlanSearch("");
+                      setStaffPlanDateFilter("");
+                    }}
+                  >
+                    Clear
+                  </button>
+
+                  <span className="travel-count-pill">
+                    {selectedStaffPlans.length}{" "}
+                    {selectedStaffPlans.length === 1
+                      ? "Plan"
+                      : "Plans"}
+                  </span>
+                </div>
+
+                {selectedStaffPlans.length === 0 ? (
+                  <div className="travel-empty">
+                    No travel plans found for this staff member.
+                  </div>
+                ) : (
+                  <div className="travel-staff-plan-list">
+                    {selectedStaffPlans.map((plan) => (
+                      <div
+                        key={plan.id}
+                        className="travel-staff-plan-item"
+                        onClick={() => {
+                          setSelectedStaffScope(null);
+                          openPlan(plan);
+                        }}
+                      >
+                        <div className="travel-staff-plan-main">
+                          <strong>
+                            {plan.title || "Untitled Travel Plan"}
+                          </strong>
+
+                          <span>
+                            {plan.branch_name || "No branch selected"}
+                          </span>
+
+                          {plan.description && (
+                            <small>{plan.description}</small>
+                          )}
+                        </div>
+
+                        <div className="travel-staff-plan-meta">
+                          <span>
+                            {String(plan.plan_date || "").slice(0, 10)}
+                          </span>
+
+                          <b
+                            className={`travel-status ${
+                              normalizeValue(plan.status) === "completed"
+                                ? "completed"
+                                : "pending"
+                            }`}
+                          >
+                            {plan.status || "Pending"}
+                          </b>
+
+                          <div className="travel-staff-plan-actions">
+                            {normalizeValue(plan.status) !== "completed" && (
+                              <button
+                                type="button"
+                                className="travel-record-edit"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+
+                                  setSelectedStaffScope(null);
+                                  openPlan(plan);
+                                }}
+                              >
+                                Edit
+                              </button>
+                            )}
+
+                            <button
+                              type="button"
+                              className="travel-record-delete"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                deleteTravelPlan(plan.id);
+                              }}
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
           )}

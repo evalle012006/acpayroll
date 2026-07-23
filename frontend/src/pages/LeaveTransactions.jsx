@@ -1018,6 +1018,17 @@ export default function LeaveTransactions() {
                       <td>
                         <div className="row-actions">
                           {renderLatestFileAction(item)}
+                            {(isAdmin || isHrDepartmentUser) &&
+                              !approved &&
+                              !voided && (
+                                <button
+                                  className="btn-warning"
+                                  type="button"
+                                  onClick={() => openEditLeave(item)}
+                                >
+                                  Edit
+                                </button>
+                            )}
 
                           {!canApprove && renderRequestFileAction(item)}
                           {!canApprove && renderApprovedFileAction(item)}
@@ -1072,7 +1083,7 @@ export default function LeaveTransactions() {
                             </>
                           ) : null}
 
-                          {isAdmin && approved ? (
+                          {(isAdmin || isHrDepartmentUser) && approved ? (
                             <button
                               className="btn-danger"
                               type="button"
@@ -1096,7 +1107,7 @@ export default function LeaveTransactions() {
                               </button>
                             ) : null}
 
-                          {isAdmin && (rejected || voided) ? (
+                          {(isAdmin || isHrDepartmentUser) && (rejected || voided) ? (
                             <button
                               className="btn-danger"
                               type="button"

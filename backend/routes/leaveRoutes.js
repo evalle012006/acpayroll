@@ -1070,10 +1070,10 @@ router.put(
   requirePermission("leave_request", "delete"),
   async (req, res) => {
     try {
-      if (!isAdmin(req)) {
-        return res.status(403).json({
-          message: "Only Admin can void approved leave.",
-        });
+      if (!(isAdmin(req) || isHrDepartmentUser(req))) {
+          return res.status(403).json({
+              message: "Only Admin or HR Department can void approved leave.",
+          });
       }
 
       const id = String(req.params.id || "").trim();
@@ -1114,10 +1114,10 @@ router.delete(
     const client = await pool.connect();
 
     try {
-      if (!isAdmin(req)) {
-        return res.status(403).json({
-          message: "Only Admin can delete rejected or voided leave.",
-        });
+      if (!(isAdmin(req) || isHrDepartmentUser(req))) {
+          return res.status(403).json({
+              message: "Only Admin or HR Department can delete rejected or voided leave.",
+          });
       }
 
       const id = String(req.params.id || "").trim();
