@@ -345,4 +345,58 @@ WHERE c.employee_id = s.id
     ADD COLUMN IF NOT EXISTS region TEXT,
     ADD COLUMN IF NOT EXISTS division TEXT;
 
+INSERT INTO public.role_permissions
+(
+  role,
+  department,
+  module_name,
+  action_name,
+  allowed,
+  created_at,
+  updated_at
+)
+SELECT
+  roles.role,
+  'OFFICE OF THE PRESIDENT',
+  'travel_plan',
+  actions.action_name,
+  TRUE,
+  NOW(),
+  NOW()
+FROM
+(
+  VALUES
+    ('branch manager'),
+    ('acting branch manager'),
+    ('area manager'),
+    ('acting area manager'),
+    ('regional manager'),
+    ('acting regional manager'),
+    ('assistant vice president'),
+    ('vice president'),
+    ('senior vice president'),
+    ('president'),
+    ('hr'),
+    ('accounting'),
+    ('staff')
+) AS roles(role)
+CROSS JOIN
+(
+  VALUES
+    ('view'),
+    ('view_all'),
+    ('create'),
+    ('edit')
+) AS actions(action_name)
+ON CONFLICT
+(
+  role,
+  COALESCE(department, ''),
+  module_name,
+  action_name
+)
+DO UPDATE SET
+  allowed = TRUE,
+  updated_at = NOW();
+
 COMMIT;

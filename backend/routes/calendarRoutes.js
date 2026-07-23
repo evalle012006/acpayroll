@@ -4024,6 +4024,8 @@ router.get(
               COALESCE(s.position, '')
             )
           ) IN (
+            'regional manager',
+            'acting regional manager',
             'area manager',
             'acting area manager'
           )
@@ -4035,25 +4037,31 @@ router.get(
           ) = LOWER(TRIM($3))
 
           ORDER BY
-            COALESCE(
-              NULLIF(TRIM(s.area), ''),
-              NULLIF(TRIM(b.area), '')
-            ) ASC NULLS LAST,
-
             CASE LOWER(
               TRIM(
                 COALESCE(s.position, '')
               )
             )
-              WHEN 'area manager' THEN 1
-              WHEN 'acting area manager' THEN 2
+              WHEN 'regional manager' THEN 1
+              WHEN 'acting regional manager' THEN 2
+              WHEN 'area manager' THEN 3
+              WHEN 'acting area manager' THEN 4
               ELSE 99
             END,
+
+            COALESCE(
+              NULLIF(TRIM(s.area), ''),
+              NULLIF(TRIM(b.area), '')
+            ) ASC NULLS LAST,
 
             s.fullname ASC
         `;
 
-        params = [targetDate, userRegion, department];
+        params = [
+          targetDate,
+          userRegion,
+          department,
+        ];
       }
 
       // =================================================
@@ -4090,12 +4098,12 @@ router.get(
               COALESCE(s.position, '')
             )
           ) IN (
+            'assistant vice president',
             'regional manager',
             'acting regional manager',
             'area manager',
             'acting area manager'
           )
-
           AND LOWER(
             TRIM(
               COALESCE(s.department, '')
@@ -4108,11 +4116,11 @@ router.get(
                 COALESCE(s.position, '')
               )
             )
-              WHEN 'regional manager' THEN 1
-              WHEN 'acting regional manager' THEN 2
-              WHEN 'area manager' THEN 3
-              WHEN 'acting area manager' THEN 4
-              ELSE 99
+              WHEN 'assistant vice president' THEN 1
+              WHEN 'regional manager' THEN 2
+              WHEN 'acting regional manager' THEN 3
+              WHEN 'area manager' THEN 4
+              WHEN 'acting area manager' THEN 5
             END,
 
             COALESCE(
@@ -4152,6 +4160,7 @@ router.get(
               COALESCE(s.position, '')
             )
           ) IN (
+            'vice president',
             'assistant vice president',
             'regional manager',
             'acting regional manager',
@@ -4165,11 +4174,12 @@ router.get(
                 COALESCE(s.position, '')
               )
             )
-              WHEN 'assistant vice president' THEN 1
-              WHEN 'regional manager' THEN 2
-              WHEN 'acting regional manager' THEN 3
-              WHEN 'area manager' THEN 4
-              WHEN 'acting area manager' THEN 5
+              WHEN 'vice president' THEN 1
+              WHEN 'assistant vice president' THEN 2
+              WHEN 'regional manager' THEN 3
+              WHEN 'acting regional manager' THEN 4
+              WHEN 'area manager' THEN 5
+              WHEN 'acting area manager' THEN 6
               ELSE 99
             END,
 
@@ -4204,6 +4214,7 @@ router.get(
               COALESCE(s.position, '')
             )
           ) IN (
+            'senior vice president',
             'vice president',
             'assistant vice president',
             'regional manager',
@@ -4218,12 +4229,13 @@ router.get(
                 COALESCE(s.position, '')
               )
             )
-              WHEN 'vice president' THEN 1
-              WHEN 'assistant vice president' THEN 2
-              WHEN 'regional manager' THEN 3
-              WHEN 'acting regional manager' THEN 4
-              WHEN 'area manager' THEN 5
-              WHEN 'acting area manager' THEN 6
+              WHEN 'senior vice president' THEN 1
+              WHEN 'vice president' THEN 2
+              WHEN 'assistant vice president' THEN 3
+              WHEN 'regional manager' THEN 4
+              WHEN 'acting regional manager' THEN 5
+              WHEN 'area manager' THEN 6
+              WHEN 'acting area manager' THEN 7
               ELSE 99
             END,
 
