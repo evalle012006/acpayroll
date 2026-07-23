@@ -3574,6 +3574,110 @@ router.get(
   }
 );
 
+// =====================================================
+// GET ALL ACTIVE STAFF FOR REVIEW AND FINDINGS
+// =====================================================
+//
+// This route is separate from:
+// /travel-plans/staff-dropdown
+//
+// It is used only for the Review and Findings
+// involved-staff selector.
+// =====================================================
+
+router.get(
+  "/travel-plans/involved-staff-dropdown",
+  requireAuth,
+  async (req, res) => {
+    try {
+      if (!canViewTravelModule(req)) {
+        return res.status(403).json({
+          message:
+            "You are not allowed to view involved staff.",
+        });
+      }
+
+      const result = await pool.query(
+        `
+        SELECT
+          s.id,
+          s.employee_no,
+
+          COALESCE(
+            NULLIF(TRIM(s.fullname), ''),
+            NULLIF(
+              TRIM(
+                CONCAT_WS(
+                  ' ',
+                  s.last_name,
+                  s.first_name,
+                  s.middle_name
+                )
+              ),
+              ''
+            ),
+            s.employee_no
+          ) AS employee_name,
+
+          s.position,
+
+          s.branch_id,
+          b.name AS branch_name,
+          b.code AS branch_code,
+
+          COALESCE(
+            NULLIF(TRIM(s.area), ''),
+            NULLIF(TRIM(b.area), '')
+          ) AS area,
+
+          COALESCE(
+            NULLIF(TRIM(s.region), ''),
+            NULLIF(TRIM(b.region), '')
+          ) AS region,
+
+          COALESCE(
+            NULLIF(TRIM(s.division), ''),
+            NULLIF(TRIM(b.division), '')
+          ) AS division,
+
+          s.department
+
+        FROM public.staff s
+
+        LEFT JOIN public.branches b
+          ON b.id = s.branch_id
+
+        WHERE LOWER(
+          TRIM(
+            COALESCE(
+              s.status,
+              'active'
+            )
+          )
+        ) = 'active'
+
+          AND s.employee_no IS NOT NULL
+
+          AND TRIM(s.employee_no) <> ''
+
+        ORDER BY
+          s.department ASC NULLS LAST,
+          b.name ASC NULLS LAST,
+          employee_name ASC
+        `
+      );
+
+      return res.json(result.rows);
+    } catch (error) {
+      return sendServerError(
+        res,
+        "GET /travel-plans/involved-staff-dropdown",
+        error
+      );
+    }
+  }
+);
+
 router.get(
   "/travel-plans/staff-scope",
   requireAuth,
