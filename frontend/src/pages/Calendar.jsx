@@ -137,7 +137,16 @@ export default function TravelPlan() {
   const [previewPhoto, setPreviewPhoto] = useState(null);
 
   const [staffRows, setStaffRows] = useState([]);
+
+  // Used only for Create Travel Plan.
   const [staffDropdownRows, setStaffDropdownRows] = useState([]);
+
+  // Used only for Review and Findings.
+  const [
+    involvedStaffDropdownRows,
+    setInvolvedStaffDropdownRows,
+  ] = useState([]);
+
   const [staffPositionFilter, setStaffPositionFilter] = useState("");
   const [staffSearch, setStaffSearch] = useState("");
 
@@ -518,6 +527,34 @@ export default function TravelPlan() {
           .join(" • "),
       })),
     [staffDropdownRows]
+  );
+
+  const involvedStaffOptions = useMemo(
+    () =>
+      involvedStaffDropdownRows.map((staff) => ({
+        value: Number(staff.id),
+
+        employee_name: staff.employee_name,
+        employee_no: staff.employee_no,
+        position: staff.position,
+        branch_name: staff.branch_name,
+        status: staff.status,
+
+        label: [
+          staff.employee_name,
+          staff.employee_no
+            ? `Emp No: ${staff.employee_no}`
+            : "",
+          staff.position,
+          staff.branch_name,
+          staff.status
+            ? `Status: ${staff.status}`
+            : "",
+        ]
+          .filter(Boolean)
+          .join(" • "),
+      })),
+    [involvedStaffDropdownRows]
   );
 
   const staffPositionOptions = useMemo(() => {
@@ -905,6 +942,27 @@ const selectedBranchPlans = useMemo(() => {
     }
   };
 
+  const fetchInvolvedStaffDropdown = async () => {
+    try {
+      const res = await api.get(
+        "/travel-plans/involved-staff-dropdown"
+      );
+
+      setInvolvedStaffDropdownRows(
+        Array.isArray(res.data)
+          ? res.data
+          : []
+      );
+    } catch (err) {
+      console.error(
+        "Fetch involved staff dropdown error:",
+        err
+      );
+
+      setInvolvedStaffDropdownRows([]);
+    }
+  };
+
   const fetchScopedBranches = async () => {
     try {
       const res = await api.get("/travel-plans/branch-scope");
@@ -958,9 +1016,11 @@ const selectedBranchPlans = useMemo(() => {
 
     fetchActivities();
     fetchStaffDropdown();
+    fetchInvolvedStaffDropdown();
     fetchScopedBranches();
     fetchPlans();
   }, [
+
     activeMenu,
     canReviewCompliance,
   ]);
@@ -1460,12 +1520,12 @@ const selectedBranchPlans = useMemo(() => {
               <Select
                 className="travel-staff-search"
                 classNamePrefix="select"
-                options={staffOptions}
+                options={involvedStaffOptions}
                 placeholder="Search and select staff..."
                 isMulti
                 isClearable
                 closeMenuOnSelect={false}
-                value={staffOptions.filter((option) =>
+                value={involvedStaffOptions.filter((option) =>
                   noteForm.involved_staff_ids.includes(
                     Number(option.value)
                   )

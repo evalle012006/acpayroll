@@ -3620,6 +3620,7 @@ router.get(
           ) AS employee_name,
 
           s.position,
+          s.status,
 
           s.branch_id,
           b.name AS branch_name,
@@ -3647,18 +3648,10 @@ router.get(
         LEFT JOIN public.branches b
           ON b.id = s.branch_id
 
-        WHERE LOWER(
-          TRIM(
-            COALESCE(
-              s.status,
-              'active'
-            )
-          )
-        ) = 'active'
+        WHERE
+            s.employee_no IS NOT NULL
 
-          AND s.employee_no IS NOT NULL
-
-          AND TRIM(s.employee_no) <> ''
+        AND TRIM(s.employee_no) <> ''
 
         ORDER BY
           s.department ASC NULLS LAST,
