@@ -1706,6 +1706,7 @@ router.get("/travel-plans/:id/notes", requireAuth, async (req, res) => {
 router.post(
   "/travel-plans/:id/notes",
   requireAuth,
+  uploadPhotosToTemp,
   async (req, res) => {
     const client = await pool.connect();
 
@@ -1735,13 +1736,32 @@ router.post(
         req.body.involved_staff
       );
 
-      const involvedStaffIds =
-        Array.isArray(req.body.involved_staff_ids)
-          ? req.body.involved_staff_ids
-          : [];
+      let involvedStaffIds = [];
+
+      try {
+        involvedStaffIds =
+          typeof req.body.involved_staff_ids ===
+          "string"
+            ? JSON.parse(
+                req.body.involved_staff_ids
+              )
+            : req.body.involved_staff_ids;
+
+        if (!Array.isArray(involvedStaffIds)) {
+          involvedStaffIds = [];
+        }
+      } catch {
+        involvedStaffIds = [];
+      }
+
+      const findingType = toStr(
+        req.body.finding_type
+      );
 
       const content = toStr(req.body.content);
       const dueDate = toStr(req.body.due_date);
+
+      let findingPhotoUrl = null;
 
       if (
         !["REVIEW", "FINDINGS"].includes(noteType)
@@ -1755,6 +1775,15 @@ router.post(
       if (!title) {
         return res.status(400).json({
           message: "Title is required.",
+        });
+      }
+
+      if (
+        noteType === "FINDINGS" &&
+        !findingType
+      ) {
+        return res.status(400).json({
+          message: "Finding Type is required.",
         });
       }
 
@@ -1801,6 +1830,22 @@ router.post(
           message:
             "Completed travel plans can no longer be changed.",
         });
+      }
+
+      if (
+        noteType === "FINDINGS" &&
+        Array.isArray(req.files) &&
+        req.files.length > 0
+      ) {
+        const file = req.files[0];
+
+        findingPhotoUrl =
+          await moveFromTempKeepExisting(
+            file.key,
+            "travel-plan-findings",
+            String(travelPlanId),
+            file.originalname
+          );
       }
 
       const result = await client.query(

@@ -13,6 +13,7 @@ const DAYS = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
 
 const emptyNoteForm = {
   title: "",
+  finding_type: "",
   involved_staff: [],
   involved_staff_ids: [],
   due_date: "",
@@ -102,6 +103,9 @@ export default function TravelPlan() {
   const [complianceSearch, setComplianceSearch] = useState("");
   const [complianceStatusFilter, setComplianceStatusFilter] =
     useState("");
+  
+  const [findingPhoto, setFindingPhoto] =
+    useState(null);
 
   const [selectedCompliance, setSelectedCompliance] =
     useState(null);
@@ -1301,6 +1305,22 @@ const selectedBranchPlans = useMemo(() => {
 
     if (
       type === "FINDINGS" &&
+      !noteForm.finding_type
+    ) {
+      alert("Select a finding type.");
+      return;
+    }
+
+    if (
+      type === "FINDINGS" &&
+      !findingPhoto
+    ) {
+      alert("Upload a findings photo.");
+      return;
+    }
+
+    if (
+      type === "FINDINGS" &&
       noteForm.involved_staff_ids.length === 0
     ) {
       alert(
@@ -1311,29 +1331,73 @@ const selectedBranchPlans = useMemo(() => {
     }
 
     try {
+      const formData = new FormData();
+
+      formData.append("note_type", type);
+
+      formData.append(
+        "title",
+        type === "FINDINGS"
+          ? "Group Visit Findings"
+          : noteForm.title.trim()
+      );
+
+      formData.append(
+        "finding_type",
+        type === "FINDINGS"
+          ? noteForm.finding_type
+          : ""
+      );
+
+      formData.append(
+        "involved_staff",
+        noteForm.involved_staff.join(", ")
+      );
+
+      formData.append(
+        "involved_staff_ids",
+        JSON.stringify(
+          noteForm.involved_staff_ids
+        )
+      );
+
+      formData.append(
+        "due_date",
+        type === "FINDINGS"
+          ? noteForm.due_date || ""
+          : ""
+      );
+
+      formData.append(
+        "content",
+        type === "REVIEW"
+          ? noteForm.content.trim()
+          : ""
+      );
+
+      if (
+        type === "FINDINGS" &&
+        findingPhoto
+      ) {
+        formData.append(
+          "photos",
+          findingPhoto
+        );
+      }
+
       await api.post(
         `/travel-plans/${selectedPlan.id}/notes`,
+        formData,
         {
-          note_type: type,
-
-          title: noteForm.title.trim(),
-
-          involved_staff:
-            noteForm.involved_staff.join(", "),
-
-          involved_staff_ids:
-            noteForm.involved_staff_ids,
-
-          due_date:
-            type === "FINDINGS"
-              ? noteForm.due_date || null
-              : null,
-
-          content: noteForm.content.trim(),
+          headers: {
+            "Content-Type":
+              "multipart/form-data",
+          },
         }
       );
 
       setNoteForm(emptyNoteForm);
+      setFindingPhoto(null);
       setShowNoteForm(false);
       fetchPlanNotes(selectedPlan.id);
     } catch (err) {
@@ -1495,7 +1559,15 @@ const selectedBranchPlans = useMemo(() => {
               className="travel-create-note-btn"
               onClick={() => {
                 setShowNoteForm(true);
-                setNoteForm(emptyNoteForm);
+                setNoteForm({
+                  ...emptyNoteForm,
+                  title:
+                    type === "FINDINGS"
+                      ? "Group Visit Findings"
+                      : "",
+                });
+
+                setFindingPhoto(null);
               }}
             >
               + Create {isReview ? "Review" : "Findings"}
@@ -1503,17 +1575,70 @@ const selectedBranchPlans = useMemo(() => {
           )
         ) : (
           <div className="travel-note-form">
-            <label>
-              Title
-              <input
-                type="text"
-                placeholder="Enter title"
-                value={noteForm.title}
-                onChange={(e) =>
-                  setNoteForm((p) => ({ ...p, title: e.target.value }))
-                }
-              />
-            </label>
+            {isReview ? (
+              <label>
+                Title
+
+                <input
+                  type="text"
+                  placeholder="Enter title"
+                  value={noteForm.title}
+                  onChange={(event) =>
+                    setNoteForm((previous) => ({
+                      ...previous,
+                      title: event.target.value,
+                    }))
+                  }
+                />
+              </label>
+            ) : (
+              <>
+                <label>
+                  Group Visit Findings
+
+                  <input
+                    type="text"
+                    value="Group Visit Findings"
+                    readOnly
+                  />
+                </label>
+
+                <label>
+                  Finding Type
+
+                  <select
+                    value={noteForm.finding_type}
+                    onChange={(event) =>
+                      setNoteForm((previous) => ({
+                        ...previous,
+                        finding_type:
+                          event.target.value,
+                      }))
+                    }
+                  >
+                    <option value="">
+                      Select finding type
+                    </option>
+
+                    <option value="Passbook Reconciliation">
+                      Passbook Reconciliation
+                    </option>
+
+                    <option value="Past Due & Delinquent Report">
+                      Past Due & Delinquent Report
+                    </option>
+
+                    <option value="Group Collection Record">
+                      Group Collection Record
+                    </option>
+
+                    <option value="Others">
+                      Others
+                    </option>
+                  </select>
+                </label>
+              </>
+            )}
 
             <label>
               Involved Staff
@@ -1573,17 +1698,46 @@ const selectedBranchPlans = useMemo(() => {
               </label>
             )}
 
-            <label>
-              Write
-              <textarea
-                rows={6}
-                placeholder={isReview ? "Write review..." : "Write findings..."}
-                value={noteForm.content}
-                onChange={(e) =>
-                  setNoteForm((p) => ({ ...p, content: e.target.value }))
-                }
-              />
-            </label>
+            {!isReview && (
+              <label>
+                Upload Photo
+
+                <input
+                  type="file"
+                  accept="image/png,image/jpeg,image/jpg,image/webp"
+                  onChange={(event) =>
+                    setFindingPhoto(
+                      event.target.files?.[0] || null
+                    )
+                  }
+                />
+
+                {findingPhoto?.name && (
+                  <small className="travel-note-file-name">
+                    Selected: {findingPhoto.name}
+                  </small>
+                )}
+              </label>
+            )}
+
+            {isReview && (
+              <label>
+                Write
+
+                <textarea
+                  rows={6}
+                  placeholder="Write review..."
+                  value={noteForm.content}
+                  onChange={(event) =>
+                    setNoteForm((previous) => ({
+                      ...previous,
+                      content:
+                        event.target.value,
+                    }))
+                  }
+                />
+              </label>
+            )}
 
             <div className="travel-note-actions">
               <button
@@ -1591,6 +1745,7 @@ const selectedBranchPlans = useMemo(() => {
                 onClick={() => {
                   setShowNoteForm(false);
                   setNoteForm(emptyNoteForm);
+                  setFindingPhoto(null);
                 }}
               >
                 Cancel
