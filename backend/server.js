@@ -49,6 +49,7 @@ const otherReceivableRoutes = require("./routes/otherReceivableRoutes");
 const calendarRoutes = require("./routes/calendarRoutes");
 const terminationRoutes = require("./routes/terminationRoutes");
 const { startMonthlyBalancePoster } = require("./jobs/monthlyBalancePoster");
+const { startResignationCron } = require("./jobs/resignationCron");
 
 const app = express();
 
@@ -132,7 +133,10 @@ app.use((err, _req, res, _next) => {
 const PORT = Number(process.env.PORT || 5000);
 
 app.listen(PORT, () => {
-  console.log(`🚀 Server running on http://localhost:${PORT}`);
+  console.log(
+    `🚀 Server running on http://localhost:${PORT}`
+  );
 
   startMonthlyBalancePoster();
+  startResignationCron();
 });

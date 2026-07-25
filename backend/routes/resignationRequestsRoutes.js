@@ -1026,14 +1026,17 @@ router.put(
             `
             UPDATE public.staff
             SET
-              status = 'Inactive',
               exit_type = 'Resigned',
               exit_date = $2::date,
               exit_remarks = $3
             WHERE employee_no = $1
             `,
-            [employeeNo, effectiveDate, remarks]
-          );
+            [
+              employeeNo,
+              effectiveDate,
+              remarks
+            ]
+            );
         }
 
         try {
