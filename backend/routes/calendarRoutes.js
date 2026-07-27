@@ -264,12 +264,6 @@ const findInvolvedStaff = async (
     LEFT JOIN public.branches b
       ON b.id = s.branch_id
 
-    WHERE LOWER(
-      TRIM(
-        COALESCE(s.status, 'active')
-      )
-    ) = 'active'
-
     ORDER BY s.id ASC
     `
   );
@@ -306,7 +300,7 @@ const findInvolvedStaff = async (
   });
 };
 
-const syncFindingCompliances = async (
+async function syncFindingCompliances(
   client,
   {
     travelPlanId,
@@ -318,17 +312,16 @@ const syncFindingCompliances = async (
     dueDate,
     createdBy,
   }
-) => {
-  const involvedStaff = await findInvolvedStaff(
-    client,
-    involvedStaffText,
-    involvedStaffIds
-  );
+) {
+  let assignedCount = 0;
 
-  /*
-    Findings can only be edited before the plan is completed.
-    Recreate the pending assignments whenever Findings changes.
-  */
+  const matchedStaff =
+    await findInvolvedStaff(
+      client,
+      involvedStaffText,
+      involvedStaffIds
+    );
+
   await client.query(
     `
     DELETE FROM public.travel_plan_compliances
@@ -338,7 +331,7 @@ const syncFindingCompliances = async (
     [findingNoteId]
   );
 
-  for (const staff of involvedStaff) {
+  for (const staff of matchedStaff) {
     await client.query(
       `
       INSERT INTO public.travel_plan_compliances
@@ -363,11 +356,11 @@ const syncFindingCompliances = async (
         finding_details,
 
         due_date,
+
         status,
 
         created_by,
-        created_at,
-        updated_at
+        created_at
       )
       VALUES
       (
@@ -391,65 +384,46 @@ const syncFindingCompliances = async (
         $14,
 
         $15::date,
+
         'Pending',
 
         $16,
-        NOW() AT TIME ZONE 'Asia/Manila',
+
         NOW() AT TIME ZONE 'Asia/Manila'
       )
-      ON CONFLICT (
-        finding_note_id,
-        employee_id
-      )
-      WHERE employee_id IS NOT NULL
-      DO UPDATE SET
-        employee_no = EXCLUDED.employee_no,
-        employee_name = EXCLUDED.employee_name,
-        position = EXCLUDED.position,
-
-        branch_id = EXCLUDED.branch_id,
-        branch_name = EXCLUDED.branch_name,
-
-        department = EXCLUDED.department,
-        area = EXCLUDED.area,
-        region = EXCLUDED.region,
-        division = EXCLUDED.division,
-
-        finding_title = EXCLUDED.finding_title,
-        finding_details = EXCLUDED.finding_details,
-        due_date = EXCLUDED.due_date,
-
-        updated_at =
-          NOW() AT TIME ZONE 'Asia/Manila'
       `,
       [
         travelPlanId,
         findingNoteId,
 
         staff.id,
-        staff.employee_no || null,
+        staff.employee_no,
         staff.employee_name,
-        staff.position || null,
+        staff.position,
 
-        staff.branch_id || null,
-        staff.branch_name || null,
+        staff.branch_id,
+        staff.branch_name,
 
-        staff.department || null,
-        staff.area || null,
-        staff.region || null,
-        staff.division || null,
+        staff.department,
+        staff.area,
+        staff.region,
+        staff.division,
 
         findingTitle,
-        findingDetails || null,
+
+        findingDetails,
 
         dueDate || null,
-        createdBy || null,
+
+        createdBy,
       ]
     );
+
+    assignedCount++;
   }
 
-  return involvedStaff.length;
-};
+  return assignedCount;
+}
 
 // =====================================================
 // ROLE HELPERS
@@ -1637,67 +1611,168 @@ router.delete("/travel-plans/:id", requireAuth, async (req, res) => {
 // GET TRAVEL PLAN NOTES
 // =====================================================
 
-router.get("/travel-plans/:id/notes", requireAuth, async (req, res) => {
-  try {
-    if (!canViewTravelModule(req)) {
-      return res.status(403).json({
-        message: "You are not allowed to view travel plan notes.",
-      });
+router.get(
+  "/travel-plans/:id/notes",
+  requireAuth,
+  async (req, res) => {
+    try {
+      if (!canViewTravelModule(req)) {
+        return res.status(403).json({
+          message:
+            "You are not allowed to view travel plan notes.",
+        });
+      }
+
+      const travelPlanId = Number(
+        req.params.id
+      );
+
+      if (!isValidId(travelPlanId)) {
+        return res.status(400).json({
+          message:
+            "Invalid travel plan ID.",
+        });
+      }
+
+      const planResult = await pool.query(
+        `
+        SELECT
+          id
+        FROM public.travel_plans
+        WHERE id = $1
+        LIMIT 1
+        `,
+        [travelPlanId]
+      );
+
+      if (!planResult.rowCount) {
+        return res.status(404).json({
+          message:
+            "Travel plan not found.",
+        });
+      }
+
+      const result = await pool.query(
+        `
+        SELECT
+          id,
+          travel_plan_id,
+          note_type,
+          title,
+
+          /*
+            Legacy fields.
+          */
+          finding_type,
+          content,
+
+          /*
+            Branch Visit Findings / REVIEW.
+          */
+          review_coh,
+          review_cashbook_vs_voucher,
+          review_bms,
+          review_other_findings,
+          review_photo_url,
+
+          /*
+            Group Visit Findings / FINDINGS.
+          */
+          passbook_reconciliation,
+          past_due_delinquent_report,
+          group_collection_record,
+          other_findings,
+          finding_photo_url,
+
+          involved_staff,
+
+          TO_CHAR(
+            due_date,
+            'YYYY-MM-DD'
+          ) AS due_date,
+
+          created_by,
+
+          CASE
+            WHEN created_at IS NULL
+              THEN NULL
+            ELSE
+              TO_CHAR(
+                created_at,
+                'YYYY-MM-DD"T"HH24:MI:SS.MS'
+              ) || '+08:00'
+          END AS created_at
+
+        FROM public.travel_plan_notes
+
+        WHERE travel_plan_id = $1
+
+        ORDER BY
+          created_at DESC,
+          id DESC
+        `,
+        [travelPlanId]
+      );
+
+      const notes = await Promise.all(
+        result.rows.map(async (note) => {
+          let findingPhotoSignedUrl = null;
+          let reviewPhotoSignedUrl = null;
+
+          if (note.finding_photo_url) {
+            try {
+              findingPhotoSignedUrl =
+                await getSignedDownloadUrl(
+                  note.finding_photo_url,
+                  3600
+                );
+            } catch (signError) {
+              console.error(
+                "Failed to create finding photo signed URL:",
+                note.finding_photo_url,
+                signError
+              );
+            }
+          }
+
+          if (note.review_photo_url) {
+            try {
+              reviewPhotoSignedUrl =
+                await getSignedDownloadUrl(
+                  note.review_photo_url,
+                  3600
+                );
+            } catch (signError) {
+              console.error(
+                "Failed to create review photo signed URL:",
+                note.review_photo_url,
+                signError
+              );
+            }
+          }
+
+          return {
+            ...note,
+
+            finding_photo_signed_url:
+              findingPhotoSignedUrl,
+
+            review_photo_signed_url:
+              reviewPhotoSignedUrl,
+          };
+        })
+      );
+
+      return res.json(notes);
+    } catch (error) {
+      return sendServerError(
+        res,
+        "GET /travel-plans/:id/notes",
+        error
+      );
     }
-
-    const travelPlanId = Number(req.params.id);
-
-    if (!isValidId(travelPlanId)) {
-      return res.status(400).json({
-        message: "Invalid travel plan ID.",
-      });
-    }
-
-    const planResult = await pool.query(
-      `
-      SELECT id
-      FROM public.travel_plans
-      WHERE id = $1
-      LIMIT 1
-      `,
-      [travelPlanId]
-    );
-
-    if (!planResult.rowCount) {
-      return res.status(404).json({
-        message: "Travel plan not found.",
-      });
-    }
-
-    const result = await pool.query(
-      `
-      SELECT
-        id,
-        travel_plan_id,
-        note_type,
-        title,
-        involved_staff,
-        content,
-        created_by,
-        created_at
-      FROM public.travel_plan_notes
-      WHERE travel_plan_id = $1
-      ORDER BY
-        created_at DESC,
-        id DESC
-      `,
-      [travelPlanId]
-    );
-
-    return res.json(result.rows);
-  } catch (error) {
-    return sendServerError(
-      res,
-      "GET /travel-plans/:id/notes",
-      error
-    );
   }
-});
+);
 
 // =====================================================
 // CREATE TRAVEL PLAN NOTE
@@ -1714,15 +1789,18 @@ router.post(
       if (!canEditPlan(req)) {
         return res.status(403).json({
           message:
-            "You are not allowed to create travel plan notes.",
+            "You are not allowed to add notes.",
         });
       }
 
-      const travelPlanId = Number(req.params.id);
+      const travelPlanId = Number(
+        req.params.id
+      );
 
       if (!isValidId(travelPlanId)) {
         return res.status(400).json({
-          message: "Invalid travel plan ID.",
+          message:
+            "Invalid travel plan.",
         });
       }
 
@@ -1730,123 +1808,296 @@ router.post(
         req.body.note_type
       ).toUpperCase();
 
-      const title = toStr(req.body.title);
-
-      const involvedStaff = toStr(
-        req.body.involved_staff
+      const title = toStr(
+        req.body.title
       );
+
+      const passbookReconciliation =
+        toStr(
+          req.body.passbook_reconciliation
+        );
+
+      const pastDueDelinquentReport =
+        toStr(
+          req.body.past_due_delinquent_report
+        );
+
+      const groupCollectionRecord =
+        toStr(
+          req.body.group_collection_record
+        );
+
+      const otherFindings =
+        toStr(
+          req.body.other_findings
+        );
+
+      const involvedStaff =
+        toStr(
+          req.body.involved_staff
+        );
+
+      const dueDate =
+        toStr(
+          req.body.due_date
+        );
+
+      const reviewCoh =
+        toStr(req.body.review_coh);
+
+      const reviewCashbookVsVoucher =
+        toStr(req.body.review_cashbook_vs_voucher);
+
+      const reviewBms =
+        toStr(req.body.review_bms);
+
+      const reviewOtherFindings =
+        toStr(req.body.review_other_findings);
 
       let involvedStaffIds = [];
 
       try {
         involvedStaffIds =
-          typeof req.body.involved_staff_ids ===
+          typeof req.body
+            .involved_staff_ids ===
           "string"
             ? JSON.parse(
-                req.body.involved_staff_ids
+                req.body
+                  .involved_staff_ids
               )
-            : req.body.involved_staff_ids;
+            : req.body
+                .involved_staff_ids;
 
-        if (!Array.isArray(involvedStaffIds)) {
+        if (
+          !Array.isArray(
+            involvedStaffIds
+          )
+        ) {
           involvedStaffIds = [];
         }
       } catch {
         involvedStaffIds = [];
       }
 
-      const findingType = toStr(
-        req.body.finding_type
-      );
-
-      const content = toStr(req.body.content);
-      const dueDate = toStr(req.body.due_date);
-
-      let findingPhotoUrl = null;
-
       if (
-        !["REVIEW", "FINDINGS"].includes(noteType)
+        noteType !== "REVIEW" &&
+        noteType !== "FINDINGS"
       ) {
         return res.status(400).json({
           message:
-            "Note type must be REVIEW or FINDINGS.",
+            "Invalid note type.",
         });
       }
 
       if (!title) {
         return res.status(400).json({
-          message: "Title is required.",
-        });
-      }
-
-      if (
-        noteType === "FINDINGS" &&
-        !findingType
-      ) {
-        return res.status(400).json({
-          message: "Finding Type is required.",
-        });
-      }
-
-      if (
-        dueDate &&
-        !/^\d{4}-\d{2}-\d{2}$/.test(dueDate)
-      ) {
-        return res.status(400).json({
           message:
-            "Due date must use YYYY-MM-DD format.",
+            "Title is required.",
         });
+      }
+      
+      if (noteType === "REVIEW") {
+        const hasReview =
+          reviewCoh ||
+          reviewCashbookVsVoucher ||
+          reviewBms ||
+          reviewOtherFindings;
+
+        if (!hasReview) {
+          return res.status(400).json({
+            message:
+              "Enter at least one Branch Visit Finding.",
+          });
+        }
+
+        if (involvedStaffIds.length === 0) {
+          return res.status(400).json({
+            message:
+              "Select involved staff.",
+          });
+        }
+
+        if (
+          !Array.isArray(req.files) ||
+          req.files.length === 0
+        ) {
+          return res.status(400).json({
+            message:
+              "Upload a Branch Visit Findings photo.",
+          });
+        }
+      }
+
+      if (noteType === "FINDINGS") {
+        const hasFinding =
+          passbookReconciliation ||
+          pastDueDelinquentReport ||
+          groupCollectionRecord ||
+          otherFindings;
+
+        if (!hasFinding) {
+          return res.status(400).json({
+            message:
+              "Enter at least one Group Visit Finding.",
+          });
+        }
+
+        if (!dueDate) {
+          return res.status(400).json({
+            message:
+              "Compliance due date is required.",
+          });
+        }
+
+        if (involvedStaffIds.length === 0) {
+          return res.status(400).json({
+            message:
+              "Select involved staff.",
+          });
+        }
+
+        if (
+          !Array.isArray(req.files) ||
+          req.files.length === 0
+        ) {
+          return res.status(400).json({
+            message:
+              "Upload a Group Visit Findings photo.",
+          });
+        }
       }
 
       await client.query("BEGIN");
 
-      const planResult = await client.query(
-        `
-        SELECT
-          id,
-          status
-        FROM public.travel_plans
-        WHERE id = $1
-        LIMIT 1
-        FOR UPDATE
-        `,
-        [travelPlanId]
-      );
+      const planResult =
+        await client.query(
+          `
+          SELECT
+            id,
+            status
 
-      if (!planResult.rowCount) {
-        await client.query("ROLLBACK");
+          FROM public.travel_plans
+
+          WHERE id=$1
+
+          FOR UPDATE
+          `,
+          [travelPlanId]
+        );
+
+      if (
+        !planResult.rowCount
+      ) {
+        await client.query(
+          "ROLLBACK"
+        );
 
         return res.status(404).json({
-          message: "Travel plan not found.",
+          message:
+            "Travel plan not found.",
         });
       }
 
       if (
-        norm(planResult.rows[0].status) ===
-        "completed"
+        norm(
+          planResult.rows[0].status
+        ) === "completed"
       ) {
-        await client.query("ROLLBACK");
+        await client.query(
+          "ROLLBACK"
+        );
 
         return res.status(400).json({
           message:
-            "Completed travel plans can no longer be changed.",
+            "Completed travel plans cannot be modified.",
         });
       }
 
+      let findingPhotoUrl =
+        null;
+
+      let reviewPhotoUrl =
+        null;
+
       if (
-        noteType === "FINDINGS" &&
+        noteType ===
+          "FINDINGS" &&
         Array.isArray(req.files) &&
         req.files.length > 0
       ) {
-        const file = req.files[0];
+        const file =
+          req.files[0];
 
         findingPhotoUrl =
           await moveFromTempKeepExisting(
             file.key,
             "travel-plan-findings",
-            String(travelPlanId),
+            String(
+              travelPlanId
+            ),
             file.originalname
           );
       }
+
+      if (
+        noteType ===
+          "REVIEW" &&
+        Array.isArray(req.files) &&
+        req.files.length > 0
+      ) {
+        const file =
+          req.files[0];
+
+        reviewPhotoUrl =
+          await moveFromTempKeepExisting(
+            file.key,
+            "travel-plan-review",
+            String(
+              travelPlanId
+            ),
+            file.originalname
+          );
+      }
+
+      const reviewDetails = [
+        reviewCoh
+          ? `COH:\n${reviewCoh}`
+          : "",
+
+        reviewCashbookVsVoucher
+          ? `Cashbook vs Voucher:\n${reviewCashbookVsVoucher}`
+          : "",
+
+        reviewBms
+          ? `BMS:\n${reviewBms}`
+          : "",
+
+        reviewOtherFindings
+          ? `Others:\n${reviewOtherFindings}`
+          : "",
+      ]
+        .filter(Boolean)
+        .join("\n\n");
+        
+          const findingDetails = [
+        passbookReconciliation
+          ? `Passbook Reconciliation:\n${passbookReconciliation}`
+          : "",
+
+        pastDueDelinquentReport
+          ? `Past Due & Delinquent Report:\n${pastDueDelinquentReport}`
+          : "",
+
+        groupCollectionRecord
+          ? `Group Collection Record:\n${groupCollectionRecord}`
+          : "",
+
+        otherFindings
+          ? `Others:\n${otherFindings}`
+          : "",
+      ]
+        .filter(Boolean)
+        .join("\n\n");
 
       const result = await client.query(
         `
@@ -1855,8 +2106,26 @@ router.post(
           travel_plan_id,
           note_type,
           title,
+
+          finding_type,
+
+          review_coh,
+          review_cashbook_vs_voucher,
+          review_bms,
+          review_other_findings,
+          review_photo_url,
+
+          passbook_reconciliation,
+          past_due_delinquent_report,
+          group_collection_record,
+          other_findings,
+
           involved_staff,
+          due_date,
+
           content,
+          finding_photo_url,
+
           created_by,
           created_at
         )
@@ -1865,9 +2134,27 @@ router.post(
           $1,
           $2,
           $3,
+
           $4,
+
           $5,
           $6,
+          $7,
+          $8,
+          $9,
+
+          $10,
+          $11,
+          $12,
+          $13,
+
+          $14,
+          $15::date,
+
+          $16,
+          $17,
+
+          $18,
           NOW() AT TIME ZONE 'Asia/Manila'
         )
         RETURNING
@@ -1875,17 +2162,123 @@ router.post(
           travel_plan_id,
           note_type,
           title,
+
+          finding_type,
+
+          review_coh,
+          review_cashbook_vs_voucher,
+          review_bms,
+          review_other_findings,
+          review_photo_url,
+
+          passbook_reconciliation,
+          past_due_delinquent_report,
+          group_collection_record,
+          other_findings,
+
           involved_staff,
+
+          TO_CHAR(
+            due_date,
+            'YYYY-MM-DD'
+          ) AS due_date,
+
           content,
+          finding_photo_url,
+
           created_by,
-          created_at
+
+          CASE
+            WHEN created_at IS NULL
+              THEN NULL
+            ELSE
+              TO_CHAR(
+                created_at,
+                'YYYY-MM-DD"T"HH24:MI:SS.MS'
+              ) || '+08:00'
+          END AS created_at
         `,
         [
+          // $1
           travelPlanId,
+
+          // $2
           noteType,
-          title,
+
+          // $3
+          noteType === "REVIEW"
+            ? "Branch Visit Findings"
+            : "Group Visit Findings",
+
+          // $4
+          noteType === "FINDINGS"
+            ? "Group Visit Findings"
+            : null,
+
+          // $5
+          noteType === "REVIEW"
+            ? reviewCoh || null
+            : null,
+
+          // $6
+          noteType === "REVIEW"
+            ? reviewCashbookVsVoucher || null
+            : null,
+
+          // $7
+          noteType === "REVIEW"
+            ? reviewBms || null
+            : null,
+
+          // $8
+          noteType === "REVIEW"
+            ? reviewOtherFindings || null
+            : null,
+
+          // $9
+          noteType === "REVIEW"
+            ? reviewPhotoUrl
+            : null,
+
+          // $10
+          noteType === "FINDINGS"
+            ? passbookReconciliation || null
+            : null,
+
+          // $11
+          noteType === "FINDINGS"
+            ? pastDueDelinquentReport || null
+            : null,
+
+          // $12
+          noteType === "FINDINGS"
+            ? groupCollectionRecord || null
+            : null,
+
+          // $13
+          noteType === "FINDINGS"
+            ? otherFindings || null
+            : null,
+
+          // $14
           involvedStaff || null,
-          content || null,
+
+          // $15
+          noteType === "FINDINGS"
+            ? dueDate || null
+            : null,
+
+          // $16
+          noteType === "REVIEW"
+            ? reviewDetails || null
+            : findingDetails || null,
+
+          // $17
+          noteType === "FINDINGS"
+            ? findingPhotoUrl
+            : null,
+
+          // $18
           req.user?.id || null,
         ]
       );
@@ -1895,36 +2288,43 @@ router.post(
       let assignedComplianceCount = 0;
 
       if (noteType === "FINDINGS") {
-        if (
-          !involvedStaff &&
-          involvedStaffIds.length === 0
-        ) {
-          await client.query("ROLLBACK");
-
-          return res.status(400).json({
-            message:
-              "At least one involved staff member is required for Findings.",
-          });
-        }
-
         assignedComplianceCount =
-          await syncFindingCompliances(client, {
-            travelPlanId,
-            findingNoteId: note.id,
-            findingTitle: title,
-            findingDetails: content,
-            involvedStaffText: involvedStaff,
-            involvedStaffIds,
-            dueDate: dueDate || null,
-            createdBy: req.user?.id || null,
-          });
+          await syncFindingCompliances(
+            client,
+            {
+              travelPlanId,
 
-        if (assignedComplianceCount === 0) {
-          await client.query("ROLLBACK");
+              findingNoteId:
+                note.id,
+
+              findingTitle:
+                "Group Visit Findings",
+
+              findingDetails,
+
+              involvedStaffText:
+                involvedStaff,
+
+              involvedStaffIds,
+
+              dueDate:
+                dueDate || null,
+
+              createdBy:
+                req.user?.id || null,
+            }
+          );
+
+        if (
+          assignedComplianceCount === 0
+        ) {
+          await client.query(
+            "ROLLBACK"
+          );
 
           return res.status(400).json({
             message:
-              "The involved staff could not be matched to an active staff record.",
+              "The selected involved staff could not be matched to staff records.",
           });
         }
       }
@@ -1934,10 +2334,11 @@ router.post(
       return res.status(201).json({
         message:
           noteType === "REVIEW"
-            ? "Review created successfully."
-            : `Findings created and assigned to ${assignedComplianceCount} staff member(s).`,
+            ? "Branch Visit Findings created successfully."
+            : `Group Visit Findings created and assigned to ${assignedComplianceCount} staff member(s).`,
 
         note,
+
         assigned_compliance_count:
           assignedComplianceCount,
       });
@@ -1962,8 +2363,11 @@ router.post(
 router.put(
   "/travel-plans/notes/:noteId",
   requireAuth,
+  uploadPhotosToTemp,
   async (req, res) => {
     const client = await pool.connect();
+
+    let newlyUploadedPhotoKey = null;
 
     try {
       if (!canEditPlan(req)) {
@@ -1973,11 +2377,14 @@ router.put(
         });
       }
 
-      const noteId = Number(req.params.noteId);
+      const noteId = Number(
+        req.params.noteId
+      );
 
       if (!isValidId(noteId)) {
         return res.status(400).json({
-          message: "Invalid note ID.",
+          message:
+            "Invalid note ID.",
         });
       }
 
@@ -1985,22 +2392,87 @@ router.put(
         req.body.note_type
       ).toUpperCase();
 
-      const title = toStr(req.body.title);
+      // =================================================
+      // BRANCH VISIT FINDINGS / REVIEW
+      // =================================================
 
-      const involvedStaff = toStr(
-        req.body.involved_staff
-      );
+      const reviewCoh =
+        toStr(req.body.review_coh);
 
-      const involvedStaffIds =
-        Array.isArray(req.body.involved_staff_ids)
-          ? req.body.involved_staff_ids
-          : [];
+      const reviewCashbookVsVoucher =
+        toStr(
+          req.body.review_cashbook_vs_voucher
+        );
 
-      const content = toStr(req.body.content);
-      const dueDate = toStr(req.body.due_date);
+      const reviewBms =
+        toStr(req.body.review_bms);
+
+      const reviewOtherFindings =
+        toStr(
+          req.body.review_other_findings
+        );
+
+      // =================================================
+      // GROUP VISIT FINDINGS / FINDINGS
+      // =================================================
+
+      const passbookReconciliation =
+        toStr(
+          req.body.passbook_reconciliation
+        );
+
+      const pastDueDelinquentReport =
+        toStr(
+          req.body.past_due_delinquent_report
+        );
+
+      const groupCollectionRecord =
+        toStr(
+          req.body.group_collection_record
+        );
+
+      const otherFindings =
+        toStr(
+          req.body.other_findings
+        );
+
+      const involvedStaff =
+        toStr(
+          req.body.involved_staff
+        );
+
+      const dueDate =
+        toStr(
+          req.body.due_date
+        );
+
+      let involvedStaffIds = [];
+
+      try {
+        involvedStaffIds =
+          typeof req.body.involved_staff_ids ===
+          "string"
+            ? JSON.parse(
+                req.body.involved_staff_ids
+              )
+            : req.body.involved_staff_ids;
+
+        if (
+          !Array.isArray(
+            involvedStaffIds
+          )
+        ) {
+          involvedStaffIds = [];
+        }
+      } catch {
+        involvedStaffIds = [];
+      }
 
       if (
-        !["REVIEW", "FINDINGS"].includes(noteType)
+        ![
+          "REVIEW",
+          "FINDINGS",
+        ].includes(noteType)
       ) {
         return res.status(400).json({
           message:
@@ -2008,35 +2480,162 @@ router.put(
         });
       }
 
-      if (!title) {
+      // =================================================
+      // REVIEW VALIDATION
+      // =================================================
+
+      if (noteType === "REVIEW") {
+        const hasReviewFinding =
+          reviewCoh ||
+          reviewCashbookVsVoucher ||
+          reviewBms ||
+          reviewOtherFindings;
+
+        if (!hasReviewFinding) {
+          return res.status(400).json({
+            message:
+              "Enter at least one Branch Visit Finding.",
+          });
+        }
+
+        if (
+          involvedStaffIds.length === 0 &&
+          !involvedStaff
+        ) {
+          return res.status(400).json({
+            message:
+              "Select at least one involved staff member.",
+          });
+        }
+      }
+
+      // =================================================
+      // FINDINGS VALIDATION
+      // =================================================
+
+      if (noteType === "FINDINGS") {
+        const hasGroupFinding =
+          passbookReconciliation ||
+          pastDueDelinquentReport ||
+          groupCollectionRecord ||
+          otherFindings;
+
+        if (!hasGroupFinding) {
+          return res.status(400).json({
+            message:
+              "Enter at least one Group Visit Finding.",
+          });
+        }
+
+        if (
+          involvedStaffIds.length === 0 &&
+          !involvedStaff
+        ) {
+          return res.status(400).json({
+            message:
+              "Select at least one involved staff member.",
+          });
+        }
+
+        if (!dueDate) {
+          return res.status(400).json({
+            message:
+              "Compliance due date is required.",
+          });
+        }
+      }
+
+      if (
+        dueDate &&
+        !/^\d{4}-\d{2}-\d{2}$/.test(
+          dueDate
+        )
+      ) {
         return res.status(400).json({
-          message: "Title is required.",
+          message:
+            "Due date must use YYYY-MM-DD format.",
         });
       }
 
+      const title =
+        noteType === "REVIEW"
+          ? "Branch Visit Findings"
+          : "Group Visit Findings";
+
+      const reviewDetails = [
+        reviewCoh
+          ? `COH:\n${reviewCoh}`
+          : "",
+
+        reviewCashbookVsVoucher
+          ? `Cashbook vs Voucher:\n${reviewCashbookVsVoucher}`
+          : "",
+
+        reviewBms
+          ? `BMS:\n${reviewBms}`
+          : "",
+
+        reviewOtherFindings
+          ? `Others:\n${reviewOtherFindings}`
+          : "",
+      ]
+        .filter(Boolean)
+        .join("\n\n");
+
+      const findingDetails = [
+        passbookReconciliation
+          ? `Passbook Reconciliation:\n${passbookReconciliation}`
+          : "",
+
+        pastDueDelinquentReport
+          ? `Past Due & Delinquent Report:\n${pastDueDelinquentReport}`
+          : "",
+
+        groupCollectionRecord
+          ? `Group Collection Record:\n${groupCollectionRecord}`
+          : "",
+
+        otherFindings
+          ? `Others:\n${otherFindings}`
+          : "",
+      ]
+        .filter(Boolean)
+        .join("\n\n");
+
       await client.query("BEGIN");
 
-      const existingResult = await client.query(
-        `
-        SELECT
-          n.id,
-          n.travel_plan_id,
-          n.note_type,
-          tp.status
-        FROM public.travel_plan_notes n
+      const existingResult =
+        await client.query(
+          `
+          SELECT
+            n.id,
+            n.travel_plan_id,
+            n.note_type,
 
-        INNER JOIN public.travel_plans tp
-          ON tp.id = n.travel_plan_id
+            n.finding_photo_url,
+            n.review_photo_url,
 
-        WHERE n.id = $1
-        LIMIT 1
-        FOR UPDATE
-        `,
-        [noteId]
-      );
+            tp.status
+
+          FROM public.travel_plan_notes n
+
+          INNER JOIN public.travel_plans tp
+            ON tp.id =
+              n.travel_plan_id
+
+          WHERE n.id = $1
+
+          LIMIT 1
+
+          FOR UPDATE
+          `,
+          [noteId]
+        );
 
       if (!existingResult.rowCount) {
-        await client.query("ROLLBACK");
+        await client.query(
+          "ROLLBACK"
+        );
 
         return res.status(404).json({
           message:
@@ -2051,7 +2650,9 @@ router.put(
         norm(existingNote.status) ===
         "completed"
       ) {
-        await client.query("ROLLBACK");
+        await client.query(
+          "ROLLBACK"
+        );
 
         return res.status(400).json({
           message:
@@ -2059,62 +2660,287 @@ router.put(
         });
       }
 
-      const result = await client.query(
-        `
-        UPDATE public.travel_plan_notes
-        SET
-          note_type = $2,
-          title = $3,
-          involved_staff = $4,
-          content = $5
-        WHERE id = $1
-        RETURNING
-          id,
-          travel_plan_id,
-          note_type,
-          title,
-          involved_staff,
-          content,
-          created_by,
-          created_at
-        `,
-        [
-          noteId,
-          noteType,
-          title,
-          involvedStaff || null,
-          content || null,
-        ]
-      );
+      const previousFindingPhotoUrl =
+        existingNote.finding_photo_url ||
+        null;
+
+      const previousReviewPhotoUrl =
+        existingNote.review_photo_url ||
+        null;
+
+      let findingPhotoUrl =
+        noteType === "FINDINGS"
+          ? previousFindingPhotoUrl
+          : null;
+
+      let reviewPhotoUrl =
+        noteType === "REVIEW"
+          ? previousReviewPhotoUrl
+          : null;
+
+      // =================================================
+      // OPTIONAL REPLACEMENT PHOTO
+      // =================================================
+
+      if (
+        Array.isArray(req.files) &&
+        req.files.length > 0
+      ) {
+        const file = req.files[0];
+
+        if (noteType === "REVIEW") {
+          reviewPhotoUrl =
+            await moveFromTempKeepExisting(
+              file.key,
+              "travel-plan-review",
+              String(
+                existingNote.travel_plan_id
+              ),
+              file.originalname
+            );
+
+          newlyUploadedPhotoKey =
+            reviewPhotoUrl;
+        }
+
+        if (noteType === "FINDINGS") {
+          findingPhotoUrl =
+            await moveFromTempKeepExisting(
+              file.key,
+              "travel-plan-findings",
+              String(
+                existingNote.travel_plan_id
+              ),
+              file.originalname
+            );
+
+          newlyUploadedPhotoKey =
+            findingPhotoUrl;
+        }
+      }
+
+      const result =
+        await client.query(
+          `
+          UPDATE public.travel_plan_notes
+
+          SET
+            note_type = $2,
+            title = $3,
+
+            finding_type = $4,
+
+            review_coh = $5,
+            review_cashbook_vs_voucher = $6,
+            review_bms = $7,
+            review_other_findings = $8,
+            review_photo_url = $9,
+
+            passbook_reconciliation = $10,
+            past_due_delinquent_report = $11,
+            group_collection_record = $12,
+            other_findings = $13,
+            finding_photo_url = $14,
+
+            involved_staff = $15,
+            due_date = $16::date,
+
+            content = $17
+
+          WHERE id = $1
+
+          RETURNING
+            id,
+            travel_plan_id,
+            note_type,
+            title,
+
+            finding_type,
+
+            review_coh,
+            review_cashbook_vs_voucher,
+            review_bms,
+            review_other_findings,
+            review_photo_url,
+
+            passbook_reconciliation,
+            past_due_delinquent_report,
+            group_collection_record,
+            other_findings,
+            finding_photo_url,
+
+            involved_staff,
+
+            TO_CHAR(
+              due_date,
+              'YYYY-MM-DD'
+            ) AS due_date,
+
+            content,
+            created_by,
+
+            CASE
+              WHEN created_at IS NULL
+                THEN NULL
+              ELSE
+                TO_CHAR(
+                  created_at,
+                  'YYYY-MM-DD"T"HH24:MI:SS.MS'
+                ) || '+08:00'
+            END AS created_at
+          `,
+          [
+            // $1
+            noteId,
+
+            // $2
+            noteType,
+
+            // $3
+            title,
+
+            // $4
+            noteType === "FINDINGS"
+              ? "Group Visit Findings"
+              : null,
+
+            // $5
+            noteType === "REVIEW"
+              ? reviewCoh || null
+              : null,
+
+            // $6
+            noteType === "REVIEW"
+              ? reviewCashbookVsVoucher ||
+                null
+              : null,
+
+            // $7
+            noteType === "REVIEW"
+              ? reviewBms || null
+              : null,
+
+            // $8
+            noteType === "REVIEW"
+              ? reviewOtherFindings ||
+                null
+              : null,
+
+            // $9
+            noteType === "REVIEW"
+              ? reviewPhotoUrl
+              : null,
+
+            // $10
+            noteType === "FINDINGS"
+              ? passbookReconciliation ||
+                null
+              : null,
+
+            // $11
+            noteType === "FINDINGS"
+              ? pastDueDelinquentReport ||
+                null
+              : null,
+
+            // $12
+            noteType === "FINDINGS"
+              ? groupCollectionRecord ||
+                null
+              : null,
+
+            // $13
+            noteType === "FINDINGS"
+              ? otherFindings || null
+              : null,
+
+            // $14
+            noteType === "FINDINGS"
+              ? findingPhotoUrl
+              : null,
+
+            // $15
+            involvedStaff || null,
+
+            // $16
+            noteType === "FINDINGS"
+              ? dueDate || null
+              : null,
+
+            // $17
+            noteType === "REVIEW"
+              ? reviewDetails || null
+              : findingDetails || null,
+          ]
+        );
 
       let assignedComplianceCount = 0;
 
       if (noteType === "FINDINGS") {
         assignedComplianceCount =
-          await syncFindingCompliances(client, {
-            travelPlanId:
-              existingNote.travel_plan_id,
+          await syncFindingCompliances(
+            client,
+            {
+              travelPlanId:
+                existingNote.travel_plan_id,
 
-            findingNoteId: noteId,
-            findingTitle: title,
-            findingDetails: content,
+              findingNoteId:
+                noteId,
 
-            involvedStaffText:
-              involvedStaff,
+              findingTitle:
+                "Group Visit Findings",
 
-            involvedStaffIds,
+              findingDetails,
 
-            dueDate: dueDate || null,
-            createdBy: req.user?.id || null,
+              involvedStaffText:
+                involvedStaff,
+
+              involvedStaffIds,
+
+              dueDate:
+                dueDate || null,
+
+              createdBy:
+                req.user?.id || null,
+            }
+          );
+
+        if (
+          assignedComplianceCount === 0
+        ) {
+          await client.query(
+            "ROLLBACK"
+          );
+
+          if (newlyUploadedPhotoKey) {
+            try {
+              await deleteKey(
+                newlyUploadedPhotoKey
+              );
+            } catch (cleanupError) {
+              console.error(
+                "Failed to clean up new note photo:",
+                newlyUploadedPhotoKey,
+                cleanupError
+              );
+            }
+          }
+
+          return res.status(400).json({
+            message:
+              "The selected involved staff could not be matched to staff records.",
           });
+        }
       } else {
         /*
-          If Findings is changed into Review,
-          remove its pending compliance assignments.
+          REVIEW does not generate compliance records.
+          Remove only pending assignments if an old
+          FINDINGS record was changed to REVIEW.
         */
         await client.query(
           `
           DELETE FROM public.travel_plan_compliances
+
           WHERE finding_note_id = $1
             AND status = 'Pending'
           `,
@@ -2124,17 +2950,82 @@ router.put(
 
       await client.query("COMMIT");
 
+      // =================================================
+      // REMOVE REPLACED OR UNUSED OLD PHOTOS
+      // =================================================
+
+      const oldPhotoKeysToDelete = [];
+
+      if (
+        previousFindingPhotoUrl &&
+        previousFindingPhotoUrl !==
+          findingPhotoUrl
+      ) {
+        oldPhotoKeysToDelete.push(
+          previousFindingPhotoUrl
+        );
+      }
+
+      if (
+        previousReviewPhotoUrl &&
+        previousReviewPhotoUrl !==
+          reviewPhotoUrl
+      ) {
+        oldPhotoKeysToDelete.push(
+          previousReviewPhotoUrl
+        );
+      }
+
+      for (
+        const oldPhotoKey of
+        oldPhotoKeysToDelete
+      ) {
+        try {
+          await deleteKey(oldPhotoKey);
+        } catch (deleteError) {
+          console.error(
+            "Failed to delete replaced note photo:",
+            oldPhotoKey,
+            deleteError
+          );
+        }
+      }
+
       return res.json({
         message:
-          "Travel plan note updated successfully.",
+          noteType === "REVIEW"
+            ? "Branch Visit Findings updated successfully."
+            : `Group Visit Findings updated for ${assignedComplianceCount} staff member(s).`,
 
-        note: result.rows[0],
+        note:
+          result.rows[0],
 
         assigned_compliance_count:
           assignedComplianceCount,
       });
     } catch (error) {
-      await client.query("ROLLBACK");
+      try {
+        await client.query("ROLLBACK");
+      } catch (rollbackError) {
+        console.error(
+          "PUT note rollback failed:",
+          rollbackError
+        );
+      }
+
+      if (newlyUploadedPhotoKey) {
+        try {
+          await deleteKey(
+            newlyUploadedPhotoKey
+          );
+        } catch (cleanupError) {
+          console.error(
+            "Failed to clean up uploaded note photo:",
+            newlyUploadedPhotoKey,
+            cleanupError
+          );
+        }
+      }
 
       return sendServerError(
         res,
@@ -2151,74 +3042,187 @@ router.put(
 // DELETE TRAVEL PLAN NOTE
 // =====================================================
 
-router.delete("/travel-plans/notes/:noteId", requireAuth, async (req, res) => {
-  try {
-    if (!canEditPlan(req) && !canDeleteTravelRecord(req)) {
-      return res.status(403).json({
-        message: "You are not allowed to delete travel plan notes.",
-      });
-    }
+router.delete(
+  "/travel-plans/notes/:noteId",
+  requireAuth,
+  async (req, res) => {
+    const client = await pool.connect();
 
-    const noteId = Number(req.params.noteId);
+    try {
+      if (
+        !canEditPlan(req) &&
+        !canDeleteTravelRecord(req)
+      ) {
+        return res.status(403).json({
+          message:
+            "You are not allowed to delete travel plan notes.",
+        });
+      }
 
-    if (!isValidId(noteId)) {
-      return res.status(400).json({
-        message: "Invalid note ID.",
-      });
-    }
+      const noteId = Number(
+        req.params.noteId
+      );
 
-    const existingResult = await pool.query(
-      `
-      SELECT
-        n.id,
-        n.travel_plan_id,
-        tp.status
-      FROM public.travel_plan_notes n
-      INNER JOIN public.travel_plans tp
-        ON tp.id = n.travel_plan_id
-      WHERE n.id = $1
-      LIMIT 1
-      `,
-      [noteId]
-    );
+      if (!isValidId(noteId)) {
+        return res.status(400).json({
+          message:
+            "Invalid note ID.",
+        });
+      }
 
-    if (!existingResult.rowCount) {
-      return res.status(404).json({
-        message: "Travel plan note not found.",
-      });
-    }
+      await client.query("BEGIN");
 
-    const existingNote = existingResult.rows[0];
+      const existingResult =
+        await client.query(
+          `
+          SELECT
+            n.id,
+            n.travel_plan_id,
+            n.note_type,
 
-    if (
-      norm(existingNote.status) === "completed" &&
-      !canDeleteTravelRecord(req)
-    ) {
-      return res.status(400).json({
+            n.finding_photo_url,
+            n.review_photo_url,
+
+            tp.status
+
+          FROM public.travel_plan_notes n
+
+          INNER JOIN public.travel_plans tp
+            ON tp.id =
+              n.travel_plan_id
+
+          WHERE n.id = $1
+
+          LIMIT 1
+
+          FOR UPDATE
+          `,
+          [noteId]
+        );
+
+      if (!existingResult.rowCount) {
+        await client.query(
+          "ROLLBACK"
+        );
+
+        return res.status(404).json({
+          message:
+            "Travel plan note not found.",
+        });
+      }
+
+      const existingNote =
+        existingResult.rows[0];
+
+      if (
+        norm(existingNote.status) ===
+          "completed" &&
+        !canDeleteTravelRecord(req)
+      ) {
+        await client.query(
+          "ROLLBACK"
+        );
+
+        return res.status(400).json({
+          message:
+            "Only Admin, IT, or TREAD Department can delete notes from completed travel plans.",
+        });
+      }
+
+      /*
+        Remove pending compliance assignments first.
+
+        Submitted, Checked, or Complied records are
+        preserved so completed compliance history
+        is not accidentally erased.
+      */
+      await client.query(
+        `
+        DELETE FROM public.travel_plan_compliances
+
+        WHERE finding_note_id = $1
+          AND status = 'Pending'
+        `,
+        [noteId]
+      );
+
+      const deleteResult =
+        await client.query(
+          `
+          DELETE FROM public.travel_plan_notes
+
+          WHERE id = $1
+
+          RETURNING
+            id,
+            note_type
+          `,
+          [noteId]
+        );
+
+      if (!deleteResult.rowCount) {
+        await client.query(
+          "ROLLBACK"
+        );
+
+        return res.status(404).json({
+          message:
+            "Travel plan note not found.",
+        });
+      }
+
+      await client.query("COMMIT");
+
+      /*
+        Delete storage objects only after the database
+        transaction succeeds.
+      */
+      const photoKeys = [
+        existingNote.finding_photo_url,
+        existingNote.review_photo_url,
+      ].filter(Boolean);
+
+      for (const photoKey of photoKeys) {
+        try {
+          await deleteKey(photoKey);
+        } catch (deleteError) {
+          console.error(
+            "Failed to delete travel-plan note photo:",
+            photoKey,
+            deleteError
+          );
+        }
+      }
+
+      return res.json({
         message:
-          "Only Admin can delete notes from completed travel plans.",
+          existingNote.note_type ===
+          "REVIEW"
+            ? "Branch Visit Findings deleted successfully."
+            : "Group Visit Findings deleted successfully.",
       });
+    } catch (error) {
+      try {
+        await client.query(
+          "ROLLBACK"
+        );
+      } catch (rollbackError) {
+        console.error(
+          "DELETE note rollback failed:",
+          rollbackError
+        );
+      }
+
+      return sendServerError(
+        res,
+        "DELETE /travel-plans/notes/:noteId",
+        error
+      );
+    } finally {
+      client.release();
     }
-
-    await pool.query(
-      `
-      DELETE FROM public.travel_plan_notes
-      WHERE id = $1
-      `,
-      [noteId]
-    );
-
-    return res.json({
-      message: "Travel plan note deleted successfully.",
-    });
-  } catch (error) {
-    return sendServerError(
-      res,
-      "DELETE /travel-plans/notes/:noteId",
-      error
-    );
   }
-});
+);
 
 // =====================================================
 // UPLOAD TRAVEL PLAN PHOTOS

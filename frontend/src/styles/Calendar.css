@@ -3238,3 +3238,60 @@
   border-color:var(--accent);
   color:var(--text);
 }
+
+.travel-findings-title {
+  margin: 0 0 4px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
+  font-size: 19px;
+  font-weight: 900;
+}
+
+.travel-saved-findings {
+  display: grid;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.travel-saved-finding-item {
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--hover);
+}
+
+.travel-saved-finding-item b {
+  display: block;
+  color: var(--text);
+}
+
+.travel-saved-finding-item p {
+  margin: 7px 0 0;
+  color: var(--text);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.travel-note-content {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.travel-note-due-date {
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel);
+  color: var(--text);
+}
+
+.travel-finding-photo {
+  width: 100%;
+  max-width: 430px;
+  max-height: 320px;
+  object-fit: cover;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  cursor: pointer;
+}

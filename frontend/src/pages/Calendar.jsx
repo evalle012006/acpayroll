@@ -13,9 +13,22 @@ const DAYS = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
 
 const emptyNoteForm = {
   title: "",
-  finding_type: "",
+
+  // Branch Visit Findings / REVIEW
+  review_coh: "",
+  review_cashbook_vs_voucher: "",
+  review_bms: "",
+  review_other_findings: "",
+
+  // Group Visit Findings / FINDINGS
+  passbook_reconciliation: "",
+  past_due_delinquent_report: "",
+  group_collection_record: "",
+  other_findings: "",
+
   involved_staff: [],
   involved_staff_ids: [],
+
   due_date: "",
   content: "",
 };
@@ -107,6 +120,9 @@ export default function TravelPlan() {
   const [findingPhoto, setFindingPhoto] =
     useState(null);
 
+  const [reviewPhoto, setReviewPhoto] =
+    useState(null);
+
   const [selectedCompliance, setSelectedCompliance] =
     useState(null);
 
@@ -170,6 +186,10 @@ export default function TravelPlan() {
 
   const [showNoteForm, setShowNoteForm] = useState(false);
   const [noteForm, setNoteForm] = useState(emptyNoteForm);
+  const [editingNoteId, setEditingNoteId] = useState(null);
+
+  const [editingNoteType, setEditingNoteType] =
+    useState(null);
   const [showCreateActivity, setShowCreateActivity] = useState(false);
   const [editingActivityId, setEditingActivityId] = useState(null);
   const [staffScopeDate, setStaffScopeDate] = useState(
@@ -1283,6 +1303,12 @@ const selectedBranchPlans = useMemo(() => {
     setDetailTab("photos");
     setShowNoteForm(false);
     setNoteForm(emptyNoteForm);
+
+    setEditingNoteId(null);
+    setEditingNoteType(null);
+    setFindingPhoto(null);
+    setReviewPhoto(null);
+
     fetchPlanPhotos(plan.id);
     fetchPlanNotes(plan.id);
   };
@@ -1293,22 +1319,61 @@ const selectedBranchPlans = useMemo(() => {
     setPlanNotes([]);
     setShowNoteForm(false);
     setNoteForm(emptyNoteForm);
+
+    setEditingNoteId(null);
+    setEditingNoteType(null);
+
+    setFindingPhoto(null);
+    setReviewPhoto(null);
   };
 
   const createNote = async (type) => {
     if (!selectedPlan?.id) return;
 
-    if (!noteForm.title.trim()) {
-      alert("Title is required.");
-      return;
+    if (type === "REVIEW") {
+      const hasReviewFinding =
+        noteForm.review_coh.trim() ||
+        noteForm.review_cashbook_vs_voucher.trim() ||
+        noteForm.review_bms.trim() ||
+        noteForm.review_other_findings.trim();
+
+      if (!hasReviewFinding) {
+        alert(
+          "Enter at least one Branch Visit Finding."
+        );
+        return;
+      }
+
+      if (
+        noteForm.involved_staff_ids.length === 0
+      ) {
+        alert(
+          "Select at least one involved staff member."
+        );
+        return;
+      }
+
+      if (!reviewPhoto) {
+        alert(
+          "Upload a Branch Visit Findings photo."
+        );
+        return;
+      }
     }
 
-    if (
-      type === "FINDINGS" &&
-      !noteForm.finding_type
-    ) {
-      alert("Select a finding type.");
-      return;
+    if (type === "FINDINGS") {
+      const hasFinding =
+        noteForm.passbook_reconciliation.trim() ||
+        noteForm.past_due_delinquent_report.trim() ||
+        noteForm.group_collection_record.trim() ||
+        noteForm.other_findings.trim();
+
+      if (!hasFinding) {
+        alert(
+          "Enter at least one Group Visit Finding."
+        );
+        return;
+      }
     }
 
     if (
@@ -1330,6 +1395,17 @@ const selectedBranchPlans = useMemo(() => {
       return;
     }
 
+    if (
+      type === "FINDINGS" &&
+      !noteForm.due_date
+    ) {
+      alert(
+        "Select a compliance due date."
+      );
+
+      return;
+    }
+
     try {
       const formData = new FormData();
 
@@ -1339,13 +1415,62 @@ const selectedBranchPlans = useMemo(() => {
         "title",
         type === "FINDINGS"
           ? "Group Visit Findings"
-          : noteForm.title.trim()
+          : "Branch Visit Findings"
       );
 
       formData.append(
-        "finding_type",
+        "review_coh",
+        type === "REVIEW"
+          ? noteForm.review_coh.trim()
+          : ""
+      );
+
+      formData.append(
+        "review_cashbook_vs_voucher",
+        type === "REVIEW"
+          ? noteForm.review_cashbook_vs_voucher.trim()
+          : ""
+      );
+
+      formData.append(
+        "review_bms",
+        type === "REVIEW"
+          ? noteForm.review_bms.trim()
+          : ""
+      );
+
+      formData.append(
+        "review_other_findings",
+        type === "REVIEW"
+          ? noteForm.review_other_findings.trim()
+          : ""
+      );
+
+      formData.append(
+        "passbook_reconciliation",
         type === "FINDINGS"
-          ? noteForm.finding_type
+          ? noteForm.passbook_reconciliation.trim()
+          : ""
+      );
+
+      formData.append(
+        "past_due_delinquent_report",
+        type === "FINDINGS"
+          ? noteForm.past_due_delinquent_report.trim()
+          : ""
+      );
+
+      formData.append(
+        "group_collection_record",
+        type === "FINDINGS"
+          ? noteForm.group_collection_record.trim()
+          : ""
+      );
+
+      formData.append(
+        "other_findings",
+        type === "FINDINGS"
+          ? noteForm.other_findings.trim()
           : ""
       );
 
@@ -1370,9 +1495,7 @@ const selectedBranchPlans = useMemo(() => {
 
       formData.append(
         "content",
-        type === "REVIEW"
-          ? noteForm.content.trim()
-          : ""
+        ""
       );
 
       if (
@@ -1382,6 +1505,16 @@ const selectedBranchPlans = useMemo(() => {
         formData.append(
           "photos",
           findingPhoto
+        );
+      }
+
+      if (
+        type === "REVIEW" &&
+        reviewPhoto
+      ) {
+        formData.append(
+          "photos",
+          reviewPhoto
         );
       }
 
@@ -1398,12 +1531,97 @@ const selectedBranchPlans = useMemo(() => {
 
       setNoteForm(emptyNoteForm);
       setFindingPhoto(null);
+      setReviewPhoto(null);
       setShowNoteForm(false);
       fetchPlanNotes(selectedPlan.id);
     } catch (err) {
       console.error("Create note error:", err);
       alert(err.response?.data?.message || "Failed to save.");
     }
+  };
+
+  const openEditNote = (note) => {
+    if (!note?.id) {
+      return;
+    }
+
+    const noteType =
+      String(note.note_type || "")
+        .trim()
+        .toUpperCase();
+
+    const selectedNames = String(
+      note.involved_staff || ""
+    )
+      .split(", ")
+      .map((name) => name.trim())
+      .filter(Boolean);
+
+    const selectedStaff = involvedStaffOptions.filter(
+      (option) =>
+        selectedNames.some(
+          (name) =>
+            normalizeValue(name) ===
+            normalizeValue(option.employee_name)
+        )
+    );
+
+    setEditingNoteId(note.id);
+    setEditingNoteType(noteType);
+
+    setNoteForm({
+      ...emptyNoteForm,
+
+      title:
+        noteType === "FINDINGS"
+          ? "Group Visit Findings"
+          : "Branch Visit Findings",
+
+      review_coh:
+        note.review_coh || "",
+
+      review_cashbook_vs_voucher:
+        note.review_cashbook_vs_voucher || "",
+
+      review_bms:
+        note.review_bms || "",
+
+      review_other_findings:
+        note.review_other_findings || "",
+
+      passbook_reconciliation:
+        note.passbook_reconciliation || "",
+
+      past_due_delinquent_report:
+        note.past_due_delinquent_report || "",
+
+      group_collection_record:
+        note.group_collection_record || "",
+
+      other_findings:
+        note.other_findings || "",
+
+      involved_staff:
+        selectedStaff.map(
+          (option) => option.employee_name
+        ),
+
+      involved_staff_ids:
+        selectedStaff.map(
+          (option) => Number(option.value)
+        ),
+
+      due_date:
+        note.due_date || "",
+
+      content:
+        note.content || "",
+    });
+
+    setFindingPhoto(null);
+    setReviewPhoto(null);
+
+    setShowNoteForm(true);
   };
 
   const deleteNote = async (noteId) => {
@@ -1508,12 +1726,23 @@ const selectedBranchPlans = useMemo(() => {
                 </div>
 
                 {selectedPlan?.status !== "Completed" && (
-                  <button
-                    type="button"
-                    onClick={() => deleteNote(note.id)}
-                  >
-                    ×
-                  </button>
+                  <div className="travel-note-head-actions">
+                    <button
+                      type="button"
+                      className="travel-note-edit-btn"
+                      onClick={() => openEditNote(note)}
+                    >
+                      Edit
+                    </button>
+
+                    <button
+                      type="button"
+                      className="travel-note-delete-btn"
+                      onClick={() => deleteNote(note.id)}
+                    >
+                      ×
+                    </button>
+                  </div>
                 )}
               </div>
 
@@ -1537,7 +1766,120 @@ const selectedBranchPlans = useMemo(() => {
                 </div>
               )}
 
-              {note.content && <p>{note.content}</p>}
+              {note.note_type === "FINDINGS" ? (
+                <div className="travel-saved-findings">
+                  {note.passbook_reconciliation && (
+                    <div className="travel-saved-finding-item">
+                      <b>Passbook Reconciliation</b>
+
+                      <p>
+                        {note.passbook_reconciliation}
+                      </p>
+                    </div>
+                  )}
+
+                  {note.past_due_delinquent_report && (
+                    <div className="travel-saved-finding-item">
+                      <b>
+                        Past Due & Delinquent Report
+                      </b>
+
+                      <p>
+                        {note.past_due_delinquent_report}
+                      </p>
+                    </div>
+                  )}
+
+                  {note.group_collection_record && (
+                    <div className="travel-saved-finding-item">
+                      <b>Group Collection Record</b>
+
+                      <p>
+                        {note.group_collection_record}
+                      </p>
+                    </div>
+                  )}
+
+                  {note.other_findings && (
+                    <div className="travel-saved-finding-item">
+                      <b>Others</b>
+
+                      <p>{note.other_findings}</p>
+                    </div>
+                  )}
+
+                  {note.due_date && (
+                    <div className="travel-note-due-date">
+                      <b>Compliance Due Date:</b>{" "}
+                      {note.due_date}
+                    </div>
+                  )}
+
+                  {note.finding_photo_signed_url && (
+                    <img
+                      src={note.finding_photo_signed_url}
+                      alt="Group Visit Findings"
+                      className="travel-finding-photo"
+                      onClick={() =>
+                        setPreviewPhoto(
+                          note.finding_photo_signed_url
+                        )
+                      }
+                    />
+                  )}
+                </div>
+              ) : (
+                <div className="travel-saved-findings">
+                  {note.review_coh && (
+                    <div className="travel-saved-finding-item">
+                      <b>COH</b>
+
+                      <p>{note.review_coh}</p>
+                    </div>
+                  )}
+
+                  {note.review_cashbook_vs_voucher && (
+                    <div className="travel-saved-finding-item">
+                      <b>Cashbook vs Voucher</b>
+
+                      <p>
+                        {note.review_cashbook_vs_voucher}
+                      </p>
+                    </div>
+                  )}
+
+                  {note.review_bms && (
+                    <div className="travel-saved-finding-item">
+                      <b>BMS</b>
+
+                      <p>{note.review_bms}</p>
+                    </div>
+                  )}
+
+                  {note.review_other_findings && (
+                    <div className="travel-saved-finding-item">
+                      <b>Others</b>
+
+                      <p>
+                        {note.review_other_findings}
+                      </p>
+                    </div>
+                  )}
+
+                  {note.review_photo_signed_url && (
+                    <img
+                      src={note.review_photo_signed_url}
+                      alt="Branch Visit Findings"
+                      className="travel-finding-photo"
+                      onClick={() =>
+                        setPreviewPhoto(
+                          note.review_photo_signed_url
+                        )
+                      }
+                    />
+                  )}
+                </div>
+              )}
             </div>
           ))
         )}
@@ -1545,7 +1887,7 @@ const selectedBranchPlans = useMemo(() => {
     );
   };
 
-  const renderNoteTab = (type) => {
+  const renderNoteTab = (type) => { 
     const isReview = type === "REVIEW";
     const isCompleted = selectedPlan?.status === "Completed";
 
@@ -1558,16 +1900,21 @@ const selectedBranchPlans = useMemo(() => {
               type="button"
               className="travel-create-note-btn"
               onClick={() => {
+                setEditingNoteId(null);
+                setEditingNoteType(null);
+
                 setShowNoteForm(true);
+
                 setNoteForm({
                   ...emptyNoteForm,
                   title:
                     type === "FINDINGS"
                       ? "Group Visit Findings"
-                      : "",
+                      : "Branch Visit Findings",
                 });
 
                 setFindingPhoto(null);
+                setReviewPhoto(null);
               }}
             >
               + Create {isReview ? "Review" : "Findings"}
@@ -1576,66 +1923,149 @@ const selectedBranchPlans = useMemo(() => {
         ) : (
           <div className="travel-note-form">
             {isReview ? (
-              <label>
-                Title
-
-                <input
-                  type="text"
-                  placeholder="Enter title"
-                  value={noteForm.title}
-                  onChange={(event) =>
-                    setNoteForm((previous) => ({
-                      ...previous,
-                      title: event.target.value,
-                    }))
-                  }
-                />
-              </label>
-            ) : (
               <>
-                <label>
-                  Group Visit Findings
+                <h3 className="travel-findings-title">
+                  Branch Visit Findings
+                </h3>
 
-                  <input
-                    type="text"
-                    value="Group Visit Findings"
-                    readOnly
+                <label>
+                  COH
+
+                  <textarea
+                    rows={4}
+                    placeholder="Enter COH findings..."
+                    value={noteForm.review_coh}
+                    onChange={(event) =>
+                      setNoteForm((previous) => ({
+                        ...previous,
+                        review_coh: event.target.value,
+                      }))
+                    }
                   />
                 </label>
 
                 <label>
-                  Finding Type
+                  Cashbook vs Voucher
 
-                  <select
-                    value={noteForm.finding_type}
+                  <textarea
+                    rows={4}
+                    placeholder="Enter Cashbook vs Voucher findings..."
+                    value={noteForm.review_cashbook_vs_voucher}
                     onChange={(event) =>
                       setNoteForm((previous) => ({
                         ...previous,
-                        finding_type:
+                        review_cashbook_vs_voucher:
                           event.target.value,
                       }))
                     }
-                  >
-                    <option value="">
-                      Select finding type
-                    </option>
+                  />
+                </label>
 
-                    <option value="Passbook Reconciliation">
-                      Passbook Reconciliation
-                    </option>
+                <label>
+                  BMS
 
-                    <option value="Past Due & Delinquent Report">
-                      Past Due & Delinquent Report
-                    </option>
+                  <textarea
+                    rows={4}
+                    placeholder="Enter BMS findings..."
+                    value={noteForm.review_bms}
+                    onChange={(event) =>
+                      setNoteForm((previous) => ({
+                        ...previous,
+                        review_bms: event.target.value,
+                      }))
+                    }
+                  />
+                </label>
 
-                    <option value="Group Collection Record">
-                      Group Collection Record
-                    </option>
+                <label>
+                  Others
 
-                    <option value="Others">
-                      Others
-                    </option>
-                  </select>
+                  <textarea
+                    rows={4}
+                    placeholder="Enter other findings..."
+                    value={noteForm.review_other_findings}
+                    onChange={(event) =>
+                      setNoteForm((previous) => ({
+                        ...previous,
+                        review_other_findings:
+                          event.target.value,
+                      }))
+                    }
+                  />
+                </label>
+              </>
+            ) : (
+              <>
+                <h3 className="travel-findings-title">
+                  Group Visit Findings
+                </h3>
+
+                <label>
+                  Passbook Reconciliation
+
+                  <textarea
+                    rows={4}
+                    placeholder="Enter Passbook Reconciliation findings..."
+                    value={noteForm.passbook_reconciliation}
+                    onChange={(event) =>
+                      setNoteForm((previous) => ({
+                        ...previous,
+                        passbook_reconciliation:
+                          event.target.value,
+                      }))
+                    }
+                  />
+                </label>
+
+                <label>
+                  Past Due & Delinquent Report
+
+                  <textarea
+                    rows={4}
+                    placeholder="Enter Past Due & Delinquent Report findings..."
+                    value={noteForm.past_due_delinquent_report}
+                    onChange={(event) =>
+                      setNoteForm((previous) => ({
+                        ...previous,
+                        past_due_delinquent_report:
+                          event.target.value,
+                      }))
+                    }
+                  />
+                </label>
+
+                <label>
+                  Group Collection Record
+
+                  <textarea
+                    rows={4}
+                    placeholder="Enter Group Collection Record findings..."
+                    value={noteForm.group_collection_record}
+                    onChange={(event) =>
+                      setNoteForm((previous) => ({
+                        ...previous,
+                        group_collection_record:
+                          event.target.value,
+                      }))
+                    }
+                  />
+                </label>
+
+                <label>
+                  Others
+
+                  <textarea
+                    rows={4}
+                    placeholder="Enter other findings..."
+                    value={noteForm.other_findings}
+                    onChange={(event) =>
+                      setNoteForm((previous) => ({
+                        ...previous,
+                        other_findings:
+                          event.target.value,
+                      }))
+                    }
+                  />
                 </label>
               </>
             )}
@@ -1722,20 +2152,23 @@ const selectedBranchPlans = useMemo(() => {
 
             {isReview && (
               <label>
-                Write
+                Upload Photo
 
-                <textarea
-                  rows={6}
-                  placeholder="Write review..."
-                  value={noteForm.content}
+                <input
+                  type="file"
+                  accept="image/png,image/jpeg,image/jpg,image/webp"
                   onChange={(event) =>
-                    setNoteForm((previous) => ({
-                      ...previous,
-                      content:
-                        event.target.value,
-                    }))
+                    setReviewPhoto(
+                      event.target.files?.[0] || null
+                    )
                   }
                 />
+
+                {reviewPhoto?.name && (
+                  <small className="travel-note-file-name">
+                    Selected: {reviewPhoto.name}
+                  </small>
+                )}
               </label>
             )}
 
@@ -1745,7 +2178,12 @@ const selectedBranchPlans = useMemo(() => {
                 onClick={() => {
                   setShowNoteForm(false);
                   setNoteForm(emptyNoteForm);
+
+                  setEditingNoteId(null);
+                  setEditingNoteType(null);
+
                   setFindingPhoto(null);
+                  setReviewPhoto(null);
                 }}
               >
                 Cancel
@@ -1970,7 +2408,7 @@ const selectedBranchPlans = useMemo(() => {
                       setShowCreatePlan(true);
                     }}
                   >
-                    + Create Plan
+                    + Create
                   </button>
 
                   {canManageCalendarActivities && (
@@ -3798,7 +4236,7 @@ const selectedBranchPlans = useMemo(() => {
                       }}
                     >
                         <span>2</span>
-                        <label>Review</label>
+                        <label>Branch Visit</label>
                     </button>
 
                     <div className="travel-step-line"></div>
@@ -3811,7 +4249,7 @@ const selectedBranchPlans = useMemo(() => {
                       }}
                     >
                         <span>3</span>
-                        <label>Findings</label>
+                        <label>Group Visit</label>
                     </button>
 
                     <div className="travel-step-line"></div>
