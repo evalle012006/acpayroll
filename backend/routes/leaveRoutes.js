@@ -19,9 +19,25 @@ const isIT = (req) => roleLower(req) === "it";
 const isHr = (req) => roleLower(req) === "hr";
 const isAccounting = (req) => roleLower(req) === "accounting";
 const isTread = (req) => roleLower(req) === "tread";
-const isBranchManager = (req) => roleLower(req) === "branch manager";
-const isAreaManager = (req) => roleLower(req) === "area manager";
-const isRegionalManager = (req) => roleLower(req) === "regional manager";
+
+const isBranchManager = (req) =>
+  [
+    "branch manager",
+    "acting branch manager",
+  ].includes(roleLower(req));
+
+const isAreaManager = (req) =>
+  [
+    "area manager",
+    "acting area manager",
+  ].includes(roleLower(req));
+
+const isRegionalManager = (req) =>
+  [
+    "regional manager",
+    "acting regional manager",
+  ].includes(roleLower(req));
+
 const isAssistantVicePresident = (req) =>
   roleLower(req) === "assistant vice president";
 const isVicePresident = (req) => roleLower(req) === "vice president";
@@ -47,18 +63,83 @@ const OPERATION_DEPARTMENTS = [
 const isOperationDepartment = (department) =>
   OPERATION_DEPARTMENTS.includes(norm(department));
 
+const DEPARTMENTS_USING_FULL_LEAVE_CHAIN = [
+  "audit",
+  "audit department",
+
+  "tread",
+  "tread department",
+
+  "office of the president",
+  "office of the president department",
+
+  "it",
+  "it department",
+
+  "accounting",
+  "accounting department",
+
+  "hr",
+  "hr department",
+  "human resources",
+  "human resources department",
+];
+
+const usesFullLeaveDepartmentChain = (department) =>
+  DEPARTMENTS_USING_FULL_LEAVE_CHAIN.includes(
+    norm(department)
+  );
+
 const isHrDepartmentUser = (req) => {
-  const d = norm(req.user?.department);
-  return d === "hr" || d === "hr department" || d === "human resources" || d === "human resources department";
+  const department = norm(
+    req.user?.department
+  );
+
+  return [
+    "hr",
+    "hr department",
+    "human resources",
+    "human resources department",
+  ].includes(department);
 };
 
+const isITDepartmentUser = (req) => {
+  const department = norm(
+    req.user?.department
+  );
+
+  return [
+    "it",
+    "it department",
+    "information technology",
+    "information technology department",
+  ].includes(department);
+};
+
+const isAccountingDepartmentUser = (req) => {
+  const department = norm(
+    req.user?.department
+  );
+
+  return [
+    "accounting",
+    "accounting department",
+  ].includes(department);
+};
+
+const canManageLeaveAdministration = (req) =>
+  isAdmin(req) ||
+  isHrDepartmentUser(req) ||
+  isITDepartmentUser(req) ||
+  isAccountingDepartmentUser(req);
+
 const isBypassApprover = (req) =>
-  isAdminOrIT(req) || isAccounting(req) || isHrDepartmentUser(req);
+  canManageLeaveAdministration(req);
 
 const isFinalApprover = (req) => isHrDepartmentUser(req);
 
 const canUploadApprovedLeave = (req) =>
-  isAdminOrIT(req) || isAccounting(req) || isHrDepartmentUser(req);
+  canManageLeaveAdministration(req);
 
 const departmentCanViewOwnDepartment = (department) => {
   const d = norm(department);
@@ -165,8 +246,13 @@ const baseLeaveSelect = `
     lr.date_created,
     lr.total_no_of_days,
     lr.reason,
+
+    lr.branch_approved_by,
+    lr.branch_approved_at,
+
     lr.area_approved_by,
     lr.area_approved_at,
+
     lr.regional_approved_by,
     lr.regional_approved_at,
     lr.division_approved_by,
@@ -221,6 +307,44 @@ const baseLeaveSelect = `
   ) appr_file ON true
 `;
 
+const isBranchManagerPosition = (position) => {
+  const pos = norm(position);
+
+  return [
+    "branch manager",
+    "acting branch manager",
+  ].includes(pos);
+};
+
+const isAreaManagerPosition = (position) => {
+  const pos = norm(position);
+
+  return [
+    "area manager",
+    "acting area manager",
+  ].includes(pos);
+};
+
+const isRegionalManagerPosition = (position) => {
+  const pos = norm(position);
+
+  return [
+    "regional manager",
+    "acting regional manager",
+  ].includes(pos);
+};
+
+const isAssistantVicePresidentPosition = (
+  position
+) => {
+  const pos = norm(position);
+
+  return (
+    pos === "assistant vice president" ||
+    pos === "avp"
+  );
+};
+
 const isVicePresidentPosition = (position) => {
   const pos = norm(position);
   return pos === "vice president" || pos === "vp";
@@ -236,27 +360,75 @@ const sameDepartment = (a, b) => {
 };
 
 const ROLE_ALIASES = {
-  area_manager: ["area manager", "acting area manager"],
-  regional_manager: ["regional manager", "acting regional manager"],
-  assistant_vice_president: ["assistant vice president", "avp"],
-  vice_president: ["vice president", "vp"],
-  senior_vice_president: ["senior vice president", "svp"],
+  branch_manager: [
+    "branch manager",
+    "acting branch manager",
+  ],
+
+  area_manager: [
+    "area manager",
+    "acting area manager",
+  ],
+
+  regional_manager: [
+    "regional manager",
+    "acting regional manager",
+  ],
+
+  assistant_vice_president: [
+    "assistant vice president",
+    "avp",
+  ],
+
+  vice_president: [
+    "vice president",
+    "vp",
+  ],
+
+  senior_vice_president: [
+    "senior vice president",
+    "svp",
+  ],
 };
 
 const STATUS_TO_ROLE_KEY = {
-  "Pending Area Manager": "area_manager",
-  "Pending Regional Manager": "regional_manager",
-  "Pending Assistant Vice President": "assistant_vice_president",
-  "Pending Vice President": "vice_president",
-  "Pending Senior Vice President": "senior_vice_president",
+  "Pending Branch Manager":
+    "branch_manager",
+
+  "Pending Area Manager":
+    "area_manager",
+
+  "Pending Regional Manager":
+    "regional_manager",
+
+  "Pending Assistant Vice President":
+    "assistant_vice_president",
+
+  "Pending Vice President":
+    "vice_president",
+
+  "Pending Senior Vice President":
+    "senior_vice_president",
 };
 
 const ROLE_KEY_TO_STATUS = {
-  area_manager: "Pending Area Manager",
-  regional_manager: "Pending Regional Manager",
-  assistant_vice_president: "Pending Assistant Vice President",
-  vice_president: "Pending Vice President",
-  senior_vice_president: "Pending Senior Vice President",
+  branch_manager:
+    "Pending Branch Manager",
+
+  area_manager:
+    "Pending Area Manager",
+
+  regional_manager:
+    "Pending Regional Manager",
+
+  assistant_vice_president:
+    "Pending Assistant Vice President",
+
+  vice_president:
+    "Pending Vice President",
+
+  senior_vice_president:
+    "Pending Senior Vice President",
 };
 
 /*
@@ -326,94 +498,447 @@ const getNextStatusByDepartmentChain = async (department, roleKeys) => {
     HR
 */
 const getInitialStatusByDepartment = async (req, staff) => {
-  const department = toStr(staff?.department);
-  const position = toStr(staff?.position);
+  const department = toStr(
+    staff?.department
+  );
 
-  if (isSeniorVicePresident(req) || isSeniorVicePresidentPosition(position)) {
+  const position = toStr(
+    staff?.position
+  );
+
+  /*
+    =====================================================
+    NEW FULL DEPARTMENT CHAIN
+    =====================================================
+
+    Applies only to:
+
+    - Audit Department
+    - TREAD Department
+    - Office of the President
+    - IT Department
+    - Accounting Department
+    - HR Department
+
+    Chain:
+
+    Branch Manager
+    -> Area Manager
+    -> Regional Manager
+    -> Assistant Vice President
+    -> Vice President
+    -> Senior Vice President
+    -> HR Department
+
+    Missing approver positions are skipped.
+  */
+  if (
+    usesFullLeaveDepartmentChain(
+      department
+    )
+  ) {
+    /*
+      Senior Vice President applicant:
+      HR Department is the final approver.
+    */
+    if (
+      isSeniorVicePresidentPosition(
+        position
+      )
+    ) {
+      return "Pending HR";
+    }
+
+    /*
+      Vice President applicant:
+      Senior Vice President, then HR.
+    */
+    if (
+      isVicePresidentPosition(
+        position
+      )
+    ) {
+      return await getNextStatusByDepartmentChain(
+        department,
+        [
+          "senior_vice_president",
+        ]
+      );
+    }
+
+    /*
+      Assistant Vice President applicant:
+      Vice President -> SVP -> HR.
+    */
+    if (
+      isAssistantVicePresidentPosition(
+        position
+      )
+    ) {
+      return await getNextStatusByDepartmentChain(
+        department,
+        [
+          "vice_president",
+          "senior_vice_president",
+        ]
+      );
+    }
+
+    /*
+      Regional Manager applicant:
+      AVP -> VP -> SVP -> HR.
+    */
+    if (
+      isRegionalManagerPosition(
+        position
+      )
+    ) {
+      return await getNextStatusByDepartmentChain(
+        department,
+        [
+          "assistant_vice_president",
+          "vice_president",
+          "senior_vice_president",
+        ]
+      );
+    }
+
+    /*
+      Area Manager applicant:
+      RM -> AVP -> VP -> SVP -> HR.
+    */
+    if (
+      isAreaManagerPosition(
+        position
+      )
+    ) {
+      return await getNextStatusByDepartmentChain(
+        department,
+        [
+          "regional_manager",
+          "assistant_vice_president",
+          "vice_president",
+          "senior_vice_president",
+        ]
+      );
+    }
+
+    /*
+      Branch Manager applicant:
+      AM -> RM -> AVP -> VP -> SVP -> HR.
+    */
+    if (
+      isBranchManagerPosition(
+        position
+      )
+    ) {
+      return await getNextStatusByDepartmentChain(
+        department,
+        [
+          "area_manager",
+          "regional_manager",
+          "assistant_vice_president",
+          "vice_president",
+          "senior_vice_president",
+        ]
+      );
+    }
+
+    /*
+      Staff below Branch Manager:
+      BM -> AM -> RM -> AVP -> VP -> SVP -> HR.
+    */
+    return await getNextStatusByDepartmentChain(
+      department,
+      [
+        "branch_manager",
+        "area_manager",
+        "regional_manager",
+        "assistant_vice_president",
+        "vice_president",
+        "senior_vice_president",
+      ]
+    );
+  }
+
+  /*
+    =====================================================
+    EXISTING FLOW FOR OTHER DEPARTMENTS
+    =====================================================
+
+    Operation Department and any department not listed
+    above keep the old approval flow.
+  */
+
+  if (
+    isSeniorVicePresident(req) ||
+    isSeniorVicePresidentPosition(
+      position
+    )
+  ) {
     return "Pending HR";
   }
 
-  if (isVicePresident(req) || isVicePresidentPosition(position)) {
-    return await getNextStatusByDepartmentChain(department, [
-      "senior_vice_president",
-    ]);
+  if (
+    isVicePresident(req) ||
+    isVicePresidentPosition(
+      position
+    )
+  ) {
+    return await getNextStatusByDepartmentChain(
+      department,
+      [
+        "senior_vice_president",
+      ]
+    );
   }
 
-  if (isAssistantVicePresident(req)) {
-    return await getNextStatusByDepartmentChain(department, [
-      "vice_president",
-    ]);
+  if (
+    isAssistantVicePresident(req)
+  ) {
+    return await getNextStatusByDepartmentChain(
+      department,
+      [
+        "vice_president",
+      ]
+    );
   }
 
-  if (isRegionalManager(req)) {
-    return await getNextStatusByDepartmentChain(department, [
-      "assistant_vice_president",
-      "vice_president",
-    ]);
+  if (
+    isRegionalManager(req)
+  ) {
+    return await getNextStatusByDepartmentChain(
+      department,
+      [
+        "assistant_vice_president",
+        "vice_president",
+      ]
+    );
   }
 
-  if (isAreaManager(req)) {
-    return await getNextStatusByDepartmentChain(department, [
-      "regional_manager",
-      "assistant_vice_president",
-      "vice_president",
-    ]);
+  if (
+    isAreaManager(req)
+  ) {
+    return await getNextStatusByDepartmentChain(
+      department,
+      [
+        "regional_manager",
+        "assistant_vice_president",
+        "vice_president",
+      ]
+    );
   }
 
-  return await getNextStatusByDepartmentChain(department, [
-    "area_manager",
-    "regional_manager",
-    "assistant_vice_president",
-    "vice_president",
-  ]);
-};
-
-const getNextStatusAfterApproval = async (currentStatus, row) => {
-  const department = toStr(row.department);
-
-  if (currentStatus === "Pending Branch Manager") {
-    return await getNextStatusByDepartmentChain(department, [
+  return await getNextStatusByDepartmentChain(
+    department,
+    [
       "area_manager",
       "regional_manager",
       "assistant_vice_president",
       "vice_president",
-    ]);
-  }
+    ]
+  );
+};
 
-  if (currentStatus === "Pending Area Manager") {
-    return await getNextStatusByDepartmentChain(department, [
-      "regional_manager",
-      "assistant_vice_president",
-      "vice_president",
-    ]);
-  }
+const getNextStatusAfterApproval = async (
+  currentStatus,
+  row
+) => {
+  const department = toStr(
+    row.department
+  );
 
-  if (currentStatus === "Pending Regional Manager") {
-    return await getNextStatusByDepartmentChain(department, [
-      "assistant_vice_president",
-      "vice_president",
-    ]);
-  }
+  /*
+    =====================================================
+    FULL CHAIN FOR SELECTED DEPARTMENTS
+    =====================================================
 
-  if (currentStatus === "Pending Assistant Vice President") {
-    return await getNextStatusByDepartmentChain(department, [
-      "vice_president",
-    ]);
-  }
+    Branch Manager
+    -> Area Manager
+    -> Regional Manager
+    -> Assistant Vice President
+    -> Vice President
+    -> Senior Vice President
+    -> HR Department
 
-  if (currentStatus === "Pending Vice President") {
-    const position = norm(row.position);
+    Missing positions are skipped.
+  */
+  if (
+    usesFullLeaveDepartmentChain(
+      department
+    )
+  ) {
+    if (
+      currentStatus ===
+      "Pending Branch Manager"
+    ) {
+      return await getNextStatusByDepartmentChain(
+        department,
+        [
+          "area_manager",
+          "regional_manager",
+          "assistant_vice_president",
+          "vice_president",
+          "senior_vice_president",
+        ]
+      );
+    }
 
-    if (isOperationDepartment(department) && isVicePresidentPosition(position)) {
-      return await getNextStatusByDepartmentChain(department, [
-        "senior_vice_president",
-      ]);
+    if (
+      currentStatus ===
+      "Pending Area Manager"
+    ) {
+      return await getNextStatusByDepartmentChain(
+        department,
+        [
+          "regional_manager",
+          "assistant_vice_president",
+          "vice_president",
+          "senior_vice_president",
+        ]
+      );
+    }
+
+    if (
+      currentStatus ===
+      "Pending Regional Manager"
+    ) {
+      return await getNextStatusByDepartmentChain(
+        department,
+        [
+          "assistant_vice_president",
+          "vice_president",
+          "senior_vice_president",
+        ]
+      );
+    }
+
+    if (
+      currentStatus ===
+      "Pending Assistant Vice President"
+    ) {
+      return await getNextStatusByDepartmentChain(
+        department,
+        [
+          "vice_president",
+          "senior_vice_president",
+        ]
+      );
+    }
+
+    if (
+      currentStatus ===
+      "Pending Vice President"
+    ) {
+      return await getNextStatusByDepartmentChain(
+        department,
+        [
+          "senior_vice_president",
+        ]
+      );
+    }
+
+    if (
+      currentStatus ===
+      "Pending Senior Vice President"
+    ) {
+      return "Pending HR";
     }
 
     return "Pending HR";
   }
 
-  if (currentStatus === "Pending Senior Vice President") {
+  /*
+    =====================================================
+    EXISTING FLOW FOR OPERATION AND OTHER DEPARTMENTS
+    =====================================================
+  */
+
+  if (
+    currentStatus ===
+    "Pending Branch Manager"
+  ) {
+    return await getNextStatusByDepartmentChain(
+      department,
+      [
+        "area_manager",
+        "regional_manager",
+        "assistant_vice_president",
+        "vice_president",
+      ]
+    );
+  }
+
+  if (
+    currentStatus ===
+    "Pending Area Manager"
+  ) {
+    return await getNextStatusByDepartmentChain(
+      department,
+      [
+        "regional_manager",
+        "assistant_vice_president",
+        "vice_president",
+      ]
+    );
+  }
+
+  if (
+    currentStatus ===
+    "Pending Regional Manager"
+  ) {
+    return await getNextStatusByDepartmentChain(
+      department,
+      [
+        "assistant_vice_president",
+        "vice_president",
+      ]
+    );
+  }
+
+  if (
+    currentStatus ===
+    "Pending Assistant Vice President"
+  ) {
+    return await getNextStatusByDepartmentChain(
+      department,
+      [
+        "vice_president",
+      ]
+    );
+  }
+
+  if (
+    currentStatus ===
+    "Pending Vice President"
+  ) {
+    const position = norm(
+      row.position
+    );
+
+    if (
+      isOperationDepartment(
+        department
+      ) &&
+      isVicePresidentPosition(
+        position
+      )
+    ) {
+      return await getNextStatusByDepartmentChain(
+        department,
+        [
+          "senior_vice_president",
+        ]
+      );
+    }
+
+    return "Pending HR";
+  }
+
+  if (
+    currentStatus ===
+    "Pending Senior Vice President"
+  ) {
     return "Pending HR";
   }
 
@@ -426,6 +951,16 @@ const isCurrentStageApprover = (req, row) => {
   const userDepartment = getUserDepartment(req);
 
   if (isBypassApprover(req) || isPresident(req)) return true;
+
+  if (status === "Pending Branch Manager") {
+    return (
+      isBranchManager(req) &&
+      sameDepartment(
+        userDepartment,
+        requestDepartment
+      )
+    );
+  }
 
   if (status === "Pending Area Manager") {
     return isAreaManager(req) && sameDepartment(userDepartment, requestDepartment);
@@ -715,8 +1250,15 @@ router.post(
     try {
       await client.query("BEGIN");
 
-      const { employee_id, leave_type, date_created, start_date, end_date, reason } =
-        req.body;
+      const {
+        employee_id,
+        leave_type,
+        date_created,
+        start_date,
+        end_date,
+        total_no_of_days,
+        reason,
+      } = req.body;
 
       if (!employee_id) {
         await client.query("ROLLBACK");
@@ -742,9 +1284,23 @@ router.post(
       const staffName = buildStaffName(staff);
       const isIndefiniteLeave = leave_type === "Indefinite Leave";
 
-      let total_no_of_days = 0;
+      let finalTotalDays = 0;
+
       if (!isIndefiniteLeave) {
-        total_no_of_days = diffDaysInclusive(start_date, end_date);
+        finalTotalDays =
+          Number(total_no_of_days);
+
+        if (
+          !Number.isFinite(finalTotalDays) ||
+          finalTotalDays <= 0
+        ) {
+          await client.query("ROLLBACK");
+
+          return res.status(400).json({
+            message:
+              "Total number of days must be greater than 0.",
+          });
+        }
       }
 
       const seqRes = await client.query(`
@@ -784,7 +1340,7 @@ router.post(
           date_created,
           start_date,
           isIndefiniteLeave ? null : end_date,
-          total_no_of_days,
+          finalTotalDays,
           reason || null,
           status,
           transaction_code,
@@ -835,6 +1391,448 @@ router.post(
       await client.query("ROLLBACK");
       console.error("CREATE LEAVE ERROR:", err.message);
       return res.status(500).json({ message: err.message });
+    } finally {
+      client.release();
+    }
+  }
+);
+
+// =====================================================
+// EDIT LEAVE REQUEST
+// Admin or any role under HR, IT, or Accounting
+// May edit Pending, Approved, or Rejected requests.
+// Voided and Returned-to-Work records are locked.
+// =====================================================
+
+router.put(
+  "/leave-requests/:id/edit",
+  requireAuth,
+  requirePermission(
+    "leave_request",
+    "edit"
+  ),
+  upload.single("attachment"),
+  async (req, res) => {
+    const client =
+      await pool.connect();
+
+    try {
+      if (
+        !canManageLeaveAdministration(
+          req
+        )
+      ) {
+        return res.status(403).json({
+          message:
+            "Only Admin or any role under HR, IT, or Accounting Department can edit leave requests.",
+        });
+      }
+
+      const id = String(
+        req.params.id || ""
+      ).trim();
+
+      const {
+        employee_id,
+        leave_type,
+        date_created,
+        start_date,
+        end_date,
+        total_no_of_days,
+        reason,
+      } = req.body;
+
+      if (!id) {
+        return res.status(400).json({
+          message:
+            "Invalid leave request ID.",
+        });
+      }
+
+      if (!employee_id) {
+        return res.status(400).json({
+          message:
+            "Employee is required.",
+        });
+      }
+
+      if (!leave_type) {
+        return res.status(400).json({
+          message:
+            "Leave type is required.",
+        });
+      }
+
+      if (!date_created) {
+        return res.status(400).json({
+          message:
+            "Date created is required.",
+        });
+      }
+
+      if (!start_date) {
+        return res.status(400).json({
+          message:
+            leave_type ===
+            "Indefinite Leave"
+              ? "Effective date is required."
+              : "Start date is required.",
+        });
+      }
+
+      const isIndefiniteLeave =
+        leave_type ===
+        "Indefinite Leave";
+
+      if (
+        !isIndefiniteLeave &&
+        !end_date
+      ) {
+        return res.status(400).json({
+          message:
+            "End date is required.",
+        });
+      }
+
+      if (
+        !isIndefiniteLeave &&
+        String(start_date) >
+          String(end_date)
+      ) {
+        return res.status(400).json({
+          message:
+            "Start date must be on or before end date.",
+        });
+      }
+
+      let finalTotalDays = 0;
+
+      if (!isIndefiniteLeave) {
+        finalTotalDays =
+          Number(total_no_of_days);
+
+        if (
+          !Number.isFinite(
+            finalTotalDays
+          ) ||
+          finalTotalDays <= 0
+        ) {
+          return res.status(400).json({
+            message:
+              "Total number of days must be greater than 0.",
+          });
+        }
+      }
+
+      await client.query("BEGIN");
+
+      const existingResult =
+        await client.query(
+          `
+          SELECT
+          id,
+          employee_id,
+          leave_type,
+          status,
+          total_no_of_days
+          FROM public.leave_requests
+          WHERE id = $1
+          FOR UPDATE
+          `,
+          [id]
+        );
+
+      if (
+        existingResult.rowCount === 0
+      ) {
+        await client.query(
+          "ROLLBACK"
+        );
+
+        return res.status(404).json({
+          message:
+            "Leave request not found.",
+        });
+      }
+
+      const existing =
+        existingResult.rows[0];
+      
+      if (toStr(existing.status) === "Approved") {
+        if (
+          String(existing.employee_id) !==
+          String(employee_id)
+        ) {
+          await client.query("ROLLBACK");
+
+          return res.status(400).json({
+            message:
+              "The employee cannot be changed after the leave is approved.",
+          });
+        }
+
+        if (
+          toStr(existing.leave_type) !==
+          toStr(leave_type)
+        ) {
+          await client.query("ROLLBACK");
+
+          return res.status(400).json({
+            message:
+              "The leave type cannot be changed after the leave is approved.",
+          });
+        }
+      }
+
+      if (
+        [
+          "Voided",
+          "Returned to Work",
+        ].includes(
+          toStr(existing.status)
+        )
+      ) {
+        await client.query(
+          "ROLLBACK"
+        );
+
+        return res.status(400).json({
+          message:
+            "Voided or Returned-to-Work leave requests cannot be edited.",
+        });
+      }
+
+      const staffResult =
+        await client.query(
+          `
+          SELECT
+            id,
+            fullname,
+            first_name,
+            middle_name,
+            last_name
+          FROM public.staff
+          WHERE id = $1
+          LIMIT 1
+          `,
+          [employee_id]
+        );
+
+      if (
+        staffResult.rowCount === 0
+      ) {
+        await client.query(
+          "ROLLBACK"
+        );
+
+        return res.status(404).json({
+          message:
+            "Selected employee was not found.",
+        });
+      }
+
+      const staff =
+        staffResult.rows[0];
+
+      const staffName =
+        buildStaffName(staff);
+
+      await client.query(
+        `
+        UPDATE public.leave_requests
+        SET
+          employee_id = $2,
+          staff_name = $3,
+          leave_type = $4,
+          date_created = $5,
+          start_date = $6,
+          end_date = $7,
+          total_no_of_days = $8,
+          reason = $9
+        WHERE id = $1
+        `,
+        [
+          id,
+          employee_id,
+          staffName || null,
+          leave_type,
+          date_created,
+          start_date,
+          isIndefiniteLeave
+            ? null
+            : end_date,
+          finalTotalDays,
+          reason || null,
+        ]
+      );
+
+      /*
+        A newly selected request attachment replaces
+        the existing request attachment.
+      */
+      if (req.file) {
+        const oldFiles =
+          await client.query(
+            `
+            SELECT file_path
+            FROM public.leave_attachments
+            WHERE leave_request_id = $1
+              AND attachment_type =
+                  'request'
+            `,
+            [id]
+          );
+
+        await client.query(
+          `
+          DELETE FROM public.leave_attachments
+          WHERE leave_request_id = $1
+            AND attachment_type =
+                'request'
+          `,
+          [id]
+        );
+
+        await client.query(
+          `
+          INSERT INTO public.leave_attachments
+          (
+            leave_request_id,
+            file_name,
+            file_path,
+            file_mime,
+            file_size,
+            attachment_type,
+            uploaded_by,
+            uploaded_by_role
+          )
+          VALUES
+          (
+            $1,$2,$3,$4,$5,
+            'request',$6,$7
+          )
+          `,
+          [
+            id,
+            req.file.originalname ||
+              null,
+            `/uploads/leave_attachments/${req.file.filename}`,
+            req.file.mimetype ||
+              null,
+            req.file.size || null,
+            req.user?.id ?? null,
+            roleLower(req),
+          ]
+        );
+
+        await client.query(
+          "COMMIT"
+        );
+
+        for (
+          const oldFile of
+          oldFiles.rows
+        ) {
+          try {
+            const relativePath =
+              String(
+                oldFile.file_path ||
+                  ""
+              ).replace(
+                /^\/uploads\//,
+                ""
+              );
+
+            const absolutePath =
+              path.join(
+                __dirname,
+                "..",
+                "uploads",
+                relativePath
+              );
+
+            if (
+              fs.existsSync(
+                absolutePath
+              )
+            ) {
+              fs.unlinkSync(
+                absolutePath
+              );
+            }
+          } catch (fileError) {
+            console.error(
+              "DELETE OLD REQUEST FILE ERROR:",
+              fileError.message
+            );
+          }
+        }
+      } else {
+        await client.query(
+          "COMMIT"
+        );
+      }
+
+      const finalRow =
+        await pool.query(
+          `
+          ${baseLeaveSelect}
+          WHERE lr.id = $1
+          `,
+          [id]
+        );
+
+      return res.json({
+        message:
+          "Leave request updated successfully.",
+        leave:
+          finalRow.rows[0],
+      });
+    } catch (error) {
+      try {
+        await client.query(
+          "ROLLBACK"
+        );
+      } catch (rollbackError) {
+        console.error(
+          "EDIT LEAVE ROLLBACK ERROR:",
+          rollbackError.message
+        );
+      }
+
+      /*
+        Remove the new uploaded file when the
+        database update fails.
+      */
+      if (req.file?.path) {
+        try {
+          if (
+            fs.existsSync(
+              req.file.path
+            )
+          ) {
+            fs.unlinkSync(
+              req.file.path
+            );
+          }
+        } catch (fileError) {
+          console.error(
+            "EDIT LEAVE FILE CLEANUP ERROR:",
+            fileError.message
+          );
+        }
+      }
+
+      console.error(
+        "PUT /leave-requests/:id/edit ERROR:",
+        error.message
+      );
+
+      return res.status(500).json({
+        message:
+          error?.message ||
+          "Server error",
+      });
     } finally {
       client.release();
     }
@@ -958,18 +1956,34 @@ router.put(
                 WHERE id = $1
               `;
               params = [id, req.user?.id ?? null];
-            } else if (currentStatus === "Pending Branch Manager") {
-              const nextStatus = await getNextStatusAfterApproval(
-                currentStatus,
-                access.row
-              );
+            } else if (
+              currentStatus ===
+              "Pending Branch Manager"
+            ) {
+              const nextStatus =
+                await getNextStatusAfterApproval(
+                  currentStatus,
+                  access.row
+                );
 
               sql = `
                 UPDATE public.leave_requests
-                SET status = $2
+
+                SET
+                  status = $3,
+
+                  branch_approved_by = $2,
+                  branch_approved_at =
+                    NOW() AT TIME ZONE 'Asia/Manila'
+
                 WHERE id = $1
               `;
-              params = [id, nextStatus];
+
+              params = [
+                id,
+                req.user?.id ?? null,
+                nextStatus,
+              ];
             } else if (currentStatus === "Pending Area Manager") {
               const nextStatus = await getNextStatusAfterApproval(
                 currentStatus,
@@ -1070,10 +2084,11 @@ router.put(
   requirePermission("leave_request", "delete"),
   async (req, res) => {
     try {
-      if (!(isAdmin(req) || isHrDepartmentUser(req))) {
-          return res.status(403).json({
-              message: "Only Admin or HR Department can void approved leave.",
-          });
+      if (!canManageLeaveAdministration(req)) {
+        return res.status(403).json({
+          message:
+            "Only Admin or any role under HR, IT, or Accounting Department can void approved leave.",
+        });
       }
 
       const id = String(req.params.id || "").trim();
@@ -1114,10 +2129,11 @@ router.delete(
     const client = await pool.connect();
 
     try {
-      if (!(isAdmin(req) || isHrDepartmentUser(req))) {
-          return res.status(403).json({
-              message: "Only Admin or HR Department can delete rejected or voided leave.",
-          });
+      if (!canManageLeaveAdministration(req)) {
+        return res.status(403).json({
+          message:
+            "Only Admin or any role under HR, IT, or Accounting Department can delete rejected or voided leave.",
+        });
       }
 
       const id = String(req.params.id || "").trim();
@@ -1309,11 +2325,12 @@ router.put(
   requirePermission("leave_request", "approve"),
   async (req, res) => {
     const client = await pool.connect();
-
+    
     try {
-      if (!(isAdminOrIT(req) || isHrDepartmentUser(req))) {
+      if (!canManageLeaveAdministration(req)) {
         return res.status(403).json({
-          message: "Only Admin, IT, or HR Department can return staff to work.",
+          message:
+            "Only Admin or any role under HR, IT, or Accounting Department can return staff to work.",
         });
       }
 

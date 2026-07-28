@@ -119,4 +119,64 @@ AND LOWER(TRIM(COALESCE(rp.action_name, ''))) IN
   'edit'
 );
 
+ALTER TABLE public.leave_requests
+ADD COLUMN IF NOT EXISTS branch_approved_by BIGINT;
+
+ALTER TABLE public.leave_requests
+ADD COLUMN IF NOT EXISTS branch_approved_at TIMESTAMP;
+
+CREATE INDEX IF NOT EXISTS idx_leave_requests_branch_approved_by
+ON public.leave_requests(branch_approved_by);
+
+INSERT INTO public.role_permissions
+(
+  role,
+  department,
+  module_name,
+  action_name,
+  allowed,
+  created_at,
+  updated_at
+)
+SELECT
+  role_name,
+  department_name,
+  'leave_request',
+  'edit',
+  TRUE,
+  NOW(),
+  NOW()
+FROM (
+  VALUES
+    ('branch manager', 'HR DEPARTMENT'),
+    ('area manager', 'HR DEPARTMENT'),
+    ('regional manager', 'HR DEPARTMENT'),
+    ('assistant vice president', 'HR DEPARTMENT'),
+    ('vice president', 'HR DEPARTMENT'),
+    ('senior vice president', 'HR DEPARTMENT'),
+
+    ('branch manager', 'IT DEPARTMENT'),
+    ('area manager', 'IT DEPARTMENT'),
+    ('regional manager', 'IT DEPARTMENT'),
+    ('assistant vice president', 'IT DEPARTMENT'),
+    ('vice president', 'IT DEPARTMENT'),
+    ('senior vice president', 'IT DEPARTMENT'),
+
+    ('branch manager', 'ACCOUNTING DEPARTMENT'),
+    ('area manager', 'ACCOUNTING DEPARTMENT'),
+    ('regional manager', 'ACCOUNTING DEPARTMENT'),
+    ('assistant vice president', 'ACCOUNTING DEPARTMENT'),
+    ('vice president', 'ACCOUNTING DEPARTMENT'),
+    ('senior vice president', 'ACCOUNTING DEPARTMENT')
+) AS permissions(role_name, department_name)
+ON CONFLICT (
+  role,
+  COALESCE(department, ''),
+  module_name,
+  action_name
+)
+DO UPDATE SET
+  allowed = TRUE,
+  updated_at = NOW();
+
 COMMIT;

@@ -108,6 +108,7 @@ export default function TravelPlan() {
 
   const [activities, setActivities] = useState([]);
   const [branchSearch, setBranchSearch] = useState("");
+  const [branchStaffFilter, setBranchStaffFilter] = useState("");
   const [branchDivisionFilter, setBranchDivisionFilter] = useState("");
   const [branchRegionFilter, setBranchRegionFilter] = useState("");
   const [branchAreaFilter, setBranchAreaFilter] = useState("");
@@ -238,6 +239,20 @@ export default function TravelPlan() {
   const [forecastSelectedDate, setForecastSelectedDate] =
     useState(getManilaDateString(new Date()));
 
+  const [forecastStaffRows, setForecastStaffRows] =
+    useState([]);
+
+  const [forecastStaffLoading, setForecastStaffLoading] =
+    useState(false);
+
+  const [forecastFilter, setForecastFilter] =
+    useState("total");
+  
+  const [
+    selectedForecastStaff,
+    setSelectedForecastStaff,
+  ] = useState(null);
+
   const forecastWeek = useMemo(() => {
     const selected = new Date(
       `${forecastSelectedDate}T00:00:00`
@@ -315,6 +330,125 @@ export default function TravelPlan() {
       }),
     };
   }, [forecastWeek, forecastSelectedDate]);
+
+  const forecastCompletedPlans = useMemo(() => {
+    return forecastSelectedDay.plans.filter(
+      (plan) =>
+        normalizeValue(plan.status) === "completed"
+    );
+  }, [forecastSelectedDay]);
+  
+  const forecastCreatedPlans = useMemo(() => {
+    return Array.isArray(forecastSelectedDay.plans)
+      ? forecastSelectedDay.plans
+      : [];
+  }, [forecastSelectedDay]);
+
+  const forecastStaffWithPlans = useMemo(() => {
+    return new Set(
+      forecastCreatedPlans
+        .map((plan) =>
+          normalizeValue(plan.employee_name)
+        )
+        .filter(Boolean)
+    );
+  }, [forecastCreatedPlans]);
+
+  const forecastPendingStaff = useMemo(() => {
+    return forecastStaffRows.filter((staff) => {
+      const staffStatus = normalizeValue(
+        staff.travel_status
+      );
+
+      // Do not mark employees on leave as pending.
+      if (
+        staffStatus === "on leave" ||
+        staffStatus === "indefinite leave"
+      ) {
+        return false;
+      }
+
+      const employeeName = normalizeValue(
+        staff.employee_name
+      );
+
+      if (!employeeName) {
+        return false;
+      }
+
+      /*
+        forecastStaffRows was fetched using
+        forecastSelectedDate.
+
+        Therefore, this only checks the currently
+        selected date, not all dates.
+      */
+      return !forecastStaffWithPlans.has(
+        employeeName
+      );
+    });
+  }, [
+    forecastStaffRows,
+    forecastStaffWithPlans,
+  ]);
+
+  const forecastDisplayRows = useMemo(() => {
+    if (forecastFilter === "completed") {
+      return forecastCompletedPlans;
+    }
+
+    if (forecastFilter === "pending") {
+      return forecastPendingStaff;
+    }
+
+    return forecastCreatedPlans;
+  }, [
+    forecastFilter,
+    forecastCreatedPlans,
+    forecastCompletedPlans,
+    forecastPendingStaff,
+  ]);
+
+const selectedForecastStaffWeek = useMemo(() => {
+  if (!selectedForecastStaff) {
+    return [];
+  }
+
+  const selectedEmployeeName = normalizeValue(
+    selectedForecastStaff.employee_name
+  );
+
+  return forecastWeek.map((day) => {
+    const staffPlans = day.plans.filter(
+      (plan) =>
+        normalizeValue(plan.employee_name) ===
+        selectedEmployeeName
+    );
+
+    const completedPlans = staffPlans.filter(
+      (plan) =>
+        normalizeValue(plan.status) === "completed"
+    );
+
+    let monitoringStatus = "Not Submitted";
+
+    if (completedPlans.length > 0) {
+      monitoringStatus = "Completed";
+    } else if (staffPlans.length > 0) {
+      monitoringStatus = "Submitted";
+    }
+
+    return {
+      ...day,
+      staffPlans,
+      completedPlans,
+      monitoringStatus,
+    };
+  });
+}, [
+  selectedForecastStaff,
+  forecastWeek,
+]);
 
   const filteredComplianceRows = useMemo(() => {
     const search = normalizeValue(complianceSearch);
@@ -585,6 +719,18 @@ export default function TravelPlan() {
     return [...new Set(staffRows.map((s) => s.position).filter(Boolean))];
   }, [staffRows]);
 
+  const branchStaffOptions = useMemo(() => {
+    const names = plans
+      .map((plan) =>
+        String(plan.employee_name || "").trim()
+      )
+      .filter(Boolean);
+
+    return [...new Set(names)].sort((a, b) =>
+      a.localeCompare(b)
+    );
+  }, [plans]);
+
   const filteredStaffRows = useMemo(() => {
     const search = normalizeValue(staffSearch);
 
@@ -719,54 +865,113 @@ export default function TravelPlan() {
 
     let filteredPlans = [...plans];
 
+    // Filter by selected staff.
+    if (branchStaffFilter) {
+      filteredPlans = filteredPlans.filter(
+        (plan) =>
+          normalizeValue(plan.employee_name) ===
+          normalizeValue(branchStaffFilter)
+      );
+    }
+
+    // Filter by selected period.
     if (visitRange === "week") {
       const weekAgo = new Date();
+
       weekAgo.setDate(now.getDate() - 7);
 
-      filteredPlans = plans.filter(
-        (p) => new Date(p.plan_date) >= weekAgo
+      filteredPlans = filteredPlans.filter(
+        (plan) =>
+          new Date(plan.plan_date) >= weekAgo
       );
     }
 
     if (visitRange === "month") {
-      filteredPlans = plans.filter((p) => {
-        const d = new Date(p.plan_date);
-        return (
-          d.getMonth() === month &&
-          d.getFullYear() === year
+      filteredPlans = filteredPlans.filter(
+        (plan) => {
+          const planDate = new Date(
+            plan.plan_date
+          );
+
+          return (
+            planDate.getMonth() === month &&
+            planDate.getFullYear() === year
+          );
+        }
+      );
+    }
+
+    if (visitRange === "year") {
+      filteredPlans = filteredPlans.filter(
+        (plan) => {
+          const planDate = new Date(
+            plan.plan_date
+          );
+
+          return (
+            planDate.getFullYear() === year
+          );
+        }
+      );
+    }
+
+    const counts = {};
+
+    // Keep every scoped branch visible.
+    branchRows.forEach((branch) => {
+      const branchName = String(
+        branch.branch_name || ""
+      ).trim();
+
+      if (!branchName) {
+        return;
+      }
+
+      counts[branchName] = 0;
+    });
+
+    // Count visits after date and staff filtering.
+    filteredPlans.forEach((plan) => {
+      const branchName = String(
+        plan.branch_name || ""
+      ).trim();
+
+      if (!branchName) {
+        return;
+      }
+
+      if (
+        Object.prototype.hasOwnProperty.call(
+          counts,
+          branchName
+        )
+      ) {
+        counts[branchName] += 1;
+      }
+    });
+
+    return Object.entries(counts)
+      .map(([branch, count]) => ({
+        branch,
+        count,
+      }))
+      .sort((a, b) => {
+        if (b.count !== a.count) {
+          return b.count - a.count;
+        }
+
+        return a.branch.localeCompare(
+          b.branch
         );
       });
-    }
-
-  if (visitRange === "year") {
-    filteredPlans = plans.filter((p) => {
-      const d = new Date(p.plan_date);
-      return d.getFullYear() === year;
-    });
-  }
-
-  const counts = {};
-
-  branchRows.forEach((branch) => {
-    if (!branch.branch_name) return;
-    counts[branch.branch_name] = 0;
-  });
-
-  filteredPlans.forEach((plan) => {
-    if (!plan.branch_name) return;
-
-    if (counts[plan.branch_name] !== undefined) {
-      counts[plan.branch_name] += 1;
-    }
-  });
-
-  return Object.entries(counts)
-    .map(([branch, count]) => ({
-      branch,
-      count,
-    }))
-    .sort((a, b) => b.count - a.count);
-}, [plans, branchRows, visitRange, month, year]);
+  }, [
+    plans,
+    branchRows,
+    visitRange,
+    month,
+    year,
+    branchStaffFilter,
+  ]);
 
 const selectedBranchPlans = useMemo(() => {
   let filtered = [...plans];
@@ -945,6 +1150,36 @@ const selectedBranchPlans = useMemo(() => {
     }
   };
 
+  const fetchForecastStaff = async (date) => {
+    if (!date) {
+      setForecastStaffRows([]);
+      return;
+    }
+
+    setForecastStaffLoading(true);
+
+    try {
+      const res = await api.get(
+        `/travel-plans/staff-scope?date=${date}`
+      );
+
+      setForecastStaffRows(
+        Array.isArray(res.data)
+          ? res.data
+          : []
+      );
+    } catch (err) {
+      console.error(
+        "Fetch forecast staff error:",
+        err
+      );
+
+      setForecastStaffRows([]);
+    } finally {
+      setForecastStaffLoading(false);
+    }
+  };
+
   const fetchStaffDropdown = async () => {
     try {
       const res = await api.get(
@@ -1056,6 +1291,21 @@ const selectedBranchPlans = useMemo(() => {
   }, [
     activeMenu,
     staffScopeDate,
+  ]);
+
+  useEffect(() => {
+    if (activeMenu !== "Forecast") {
+      return;
+    }
+
+    fetchForecastStaff(
+      forecastSelectedDate
+    );
+
+    setForecastFilter("total");
+  }, [
+    activeMenu,
+    forecastSelectedDate,
   ]);
 
   const saveTravelPlan = async () => {
@@ -1353,7 +1603,10 @@ const selectedBranchPlans = useMemo(() => {
         return;
       }
 
-      if (!reviewPhoto) {
+      if (
+        !editingNoteId &&
+        !reviewPhoto
+      ) {
         alert(
           "Upload a Branch Visit Findings photo."
         );
@@ -1378,9 +1631,12 @@ const selectedBranchPlans = useMemo(() => {
 
     if (
       type === "FINDINGS" &&
+      !editingNoteId &&
       !findingPhoto
     ) {
-      alert("Upload a findings photo.");
+      alert(
+        "Upload a Group Visit Findings photo."
+      );
       return;
     }
 
@@ -1518,21 +1774,41 @@ const selectedBranchPlans = useMemo(() => {
         );
       }
 
-      await api.post(
-        `/travel-plans/${selectedPlan.id}/notes`,
-        formData,
-        {
-          headers: {
-            "Content-Type":
-              "multipart/form-data",
-          },
-        }
-      );
+      if (
+        editingNoteId &&
+        editingNoteType === type
+      ) {
+        await api.put(
+          `/travel-plans/notes/${editingNoteId}`,
+          formData,
+          {
+            headers: {
+              "Content-Type": "multipart/form-data",
+            },
+          }
+        );
+      } else {
+        await api.post(
+          `/travel-plans/${selectedPlan.id}/notes`,
+          formData,
+          {
+            headers: {
+              "Content-Type": "multipart/form-data",
+            },
+          }
+        );
+      }
 
       setNoteForm(emptyNoteForm);
+
+      setEditingNoteId(null);
+      setEditingNoteType(null);
+
       setFindingPhoto(null);
       setReviewPhoto(null);
+
       setShowNoteForm(false);
+
       fetchPlanNotes(selectedPlan.id);
     } catch (err) {
       console.error("Create note error:", err);
@@ -2189,8 +2465,13 @@ const selectedBranchPlans = useMemo(() => {
                 Cancel
               </button>
 
-              <button type="button" onClick={() => createNote(type)}>
-                Save
+              <button
+                type="button"
+                onClick={() => createNote(type)}
+              >
+                {editingNoteId && editingNoteType === type
+                  ? "Update"
+                  : "Save"}
               </button>
             </div>
           </div>
@@ -2494,6 +2775,48 @@ const selectedBranchPlans = useMemo(() => {
                           onChange={(e) => setBranchSearch(e.target.value)}
                           className="travel-branch-search"
                         />
+
+                        <div className="travel-branch-staff-filter">
+                          <label className="travel-branch-staff-field">
+                            <span>Staff</span>
+
+                            <select
+                              value={branchStaffFilter}
+                              onChange={(event) => {
+                                setBranchStaffFilter(
+                                  event.target.value
+                                );
+                              }}
+                            >
+                              <option value="">All Staff</option>
+
+                              {branchStaffOptions.map(
+                                (employeeName) => (
+                                  <option
+                                    key={employeeName}
+                                    value={employeeName}
+                                  >
+                                    {employeeName}
+                                  </option>
+                                )
+                              )}
+                            </select>
+                          </label>
+
+                          {branchStaffFilter && (
+                            <button
+                              type="button"
+                              className="travel-branch-staff-clear"
+                              title="Clear selected staff"
+                              onClick={() => {
+                                setBranchStaffFilter("");
+                              }}
+                            >
+                              Clear
+                            </button>
+                          )}
+                        </div>
+
                         <div className="travel-branch-location-filters">
                           <label>
                             <span>Division</span>
@@ -2828,20 +3151,59 @@ const selectedBranchPlans = useMemo(() => {
                 </div>
 
                 <div className="travel-forecast-summary">
-                  <div>
+                  <button
+                    type="button"
+                    className={
+                      forecastFilter === "total"
+                        ? "active"
+                        : ""
+                    }
+                    onClick={() =>
+                      setForecastFilter("total")
+                    }
+                  >
                     <span>Total Plans</span>
-                    <b>{forecastSelectedDay.total}</b>
-                  </div>
 
-                  <div>
+                    <b>
+                      {forecastCreatedPlans.length}
+                    </b>
+                  </button>
+
+                  <button
+                    type="button"
+                    className={
+                      forecastFilter === "completed"
+                        ? "active"
+                        : ""
+                    }
+                    onClick={() =>
+                      setForecastFilter("completed")
+                    }
+                  >
                     <span>Completed</span>
-                    <b>{forecastSelectedDay.completed}</b>
-                  </div>
 
-                  <div>
+                    <b>
+                      {forecastCompletedPlans.length}
+                    </b>
+                  </button>
+
+                  <button
+                    type="button"
+                    className={
+                      forecastFilter === "pending"
+                        ? "active"
+                        : ""
+                    }
+                    onClick={() =>
+                      setForecastFilter("pending")
+                    }
+                  >
                     <span>Pending</span>
-                    <b>{forecastSelectedDay.pending}</b>
-                  </div>
+
+                    <b>
+                      {forecastPendingStaff.length}
+                    </b>
+                  </button>
                 </div>
               </div>
 
@@ -2853,11 +3215,23 @@ const selectedBranchPlans = useMemo(() => {
                     </span>
 
                     <h1>
-                      {forecastSelectedDay.total === 0
+                      {forecastFilter === "completed"
+                        ? forecastCompletedPlans.length === 0
+                          ? "No Completed Plans"
+                          : forecastCompletedPlans.length === 1
+                          ? "1 Completed Plan"
+                          : `${forecastCompletedPlans.length} Completed Plans`
+                        : forecastFilter === "pending"
+                        ? forecastPendingStaff.length === 0
+                          ? "No Pending Staff"
+                          : forecastPendingStaff.length === 1
+                          ? "1 Staff Not Submitted"
+                          : `${forecastPendingStaff.length} Staff Not Submitted`
+                        : forecastCreatedPlans.length === 0
                         ? "No Travel Plans"
-                        : forecastSelectedDay.total === 1
+                        : forecastCreatedPlans.length === 1
                         ? "1 Travel Plan"
-                        : `${forecastSelectedDay.total} Travel Plans`}
+                        : `${forecastCreatedPlans.length} Travel Plans`}
                     </h1>
 
                     <p>
@@ -2868,17 +3242,65 @@ const selectedBranchPlans = useMemo(() => {
                   </div>
 
                   <div className="travel-forecast-count">
-                    {forecastSelectedDay.total}
+                    {forecastFilter === "completed"
+                      ? forecastCompletedPlans.length
+                      : forecastFilter === "pending"
+                      ? forecastPendingStaff.length
+                      : forecastCreatedPlans.length}
                   </div>
                 </div>
 
                 <div className="travel-forecast-plan-list">
-                  {forecastSelectedDay.plans.length === 0 ? (
+                  {forecastStaffLoading ? (
                     <div className="travel-forecast-empty">
-                      No travel plans scheduled.
+                      Loading staff monitoring...
                     </div>
+                  ) : forecastDisplayRows.length === 0 ? (
+                    <div className="travel-forecast-empty">
+                      {forecastFilter === "completed"
+                        ? "No completed travel plans."
+                        : forecastFilter === "pending"
+                        ? "All monitored staff have created a travel plan."
+                        : "No travel plans scheduled."}
+                    </div>
+                  ) : forecastFilter === "pending" ? (
+                    forecastDisplayRows.map((staff) => (
+                      <button
+                        key={
+                          staff.id ||
+                          staff.employee_id ||
+                          staff.employee_no ||
+                          staff.employee_name
+                        }
+                        type="button"
+                        className="travel-forecast-plan-card"
+                        onClick={() => {
+                          setSelectedForecastStaff(staff);
+                        }}
+                      >
+                        <div>
+                          <strong>
+                            {staff.employee_name || "Unknown Employee"}
+                          </strong>
+
+                          <span>
+                            {staff.position || "No position"}
+                          </span>
+
+                          <small>
+                            {staff.branch_name || "No branch"}
+                            {staff.area ? ` • ${staff.area}` : ""}
+                            {staff.region ? ` • ${staff.region}` : ""}
+                          </small>
+                        </div>
+
+                        <b className="travel-status pending">
+                          Not Submitted
+                        </b>
+                      </button>
+                    ))
                   ) : (
-                    forecastSelectedDay.plans.map((plan) => (
+                    forecastDisplayRows.map((plan) => (
                       <button
                         key={plan.id}
                         type="button"
@@ -2901,12 +3323,14 @@ const selectedBranchPlans = useMemo(() => {
 
                         <b
                           className={`travel-status ${
-                            plan.status === "Completed"
+                            normalizeValue(plan.status) === "completed"
                               ? "completed"
                               : "pending"
                           }`}
                         >
-                          {plan.status || "Pending"}
+                          {normalizeValue(plan.status) === "completed"
+                            ? "Completed"
+                            : "Submitted"}
                         </b>
                       </button>
                     ))

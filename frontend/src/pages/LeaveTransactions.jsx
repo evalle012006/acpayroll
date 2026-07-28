@@ -65,11 +65,24 @@ export default function LeaveTransactions() {
 
   const department = String(user?.department || "").trim().toLowerCase();
 
-  const isHrDepartmentUser =
-    department === "hr" ||
-    department === "hr department" ||
-    department === "human resources" ||
-    department === "human resources department";
+  const isHrDepartmentUser = [
+    "hr",
+    "hr department",
+    "human resources",
+    "human resources department",
+  ].includes(department);
+
+  const isITDepartmentUser = [
+    "it",
+    "it department",
+    "information technology",
+    "information technology department",
+  ].includes(department);
+
+  const isAccountingDepartmentUser = [
+    "accounting",
+    "accounting department",
+  ].includes(department);
 
   const isAdmin = role === "admin";
   const isAdminOrIT = ["admin", "it"].includes(role);
@@ -78,16 +91,35 @@ export default function LeaveTransactions() {
   const isHr = role === "hr";
   const isAccounting = role === "accounting";
   const isTread = role === "tread";
-  const isBranchManager = role === "branch manager";
-  const isAreaManager = role === "area manager";
-  const isRegionalManager = role === "regional manager";
+
+  const isBranchManager = [
+    "branch manager",
+    "acting branch manager",
+  ].includes(role);
+
+  const isAreaManager = [
+    "area manager",
+    "acting area manager",
+  ].includes(role);
+
+  const isRegionalManager = [
+    "regional manager",
+    "acting regional manager",
+  ].includes(role);
+  
   const isAssistantVicePresident = role === "assistant vice president";
   const isVicePresident = role === "vice president";
   const isSeniorVicePresident = role === "senior vice president";
   const isPresident = role === "president";
 
+  const canManageLeaveAdministration =
+    isAdmin ||
+    isHrDepartmentUser ||
+    isITDepartmentUser ||
+    isAccountingDepartmentUser;
+
   const canBypassLeaveApproval =
-    isAdminOrIT || isAccounting || isHrDepartmentUser;
+    canManageLeaveAdministration;
 
   const canCreateLeave =
     isAdminOrIT ||
@@ -147,6 +179,8 @@ export default function LeaveTransactions() {
   const [pageSize, setPageSize] = useState(25);
 
   const [showCreateLeave, setShowCreateLeave] = useState(false);
+  const [editingLeaveId, setEditingLeaveId] = useState(null);
+  const [editingLeaveStatus, setEditingLeaveStatus] = useState("");
 
   const [leaveForm, setLeaveForm] = useState({
     employee_id: "",
@@ -229,22 +263,6 @@ export default function LeaveTransactions() {
     fetchBranches();
     fetchLeave();
   }, [user, fetchStaff, fetchBranches, fetchLeave]);
-
-  useEffect(() => {
-    if (!showCreateLeave) return;
-
-    const onKeyDown = (e) => {
-      if (e.key === "Escape") setShowCreateLeave(false);
-    };
-
-    document.addEventListener("keydown", onKeyDown);
-    document.body.style.overflow = "hidden";
-
-    return () => {
-      document.removeEventListener("keydown", onKeyDown);
-      document.body.style.overflow = "";
-    };
-  }, [showCreateLeave]);
 
   useEffect(() => {
     const onMouseDown = (e) => {
@@ -361,6 +379,113 @@ export default function LeaveTransactions() {
     setAttachmentFile(null);
     setEmployeeSearch("");
     setShowEmployeeDropdown(false);
+
+    setEditingLeaveId(null);
+    setEditingLeaveStatus("");
+  };
+
+  const closeLeaveModal = () => {
+    resetForm();
+    setShowCreateLeave(false);
+  };
+
+  useEffect(() => {
+  if (!showCreateLeave) return;
+
+  const onKeyDown = (e) => {
+    if (e.key === "Escape") {
+      closeLeaveModal();
+    }
+  };
+
+  document.addEventListener(
+    "keydown",
+    onKeyDown
+  );
+
+  document.body.style.overflow =
+    "hidden";
+
+  return () => {
+    document.removeEventListener(
+      "keydown",
+      onKeyDown
+    );
+
+    document.body.style.overflow =
+      "";
+  };
+}, [showCreateLeave]);
+
+  const openEditLeave = (item) => {
+    if (!item?.id) {
+      return;
+    }
+
+    setEditingLeaveId(item.id);
+    setEditingLeaveStatus(
+      String(item.status || "").trim()
+    );
+
+    setLeaveForm({
+      employee_id:
+        String(item.employee_id || ""),
+
+      staff_name:
+        item.staff_name || "",
+
+      branch_id:
+        String(item.branch_id || ""),
+
+      branch_code:
+        item.branch_code || "",
+
+      branch_name:
+        item.branch_name || "",
+
+      leave_type:
+        item.leave_type || "",
+
+      date_created:
+        fmtDate(item.date_created) === "-"
+          ? todayDate()
+          : fmtDate(item.date_created),
+
+      start_date:
+        fmtDate(item.start_date) === "-"
+          ? ""
+          : fmtDate(item.start_date),
+
+      end_date:
+        fmtDate(item.end_date) === "-"
+          ? ""
+          : fmtDate(item.end_date),
+
+      total_no_of_days:
+        item.leave_type === "Indefinite Leave"
+          ? ""
+          : item.total_no_of_days ?? "",
+
+      reason:
+        item.reason || "",
+    });
+
+    setEmployeeSearch(
+      item.employee_no
+        ? `${item.employee_no} - ${
+            item.staff_name || "-"
+          }`
+        : item.staff_name || ""
+    );
+
+    /*
+      Keep the existing request file unless the user
+      selects a new replacement file.
+    */
+    setAttachmentFile(null);
+
+    setShowEmployeeDropdown(false);
+    setShowCreateLeave(true);
   };
 
   const getApprovedUsedLeave = useCallback(
@@ -409,95 +534,270 @@ export default function LeaveTransactions() {
   const handleCreateLeave = async (e) => {
     e.preventDefault();
 
-    if (!leaveForm.employee_id) return alert("Select an employee.");
-    if (!leaveForm.leave_type) return alert("Select leave type.");
-    if (!leaveForm.date_created) return alert("Select date created.");
-    if (isIndefiniteLeave && !leaveForm.start_date) {
+    if (!leaveForm.employee_id) {
+      return alert("Select an employee.");
+    }
+
+    if (!leaveForm.leave_type) {
+      return alert("Select leave type.");
+    }
+
+    if (!leaveForm.date_created) {
+      return alert("Select date created.");
+    }
+
+    if (
+      isIndefiniteLeave &&
+      !leaveForm.start_date
+    ) {
       return alert("Select effective date.");
     }
 
     if (!isIndefiniteLeave) {
-      if (!leaveForm.start_date || !leaveForm.end_date) {
-        return alert("Select start/end date.");
+      if (
+        !leaveForm.start_date ||
+        !leaveForm.end_date
+      ) {
+        return alert(
+          "Select start/end date."
+        );
       }
 
-      if (String(leaveForm.start_date) > String(leaveForm.end_date)) {
-        return alert("Start date must be on or before end date.");
+      if (
+        String(leaveForm.start_date) >
+        String(leaveForm.end_date)
+      ) {
+        return alert(
+          "Start date must be on or before end date."
+        );
       }
 
-      const requestedDays = toNum(leaveForm.total_no_of_days);
+      const requestedDays = toNum(
+        leaveForm.total_no_of_days
+      );
 
       if (requestedDays <= 0) {
-        return alert("Enter total number of days.");
-      }
-      const remainingLeave = getLeaveRemaining();
-
-      if (remainingLeave <= 0) {
-        return alert("Insufficient leave balance. Remaining leave is 0.");
-      }
-
-      if (requestedDays > remainingLeave) {
         return alert(
-          `Insufficient leave balance. Remaining: ${remainingLeave}, Requested: ${requestedDays}.`
+          "Enter total number of days."
         );
+      }
+
+      /*
+        Only enforce the remaining-balance check
+        when creating a new leave request.
+
+        While editing, the request may already be
+        included in the approved-used calculation.
+      */
+      if (!editingLeaveId) {
+        const remainingLeave =
+          getLeaveRemaining();
+
+        if (remainingLeave <= 0) {
+          return alert(
+            "Insufficient leave balance. Remaining leave is 0."
+          );
+        }
+
+        if (
+          requestedDays >
+          remainingLeave
+        ) {
+          return alert(
+            `Insufficient leave balance. Remaining: ${remainingLeave}, Requested: ${requestedDays}.`
+          );
+        }
       }
     }
 
     try {
       setLoadingCreate(true);
 
-      const formData = new FormData();
+      const formData =
+        new FormData();
 
-      formData.append("employee_id", leaveForm.employee_id);
-      formData.append("leave_type", leaveForm.leave_type);
-      formData.append("date_created", leaveForm.date_created);
-      formData.append("start_date", leaveForm.start_date);
-      formData.append("end_date", isIndefiniteLeave ? "" : leaveForm.end_date);
-      formData.append("reason", leaveForm.reason || "");
+      formData.append(
+        "employee_id",
+        leaveForm.employee_id
+      );
+
+      formData.append(
+        "leave_type",
+        leaveForm.leave_type
+      );
+
+      formData.append(
+        "date_created",
+        leaveForm.date_created
+      );
+
+      formData.append(
+        "start_date",
+        leaveForm.start_date
+      );
+
+      formData.append(
+        "end_date",
+        isIndefiniteLeave
+          ? ""
+          : leaveForm.end_date
+      );
+
+      formData.append(
+        "total_no_of_days",
+        isIndefiniteLeave
+          ? "0"
+          : String(
+              leaveForm.total_no_of_days
+            )
+      );
+
+      formData.append(
+        "reason",
+        leaveForm.reason || ""
+      );
 
       if (attachmentFile) {
-        formData.append("attachment", attachmentFile);
+        formData.append(
+          "attachment",
+          attachmentFile
+        );
       }
 
-      await api.post("/leave-requests", formData, {
-        headers: { "Content-Type": "multipart/form-data" },
-      });
+      if (editingLeaveId) {
+        await api.put(
+          `/leave-requests/${editingLeaveId}/edit`,
+          formData,
+          {
+            headers: {
+              "Content-Type":
+                "multipart/form-data",
+            },
+          }
+        );
+      } else {
+        await api.post(
+          "/leave-requests",
+          formData,
+          {
+            headers: {
+              "Content-Type":
+                "multipart/form-data",
+            },
+          }
+        );
+      }
 
-      alert("Leave request submitted.");
-      resetForm();
-      setShowCreateLeave(false);
+      alert(
+        editingLeaveId
+          ? "Leave request updated successfully."
+          : "Leave request submitted successfully."
+      );
+
+      closeLeaveModal();
 
       await fetchLeave();
       await fetchStaff();
     } catch (err) {
-      if (err?.response?.status === 401) return logout();
-      if (err?.response?.status === 403) return alert("Access denied.");
+      if (
+        err?.response?.status === 401
+      ) {
+        return logout();
+      }
 
-      alert(err?.response?.data?.message || "Failed to submit leave request.");
+      if (
+        err?.response?.status === 403
+      ) {
+        return alert(
+          "Access denied. Check the leave_request edit permission."
+        );
+      }
+
+      alert(
+        err?.response?.data?.message ||
+          (editingLeaveId
+            ? "Failed to update leave request."
+            : "Failed to submit leave request.")
+      );
     } finally {
       setLoadingCreate(false);
     }
   };
 
   const canApproveThisRow = (item) => {
-    const status = String(item.status || "").trim();
-    const itemDepartment = String(item.department || "").trim().toLowerCase();
+    const status = String(
+      item.status || ""
+    ).trim();
 
-    if (!status.includes("Pending")) return false;
+    const itemDepartment = String(
+      item.department || ""
+    )
+      .trim()
+      .toLowerCase();
 
+    if (!status.includes("Pending")) {
+      return false;
+    }
+
+    /*
+      HR Department is the final approver.
+    */
     if (status === "Pending HR") {
       return isHrDepartmentUser;
     }
 
-    if (canBypassLeaveApproval) return true;
+    /*
+      Existing bypass users.
+    */
+    if (canBypassLeaveApproval) {
+      return true;
+    }
 
-    if (itemDepartment !== department) return false;
+    /*
+      Normal approvers must belong to the same department
+      as the employee requesting leave.
+    */
+    if (itemDepartment !== department) {
+      return false;
+    }
 
-    if (status === "Pending Area Manager") return isAreaManager;
-    if (status === "Pending Regional Manager") return isRegionalManager;
-    if (status === "Pending Assistant Vice President") return isAssistantVicePresident;
-    if (status === "Pending Vice President") return isVicePresident;
-    if (status === "Pending Senior Vice President") return isSeniorVicePresident;
+    if (
+      status === "Pending Branch Manager"
+    ) {
+      return isBranchManager;
+    }
+
+    if (
+      status === "Pending Area Manager"
+    ) {
+      return isAreaManager;
+    }
+
+    if (
+      status === "Pending Regional Manager"
+    ) {
+      return isRegionalManager;
+    }
+
+    if (
+      status ===
+      "Pending Assistant Vice President"
+    ) {
+      return isAssistantVicePresident;
+    }
+
+    if (
+      status === "Pending Vice President"
+    ) {
+      return isVicePresident;
+    }
+
+    if (
+      status ===
+      "Pending Senior Vice President"
+    ) {
+      return isSeniorVicePresident;
+    }
 
     return false;
   };
@@ -824,7 +1124,10 @@ export default function LeaveTransactions() {
           {canCreateLeave && (
             <button
               className="btn-primary"
-              onClick={() => setShowCreateLeave(true)}
+                onClick={() => {
+                  resetForm();
+                  setShowCreateLeave(true);
+                }}
               type="button"
             >
               + Add Leave
@@ -1018,9 +1321,9 @@ export default function LeaveTransactions() {
                       <td>
                         <div className="row-actions">
                           {renderLatestFileAction(item)}
-                            {(isAdmin || isHrDepartmentUser) &&
-                              !approved &&
-                              !voided && (
+                            {canManageLeaveAdministration &&
+                              !voided &&
+                              status !== "Returned to Work" && (
                                 <button
                                   className="btn-warning"
                                   type="button"
@@ -1083,7 +1386,7 @@ export default function LeaveTransactions() {
                             </>
                           ) : null}
 
-                          {(isAdmin || isHrDepartmentUser) && approved ? (
+                          {canManageLeaveAdministration && approved ? (
                             <button
                               className="btn-danger"
                               type="button"
@@ -1093,7 +1396,7 @@ export default function LeaveTransactions() {
                             </button>
                           ) : null}
 
-                          {(isAdminOrIT || isHrDepartmentUser) &&
+                          {canManageLeaveAdministration &&
                             item.leave_type === "Indefinite Leave" &&
                             approved &&
                             item.start_date &&
@@ -1107,15 +1410,16 @@ export default function LeaveTransactions() {
                               </button>
                             ) : null}
 
-                          {(isAdmin || isHrDepartmentUser) && (rejected || voided) ? (
-                            <button
-                              className="btn-danger"
-                              type="button"
-                              onClick={() => deleteLeaveRequest(item)}
-                            >
-                              Delete
-                            </button>
-                          ) : null}
+                          {canManageLeaveAdministration &&
+                            (rejected || voided) ? (
+                              <button
+                                className="btn-danger"
+                                type="button"
+                                onClick={() => deleteLeaveRequest(item)}
+                              >
+                                Delete
+                              </button>
+                            ) : null}
                         </div>
                       </td>
                     </tr>
@@ -1127,13 +1431,18 @@ export default function LeaveTransactions() {
         </div>
       </div>
 
-      {canCreateLeave && showCreateLeave && (
+      {(canCreateLeave || canManageLeaveAdministration) && showCreateLeave && (
         <div
           className="modal-overlay"
-          onMouseDown={(e) =>
-            e.target.classList.contains("modal-overlay") &&
-            setShowCreateLeave(false)
-          }
+          onMouseDown={(e) => {
+            if (
+              e.target.classList.contains(
+                "modal-overlay"
+              )
+            ) {
+              closeLeaveModal();
+            }
+          }}
         >
           <div
             className="modal saas-modal"
@@ -1146,17 +1455,23 @@ export default function LeaveTransactions() {
           >
             <div className="modal-head">
               <div>
-                <h3 className="modal-title">Add Leave Request</h3>
+                <h3 className="modal-title">
+                  {editingLeaveId
+                    ? "Edit Leave Request"
+                    : "Add Leave Request"}
+                </h3>
 
                 <p className="modal-subtitle">
-                  Submitted into approval chain automatically
+                  {editingLeaveId
+                    ? "Correct the leave details without changing its approval status"
+                    : "Submitted into approval chain automatically"}
                 </p>
               </div>
 
               <button
                 className="modal-x"
                 type="button"
-                onClick={() => setShowCreateLeave(false)}
+                onClick={closeLeaveModal}
               >
                 ✕
               </button>
@@ -1181,6 +1496,9 @@ export default function LeaveTransactions() {
                   <input
                     type="text"
                     placeholder="Search Employee..."
+                    disabled={
+                      editingLeaveStatus === "Approved"
+                    }
                     value={employeeSearch}
                     onChange={(e) => {
                       setEmployeeSearch(e.target.value);
@@ -1239,6 +1557,9 @@ export default function LeaveTransactions() {
 
                   <select
                     value={leaveForm.leave_type}
+                    disabled={
+                      editingLeaveStatus === "Approved"
+                    }
                     onChange={(e) =>
                       setLeaveForm((p) => ({
                         ...p,
@@ -1258,7 +1579,14 @@ export default function LeaveTransactions() {
                     <option value="">Select Leave Type</option>
 
                     {leaveTypes
-                      .filter((x) => x !== "All")
+                      .filter(
+                        (x) =>
+                          ![
+                            "All",
+                            "Pending",
+                            "History",
+                          ].includes(x)
+                      )
                       .map((x) => (
                         <option key={x} value={x}>
                           {x}
@@ -1369,7 +1697,7 @@ export default function LeaveTransactions() {
                 <button
                   className="btn-secondary"
                   type="button"
-                  onClick={() => setShowCreateLeave(false)}
+                  onClick={closeLeaveModal}
                 >
                   Cancel
                 </button>
@@ -1379,7 +1707,13 @@ export default function LeaveTransactions() {
                   type="submit"
                   disabled={loadingCreate}
                 >
-                  {loadingCreate ? "Submitting..." : "Submit"}
+                  {loadingCreate
+                    ? editingLeaveId
+                      ? "Updating..."
+                      : "Submitting..."
+                    : editingLeaveId
+                    ? "Update Leave"
+                    : "Submit Leave"}
                 </button>
               </div>
             </form>

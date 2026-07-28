@@ -2368,6 +2368,66 @@
   margin-top: 34px;
 }
 
+.travel-forecast-summary button{
+    width:100%;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+
+    padding:13px 14px;
+
+    border:1px solid var(--border);
+    border-radius:12px;
+
+    background:var(--panel);
+
+    color:var(--text);
+
+    cursor:pointer;
+
+    transition:
+        background .2s,
+        border-color .2s,
+        transform .15s;
+}
+
+.travel-forecast-summary button:hover{
+    transform:translateY(-2px);
+    border-color:var(--accent);
+    background:var(--panel-2);
+}
+
+.travel-forecast-summary button.active{
+    border-color:var(--accent);
+
+    background:
+      color-mix(
+        in srgb,
+        var(--accent) 16%,
+        var(--panel)
+      );
+
+    box-shadow:
+      0 0 0 1px
+      color-mix(
+        in srgb,
+        var(--accent) 25%,
+        transparent
+      );
+}
+
+.travel-forecast-summary button span{
+    color:var(--muted);
+    font-size:13px;
+    font-weight:700;
+}
+
+.travel-forecast-summary button b{
+    font-size:18px;
+    font-weight:900;
+    color:var(--text);
+}
+
 .travel-forecast-summary > div {
   display: flex;
   justify-content: space-between;
@@ -3294,4 +3354,153 @@
   border: 1px solid var(--border);
   border-radius: 12px;
   cursor: pointer;
+}
+
+.travel-branch-staff-filter{
+    display:flex;
+    align-items:flex-end;
+    gap:10px;
+    margin-top:10px;
+}
+
+.travel-branch-staff-filter label{
+    flex:1;
+    display:flex;
+    flex-direction:column;
+    gap:6px;
+}
+
+.travel-branch-staff-filter label span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.travel-branch-filter-clear{
+    height:42px;
+    padding:0 16px;
+
+    border:1px solid var(--border);
+    border-radius:10px;
+
+    background:var(--panel);
+
+    color:var(--text);
+
+    font-weight:700;
+
+    cursor:pointer;
+
+    white-space:nowrap;
+
+    flex:none;
+}
+
+.travel-branch-filter-clear:hover{
+    border-color:var(--accent);
+    background:var(--panel-2);
+}
+
+.travel-branch-staff-filter select {
+  width: 100%;
+  min-height: 40px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel-2);
+  color: var(--text);
+  font: inherit;
+  font-weight: 700;
+  outline: none;
+}
+
+.travel-branch-staff-filter select:focus {
+  border-color: var(--accent);
+}
+
+/* =========================================================
+   MOST VISITED BRANCHES - STAFF FILTER FINAL FIX
+========================================================= */
+
+.travel-branch-staff-filter {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 10px;
+  width: 100%;
+  margin-top: 10px;
+}
+
+.travel-branch-staff-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  width: 100%;
+}
+
+.travel-branch-staff-field > span {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.travel-branch-staff-field select {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  height: 40px;
+  padding: 0 34px 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  outline: none;
+  background: var(--panel);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.travel-branch-staff-field select:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px
+    color-mix(
+      in srgb,
+      var(--accent) 18%,
+      transparent
+    );
+}
+
+.travel-branch-staff-clear {
+  width: auto;
+  min-width: 64px;
+  height: 40px;
+  margin: 0;
+  padding: 0 14px;
+  flex: none;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.travel-branch-staff-clear:hover {
+  border-color: var(--accent);
+  background: var(--panel-2);
+  color: var(--text);
+}
+
+@media (max-width: 600px) {
+  .travel-branch-staff-filter {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .travel-branch-staff-clear {
+    width: fit-content;
+  }
 }

@@ -1175,47 +1175,164 @@
   );
 
   router.put(
-    "/transfer-staff-orders/:id/void",
-    requireAuth,
-    requirePermission("transfer_staff_order", "void"),
-    async (req, res) => {
-      try {
-        if (!canVoidOrder(req)) {
-          return res.status(403).json({ message: "Access denied" });
-        }
+  "/transfer-staff-orders/:id/void",
+  requireAuth,
+  requirePermission("transfer_staff_order", "void"),
+  async (req, res) => {
+    const client = await pool.connect();
 
-        const id = toInt(req.params.id);
-        const reason = toStr(req.body?.reason);
-
-        if (!id) return res.status(400).json({ message: "Invalid id" });
-        if (!reason) return res.status(400).json({ message: "Void reason is required" });
-
-        const r = await pool.query(
-          `
-          UPDATE public.transfer_staff_orders
-          SET
-            status = 'Void',
-            voided_by = $2,
-            voided_at = NOW(),
-            void_reason = $3
-          WHERE id = $1
-            AND status = 'Approved'
-          RETURNING *
-          `,
-          [id, req.user?.id ?? null, reason]
-        );
-
-        if (r.rowCount === 0) {
-          return res.status(400).json({ message: "Order not found or cannot be voided." });
-        }
-
-        return res.json(r.rows[0]);
-      } catch (e) {
-        console.error("VOID TRANSFER ERROR:", e.message);
-        return res.status(500).json({ message: e.message || "Server error" });
+    try {
+      if (!canVoidOrder(req)) {
+        return res.status(403).json({
+          message: "Access denied",
+        });
       }
+
+      const id = toInt(req.params.id);
+      const reason = toStr(req.body?.reason);
+
+      if (!id) {
+        return res.status(400).json({
+          message: "Invalid id",
+        });
+      }
+
+      if (!reason) {
+        return res.status(400).json({
+          message: "Void reason is required.",
+        });
+      }
+
+      await client.query("BEGIN");
+
+      // =====================================================
+      // LOCK TRANSFER ORDER
+      // =====================================================
+
+      const orderResult = await client.query(
+        `
+        SELECT *
+        FROM public.transfer_staff_orders
+        WHERE id = $1
+        FOR UPDATE
+        `,
+        [id]
+      );
+
+      if (orderResult.rowCount === 0) {
+        await client.query("ROLLBACK");
+
+        return res.status(404).json({
+          message: "Transfer order not found.",
+        });
+      }
+
+      const order = orderResult.rows[0];
+
+      if (order.status !== "Approved") {
+        await client.query("ROLLBACK");
+
+        return res.status(400).json({
+          message: "Only approved transfer orders can be voided.",
+        });
+      }
+
+      // =====================================================
+      // GET ORIGINAL BRANCH INFORMATION
+      // =====================================================
+
+      const branchResult = await client.query(
+        `
+        SELECT
+          area,
+          region,
+          division
+        FROM public.branches
+        WHERE id = $1
+        LIMIT 1
+        `,
+        [order.prev_branch_id]
+      );
+
+      if (branchResult.rowCount === 0) {
+        await client.query("ROLLBACK");
+
+        return res.status(404).json({
+          message: "Original branch no longer exists.",
+        });
+      }
+
+      const previousBranch = branchResult.rows[0];
+
+      // =====================================================
+      // RESTORE STAFF TO ORIGINAL BRANCH
+      // =====================================================
+
+      await client.query(
+        `
+        UPDATE public.staff
+        SET
+          branch_id = $2,
+          area = $3,
+          region = $4,
+          division = $5,
+          department = $6,
+          updated_at = NOW()
+        WHERE id = $1
+        `,
+        [
+          order.employee_id,
+          order.prev_branch_id,
+          previousBranch.area,
+          previousBranch.region,
+          previousBranch.division,
+          order.department,
+        ]
+      );
+
+      // =====================================================
+      // VOID TRANSFER ORDER
+      // =====================================================
+
+      const voidResult = await client.query(
+        `
+        UPDATE public.transfer_staff_orders
+        SET
+          status = 'Void',
+          voided_by = $2,
+          voided_at = NOW(),
+          void_reason = $3
+        WHERE id = $1
+        RETURNING *
+        `,
+        [
+          id,
+          req.user?.id ?? null,
+          reason,
+        ]
+      );
+
+      await client.query("COMMIT");
+
+      return res.json(voidResult.rows[0]);
+    } catch (e) {
+      try {
+        await client.query("ROLLBACK");
+      } catch {}
+
+      console.error(
+        "VOID TRANSFER ERROR:",
+        e.message
+      );
+
+      return res.status(500).json({
+        message: e.message || "Server error",
+      });
+    } finally {
+      client.release();
     }
-  );
+  }
+);
 
   router.delete(
     "/transfer-staff-orders/:id",
