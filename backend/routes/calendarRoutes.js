@@ -4383,6 +4383,21 @@ router.get(
         `;
       }
 
+      // OFFICE OF THE PRESIDENT
+      // Show every active staff member.
+      else if (
+        isOfficeOfPresidentDepartment(department)
+      ) {
+        sql = `
+          ${baseSelect}
+
+          ORDER BY
+            s.department ASC NULLS LAST,
+            b.name ASC NULLS LAST,
+            employee_name ASC
+        `;
+      }
+
       // AREA MANAGER:
       // AUDIT BRANCH MANAGER:
       // Show active Audit Department staff from the same branch.
@@ -5019,6 +5034,21 @@ router.get(
             END,
 
             s.fullname ASC
+        `;
+      }
+
+      // =================================================
+      // OFFICE OF THE PRESIDENT
+      // =================================================
+
+      else if (
+        isOfficeOfPresidentDepartment(department)
+      ) {
+        sql = `
+          ${baseSelect}
+
+          ORDER BY
+            employee_name ASC
         `;
       }
 
