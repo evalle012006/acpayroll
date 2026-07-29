@@ -292,6 +292,7 @@ const canMutatePendingOrder = (req, row) => {
 const canDownloadRequestFile = (req) =>
   isRegionalManager(req) ||
   isAssistantVicePresident(req) ||
+  isVicePresident(req) ||
   isAdmin(req) ||
   isIT(req) ||
   isHr(req) ||
@@ -315,6 +316,7 @@ const canDownloadApprovedFile = (req, row) => {
 
   if (isRegionalManager(req)) return true;
   if (isAssistantVicePresident(req)) return true;
+  if (isVicePresident(req)) return true;
 
   if (
     isAreaManager(req) &&

@@ -56,6 +56,10 @@ export default function TerminationApprovalTab({ embedded = false }) {
   const isHR = role === "hr";
   const isAccounting = role === "accounting";
 
+  const isOperationVicePresident =
+    dept === "operation department" &&
+    role === "vice president";
+
   const canManage =
     isAdmin ||
     isIT ||
@@ -64,6 +68,10 @@ export default function TerminationApprovalTab({ embedded = false }) {
     dept === "it department" ||
     dept === "hr department" ||
     dept === "accounting department";
+
+  const canView =
+    canManage ||
+    isOperationVicePresident;
 
   const canCreate = canManage;
   const canFinalUpload = canManage;
@@ -482,7 +490,7 @@ export default function TerminationApprovalTab({ embedded = false }) {
     return pages;
   };
 
-  if (!canManage) {
+  if (!canView) {
     return (
       <div className="empty-state">
         You do not have access to Termination of Contract.

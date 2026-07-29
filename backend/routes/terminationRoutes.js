@@ -26,6 +26,27 @@ const STATUS_VOID = "Voided";
 const toStr = (v) => String(v ?? "").trim();
 const norm = (v) => toStr(v).toLowerCase();
 
+const normalizeDepartment = (value) =>
+  norm(value).replace(/\s+/g, " ");
+
+const normalizeRole = (value) =>
+  norm(value).replace(/\s+/g, " ");
+
+const isOperationVicePresident = (req) => {
+  const role = normalizeRole(
+    req.user?.role
+  );
+
+  const department = normalizeDepartment(
+    req.user?.department
+  );
+
+  return (
+    department === "operation department" &&
+    role === "vice president"
+  );
+};
+
 const toInt = (v) => {
   const n = Number(v);
   return Number.isFinite(n) ? Math.trunc(n) : null;
@@ -47,6 +68,10 @@ const canManageTermination = (req) =>
   isHrDepartment(req) ||
   isAccountingDepartment(req) ||
   isITDepartment(req);
+
+const canViewTermination = (req) =>
+  canManageTermination(req) ||
+  isOperationVicePresident(req);
 
 const canDeleteTermination = (req) =>
   isAdmin(req) || isIT(req);
@@ -142,8 +167,10 @@ router.get(
   requirePermission("termination_request", "view"),
   async (req, res) => {
     try {
-      if (!canManageTermination(req)) {
-        return res.status(403).json({ message: "Access denied" });
+      if (!canViewTermination(req)) {
+        return res.status(403).json({
+          message: "Access denied",
+        });
       }
 
       const r = await pool.query(`
@@ -603,7 +630,7 @@ router.get(
   requirePermission("termination_request", "view"),
   async (req, res) => {
     try {
-      if (!canManageTermination(req)) {
+      if (!canViewTermination(req)) {
         return res.status(403).json({
           message: "Access denied.",
         });
@@ -671,7 +698,7 @@ router.get(
   requirePermission("termination_request", "view"),
   async (req, res) => {
     try {
-      if (!canManageTermination(req)) {
+      if (!canViewTermination(req)) {
         return res.status(403).json({
           message: "Access denied.",
         });
@@ -793,7 +820,7 @@ router.delete(
       }
 
       return res.json({
-        message: "Termination request deleted successfully.",
+        message: "Termination request deleted successfully.", 
       });
     } catch (e) {
       console.error(

@@ -68,6 +68,160 @@ const calculateInclusiveDays = (dateFrom, dateTo) => {
 };
 
 // =====================================================
+// CHECK 3 CONSECUTIVE VISITS TO THE SAME BRANCH
+// =====================================================
+
+const wouldCreateThreeConsecutiveBranchVisits = async (
+  client,
+  {
+    employeeName,
+    branchName,
+    planDate,
+    excludePlanId = null,
+  }
+) => {
+  const normalizedEmployeeName = toStr(employeeName);
+  const normalizedBranchName = toStr(branchName);
+  const normalizedPlanDate = toStr(planDate);
+
+  if (
+    !normalizedEmployeeName ||
+    !normalizedBranchName ||
+    !normalizedPlanDate
+  ) {
+    return false;
+  }
+
+  const result = await client.query(
+    `
+    WITH combined_plans AS (
+      SELECT
+        tp.id,
+        tp.employee_name,
+        tp.branch_name,
+        tp.plan_date,
+        0 AS is_new
+
+      FROM public.travel_plans tp
+
+      WHERE LOWER(TRIM(COALESCE(tp.employee_name, ''))) =
+            LOWER(TRIM($1))
+
+        AND (
+          $4::bigint IS NULL
+          OR tp.id <> $4::bigint
+        )
+
+      UNION ALL
+
+      SELECT
+        NULL::bigint AS id,
+        $1::text AS employee_name,
+        $2::text AS branch_name,
+        $3::date AS plan_date,
+        1 AS is_new
+    ),
+
+    ordered_plans AS (
+      SELECT
+        id,
+        employee_name,
+        branch_name,
+        plan_date,
+        is_new,
+
+        LAG(branch_name, 1) OVER (
+          ORDER BY
+            plan_date ASC,
+            is_new ASC,
+            id ASC NULLS LAST
+        ) AS previous_branch_1,
+
+        LAG(branch_name, 2) OVER (
+          ORDER BY
+            plan_date ASC,
+            is_new ASC,
+            id ASC NULLS LAST
+        ) AS previous_branch_2,
+
+        LEAD(branch_name, 1) OVER (
+          ORDER BY
+            plan_date ASC,
+            is_new ASC,
+            id ASC NULLS LAST
+        ) AS next_branch_1,
+
+        LEAD(branch_name, 2) OVER (
+          ORDER BY
+            plan_date ASC,
+            is_new ASC,
+            id ASC NULLS LAST
+        ) AS next_branch_2
+
+      FROM combined_plans
+    )
+
+    SELECT
+      CASE
+        /*
+          Previous two plans and new plan
+          are all the same branch.
+        */
+        WHEN
+          LOWER(TRIM(COALESCE(previous_branch_2, ''))) =
+            LOWER(TRIM($2))
+          AND
+          LOWER(TRIM(COALESCE(previous_branch_1, ''))) =
+            LOWER(TRIM($2))
+        THEN TRUE
+
+        /*
+          Previous plan, new plan, and next plan
+          are all the same branch.
+        */
+        WHEN
+          LOWER(TRIM(COALESCE(previous_branch_1, ''))) =
+            LOWER(TRIM($2))
+          AND
+          LOWER(TRIM(COALESCE(next_branch_1, ''))) =
+            LOWER(TRIM($2))
+        THEN TRUE
+
+        /*
+          New plan and the next two plans
+          are all the same branch.
+        */
+        WHEN
+          LOWER(TRIM(COALESCE(next_branch_1, ''))) =
+            LOWER(TRIM($2))
+          AND
+          LOWER(TRIM(COALESCE(next_branch_2, ''))) =
+            LOWER(TRIM($2))
+        THEN TRUE
+
+        ELSE FALSE
+      END AS has_three_consecutive
+
+    FROM ordered_plans
+
+    WHERE is_new = 1
+
+    LIMIT 1
+    `,
+    [
+      normalizedEmployeeName,
+      normalizedBranchName,
+      normalizedPlanDate,
+      excludePlanId,
+    ]
+  );
+
+  return Boolean(
+    result.rows[0]?.has_three_consecutive
+  );
+};
+
+// =====================================================
 // TRAVEL PLAN COMPLIANCE HELPERS
 // =====================================================
 
@@ -1313,6 +1467,8 @@ router.get(
 // =====================================================
 
 router.post("/travel-plans", requireAuth, async (req, res) => {
+  const client = await pool.connect();
+
   try {
     if (!canCreatePlan(req)) {
       return res.status(403).json({
@@ -1342,7 +1498,37 @@ router.post("/travel-plans", requireAuth, async (req, res) => {
       });
     }
 
-    const result = await pool.query(
+    if (!employeeName) {
+      return res.status(400).json({
+        message: "Employee is required.",
+      });
+    }
+
+    if (!branchName) {
+      return res.status(400).json({
+        message: "Branch is required.",
+      });
+    }
+
+    const hasThreeConsecutiveVisits =
+      await wouldCreateThreeConsecutiveBranchVisits(
+        client,
+        {
+          employeeName,
+          branchName,
+          planDate,
+        }
+      );
+
+    if (hasThreeConsecutiveVisits) {
+      return res.status(400).json({
+        message:
+          `${employeeName} cannot visit ${branchName} three times in a row. ` +
+          "Select a different branch before visiting this branch again.",
+      });
+    }
+
+    const result = await client.query(
       `
       INSERT INTO public.travel_plans
       (
@@ -1405,6 +1591,8 @@ router.post("/travel-plans", requireAuth, async (req, res) => {
       "POST /travel-plans",
       error
     );
+  } finally {
+    client.release();
   }
 });
 
@@ -1413,6 +1601,9 @@ router.post("/travel-plans", requireAuth, async (req, res) => {
 // =====================================================
 
 router.put("/travel-plans/:id", requireAuth, async (req, res) => {
+
+  const client = await pool.connect();
+
   try {
     if (!canEditPlan(req)) {
       return res.status(403).json({
@@ -1429,7 +1620,7 @@ router.put("/travel-plans/:id", requireAuth, async (req, res) => {
       });
     }
 
-    const existingResult = await pool.query(
+    const existingResult = await client.query(
       `
       SELECT
         id,
@@ -1478,7 +1669,38 @@ router.put("/travel-plans/:id", requireAuth, async (req, res) => {
       });
     }
 
-    const result = await pool.query(
+    if (!employeeName) {
+      return res.status(400).json({
+        message: "Employee is required.",
+      });
+    }
+
+    if (!branchName) {
+      return res.status(400).json({
+        message: "Branch is required.",
+      });
+    }
+
+    const hasThreeConsecutiveVisits =
+      await wouldCreateThreeConsecutiveBranchVisits(
+        client,
+        {
+          employeeName,
+          branchName,
+          planDate,
+          excludePlanId: id,
+        }
+      );
+
+    if (hasThreeConsecutiveVisits) {
+      return res.status(400).json({
+        message:
+          `${employeeName} cannot visit ${branchName} three times in a row. ` +
+          "Select a different branch before visiting this branch again.",
+      });
+    }
+
+    const result = await client.query(
       `
       UPDATE public.travel_plans
       SET
@@ -1520,8 +1742,10 @@ router.put("/travel-plans/:id", requireAuth, async (req, res) => {
       "PUT /travel-plans/:id",
       error
     );
+  } finally {
+    client.release();
   }
-});
+  });
 
 // =====================================================
 // DELETE TRAVEL PLAN
@@ -4346,6 +4570,18 @@ router.get(
           )
         ) = 'active'
 
+        AND LOWER(
+          TRIM(
+            COALESCE(s.position, '')
+          )
+        ) NOT IN (
+          'vice president',
+          'acting vice president',
+          'senior vice president',
+          'acting senior vice president',
+          'president'
+        )
+
           AND s.employee_no IS NOT NULL
 
           AND TRIM(s.employee_no) <> ''
@@ -4911,21 +5147,38 @@ router.get(
           LIMIT 1
         ) active_leave ON TRUE
 
-        WHERE (
-          /*
-            Normal active staff.
-          */
-          LOWER(TRIM(COALESCE(s.status, 'active'))) = 'active'
+                WHERE (
+                  /*
+                    Normal active staff.
+                  */
+                  LOWER(TRIM(COALESCE(s.status, 'active'))) = 'active'
 
-          OR
+                  OR
 
-          /*
-            Include inactive staff when they are currently
-            on approved Indefinite Leave.
-          */
-          active_leave.leave_type = 'Indefinite Leave'
-        )
-      `;
+                  /*
+                    Include inactive staff when they are currently
+                    on approved Indefinite Leave.
+                  */
+                  active_leave.leave_type = 'Indefinite Leave'
+                )
+
+                /*
+                  VP, SVP, and President are monitoring roles.
+                  They must not appear as employees required
+                  to submit travel plans.
+                */
+                AND LOWER(
+                  TRIM(
+                    COALESCE(s.position, '')
+                  )
+                ) NOT IN (
+                  'vice president',
+                  'acting vice president',
+                  'senior vice president',
+                  'acting senior vice president',
+                  'president'
+                )
+              `;
 
       let sql = "";
       let params = [targetDate];
@@ -4953,14 +5206,12 @@ router.get(
               COALESCE(s.position, '')
             )
           ) IN (
-            'area manager',
-            'acting area manager',
-            'regional manager',
-            'acting regional manager',
-            'assistant vice president',
-            'vice president',
-            'senior vice president'
-          )
+              'area manager',
+              'acting area manager',
+              'regional manager',
+              'acting regional manager',
+              'assistant vice president'
+            )
 
           ORDER BY
             CASE LOWER(
@@ -4968,13 +5219,11 @@ router.get(
                 COALESCE(s.position, '')
               )
             )
-              WHEN 'senior vice president' THEN 1
-              WHEN 'vice president' THEN 2
-              WHEN 'assistant vice president' THEN 3
-              WHEN 'regional manager' THEN 4
-              WHEN 'acting regional manager' THEN 5
-              WHEN 'area manager' THEN 6
-              WHEN 'acting area manager' THEN 7
+              WHEN 'assistant vice president' THEN 1
+              WHEN 'regional manager' THEN 2
+              WHEN 'acting regional manager' THEN 3
+              WHEN 'area manager' THEN 4
+              WHEN 'acting area manager' THEN 5
               ELSE 99
             END,
 
@@ -5336,7 +5585,6 @@ router.get(
               COALESCE(s.position, '')
             )
           ) IN (
-            'vice president',
             'assistant vice president',
             'regional manager',
             'acting regional manager',
@@ -5350,12 +5598,11 @@ router.get(
                 COALESCE(s.position, '')
               )
             )
-              WHEN 'vice president' THEN 1
-              WHEN 'assistant vice president' THEN 2
-              WHEN 'regional manager' THEN 3
-              WHEN 'acting regional manager' THEN 4
-              WHEN 'area manager' THEN 5
-              WHEN 'acting area manager' THEN 6
+              WHEN 'assistant vice president' THEN 1
+              WHEN 'regional manager' THEN 2
+              WHEN 'acting regional manager' THEN 3
+              WHEN 'area manager' THEN 4
+              WHEN 'acting area manager' THEN 5
               ELSE 99
             END,
 
@@ -5390,8 +5637,6 @@ router.get(
               COALESCE(s.position, '')
             )
           ) IN (
-            'senior vice president',
-            'vice president',
             'assistant vice president',
             'regional manager',
             'acting regional manager',
@@ -5405,13 +5650,11 @@ router.get(
                 COALESCE(s.position, '')
               )
             )
-              WHEN 'senior vice president' THEN 1
-              WHEN 'vice president' THEN 2
-              WHEN 'assistant vice president' THEN 3
-              WHEN 'regional manager' THEN 4
-              WHEN 'acting regional manager' THEN 5
-              WHEN 'area manager' THEN 6
-              WHEN 'acting area manager' THEN 7
+              WHEN 'assistant vice president' THEN 1
+              WHEN 'regional manager' THEN 2
+              WHEN 'acting regional manager' THEN 3
+              WHEN 'area manager' THEN 4
+              WHEN 'acting area manager' THEN 5
               ELSE 99
             END,
 

@@ -138,6 +138,7 @@ export default function SuspensionOrder() {
   const canDownloadRequestFile =
     isRegionalManager ||
     isAssistantVicePresident ||
+    isVicePresident ||
     isAdmin ||
     isIt ||
     isHr ||
@@ -151,10 +152,31 @@ export default function SuspensionOrder() {
   const canDownloadApprovedFile = (order) => {
     const approved = norm(order?.status) === "approved";
 
-    if (isAdmin || isIt || isHr || isAccounting || isHRDepartmentManager) return true;
-    if (isRegionalManager || isAssistantVicePresident) return true;
-    if (isAreaManager && approved) return true;
-    if (isBranchManager && approved) return true;
+    if (
+      isAdmin ||
+      isIt ||
+      isHr ||
+      isAccounting ||
+      isHRDepartmentManager
+    ) {
+      return true;
+    }
+
+    if (
+      isRegionalManager ||
+      isAssistantVicePresident ||
+      isVicePresident
+    ) {
+      return true;
+    }
+
+    if (isAreaManager && approved) {
+      return true;
+    }
+
+    if (isBranchManager && approved) {
+      return true;
+    }
 
     return false;
   };

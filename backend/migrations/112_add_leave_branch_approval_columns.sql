@@ -1,7 +1,7 @@
 BEGIN;
 
 -- =====================================================
--- ADD BRANCH MANAGER APPROVAL COLUMNS
+-- LEAVE REQUEST BRANCH APPROVAL COLUMNS
 -- =====================================================
 
 ALTER TABLE public.leave_requests
@@ -12,5 +12,138 @@ ADD COLUMN IF NOT EXISTS branch_approved_at TIMESTAMP;
 
 CREATE INDEX IF NOT EXISTS idx_leave_requests_branch_approved_by
 ON public.leave_requests(branch_approved_by);
+
+-- =====================================================
+-- OFFICE OF THE PRESIDENT - TRAVEL PLAN PERMISSIONS
+-- =====================================================
+
+INSERT INTO public.role_permissions
+(
+  role,
+  department,
+  module_name,
+  action_name,
+  allowed,
+  created_at,
+  updated_at
+)
+SELECT
+  source.role,
+  source.department,
+  'travel_plan',
+  action.action_name,
+  TRUE,
+  NOW(),
+  NOW()
+FROM
+(
+  SELECT DISTINCT
+    LOWER(TRIM(u.role)) AS role,
+    UPPER(TRIM(u.department)) AS department
+  FROM public.users u
+  WHERE LOWER(TRIM(COALESCE(u.department, ''))) IN
+  (
+    'office of the president',
+    'office of the president department'
+  )
+  AND NULLIF(TRIM(COALESCE(u.role, '')), '') IS NOT NULL
+) source
+CROSS JOIN
+(
+  VALUES
+    ('view'),
+    ('view_all'),
+    ('create'),
+    ('edit')
+) AS action(action_name)
+WHERE NOT EXISTS
+(
+  SELECT 1
+  FROM public.role_permissions rp
+  WHERE LOWER(TRIM(COALESCE(rp.role, ''))) =
+        LOWER(TRIM(source.role))
+    AND LOWER(TRIM(COALESCE(rp.department, ''))) =
+        LOWER(TRIM(source.department))
+    AND LOWER(TRIM(COALESCE(rp.module_name, ''))) =
+        'travel_plan'
+    AND LOWER(TRIM(COALESCE(rp.action_name, ''))) =
+        LOWER(TRIM(action.action_name))
+);
+
+UPDATE public.role_permissions
+SET
+  allowed = TRUE,
+  updated_at = NOW()
+WHERE LOWER(TRIM(COALESCE(department, ''))) IN
+(
+  'office of the president',
+  'office of the president department'
+)
+AND LOWER(TRIM(COALESCE(module_name, ''))) =
+    'travel_plan'
+AND LOWER(TRIM(COALESCE(action_name, ''))) IN
+(
+  'view',
+  'view_all',
+  'create',
+  'edit'
+);
+
+-- =====================================================
+-- LEAVE EDIT PERMISSIONS
+-- =====================================================
+
+INSERT INTO public.role_permissions
+(
+  role,
+  department,
+  module_name,
+  action_name,
+  allowed,
+  created_at,
+  updated_at
+)
+SELECT
+  role_name,
+  department_name,
+  'leave_request',
+  'edit',
+  TRUE,
+  NOW(),
+  NOW()
+FROM
+(
+  VALUES
+    ('branch manager', 'HR DEPARTMENT'),
+    ('area manager', 'HR DEPARTMENT'),
+    ('regional manager', 'HR DEPARTMENT'),
+    ('assistant vice president', 'HR DEPARTMENT'),
+    ('vice president', 'HR DEPARTMENT'),
+    ('senior vice president', 'HR DEPARTMENT'),
+
+    ('branch manager', 'IT DEPARTMENT'),
+    ('area manager', 'IT DEPARTMENT'),
+    ('regional manager', 'IT DEPARTMENT'),
+    ('assistant vice president', 'IT DEPARTMENT'),
+    ('vice president', 'IT DEPARTMENT'),
+    ('senior vice president', 'IT DEPARTMENT'),
+
+    ('branch manager', 'ACCOUNTING DEPARTMENT'),
+    ('area manager', 'ACCOUNTING DEPARTMENT'),
+    ('regional manager', 'ACCOUNTING DEPARTMENT'),
+    ('assistant vice president', 'ACCOUNTING DEPARTMENT'),
+    ('vice president', 'ACCOUNTING DEPARTMENT'),
+    ('senior vice president', 'ACCOUNTING DEPARTMENT')
+) AS permissions(role_name, department_name)
+ON CONFLICT
+(
+  role,
+  COALESCE(department, ''),
+  module_name,
+  action_name
+)
+DO UPDATE SET
+  allowed = TRUE,
+  updated_at = NOW();
 
 COMMIT;
