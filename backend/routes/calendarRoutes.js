@@ -5195,40 +5195,38 @@ router.get(
         sql = `
           ${baseSelect}
 
-          AND LOWER(
-            TRIM(
-              COALESCE(s.department, '')
-            )
-          ) = 'operation department'
-
-          AND LOWER(
-            TRIM(
-              COALESCE(s.position, '')
-            )
-          ) IN (
-              'area manager',
-              'acting area manager',
-              'regional manager',
-              'acting regional manager',
-              'assistant vice president'
-            )
-
           ORDER BY
+            LOWER(
+              TRIM(
+                COALESCE(s.department, '')
+              )
+            ) ASC,
+
             CASE LOWER(
               TRIM(
                 COALESCE(s.position, '')
               )
             )
-              WHEN 'assistant vice president' THEN 1
-              WHEN 'regional manager' THEN 2
-              WHEN 'acting regional manager' THEN 3
-              WHEN 'area manager' THEN 4
-              WHEN 'acting area manager' THEN 5
+              WHEN 'president' THEN 1
+              WHEN 'senior vice president' THEN 2
+              WHEN 'acting senior vice president' THEN 3
+              WHEN 'vice president' THEN 4
+              WHEN 'acting vice president' THEN 5
+              WHEN 'assistant vice president' THEN 6
+              WHEN 'regional manager' THEN 7
+              WHEN 'acting regional manager' THEN 8
+              WHEN 'area manager' THEN 9
+              WHEN 'acting area manager' THEN 10
+              WHEN 'branch manager' THEN 11
+              WHEN 'acting branch manager' THEN 12
+              WHEN 'loan officer' THEN 13
               ELSE 99
             END,
 
-            s.fullname ASC
+            employee_name ASC
         `;
+
+        params = [targetDate];
       }
 
       // =================================================

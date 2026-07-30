@@ -169,6 +169,7 @@ export default function TravelPlan() {
   ] = useState([]);
 
   const [staffPositionFilter, setStaffPositionFilter] = useState("");
+  const [staffDepartmentFilter, setStaffDepartmentFilter] = useState("");
   const [staffSearch, setStaffSearch] = useState("");
 
   const [branchScopeRows, setBranchScopeRows] = useState([]);
@@ -719,6 +720,18 @@ const selectedForecastStaffWeek = useMemo(() => {
     return [...new Set(staffRows.map((s) => s.position).filter(Boolean))];
   }, [staffRows]);
 
+  const staffDepartmentOptions = useMemo(() => {
+    return [
+      ...new Set(
+        staffRows
+          .map((staff) =>
+            String(staff.department || "").trim()
+          )
+          .filter(Boolean)
+      ),
+    ].sort((a, b) => a.localeCompare(b));
+  }, [staffRows]);
+
   const branchStaffOptions = useMemo(() => {
     const names = plans
       .map((plan) =>
@@ -735,20 +748,26 @@ const selectedForecastStaffWeek = useMemo(() => {
     const search = normalizeValue(staffSearch);
 
     return staffRows.filter((staff) => {
+      const matchesDepartment =
+        !staffDepartmentFilter ||
+        normalizeValue(staff.department) ===
+          normalizeValue(staffDepartmentFilter);
+
       const matchesPosition =
         !staffPositionFilter ||
-        String(staff.position || "") ===
-          staffPositionFilter;
+        normalizeValue(staff.position) ===
+          normalizeValue(staffPositionFilter);
 
       const searchableText = normalizeValue(
         [
           staff.employee_no,
           staff.employee_name,
           staff.position,
+          staff.department,
           staff.branch_name,
           staff.area,
           staff.region,
-          staff.department,
+          staff.division,
           staff.travel_status,
         ]
           .filter(Boolean)
@@ -756,12 +775,18 @@ const selectedForecastStaffWeek = useMemo(() => {
       );
 
       const matchesSearch =
-        !search || searchableText.includes(search);
+        !search ||
+        searchableText.includes(search);
 
-      return matchesPosition && matchesSearch;
+      return (
+        matchesDepartment &&
+        matchesPosition &&
+        matchesSearch
+      );
     });
   }, [
     staffRows,
+    staffDepartmentFilter,
     staffPositionFilter,
     staffSearch,
   ]);
@@ -2767,54 +2792,44 @@ const selectedBranchPlans = useMemo(() => {
                       <div>
                         <h3>Most Visited Branches</h3>
                         <p>Based on created travel plans.</p>
-
-                        <input
-                          type="text"
-                          placeholder="Search branch..."
-                          value={branchSearch}
-                          onChange={(e) => setBranchSearch(e.target.value)}
-                          className="travel-branch-search"
-                        />
-
                         <div className="travel-branch-staff-filter">
                           <label className="travel-branch-staff-field">
                             <span>Staff</span>
 
-                            <select
-                              value={branchStaffFilter}
-                              onChange={(event) => {
-                                setBranchStaffFilter(
-                                  event.target.value
-                                );
-                              }}
-                            >
-                              <option value="">All Staff</option>
+                            <Select
+                              className="travel-staff-search"
+                              classNamePrefix="select"
+                              isSearchable
+                              isClearable
+                              placeholder="Search staff..."
+                              options={[
+                                {
+                                  value: "",
+                                  label: "All Staff",
+                                },
 
-                              {branchStaffOptions.map(
-                                (employeeName) => (
-                                  <option
-                                    key={employeeName}
-                                    value={employeeName}
-                                  >
-                                    {employeeName}
-                                  </option>
-                                )
-                              )}
-                            </select>
+                                ...branchStaffOptions.map((employeeName) => ({
+                                  value: employeeName,
+                                  label: employeeName,
+                                })),
+                              ]}
+                              value={
+                                branchStaffFilter
+                                  ? {
+                                      value: branchStaffFilter,
+                                      label: branchStaffFilter,
+                                    }
+                                  : {
+                                      value: "",
+                                      label: "All Staff",
+                                    }
+                              }
+                              onChange={(option) =>
+                                setBranchStaffFilter(option?.value || "")
+                              }
+                              noOptionsMessage={() => "No staff found"}
+                            />
                           </label>
-
-                          {branchStaffFilter && (
-                            <button
-                              type="button"
-                              className="travel-branch-staff-clear"
-                              title="Clear selected staff"
-                              onClick={() => {
-                                setBranchStaffFilter("");
-                              }}
-                            >
-                              Clear
-                            </button>
-                          )}
                         </div>
 
                         <div className="travel-branch-location-filters">
@@ -2954,11 +2969,13 @@ const selectedBranchPlans = useMemo(() => {
                 </div>
               </div>
 
-
               {/* STAFF SCOPE */}
                 <div className="travel-dashboard-card">
                   <div className="travel-dashboard-head">
                     <div>
+
+
+
                       <h3>Staff Scope</h3>
                       <p>Staff visible based on your position.</p>
                     </div>
@@ -2989,9 +3006,29 @@ const selectedBranchPlans = useMemo(() => {
                         onChange={(e) => setStaffPositionFilter(e.target.value)}
                       >
                         <option value="">All Positions</option>
+
                         {staffPositionOptions.map((pos) => (
                           <option key={pos} value={pos}>
                             {pos}
+                          </option>
+                        ))}
+                      </select>
+
+                      <select
+                        value={staffDepartmentFilter}
+                        onChange={(event) => {
+                          setStaffDepartmentFilter(event.target.value);
+                          setStaffPositionFilter("");
+                        }}
+                      >
+                        <option value="">All Departments</option>
+
+                        {staffDepartmentOptions.map((department) => (
+                          <option
+                            key={department}
+                            value={department}
+                          >
+                            {department}
                           </option>
                         ))}
                       </select>
