@@ -116,6 +116,77 @@ export default function SystemUpdate() {
             </div>
           </div>
         </button>
+
+        <button
+          type="button"
+          className="sys-card"
+          onClick={() =>
+            navigate("/system-update/pag-ibig-remittances")
+          }
+        >
+          <div className="sys-card-head">
+            <div>
+              <div className="sys-card-title">
+                Pag-IBIG Remittances
+              </div>
+
+              <div className="sys-card-meta">
+                Manage employee Pag-IBIG contribution remittances.
+              </div>
+            </div>
+
+            <span className="sys-pill">Manage</span>
+          </div>
+
+          <div className="sys-card-body">
+            <p className="sys-mini">
+              Create, review, and maintain employee and employer
+              Pag-IBIG remittance records.
+            </p>
+
+            <div className="sys-actions">
+              <span className="sys-link">
+                Open →
+              </span>
+            </div>
+          </div>
+        </button>
+
+        <button
+          type="button"
+          className="sys-card"
+          onClick={() =>
+            navigate("/system-update/pag-ibig-loan")
+          }
+        >
+          <div className="sys-card-head">
+            <div>
+              <div className="sys-card-title">
+                Pag-IBIG Loan
+              </div>
+
+              <div className="sys-card-meta">
+                Manage Pag-IBIG loan setup and deductions.
+              </div>
+            </div>
+
+            <span className="sys-pill">Manage</span>
+          </div>
+
+          <div className="sys-card-body">
+            <p className="sys-mini">
+              Configure employee Pag-IBIG loan balances,
+              monthly deductions, and payment records.
+            </p>
+
+            <div className="sys-actions">
+              <span className="sys-link">
+                Open →
+              </span>
+            </div>
+          </div>
+        </button>
+
       </div>
     </div>
   );
