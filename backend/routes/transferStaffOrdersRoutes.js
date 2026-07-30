@@ -577,7 +577,6 @@
             date_created = $14::date,
             effective_date = $15::date,
             details = $16,
-            updated_at = NOW()
 
           WHERE id = $1
           RETURNING *
@@ -1271,14 +1270,13 @@
       await client.query(
         `
         UPDATE public.staff
-        SET
-          branch_id = $2,
-          area = $3,
-          region = $4,
-          division = $5,
-          department = $6,
-          updated_at = NOW()
-        WHERE id = $1
+          SET
+            branch_id = $2,
+            area = $3,
+            region = $4,
+            division = $5,
+            department = $6
+          WHERE id = $1
         `,
         [
           order.employee_id,
