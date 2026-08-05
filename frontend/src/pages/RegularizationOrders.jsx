@@ -61,7 +61,18 @@ export default function RegularizationOrders() {
 
   const user = useMemo(() => readUser(), []);
   const role = norm(user?.role);
-  const department = norm(user?.department);
+  const department = norm(
+    user?.department ||
+    user?.department_name ||
+    user?.user_department ||
+    user?.departmentName ||
+    user?.dept
+  );
+
+  const isHRDepartment =
+    department === "hr department" ||
+    department === "human resources" ||
+    department === "human resources department";
 
   const isITDepartmentManager =
     department === "it department" &&
@@ -79,10 +90,10 @@ export default function RegularizationOrders() {
 
   const canCreate =
     isITDepartmentManager ||
+    isHRDepartment ||
     [
       "admin",
       "it",
-      "hr",
       "accounting",
       "vice president",
       "senior vice president",
@@ -91,10 +102,10 @@ export default function RegularizationOrders() {
 
   const canApprove =
     isITDepartmentManager ||
+    isHRDepartment ||
     [
       "admin",
       "it",
-      "hr",
       "accounting",
     ].includes(role);
 

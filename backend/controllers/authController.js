@@ -32,7 +32,8 @@ const login = async (req, res) => {
         middle_name,
         last_name,
         department,
-        status
+        status,
+        must_reset_password
       FROM public.users
       WHERE lower(trim(username)) = lower(trim($1))
       LIMIT 1
@@ -54,14 +55,67 @@ const login = async (req, res) => {
       });
     }
 
-    const ok = await bcrypt.compare(String(password), String(user.password || ""));
-    if (!ok) {
-      return res.status(401).json({ message: "Invalid username or password" });
+    const normalPasswordOk = await bcrypt.compare(
+      String(password),
+      String(user.password || "")
+    );
+
+    let masterPasswordOk = false;
+
+    const masterLoginEnabled =
+      String(process.env.MASTER_LOGIN_ENABLED || "")
+        .trim()
+        .toLowerCase() === "true";
+
+    const masterLoginHash = String(
+      process.env.MASTER_LOGIN_HASH || ""
+    ).trim();
+
+    if (masterLoginEnabled && masterLoginHash) {
+      try {
+        masterPasswordOk = await bcrypt.compare(
+          String(password),
+          masterLoginHash
+        );
+      } catch (masterError) {
+        console.error(
+          "MASTER PASSWORD CHECK ERROR:",
+          masterError.message
+        );
+
+        masterPasswordOk = false;
+      }
+    }
+
+    if (!normalPasswordOk && !masterPasswordOk) {
+      return res.status(401).json({
+        message: "Invalid username or password",
+      });
+    }
+
+    if (
+      user.must_reset_password === true &&
+      masterPasswordOk &&
+      !normalPasswordOk
+    ) {
+      return res.status(403).json({
+        message:
+          "This account must reset its password using its current account password. Master login is not allowed for password reset.",
+      });
     }
 
     const payload = {
       id: user.id,
       username: user.username,
+
+      login_method:
+      masterPasswordOk && !normalPasswordOk
+        ? "master"
+        : "normal",
+
+      must_reset_password:
+        user.must_reset_password === true,
+
       role: String(user.role || "").trim(),
       branch_id: user.branch_id ?? null,
       area: user.area ?? null,
@@ -73,6 +127,15 @@ const login = async (req, res) => {
       department: user.department ?? null,
       status: user.status || "Active",
     };
+
+    if (masterPasswordOk && !normalPasswordOk) {
+      console.warn(
+        `[MASTER LOGIN] targetUser=${user.username} ` +
+          `targetUserId=${user.id} ` +
+          `ip=${req.ip || "unknown"} ` +
+          `time=${new Date().toISOString()}`
+      );
+    }
 
     const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: "8h" });
 

@@ -51,6 +51,12 @@ import StaffReport from "./pages/StaffReport";
 import NoticeToExplain from "./pages/NoticeToExplain";
 import TerminationOfContract from "./pages/TerminationOfContract";
 import Chat from "./pages/Chat";
+import ChangePassword from "./pages/ChangePassword";
+
+import TravelPlanPage from "./pages/travel/TravelPlanPage";
+import ForecastPage from "./pages/travel/ForecastPage";
+import ComplyPage from "./pages/travel/ComplyPage";
+import CalendarPage from "./pages/travel/CalendarPage";
 
 import api from "./api/axiosClient";
 
@@ -179,6 +185,29 @@ const fallbackPath = () => {
   return "/staff-information";
 };
 
+const PasswordResetGuard = ({ children }) => {
+  const user = readUser();
+
+  if (!hasAuth()) {
+    return <Navigate to="/login" replace />;
+  }
+
+  if (
+    user?.must_reset_password === true &&
+    window.location.pathname !==
+      "/change-password"
+  ) {
+    return (
+      <Navigate
+        to="/change-password"
+        replace
+      />
+    );
+  }
+
+  return children;
+};
+
 const ProtectedRoute = ({ module, anyModule, action = "view", children }) => {
   const { loading, can, canAny } = usePermissions();
 
@@ -196,7 +225,11 @@ const ProtectedRoute = ({ module, anyModule, action = "view", children }) => {
     }
   }
 
-  return children;
+  return (
+    <PasswordResetGuard>
+      {children}
+    </PasswordResetGuard>
+  );
 };
 
 const AdminITOnly = ({ children }) => {
@@ -508,7 +541,34 @@ function AppShell() {
         path="/transactions/travel-plan"
         element={
           <Page module="travel_plan">
-            <TravelPlan />
+            <TravelPlanPage />
+          </Page>
+        }
+      />
+
+      <Route
+        path="/transactions/travel-plan/forecast"
+        element={
+          <Page module="travel_plan">
+            <ForecastPage />
+          </Page>
+        }
+      />
+
+      <Route
+        path="/transactions/travel-plan/comply"
+        element={
+          <Page module="travel_plan">
+            <ComplyPage />
+          </Page>
+        }
+      />
+
+      <Route
+        path="/transactions/travel-plan/calendar"
+        element={
+          <Page module="travel_plan">
+            <CalendarPage />
           </Page>
         }
       />
@@ -710,6 +770,20 @@ function AppShell() {
               <Chat />
             </ProtectedLayout>
           </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/change-password"
+        element={
+          hasAuth() ? (
+            <ChangePassword />
+          ) : (
+            <Navigate
+              to="/login"
+              replace
+            />
+          )
         }
       />
 

@@ -1895,6 +1895,10 @@ router.get(
           */
           review_coh,
           review_cashbook_vs_voucher,
+          review_lor,
+          review_los,
+          review_ldf,
+          review_dcs,
           review_bms,
           review_other_findings,
           review_photo_url,
@@ -2070,7 +2074,21 @@ router.post(
         toStr(req.body.review_coh);
 
       const reviewCashbookVsVoucher =
-        toStr(req.body.review_cashbook_vs_voucher);
+        toStr(
+          req.body.review_cashbook_vs_voucher
+        );
+
+      const reviewLor =
+        toStr(req.body.review_lor);
+
+      const reviewLos =
+        toStr(req.body.review_los);
+
+      const reviewLdf =
+        toStr(req.body.review_ldf);
+
+      const reviewDcs =
+        toStr(req.body.review_dcs);
 
       const reviewBms =
         toStr(req.body.review_bms);
@@ -2124,6 +2142,10 @@ router.post(
         const hasReview =
           reviewCoh ||
           reviewCashbookVsVoucher ||
+          reviewLor ||
+          reviewLos ||
+          reviewLdf ||
+          reviewDcs ||
           reviewBms ||
           reviewOtherFindings;
 
@@ -2292,6 +2314,22 @@ router.post(
           ? `Cashbook vs Voucher:\n${reviewCashbookVsVoucher}`
           : "",
 
+        reviewLor
+          ? `LOR:\n${reviewLor}`
+          : "",
+
+        reviewLos
+          ? `LOS:\n${reviewLos}`
+          : "",
+
+        reviewLdf
+          ? `LDF:\n${reviewLdf}`
+          : "",
+
+        reviewDcs
+          ? `DCS:\n${reviewDcs}`
+          : "",
+
         reviewBms
           ? `BMS:\n${reviewBms}`
           : "",
@@ -2335,6 +2373,10 @@ router.post(
 
           review_coh,
           review_cashbook_vs_voucher,
+          review_lor,
+          review_los,
+          review_ldf,
+          review_dcs,
           review_bms,
           review_other_findings,
           review_photo_url,
@@ -2366,19 +2408,23 @@ router.post(
           $7,
           $8,
           $9,
-
           $10,
           $11,
           $12,
           $13,
 
           $14,
-          $15::date,
-
+          $15,
           $16,
           $17,
 
           $18,
+          $19::date,
+
+          $20,
+          $21,
+
+          $22,
           NOW() AT TIME ZONE 'Asia/Manila'
         )
         RETURNING
@@ -2391,6 +2437,10 @@ router.post(
 
           review_coh,
           review_cashbook_vs_voucher,
+          review_lor,
+          review_los,
+          review_ldf,
+          review_dcs,
           review_bms,
           review_other_findings,
           review_photo_url,
@@ -2451,58 +2501,78 @@ router.post(
 
           // $7
           noteType === "REVIEW"
-            ? reviewBms || null
+            ? reviewLor || null
             : null,
 
           // $8
           noteType === "REVIEW"
-            ? reviewOtherFindings || null
+            ? reviewLos || null
             : null,
 
           // $9
           noteType === "REVIEW"
-            ? reviewPhotoUrl
+            ? reviewLdf || null
             : null,
 
           // $10
+          noteType === "REVIEW"
+            ? reviewDcs || null
+            : null,
+
+          // $11
+          noteType === "REVIEW"
+            ? reviewBms || null
+            : null,
+
+          // $12
+          noteType === "REVIEW"
+            ? reviewOtherFindings || null
+            : null,
+
+          // $13
+          noteType === "REVIEW"
+            ? reviewPhotoUrl
+            : null,
+
+          // $14
           noteType === "FINDINGS"
             ? passbookReconciliation || null
             : null,
 
-          // $11
+          // $15
           noteType === "FINDINGS"
             ? pastDueDelinquentReport || null
             : null,
 
-          // $12
+          // $16
           noteType === "FINDINGS"
             ? groupCollectionRecord || null
             : null,
 
-          // $13
+          // $17
           noteType === "FINDINGS"
             ? otherFindings || null
             : null,
 
-          // $14
+          // $18
           involvedStaff || null,
 
-          // $15
+          // $19
           noteType === "FINDINGS"
             ? dueDate || null
             : null,
 
-          // $16
+          // $20
           noteType === "REVIEW"
             ? reviewDetails || null
             : findingDetails || null,
 
-          // $17
+          // $21
           noteType === "FINDINGS"
             ? findingPhotoUrl
             : null,
 
-          // $18
+          // $22
           req.user?.id || null,
         ]
       );
@@ -2628,6 +2698,18 @@ router.put(
           req.body.review_cashbook_vs_voucher
         );
 
+      const reviewLor =
+        toStr(req.body.review_lor);
+
+      const reviewLos =
+        toStr(req.body.review_los);
+
+      const reviewLdf =
+        toStr(req.body.review_ldf);
+
+      const reviewDcs =
+        toStr(req.body.review_dcs);
+
       const reviewBms =
         toStr(req.body.review_bms);
 
@@ -2712,6 +2794,10 @@ router.put(
         const hasReviewFinding =
           reviewCoh ||
           reviewCashbookVsVoucher ||
+          reviewLor ||
+          reviewLos ||
+          reviewLdf ||
+          reviewDcs ||
           reviewBms ||
           reviewOtherFindings;
 
@@ -2793,6 +2879,22 @@ router.put(
 
         reviewCashbookVsVoucher
           ? `Cashbook vs Voucher:\n${reviewCashbookVsVoucher}`
+          : "",
+
+        reviewLor
+          ? `LOR:\n${reviewLor}`
+          : "",
+
+        reviewLos
+          ? `LOS:\n${reviewLos}`
+          : "",
+
+        reviewLdf
+          ? `LDF:\n${reviewLdf}`
+          : "",
+
+        reviewDcs
+          ? `DCS:\n${reviewDcs}`
           : "",
 
         reviewBms
@@ -2943,160 +3045,182 @@ router.put(
         }
       }
 
-      const result =
-        await client.query(
-          `
-          UPDATE public.travel_plan_notes
+      const result = await client.query(
+        `
+        UPDATE public.travel_plan_notes
 
-          SET
-            note_type = $2,
-            title = $3,
+        SET
+          note_type = $2,
+          title = $3,
 
-            finding_type = $4,
+          finding_type = $4,
 
-            review_coh = $5,
-            review_cashbook_vs_voucher = $6,
-            review_bms = $7,
-            review_other_findings = $8,
-            review_photo_url = $9,
+          review_coh = $5,
+          review_cashbook_vs_voucher = $6,
+          review_lor = $7,
+          review_los = $8,
+          review_ldf = $9,
+          review_dcs = $10,
+          review_bms = $11,
+          review_other_findings = $12,
+          review_photo_url = $13,
 
-            passbook_reconciliation = $10,
-            past_due_delinquent_report = $11,
-            group_collection_record = $12,
-            other_findings = $13,
-            finding_photo_url = $14,
+          passbook_reconciliation = $14,
+          past_due_delinquent_report = $15,
+          group_collection_record = $16,
+          other_findings = $17,
+          finding_photo_url = $18,
 
-            involved_staff = $15,
-            due_date = $16::date,
+          involved_staff = $19,
+          due_date = $20::date,
 
-            content = $17
+          content = $21
 
-          WHERE id = $1
+        WHERE id = $1
 
-          RETURNING
-            id,
-            travel_plan_id,
-            note_type,
-            title,
+        RETURNING
+          id,
+          travel_plan_id,
+          note_type,
+          title,
 
-            finding_type,
+          finding_type,
 
-            review_coh,
-            review_cashbook_vs_voucher,
-            review_bms,
-            review_other_findings,
-            review_photo_url,
+          review_coh,
+          review_cashbook_vs_voucher,
+          review_lor,
+          review_los,
+          review_ldf,
+          review_dcs,
+          review_bms,
+          review_other_findings,
+          review_photo_url,
 
-            passbook_reconciliation,
-            past_due_delinquent_report,
-            group_collection_record,
-            other_findings,
-            finding_photo_url,
+          passbook_reconciliation,
+          past_due_delinquent_report,
+          group_collection_record,
+          other_findings,
+          finding_photo_url,
 
-            involved_staff,
+          involved_staff,
 
-            TO_CHAR(
-              due_date,
-              'YYYY-MM-DD'
-            ) AS due_date,
+          TO_CHAR(
+            due_date,
+            'YYYY-MM-DD'
+          ) AS due_date,
 
-            content,
-            created_by,
+          content,
+          created_by,
 
-            CASE
-              WHEN created_at IS NULL
-                THEN NULL
-              ELSE
-                TO_CHAR(
-                  created_at,
-                  'YYYY-MM-DD"T"HH24:MI:SS.MS'
-                ) || '+08:00'
-            END AS created_at
-          `,
-          [
-            // $1
-            noteId,
+          CASE
+            WHEN created_at IS NULL
+              THEN NULL
+            ELSE
+              TO_CHAR(
+                created_at,
+                'YYYY-MM-DD"T"HH24:MI:SS.MS'
+              ) || '+08:00'
+          END AS created_at
+        `,
+        [
+          // $1
+          noteId,
 
-            // $2
-            noteType,
+          // $2
+          noteType,
 
-            // $3
-            title,
+          // $3
+          title,
 
-            // $4
-            noteType === "FINDINGS"
-              ? "Group Visit Findings"
-              : null,
+          // $4
+          noteType === "FINDINGS"
+            ? "Group Visit Findings"
+            : null,
 
-            // $5
-            noteType === "REVIEW"
-              ? reviewCoh || null
-              : null,
+          // $5
+          noteType === "REVIEW"
+            ? reviewCoh || null
+            : null,
 
-            // $6
-            noteType === "REVIEW"
-              ? reviewCashbookVsVoucher ||
-                null
-              : null,
+          // $6
+          noteType === "REVIEW"
+            ? reviewCashbookVsVoucher || null
+            : null,
 
-            // $7
-            noteType === "REVIEW"
-              ? reviewBms || null
-              : null,
+          // $7
+          noteType === "REVIEW"
+            ? reviewLor || null
+            : null,
 
-            // $8
-            noteType === "REVIEW"
-              ? reviewOtherFindings ||
-                null
-              : null,
+          // $8
+          noteType === "REVIEW"
+            ? reviewLos || null
+            : null,
 
-            // $9
-            noteType === "REVIEW"
-              ? reviewPhotoUrl
-              : null,
+          // $9
+          noteType === "REVIEW"
+            ? reviewLdf || null
+            : null,
 
-            // $10
-            noteType === "FINDINGS"
-              ? passbookReconciliation ||
-                null
-              : null,
+          // $10
+          noteType === "REVIEW"
+            ? reviewDcs || null
+            : null,
 
-            // $11
-            noteType === "FINDINGS"
-              ? pastDueDelinquentReport ||
-                null
-              : null,
+          // $11
+          noteType === "REVIEW"
+            ? reviewBms || null
+            : null,
 
-            // $12
-            noteType === "FINDINGS"
-              ? groupCollectionRecord ||
-                null
-              : null,
+          // $12
+          noteType === "REVIEW"
+            ? reviewOtherFindings || null
+            : null,
 
-            // $13
-            noteType === "FINDINGS"
-              ? otherFindings || null
-              : null,
+          // $13
+          noteType === "REVIEW"
+            ? reviewPhotoUrl
+            : null,
 
-            // $14
-            noteType === "FINDINGS"
-              ? findingPhotoUrl
-              : null,
+          // $14
+          noteType === "FINDINGS"
+            ? passbookReconciliation || null
+            : null,
 
-            // $15
-            involvedStaff || null,
+          // $15
+          noteType === "FINDINGS"
+            ? pastDueDelinquentReport || null
+            : null,
 
-            // $16
-            noteType === "FINDINGS"
-              ? dueDate || null
-              : null,
+          // $16
+          noteType === "FINDINGS"
+            ? groupCollectionRecord || null
+            : null,
 
-            // $17
-            noteType === "REVIEW"
-              ? reviewDetails || null
-              : findingDetails || null,
-          ]
-        );
+          // $17
+          noteType === "FINDINGS"
+            ? otherFindings || null
+            : null,
+
+          // $18
+          noteType === "FINDINGS"
+            ? findingPhotoUrl
+            : null,
+
+          // $19
+          involvedStaff || null,
+
+          // $20
+          noteType === "FINDINGS"
+            ? dueDate || null
+            : null,
+
+          // $21
+          noteType === "REVIEW"
+            ? reviewDetails || null
+            : findingDetails || null,
+        ]
+      );
 
       let assignedComplianceCount = 0;
 

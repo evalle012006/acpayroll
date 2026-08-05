@@ -332,19 +332,19 @@ const Sidebar = ({ collapsed }) => {
         module: "travel_plan",
         children: [
           {
-            to: "/transactions/travel-plan?tab=travel-plan",
+            to: "/transactions/travel-plan",
             label: "Travel Plan",
           },
           {
-            to: "/transactions/travel-plan?tab=calendar",
+            to: "/transactions/travel-plan/calendar",
             label: "Calendar",
           },
           {
-            to: "/transactions/travel-plan?tab=forecast",
+            to: "/transactions/travel-plan/forecast",
             label: "Forecast",
           },
           {
-            to: "/transactions/travel-plan?tab=history",
+            to: "/transactions/travel-plan/comply",
             label: "Comply",
           },
         ],
@@ -579,31 +579,15 @@ const Sidebar = ({ collapsed }) => {
                     <NavLink
                       key={child.to}
                       to={child.to}
-                      className={({ isActive }) => {
-                        const childUrl = new URL(
-                          child.to,
-                          window.location.origin
-                        );
-
-                        const childTab = childUrl.searchParams.get("tab");
-                        const currentTab = new URLSearchParams(
-                          window.location.search
-                        ).get("tab");
-
-                        const tabMatches =
-                          pathname === childUrl.pathname &&
-                          (
-                            currentTab === childTab ||
-                            (
-                              !currentTab &&
-                              childTab === "travel-plan"
-                            )
-                          );
-
-                        return `sidebar-sub-link ${
-                          isActive && tabMatches ? "active" : ""
-                        }`;
-                      }}
+                      end={
+                        child.to ===
+                        "/transactions/travel-plan"
+                      }
+                      className={({ isActive }) =>
+                        `sidebar-sub-link ${
+                          isActive ? "active" : ""
+                        }`
+                      }
                     >
                       <span>{child.label}</span>
 

@@ -62,11 +62,6 @@ const Users = () => {
   const [showRegionOptions, setShowRegionOptions] = useState(false);
   const [showDivisionOptions, setShowDivisionOptions] = useState(false);
 
-  const [resetId, setResetId] = useState(null);
-  const [resetUser, setResetUser] = useState(null);
-  const [resetPw, setResetPw] = useState("");
-  const [resetSaving, setResetSaving] = useState(false);
-
   const handle401 = () => {
     localStorage.removeItem("token");
     localStorage.removeItem("user");
@@ -106,12 +101,11 @@ const Users = () => {
   }, []);
 
   useEffect(() => {
-    if (!showModal && !resetId) return;
+    if (!showModal) return;
 
     const onKeyDown = (e) => {
       if (e.key === "Escape") {
-        if (resetId) closeReset();
-        else closeModal();
+        closeModal();
       }
     };
 
@@ -122,7 +116,7 @@ const Users = () => {
       document.removeEventListener("keydown", onKeyDown);
       document.body.style.overflow = "";
     };
-  }, [showModal, resetId]);
+  }, [showModal]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -251,18 +245,6 @@ const Users = () => {
     setShowDivisionOptions(false);
   };
 
-  const openReset = (u) => {
-    setResetId(u.id);
-    setResetUser(u);
-    setResetPw("");
-  };
-
-  const closeReset = () => {
-    setResetId(null);
-    setResetUser(null);
-    setResetPw("");
-  };
-
   const onChange = (e) => {
     const { name, value } = e.target;
     setForm((p) => ({ ...p, [name]: value }));
@@ -368,29 +350,40 @@ const Users = () => {
     }
   };
 
-  const submitReset = async (e) => {
-    e.preventDefault();
-    if (resetSaving) return;
+  const requirePasswordReset = async (user) => {
+    const confirmed = window.confirm(
+      `Require ${user.username} to create a new password on their next login?`
+    );
 
-    const pw = String(resetPw || "").trim();
-
-    if (pw.length < 6) {
-      return alert("Password must be at least 6 characters.");
+    if (!confirmed) {
+      return;
     }
 
-    setResetSaving(true);
-
     try {
-      await api.put(`/users/${resetId}/reset-password`, { new_password: pw });
-      closeReset();
-      alert("Password reset successfully.");
+      await api.put(
+        `/users/${user.id}/require-password-reset`
+      );
+
+      await fetchUsers();
+
+      alert(
+        `${user.username} must create a new password on their next login.`
+      );
     } catch (err) {
       const status = err?.response?.status;
-      if (status === 401) return handle401();
-      if (status === 403) return alert("Access denied.");
-      alert(err?.response?.data?.message || "Failed to reset password");
-    } finally {
-      setResetSaving(false);
+
+      if (status === 401) {
+        return handle401();
+      }
+
+      if (status === 403) {
+        return alert("Access denied.");
+      }
+
+      alert(
+        err?.response?.data?.message ||
+          "Failed to require password reset."
+      );
     }
   };
 
@@ -521,8 +514,8 @@ const Users = () => {
                           <button
                             className="users-icon-btn reset"
                             type="button"
-                            onClick={() => openReset(u)}
-                            title="Reset Password"
+                            onClick={() => requirePasswordReset(u)}
+                            title="Require Password Reset"
                           >
                             <RxReset />
                           </button>
@@ -853,69 +846,6 @@ const Users = () => {
 
                 <button className="btn-primary" type="submit" disabled={saving}>
                   {saving ? "Saving..." : editId ? "Update" : "Create"}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {resetId && (
-        <div
-          className="modal-overlay"
-          onMouseDown={(e) =>
-            e.target.classList.contains("modal-overlay") && closeReset()
-          }
-        >
-          <div
-            className="modal confirm-modal"
-            onMouseDown={(e) => e.stopPropagation()}
-          >
-            <div className="modal-head">
-              <div>
-                <h3 className="modal-title">Reset Password</h3>
-
-                <p className="modal-subtitle">
-                  Set a new password for <b>{resetUser?.username}</b>
-                </p>
-              </div>
-
-              <button className="modal-x" type="button" onClick={closeReset}>
-                ✕
-              </button>
-            </div>
-
-            <form onSubmit={submitReset} className="modal-form">
-              <div className="grid">
-                <div className="field full">
-                  <label>New Password</label>
-                  <input
-                    className="input"
-                    type="password"
-                    value={resetPw}
-                    onChange={(e) => setResetPw(e.target.value)}
-                    placeholder="Minimum 6 characters"
-                    required
-                  />
-                </div>
-              </div>
-
-              <div className="modal-actions">
-                <button
-                  className="btn-secondary"
-                  type="button"
-                  onClick={closeReset}
-                  disabled={resetSaving}
-                >
-                  Cancel
-                </button>
-
-                <button
-                  className="btn-primary"
-                  type="submit"
-                  disabled={resetSaving}
-                >
-                  {resetSaving ? "Resetting..." : "Reset Password"}
                 </button>
               </div>
             </form>

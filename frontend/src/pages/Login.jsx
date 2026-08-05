@@ -46,7 +46,16 @@ export default function Login() {
         localStorage.setItem("user", JSON.stringify(user));
 
         emitAuthChanged();
-        navigate("/dashboard", { replace: true });
+
+        if (user.must_reset_password) {
+          navigate("/change-password", {
+            replace: true,
+          });
+        } else {
+          navigate("/dashboard", {
+            replace: true,
+          });
+        }
       } catch (err) {
         const msg =
           err?.response?.data?.message ||

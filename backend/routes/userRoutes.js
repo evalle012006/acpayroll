@@ -20,7 +20,8 @@ const USER_RETURN_FIELDS = `
   first_name,
   middle_name,
   last_name,
-  department
+  department,
+  must_reset_password
 `;
 
 router.get(
@@ -313,7 +314,7 @@ router.put(
 );
 
 router.put(
-  "/:id/reset-password",
+  "/:id/require-password-reset",
   requireAuth,
   requirePermission("users", "edit"),
   async (req, res) => {
@@ -321,42 +322,108 @@ router.put(
       const id = Number(req.params.id);
 
       if (!Number.isFinite(id) || id <= 0) {
-        return res.status(400).json({ message: "Invalid user id" });
-      }
-
-      const new_password = clean(req.body?.new_password);
-
-      if (!new_password || new_password.length < 6) {
         return res.status(400).json({
-          message: "new_password is required (min 6 chars)",
+          message: "Invalid user id",
         });
       }
 
-      const hashed = await bcrypt.hash(new_password, 10);
+      const result = await pool.query(
+        `
+        UPDATE public.users
+        SET
+          must_reset_password = TRUE,
+          updated_at = NOW()
+        WHERE id = $1
+        RETURNING ${USER_RETURN_FIELDS}
+        `,
+        [id]
+      );
+
+      if (result.rowCount === 0) {
+        return res.status(404).json({
+          message: "User not found",
+        });
+      }
+
+      return res.json({
+        message:
+          "The user must create a new password on their next login.",
+        user: result.rows[0],
+      });
+    } catch (error) {
+      console.error(
+        "REQUIRE PASSWORD RESET ERROR:",
+        error.message
+      );
+
+      return res.status(500).json({
+        message: "Server error",
+      });
+    }
+  }
+);
+
+router.put(
+  "/me/change-password",
+  requireAuth,
+  async (req, res) => {
+    try {
+      const userId = Number(req.user?.id);
+      const newPassword = clean(
+        req.body?.new_password
+      );
+
+      if (!userId) {
+        return res.status(401).json({
+          message: "Unauthorized",
+        });
+      }
+
+      if (newPassword.length < 6) {
+        return res.status(400).json({
+          message:
+            "Password must be at least 6 characters.",
+        });
+      }
+
+      const hashedPassword =
+        await bcrypt.hash(newPassword, 10);
 
       const result = await pool.query(
         `
         UPDATE public.users
         SET
           password = $1,
+          must_reset_password = FALSE,
           updated_at = NOW()
         WHERE id = $2
+          AND must_reset_password = TRUE
         RETURNING ${USER_RETURN_FIELDS}
         `,
-        [hashed, id]
+        [hashedPassword, userId]
       );
 
-      if (result.rows.length === 0) {
-        return res.status(404).json({ message: "User not found" });
+      if (result.rowCount === 0) {
+        return res.status(400).json({
+          message:
+            "This account is not currently required to reset its password.",
+        });
       }
 
       return res.json({
-        message: "Password reset",
+        message:
+          "Password changed successfully.",
         user: result.rows[0],
       });
-    } catch (e) {
-      console.error("PUT /api/users/:id/reset-password ERROR:", e.message);
-      return res.status(500).json({ message: "Server error" });
+    } catch (error) {
+      console.error(
+        "CHANGE OWN PASSWORD ERROR:",
+        error.message
+      );
+
+      return res.status(500).json({
+        message: "Server error",
+      });
     }
   }
 );

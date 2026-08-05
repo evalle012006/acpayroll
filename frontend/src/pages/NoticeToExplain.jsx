@@ -91,11 +91,13 @@ export default function NoticeToExplain() {
   const isOfficeOfThePresidentDept = dept === "office of the president";
 
   const isHRDepartment = dept === "hr department";
+  const isAuditDepartment = dept === "audit department";
 
   const canCreate =
     isAdmin ||
     isIT ||
     isHRDepartment ||
+    isAuditDepartment ||
     isBM ||
     isAM ||
     isRM ||
@@ -105,9 +107,24 @@ export default function NoticeToExplain() {
     isPresident ||
     isOfficeOfThePresidentDept;
 
-  const canBypassApprove = isAdmin || isIT;
-  const canFinalUpload = isAdmin || isIT || isHR || isAccounting;
-  const canVoid = isAdmin || isIT || isHR || isAccounting;
+  const canBypassApprove =
+    isAdmin ||
+    isIT ||
+    isAuditDepartment;
+    
+  const canFinalUpload =
+    isAdmin ||
+    isIT ||
+    isHR ||
+    isAccounting ||
+    isAuditDepartment;
+
+  const canVoid =
+    isAdmin ||
+    isIT ||
+    isHR ||
+    isAccounting ||
+    isAuditDepartment;
 
   const employeePickerRef = useRef(null);
 

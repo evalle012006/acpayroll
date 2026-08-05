@@ -135,6 +135,40 @@ const isOperationDepartmentUser = (req) => {
   return dept === "operation department";
 };
 
+const isAuditDepartmentUser = (req) => {
+  const dept = String(
+    req.user?.department ||
+      req.user?.department_name ||
+      req.user?.departmentName ||
+      req.user?.user_department ||
+      req.user?.dept ||
+      ""
+  )
+    .trim()
+    .toLowerCase();
+
+  return (
+    dept === "audit" ||
+    dept === "audit department"
+  );
+};
+
+const isOperationVicePresident = (req) =>
+  isOperationDepartmentUser(req) &&
+  isVicePresident(req);
+
+const hasSuspensionFullAccess = (req) =>
+  isAdmin(req) ||
+  isIT(req) ||
+  isHr(req) ||
+  isHrDepartmentUser(req) ||
+  isHRDepartmentManager(req) ||
+  isAccounting(req) ||
+  isAccountingDepartmentUser(req) ||
+  isITDepartmentManager(req) ||
+  isAuditDepartmentUser(req) ||
+  isOperationVicePresident(req);
+
 const uploadRoot = path.join(process.cwd(), "uploads");
 const suspensionUploadDir = path.join(uploadRoot, "suspension");
 
@@ -210,17 +244,9 @@ const getCurrentStage = (row) => {
 
 const canAccessStaffRecord = (req, staff) => {
   if (
-    isAdmin(req) ||
-    isIT(req) ||
-    isHr(req) ||
-    isHrDepartmentUser(req) ||
-    isHRDepartmentManager(req) ||
-    isAccounting(req) ||
-    isAccountingDepartmentUser(req) ||
+    hasSuspensionFullAccess(req) ||
     isOfficeOfThePresidentUser(req) ||
-    isITDepartmentManager(req) ||
     isTread(req) ||
-    isVicePresident(req) ||
     isSeniorVicePresident(req) ||
     isPresident(req)
   ) {
@@ -251,16 +277,9 @@ const canAccessStaffRecord = (req, staff) => {
 };
 
 const canMutatePendingOrder = (req, row) => {
-  if (
-    isAdmin(req) ||
-    isIT(req) ||
-    isHr(req) ||
-    isHrDepartmentUser(req) ||
-    isHRDepartmentManager(req) ||
-    isAccounting(req) ||
-    isITDepartmentManager(req) ||
-    isAccountingDepartmentUser(req)
-  ) return true;
+  if (hasSuspensionFullAccess(req)) {
+    return true;
+  }
 
   if (isBranchManager(req)) {
     const bid = toInt(getUserBranchId(req));
@@ -290,29 +309,15 @@ const canMutatePendingOrder = (req, row) => {
 };
 
 const canDownloadRequestFile = (req) =>
+  hasSuspensionFullAccess(req) ||
   isRegionalManager(req) ||
   isAssistantVicePresident(req) ||
-  isVicePresident(req) ||
-  isAdmin(req) ||
-  isIT(req) ||
-  isHr(req) ||
-  isHrDepartmentUser(req) ||
-  isHRDepartmentManager(req) ||
-  isAccounting(req) ||
-  isITDepartmentManager(req) ||
-  isAccountingDepartmentUser(req);
+  isVicePresident(req);
 
 const canDownloadApprovedFile = (req, row) => {
-  if (
-    isAdmin(req) ||
-    isIT(req) ||
-    isHr(req) ||
-    isHrDepartmentUser(req) ||
-    isHRDepartmentManager(req) ||
-    isAccounting(req) ||
-    isITDepartmentManager(req) ||
-    isAccountingDepartmentUser(req)
-  ) return true;
+  if (hasSuspensionFullAccess(req)) {
+    return true;
+  }
 
   if (isRegionalManager(req)) return true;
   if (isAssistantVicePresident(req)) return true;
@@ -329,14 +334,7 @@ const canDownloadApprovedFile = (req, row) => {
 };
 
 const canUploadApprovedFile = (req) =>
-  isAdmin(req) ||
-  isIT(req) ||
-  isHr(req) ||
-  isHrDepartmentUser(req) ||
-  isHRDepartmentManager(req) ||
-  isAccounting(req) ||
-  isITDepartmentManager(req) ||
-  isAccountingDepartmentUser(req);
+  hasSuspensionFullAccess(req);
 
 router.get(
   "/suspension-orders",
@@ -345,16 +343,9 @@ router.get(
   async (req, res) => {
     try {
       if (
-        isAdmin(req) ||
-        isIT(req) ||
-        isHr(req) ||
-        isHrDepartmentUser(req) ||
-        isHRDepartmentManager(req) ||
-        isAccounting(req) ||
-        isAccountingDepartmentUser(req) ||
+        hasSuspensionFullAccess(req) ||
         isOfficeOfThePresidentUser(req) ||
-        isITDepartmentManager(req) ||
-        isTread(req) || 
+        isTread(req) ||
         isSeniorVicePresident(req) ||
         isPresident(req)
       ) {
@@ -531,13 +522,13 @@ router.post(
           isBranchManager(req) ||
           isAreaManager(req) ||
           isRegionalManager(req) ||
-          isAssistantVicePresident(req) ||
-          isVicePresident(req)
+          isAssistantVicePresident(req)
         )
       ) {
         await client.query("ROLLBACK");
         return res.status(403).json({
-          message: "Operation Department Branch Manager to Vice President can only view suspension orders.",
+          message:
+            "Operation Department Branch Manager to Assistant Vice President can only view suspension orders.",
         });
       }
 
@@ -649,15 +640,7 @@ router.post(
       let avpStatus = "Pending";
       let adminStatus = "Pending";
 
-      if (
-        isAdmin(req) ||
-        isIT(req) ||
-        isHr(req) ||
-        isHrDepartmentUser(req) ||
-        isHRDepartmentManager(req) ||
-        isAccounting(req) ||
-        isAccountingDepartmentUser(req)
-      ) {
+      if (hasSuspensionFullAccess(req)) {
         initialStage = STAGE_ADMIN;
       } else if (
         isAssistantVicePresident(req) ||
@@ -796,8 +779,7 @@ router.put(
           isBranchManager(req) ||
           isAreaManager(req) ||
           isRegionalManager(req) ||
-          isAssistantVicePresident(req) ||
-          isVicePresident(req)
+          isAssistantVicePresident(req)
         )
       ) {
         await client.query("ROLLBACK");
@@ -1050,8 +1032,7 @@ router.delete(
           isBranchManager(req) ||
           isAreaManager(req) ||
           isRegionalManager(req) ||
-          isAssistantVicePresident(req) ||
-          isVicePresident(req)
+          isAssistantVicePresident(req)
         )
       ) {
         await client.query("ROLLBACK");
@@ -1262,13 +1243,12 @@ router.put(
           isBranchManager(req) ||
           isAreaManager(req) ||
           isRegionalManager(req) ||
-          isAssistantVicePresident(req) ||
-          isVicePresident(req)
+          isAssistantVicePresident(req)
         )
       ) {
         return res.status(403).json({
           message:
-            "Operation Department Branch Manager to Vice President can only view suspension orders.",
+            "Operation Department Branch Manager to Assistant Vice President can only view suspension orders.",
         });
       }
 
@@ -1290,10 +1270,48 @@ router.put(
 
       let result;
 
-      if (isAreaManager(req) && !isHRDepartmentManager(req)) {
+      // Full-access users approve the final stage.
+      // This must be checked first because an Audit user
+      // may also have an Area Manager, Regional Manager,
+      // or Assistant Vice President role.
+
+      if (hasSuspensionFullAccess(req)) {
+        if (currentStage !== STAGE_ADMIN) {
+          return res.status(400).json({
+            message:
+              "This order is not pending final approval",
+          });
+        }
+
+        result = await pool.query(
+          `
+          UPDATE public.suspension_orders
+          SET
+            admin_status = 'Approved',
+            admin_approved_by = $2,
+            admin_approved_at = NOW(),
+            approved_by = $3,
+            approved_at = NOW(),
+            approval_stage = $4,
+            status = 'Approved',
+            rejected_by = NULL,
+            rejected_at = NULL,
+            rejection_reason = NULL
+          WHERE id = $1
+          RETURNING *;
+          `,
+          [
+            id,
+            approverId,
+            approverText,
+            STAGE_ADMIN,
+          ]
+        );
+      } else if (isAreaManager(req)) {
         if (currentStage !== STAGE_AREA) {
           return res.status(400).json({
-            message: "This order is not pending Area Manager approval",
+            message:
+              "This order is not pending Area Manager approval",
           });
         }
 
@@ -1312,12 +1330,18 @@ router.put(
           WHERE id = $1
           RETURNING *;
           `,
-          [id, approverId, STAGE_RM, LABELS[STAGE_RM]]
+          [
+            id,
+            approverId,
+            STAGE_RM,
+            LABELS[STAGE_RM],
+          ]
         );
       } else if (isRegionalManager(req)) {
         if (currentStage !== STAGE_RM) {
           return res.status(400).json({
-            message: "This order is not pending Regional Manager approval",
+            message:
+              "This order is not pending Regional Manager approval",
           });
         }
 
@@ -1336,7 +1360,12 @@ router.put(
           WHERE id = $1
           RETURNING *;
           `,
-          [id, approverId, STAGE_AVP, LABELS[STAGE_AVP]]
+          [
+            id,
+            approverId,
+            STAGE_AVP,
+            LABELS[STAGE_AVP],
+          ]
         );
       } else if (isAssistantVicePresident(req)) {
         if (currentStage !== STAGE_AVP) {
@@ -1361,43 +1390,17 @@ router.put(
           WHERE id = $1
           RETURNING *;
           `,
-          [id, approverId, STAGE_ADMIN, LABELS[STAGE_ADMIN]]
-        );
-      } else if (
-          isAdmin(req) ||
-          isIT(req) ||
-          isHr(req) ||
-          isHRDepartmentManager(req) ||
-          isAccounting(req) ||
-          isAccountingDepartmentUser(req)
-      ) {
-        if (currentStage !== STAGE_ADMIN) {
-          return res.status(400).json({
-            message: "This order is not pending Admin/HR/Accounting approval",
-          });
-        }
-
-        result = await pool.query(
-          `
-          UPDATE public.suspension_orders
-          SET
-            admin_status = 'Approved',
-            admin_approved_by = $2,
-            admin_approved_at = NOW(),
-            approved_by = $3,
-            approved_at = NOW(),
-            approval_stage = $4,
-            status = 'Approved',
-            rejected_by = NULL,
-            rejected_at = NULL,
-            rejection_reason = NULL
-          WHERE id = $1
-          RETURNING *;
-          `,
-          [id, approverId, approverText, STAGE_ADMIN]
+          [
+            id,
+            approverId,
+            STAGE_ADMIN,
+            LABELS[STAGE_ADMIN],
+          ]
         );
       } else {
-        return res.status(403).json({ message: "Access denied" });
+        return res.status(403).json({
+          message: "Access denied",
+        });
       }
 
       if (result.rowCount === 0) {
@@ -1430,13 +1433,12 @@ router.put(
           isBranchManager(req) ||
           isAreaManager(req) ||
           isRegionalManager(req) ||
-          isAssistantVicePresident(req) ||
-          isVicePresident(req)
+          isAssistantVicePresident(req)
         )
       ) {
         return res.status(403).json({
           message:
-            "Operation Department Branch Manager to Vice President can only view suspension orders.",
+            "Operation Department Branch Manager to Assistant Vice President can only view suspension orders.",
         });
       }
 
@@ -1473,14 +1475,7 @@ router.put(
       }
 
       if (
-        (
-          isAdmin(req) ||
-          isIT(req) ||
-          isHr(req) ||
-          isHRDepartmentManager(req) ||
-          isAccounting(req) ||
-          isAccountingDepartmentUser(req)
-        ) &&
+        hasSuspensionFullAccess(req) &&
         currentStage === STAGE_ADMIN
       ) {
         allowed = true;

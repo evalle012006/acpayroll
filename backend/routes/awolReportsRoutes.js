@@ -87,6 +87,17 @@ const isHRDepartmentUser = (req) =>
     "human resources department",
   ].includes(norm(req.user?.department));
 
+const isAuditDepartmentUser = (req) =>
+  ["audit", "audit department"].includes(
+    norm(
+      req.user?.department ||
+        req.user?.department_name ||
+        req.user?.departmentName ||
+        req.user?.user_department ||
+        req.user?.dept
+    )
+  );
+
 const canCreateReport = (req) =>
   isBranchManager(req) ||
   isAreaManager(req) ||
@@ -95,6 +106,7 @@ const canCreateReport = (req) =>
   isVicePresident(req) ||
   isSeniorVicePresident(req) ||
   isHRDepartmentUser(req) ||
+  isAuditDepartmentUser(req) ||
   isAdmin(req) ||
   isIT(req);
 
@@ -102,6 +114,7 @@ const canViewAll = (req) =>
   isAdmin(req) ||
   isIT(req) ||
   isHRDepartmentUser(req) ||
+  isAuditDepartmentUser(req) ||
   isAccounting(req) ||
   isTread(req) ||
   isVicePresident(req) ||
@@ -109,11 +122,23 @@ const canViewAll = (req) =>
   isPresident(req);
 
 const canUploadFinalFile = (req) =>
-  isHRDepartmentUser(req) || isAccounting(req) || isAdmin(req) || isIT(req);
+  isHRDepartmentUser(req) ||
+  isAuditDepartmentUser(req) ||
+  isAccounting(req) ||
+  isAdmin(req) ||
+  isIT(req);
 
-const canBypassApprove = (req) => isAdmin(req) || isIT(req);
+const canBypassApprove = (req) =>
+  isAdmin(req) ||
+  isIT(req) ||
+  isAuditDepartmentUser(req);
 
-const canVoidReport = (req) => isHRDepartmentUser(req) || isAccounting(req) || isAdmin(req) || isIT(req);
+const canVoidReport = (req) =>
+  isHRDepartmentUser(req) ||
+  isAuditDepartmentUser(req) ||
+  isAccounting(req) ||
+  isAdmin(req) ||
+  isIT(req);
 
 const canRejectReport = (req) =>
   isAreaManager(req) ||
@@ -121,6 +146,7 @@ const canRejectReport = (req) =>
   isAssistantVicePresident(req) ||
   isVicePresident(req) ||
   isHRDepartmentUser(req) ||
+  isAuditDepartmentUser(req) ||
   isAccounting(req) ||
   isAdmin(req) ||
   isIT(req);
@@ -148,10 +174,16 @@ const getInitialStatus = (req) => {
 
   if (isSeniorVicePresident(req)) return STATUS_WAITING_FINAL;
 
-  if (isHRDepartmentUser(req)) return STATUS_WAITING_FINAL;
-
-  if (isAdmin(req) || isIT(req))
+  if (
+    isHRDepartmentUser(req) ||
+    isAuditDepartmentUser(req)
+  ) {
     return STATUS_WAITING_FINAL;
+  }
+
+  if (isAdmin(req) || isIT(req)) {
+    return STATUS_WAITING_FINAL;
+  }
 
   return STATUS_AREA;
 };
@@ -159,7 +191,12 @@ const getInitialStatus = (req) => {
 const canAccessRow = (req, row) => {
   if (canViewAll(req)) return true;
 
-  if (isHRDepartmentUser(req)) return true;
+  if (
+    isHRDepartmentUser(req) ||
+    isAuditDepartmentUser(req)
+  ) {
+    return true;
+  }
 
   if (isBranchManager(req)) {
     const userBranchId = toInt(req.user?.branch_id);
@@ -526,7 +563,11 @@ router.post(
 
       const s = staff.rows[0];
 
-      if (!isHRDepartmentUser(req) && isBranchManager(req)) {
+      if (
+        !isHRDepartmentUser(req) &&
+        !isAuditDepartmentUser(req) &&
+        isBranchManager(req)
+      ) {
         const userBranchId = toInt(req.user?.branch_id);
 
         if (userBranchId) {
@@ -545,17 +586,32 @@ router.post(
         }
       }
 
-      if (!isHRDepartmentUser(req) && isAreaManager(req) && norm(req.user?.area) !== norm(s.area)) {
+      if (
+        !isHRDepartmentUser(req) &&
+        !isAuditDepartmentUser(req) &&
+        isAreaManager(req) &&
+        norm(req.user?.area) !== norm(s.area)
+      ) {
         await client.query("ROLLBACK");
         return res.status(403).json({ message: "Access denied" });
       }
 
-      if (!isHRDepartmentUser(req) && isRegionalManager(req) && norm(req.user?.region) !== norm(s.region)) {
+      if (
+        !isHRDepartmentUser(req) &&
+        !isAuditDepartmentUser(req) &&
+        isRegionalManager(req) &&
+        norm(req.user?.region) !== norm(s.region)
+      ) {
         await client.query("ROLLBACK");
         return res.status(403).json({ message: "Access denied" });
       }
 
-      if (!isHRDepartmentUser(req) && isAssistantVicePresident(req) && norm(req.user?.division) !== norm(s.division)) {
+      if (
+        !isHRDepartmentUser(req) &&
+        !isAuditDepartmentUser(req) &&
+        isAssistantVicePresident(req) &&
+        norm(req.user?.division) !== norm(s.division)
+      ) {
         await client.query("ROLLBACK");
         return res.status(403).json({ message: "Access denied" });
       }
@@ -771,7 +827,7 @@ router.put(
 
         if (row.status === STATUS_WAITING_FINAL && !canUploadFinalFile(req)) {
           return res.status(403).json({
-            message: "Only HR/Accounting/Admin/IT can reject during final upload stage",
+            message: "Only HR/Audit/Accounting/Admin/IT can reject during final upload stage",
           });
         }
       }
@@ -851,7 +907,7 @@ router.put(
   async (req, res) => {
     try {
       if (!canBypassApprove(req)) {
-        return res.status(403).json({ message: "Admin/IT only" });
+        return res.status(403).json({ message: "Admin/IT/Audit Department only" });
       }
 
       const id = toInt(req.params.id);
@@ -910,7 +966,7 @@ router.post(
     try {
       if (!canUploadFinalFile(req)) {
         return res.status(403).json({
-          message: "Only HR/Accounting/Admin/IT can upload final file",
+          message:"Only HR/Audit/Accounting/Admin/IT can upload final file",
         });
       }
 
