@@ -78,10 +78,35 @@ const isRegionalManagerPos = (position) =>
   hasRole(position, "regional manager") ||
   hasRole(position, "acting regional manager");
 
-const isAVPPos = (position) => hasRole(position, "assistant vice president");
-const isVPPos = (position) =>
-  hasRole(position, "vice president") && !hasRole(position, "senior vice president");
-const isSVPPos = (position) => hasRole(position, "senior vice president");
+const isAVPPos = (position) => {
+  const value = norm(position);
+
+  return (
+    value === "assistant vice president" ||
+    value === "acting assistant vice president" ||
+    value.includes("assistant vice president")
+  );
+};
+
+const isSVPPos = (position) => {
+  const value = norm(position);
+
+  return (
+    value === "senior vice president" ||
+    value === "acting senior vice president" ||
+    value.includes("senior vice president")
+  );
+};
+
+const isVPPos = (position) => {
+  const value = norm(position);
+
+  return (
+    value.includes("vice president") &&
+    !value.includes("assistant vice president") &&
+    !value.includes("senior vice president")
+  );
+};
 
 const uniq = (arr) => {
   const out = [];
@@ -96,15 +121,25 @@ const getRawApprovalChain = (department, position) => {
   const pos = norm(position);
 
   if (isOperationDepartment(dept)) {
-    if (isSVPPos(pos)) return [ACCOUNTING_FINAL];
+    if (isSVPPos(pos)) {
+      return [ACCOUNTING_FINAL];
+    }
 
-    // If Vice President is the applicant:
-    // SVP approves, then Accounting final upload/approve
-    if (isVPPos(pos)) return ["Senior Vice President", ACCOUNTING_FINAL];
+    /*
+      Check Assistant Vice President before
+      Vice President because the AVP title also
+      contains the words "vice president".
+    */
+    if (isAVPPos(pos)) {
+      return ["Vice President"];
+    }
 
-    // Normal Operation flow:
-    // Vice President is final uploader/approver
-    if (isAVPPos(pos)) return ["Vice President"];
+    if (isVPPos(pos)) {
+      return [
+        "Senior Vice President",
+        ACCOUNTING_FINAL,
+      ];
+    }
 
     if (isRegionalManagerPos(pos)) {
       return ["Assistant Vice President", "Vice President"];

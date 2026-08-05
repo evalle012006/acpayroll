@@ -1076,6 +1076,81 @@ export default function LeaveTransactions() {
     );
   };
 
+  const leaveSummary = useMemo(() => {
+    const rows = Array.isArray(leaveRequests)
+      ? leaveRequests
+      : [];
+
+    const today = todayDate();
+
+    let pending = 0;
+    let approved = 0;
+    let rejected = 0;
+    let voided = 0;
+    let indefinite = 0;
+    let onLeaveToday = 0;
+
+    rows.forEach((item) => {
+      const status = String(
+        item?.status || ""
+      )
+        .trim()
+        .toLowerCase();
+
+      const leaveType = String(
+        item?.leave_type || ""
+      ).trim();
+
+      if (status.includes("pending")) {
+        pending += 1;
+      } else if (status === "approved") {
+        approved += 1;
+      } else if (status === "rejected") {
+        rejected += 1;
+      } else if (status === "voided") {
+        voided += 1;
+      }
+
+      if (leaveType === "Indefinite Leave") {
+        indefinite += 1;
+      }
+
+      const startDate = fmtDate(
+        item?.start_date
+      );
+
+      const endDate = fmtDate(
+        item?.end_date
+      );
+
+      const isApproved =
+        status === "approved";
+
+      if (
+        isApproved &&
+        startDate !== "-" &&
+        startDate <= today &&
+        (
+          leaveType === "Indefinite Leave" ||
+          endDate === "-" ||
+          endDate >= today
+        )
+      ) {
+        onLeaveToday += 1;
+      }
+    });
+
+    return {
+      total: rows.length,
+      pending,
+      approved,
+      rejected,
+      voided,
+      indefinite,
+      onLeaveToday,
+    };
+  }, [leaveRequests]);
+
   const getPageNumbers = () => {
     const pages = [];
     const maxButtons = 5;
@@ -1094,60 +1169,145 @@ export default function LeaveTransactions() {
 
   return (
     <div className="approval-page">
-      <div className="approval-page-header">
-        <div>
-          <h2 className="approval-title">Leave Transactions</h2>
+      <section className="leave-hero">
+        <div className="leave-hero-main">
+          <div className="leave-hero-copy">
+            <span className="leave-eyebrow">
+              HRIS TRANSACTIONS
+            </span>
 
-          <p className="approval-subtitle">
-            Create and manage leave requests
-          </p>
-        </div>
+            <h1 className="leave-hero-title">
+              Leave Transactions
+            </h1>
 
-        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-          <button
-            className="btn-secondary"
-            onClick={() => navigate(-1)}
-            type="button"
-          >
-            ← Back
-          </button>
+            <p className="leave-hero-subtitle">
+              Create, review, and track employee
+              leave requests through the required
+              approval process.
+            </p>
 
-          <button
-            className="btn-secondary"
-            onClick={handleRefresh}
-            type="button"
-            disabled={loadingList}
-          >
-            {loadingList ? "Refreshing..." : "Refresh"}
-          </button>
+            <div className="leave-approval-flow">
+              <span>Approval Flow</span>
 
-          {canCreateLeave && (
+              <strong>
+                BM → AM → RM → AVP → VP → HR Final
+              </strong>
+            </div>
+          </div>
+
+          <div className="leave-hero-actions">
             <button
-              className="btn-primary"
+              className="leave-hero-btn ghost"
+              type="button"
+              onClick={() => navigate(-1)}
+            >
+              ← Back
+            </button>
+
+            <button
+              className="leave-hero-btn outline"
+              type="button"
+              onClick={handleRefresh}
+              disabled={loadingList}
+            >
+              {loadingList
+                ? "Refreshing..."
+                : "Refresh"}
+            </button>
+
+            {canCreateLeave && (
+              <button
+                className="leave-hero-btn primary"
+                type="button"
                 onClick={() => {
                   resetForm();
                   setShowCreateLeave(true);
                 }}
-              type="button"
-            >
-              + Add Leave
-            </button>
-          )}
+              >
+                + Add Leave
+              </button>
+            )}
+          </div>
         </div>
-      </div>
 
-      <div className="filters">
-        {leaveTypes.map((t) => (
+        <div className="leave-summary-grid">
           <button
-            key={t}
-            className={`chip ${selectedLeaveType === t ? "active" : ""}`}
-            onClick={() => setSelectedLeaveType(t)}
             type="button"
+            className={`leave-summary-card total ${
+              selectedLeaveType === "All"
+                ? "active"
+                : ""
+            }`}
+            onClick={() =>
+              setSelectedLeaveType("All")
+            }
           >
-            {t}
+            <div className="leave-summary-icon">
+              ALL
+            </div>
+
+            <div>
+              <span>Total Requests</span>
+              <strong>{leaveSummary.total}</strong>
+              <small>All leave records</small>
+            </div>
           </button>
-        ))}
-      </div>
+
+          <button
+            type="button"
+            className={`leave-summary-card pending ${
+              selectedLeaveType === "Pending"
+                ? "active"
+                : ""
+            }`}
+            onClick={() =>
+              setSelectedLeaveType("Pending")
+            }
+          >
+            <div className="leave-summary-icon">
+              P
+            </div>
+
+            <div>
+              <span>Pending</span>
+              <strong>{leaveSummary.pending}</strong>
+              <small>Awaiting approval</small>
+            </div>
+          </button>
+
+          <button
+            type="button"
+            className="leave-summary-card approved"
+            onClick={() =>
+              setSelectedLeaveType("History")
+            }
+          >
+            <div className="leave-summary-icon">
+              A
+            </div>
+
+            <div>
+              <span>Approved</span>
+              <strong>{leaveSummary.approved}</strong>
+              <small>Completed requests</small>
+            </div>
+          </button>
+
+          <div className="leave-summary-card active-leave">
+            <div className="leave-summary-icon">
+              L
+            </div>
+
+            <div>
+              <span>On Leave Today</span>
+              <strong>
+                {leaveSummary.onLeaveToday}
+              </strong>
+              <small>Currently on leave</small>
+            </div>
+          </div>
+        </div>
+      </section>
 
       <div className="leave-searchbar">
         <input
@@ -1182,57 +1342,6 @@ export default function LeaveTransactions() {
         <span className="leave-search-count">
           {filteredLeave.length} result(s)
         </span>
-      </div>
-
-      <div className="leave-pager">
-        <div className="leave-pager-left">
-          <span>Rows per page</span>
-
-          <select
-            value={pageSize}
-            onChange={(e) => setPageSize(Number(e.target.value))}
-          >
-            <option value={25}>25</option>
-            <option value={50}>50</option>
-            <option value={75}>75</option>
-            <option value={100}>100</option>
-          </select>
-        </div>
-
-        <div className="leave-pager-right">
-          <button
-            className="leave-page-btn"
-            type="button"
-            disabled={page <= 1}
-            onClick={() => setPage((p) => Math.max(1, p - 1))}
-          >
-            ‹
-          </button>
-
-          {getPageNumbers().map((p) => (
-            <button
-              key={p}
-              className={`leave-page-number ${page === p ? "active" : ""}`}
-              type="button"
-              onClick={() => setPage(p)}
-            >
-              {p}
-            </button>
-          ))}
-
-          <button
-            className="leave-page-btn"
-            type="button"
-            disabled={page >= totalPages}
-            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-          >
-            ›
-          </button>
-
-          <span className="leave-page-summary">
-            Page {page} of {totalPages}
-          </span>
-        </div>
       </div>
 
       <div className="table-card">
@@ -1428,6 +1537,57 @@ export default function LeaveTransactions() {
               )}
             </tbody>
           </table>
+        </div>
+      </div>
+
+      <div className="leave-pager">
+        <div className="leave-pager-left">
+          <span>Rows per page</span>
+
+          <select
+            value={pageSize}
+            onChange={(e) => setPageSize(Number(e.target.value))}
+          >
+            <option value={25}>25</option>
+            <option value={50}>50</option>
+            <option value={75}>75</option>
+            <option value={100}>100</option>
+          </select>
+        </div>
+
+        <div className="leave-pager-right">
+          <button
+            className="leave-page-btn"
+            type="button"
+            disabled={page <= 1}
+            onClick={() => setPage((p) => Math.max(1, p - 1))}
+          >
+            ‹
+          </button>
+
+          {getPageNumbers().map((p) => (
+            <button
+              key={p}
+              className={`leave-page-number ${page === p ? "active" : ""}`}
+              type="button"
+              onClick={() => setPage(p)}
+            >
+              {p}
+            </button>
+          ))}
+
+          <button
+            className="leave-page-btn"
+            type="button"
+            disabled={page >= totalPages}
+            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+          >
+            ›
+          </button>
+
+          <span className="leave-page-summary">
+            Page {page} of {totalPages}
+          </span>
         </div>
       </div>
 

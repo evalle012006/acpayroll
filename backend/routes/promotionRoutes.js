@@ -380,11 +380,16 @@ const canCreatePromotionForStaff = (req, staffRow) => {
 };
 
 const canViewAllPromotionOrders = (req) => {
-  if (isAdmin(req) || isIT(req)) return true;
+  if (isAdmin(req) || isIT(req)) {
+    return true;
+  }
 
   const dept = deptLower(req);
 
-  // Office of the President
+  /*
+    Office of the President keeps its
+    existing viewing access.
+  */
   if (dept === "office of the president") {
     return (
       isVicePresident(req) ||
@@ -393,18 +398,20 @@ const canViewAllPromotionOrders = (req) => {
     );
   }
 
-  // Other back office departments
-  if (isBackOfficeFullViewDept(dept)) return true;
-
-  // Operation
-  if (
-    isVicePresident(req) ||
-    isSeniorVicePresident(req) ||
-    isPresident(req)
-  ) {
+  /*
+    HR, Accounting, Audit, TREAD,
+    Production and other back-office
+    departments keep their existing
+    full-view access.
+  */
+  if (isBackOfficeFullViewDept(dept)) {
     return true;
   }
 
+  /*
+    Operation Department must use the
+    scoped queries inside GET /promotion-orders.
+  */
   return false;
 };
 
@@ -551,15 +558,36 @@ router.get(
         return res.json(r.rows);
       }
 
-      if (isVicePresident(req) && isOperationDepartment(deptLower(req))) {
-        const r = await pool.query(`
+      if (
+        isOperationDepartment(deptLower(req)) &&
+        (
+          isVicePresident(req) ||
+          isSeniorVicePresident(req)
+        )
+      ) {
+        const r = await pool.query(
+          `
           SELECT po.*
+
           FROM public.promotion_orders po
-          JOIN public.staff s ON s.id = po.employee_id
-          WHERE LOWER(TRIM(COALESCE(s.department,''))) IN
-            ('operation','operations','operation department','operations department')
+
+          INNER JOIN public.staff s
+            ON s.id = po.employee_id
+
+          WHERE LOWER(
+            TRIM(
+              COALESCE(s.department, '')
+            )
+          ) IN (
+            'operation',
+            'operations',
+            'operation department',
+            'operations department'
+          )
+
           ORDER BY po.created_at DESC
-        `);
+          `
+        );
 
         return res.json(r.rows);
       }
@@ -574,6 +602,8 @@ router.get(
           FROM public.promotion_orders po
           JOIN public.staff s ON s.id = po.employee_id
           WHERE s.branch_id = $1
+            AND LOWER(TRIM(COALESCE(s.department,''))) IN
+              ('operation','operations','operation department','operations department')
           ORDER BY po.created_at DESC
           `,
           [bid]
@@ -591,8 +621,9 @@ router.get(
           SELECT po.*
           FROM public.promotion_orders po
           JOIN public.staff s ON s.id = po.employee_id
-          WHERE LOWER(TRIM(COALESCE(s.area,''))) = LOWER(TRIM($1))
-             OR po.approval_stage = 'area manager'
+          WHERE LOWER(TRIM(COALESCE(s.department,''))) IN
+            ('operation','operations','operation department','operations department')
+            AND LOWER(TRIM(COALESCE(s.area,''))) = LOWER(TRIM($1))
           ORDER BY po.created_at DESC
           `,
           [area]
@@ -610,8 +641,9 @@ router.get(
           SELECT po.*
           FROM public.promotion_orders po
           JOIN public.staff s ON s.id = po.employee_id
-          WHERE LOWER(TRIM(COALESCE(s.region,''))) = LOWER(TRIM($1))
-             OR po.approval_stage = 'regional manager'
+          WHERE LOWER(TRIM(COALESCE(s.department,''))) IN
+            ('operation','operations','operation department','operations department')
+            AND LOWER(TRIM(COALESCE(s.region,''))) = LOWER(TRIM($1))
           ORDER BY po.created_at DESC
           `,
           [region]
@@ -629,8 +661,9 @@ router.get(
           SELECT po.*
           FROM public.promotion_orders po
           JOIN public.staff s ON s.id = po.employee_id
-          WHERE LOWER(TRIM(COALESCE(s.division,''))) = LOWER(TRIM($1))
-             OR po.approval_stage = 'assistant vice president'
+          WHERE LOWER(TRIM(COALESCE(s.department,''))) IN
+            ('operation','operations','operation department','operations department')
+            AND LOWER(TRIM(COALESCE(s.division,''))) = LOWER(TRIM($1))
           ORDER BY po.created_at DESC
           `,
           [division]

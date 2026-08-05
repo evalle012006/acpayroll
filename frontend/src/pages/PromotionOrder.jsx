@@ -179,7 +179,25 @@ export default function PromotionOrder() {
   const navigate = useNavigate();
   const user = useMemo(() => readUser(), []);
   const role = norm(user?.role);
-  const department = norm(user?.department);
+
+  const department = norm(
+    user?.department ||
+      user?.department_name ||
+      user?.user_department ||
+      user?.departmentName ||
+      user?.dept
+  );
+
+  const userBranchId = String(
+    user?.branch_id ?? ""
+  ).trim();
+
+  const userArea = norm(user?.area);
+  const userRegion = norm(user?.region);
+  const userDivision = norm(user?.division);
+
+  const loggedInOperationUser =
+    isOperationDepartment(department);
 
   const isAdmin = role === "admin";
   const isIt = role === "it";
@@ -316,12 +334,91 @@ export default function PromotionOrder() {
       .sort((a, b) => toStr(a.position).localeCompare(toStr(b.position)));
   }, [positionRates]);
 
+  const scopedStaff = useMemo(() => {
+    if (!Array.isArray(staff)) {
+      return [];
+    }
+
+    /*
+      Do not change HR, IT, Accounting,
+      TREAD, Audit or other department access.
+    */
+    if (!loggedInOperationUser) {
+      return staff;
+    }
+
+    return staff.filter((employee) => {
+      const employeeDepartment = norm(
+        employee?.department ||
+          employee?.department_name
+      );
+
+      if (
+        !isOperationDepartment(
+          employeeDepartment
+        )
+      ) {
+        return false;
+      }
+
+      if (isBranchManager) {
+        return (
+          String(
+            employee?.branch_id ?? ""
+          ).trim() === userBranchId
+        );
+      }
+
+      if (isAreaManager) {
+        return (
+          norm(employee?.area) === userArea
+        );
+      }
+
+      if (isRegionalManager) {
+        return (
+          norm(employee?.region) ===
+          userRegion
+        );
+      }
+
+      if (isAssistantVicePresident) {
+        return (
+          norm(employee?.division) ===
+          userDivision
+        );
+      }
+
+      if (
+        isVicePresident ||
+        isSeniorVicePresident
+      ) {
+        return true;
+      }
+
+      return false;
+    });
+  }, [
+    staff,
+    loggedInOperationUser,
+    isBranchManager,
+    isAreaManager,
+    isRegionalManager,
+    isAssistantVicePresident,
+    isVicePresident,
+    isSeniorVicePresident,
+    userBranchId,
+    userArea,
+    userRegion,
+    userDivision,
+  ]);
+
   const filteredStaff = useMemo(() => {
     const q = norm(employeeQuery);
 
     const list = !q
-      ? staff
-      : staff.filter((s) => {
+      ? scopedStaff
+      : scopedStaff.filter((s) => {
           const hay = [
             s.id,
             s.employee_no,
@@ -332,6 +429,7 @@ export default function PromotionOrder() {
             s.position,
             s.department,
             s.department_name,
+            s.branch_id,
             s.area,
             s.region,
             s.division,
@@ -343,7 +441,7 @@ export default function PromotionOrder() {
         });
 
     return list.slice(0, 50);
-  }, [staff, employeeQuery]);
+  }, [scopedStaff, employeeQuery]);
 
   const filteredBranches = useMemo(() => {
     const q = norm(branchSearch);
@@ -767,6 +865,58 @@ export default function PromotionOrder() {
     return `${total} Record${total === 1 ? "" : "s"}`;
   }, [orders, filteredOrders, orderSearch]);
 
+  const promotionSummary = useMemo(() => {
+    const rows = Array.isArray(orders)
+      ? orders
+      : [];
+
+    const now = new Date();
+    const currentMonth = now.getMonth();
+    const currentYear = now.getFullYear();
+
+    let pending = 0;
+    let approved = 0;
+    let rejected = 0;
+    let voided = 0;
+    let thisMonth = 0;
+
+    rows.forEach((order) => {
+      const status = norm(order?.status);
+
+      if (status === "pending") {
+        pending += 1;
+      } else if (status === "approved") {
+        approved += 1;
+      } else if (status === "rejected") {
+        rejected += 1;
+      } else if (status === "voided") {
+        voided += 1;
+      }
+
+      const createdAt = order?.created_at
+        ? new Date(order.created_at)
+        : null;
+
+      if (
+        createdAt &&
+        !Number.isNaN(createdAt.getTime()) &&
+        createdAt.getMonth() === currentMonth &&
+        createdAt.getFullYear() === currentYear
+      ) {
+        thisMonth += 1;
+      }
+    });
+
+    return {
+      total: rows.length,
+      pending,
+      approved,
+      rejected,
+      voided,
+      thisMonth,
+    };
+  }, [orders]);
+
   const badgeClass = (status) => {
     const s = norm(status);
 
@@ -795,45 +945,161 @@ export default function PromotionOrder() {
 
   return (
     <div className="po-page">
-      <div className="po-topbar">
-        <div>
-          <h2 className="po-title">Promotion Recommendation</h2>
-          <p className="po-subtitle">
-            Approval Chain: BM → AM → RM → AVP → VP → TREAD → HR Department.
-          </p>
-        </div>
+      <section className="po-hero">
+        <div className="po-hero-main">
+          <div className="po-hero-copy">
+            <span className="po-eyebrow">
+              HRIS TRANSACTIONS
+            </span>
 
-        <div className="po-actions">
-          <button className="po-btn po-btn-ghost" type="button" onClick={() => navigate(-1)}>
-            ← Back
-          </button>
+            <h1 className="po-title">
+              Promotion Recommendations
+            </h1>
 
-          <button className="po-btn po-btn-outline" type="button" onClick={loadOrders} disabled={loadingOrders}>
-            {loadingOrders ? "Refreshing..." : "Refresh"}
-          </button>
+            <p className="po-subtitle">
+              Create, review, and track employee
+              promotion recommendations through the
+              required approval process.
+            </p>
 
-          {canCreatePromotion && (
-            <button className="po-btn po-btn-primary" type="button" onClick={() => setShowCreate(true)}>
-              + Recommendation
+            <div className="po-chain">
+              <span>Approval Flow</span>
+
+              <strong>
+                BM → AM → RM → AVP → VP → TREAD →
+                HR Final
+              </strong>
+            </div>
+          </div>
+
+          <div className="po-actions">
+            <button
+              className="po-btn po-btn-ghost"
+              type="button"
+              onClick={() => navigate(-1)}
+            >
+              ← Back
             </button>
-          )}
+
+            <button
+              className="po-btn po-btn-outline"
+              type="button"
+              onClick={loadOrders}
+              disabled={loadingOrders}
+            >
+              {loadingOrders
+                ? "Refreshing..."
+                : "Refresh"}
+            </button>
+
+            {canCreatePromotion && (
+              <button
+                className="po-btn po-btn-primary"
+                type="button"
+                onClick={() => setShowCreate(true)}
+              >
+                + Create Recommendation
+              </button>
+            )}
+          </div>
         </div>
-      </div>
+
+        <div className="po-summary-grid">
+          <button
+            type="button"
+            className={`po-summary-card total ${
+              statusFilter === "All"
+                ? "active"
+                : ""
+            }`}
+            onClick={() => setStatusFilter("All")}
+          >
+            <div className="po-summary-icon">
+              ALL
+            </div>
+
+            <div>
+              <span>Total Recommendations</span>
+              <strong>
+                {promotionSummary.total}
+              </strong>
+              <small>
+                All promotion records
+              </small>
+            </div>
+          </button>
+
+          <button
+            type="button"
+            className={`po-summary-card pending ${
+              statusFilter === "Pending"
+                ? "active"
+                : ""
+            }`}
+            onClick={() =>
+              setStatusFilter("Pending")
+            }
+          >
+            <div className="po-summary-icon">
+              P
+            </div>
+
+            <div>
+              <span>Pending</span>
+              <strong>
+                {promotionSummary.pending}
+              </strong>
+              <small>
+                Awaiting action
+              </small>
+            </div>
+          </button>
+
+          <button
+            type="button"
+            className={`po-summary-card approved ${
+              statusFilter === "Approved"
+                ? "active"
+                : ""
+            }`}
+            onClick={() =>
+              setStatusFilter("Approved")
+            }
+          >
+            <div className="po-summary-icon">
+              A
+            </div>
+
+            <div>
+              <span>Approved</span>
+              <strong>
+                {promotionSummary.approved}
+              </strong>
+              <small>
+                Completed recommendations
+              </small>
+            </div>
+          </button>
+
+          <div className="po-summary-card monthly">
+            <div className="po-summary-icon">
+              M
+            </div>
+
+            <div>
+              <span>Created This Month</span>
+              <strong>
+                {promotionSummary.thisMonth}
+              </strong>
+              <small>
+                New recommendations
+              </small>
+            </div>
+          </div>
+        </div>
+      </section>
 
       <div className="po-card">
-        <div className="po-status-tabs">
-          {["All", "Pending", "Approved"].map((s) => (
-            <button
-              key={s}
-              type="button"
-              className={`po-status-tab ${statusFilter === s ? "active" : ""}`}
-              onClick={() => setStatusFilter(s)}
-            >
-              {s}
-            </button>
-          ))}
-        </div>
-
         <div className="po-card-head">
           <div className="po-toolbar">
             <input
@@ -846,7 +1112,9 @@ export default function PromotionOrder() {
             <select
               className="po-page-size"
               value={pageSize}
-              onChange={(e) => setPageSize(Number(e.target.value))}
+              onChange={(e) =>
+                setPageSize(Number(e.target.value))
+              }
             >
               <option value={25}>25 rows</option>
               <option value={50}>50 rows</option>
@@ -854,9 +1122,6 @@ export default function PromotionOrder() {
               <option value={100}>100 rows</option>
             </select>
           </div>
-
-          <div className="po-card-title">Promotion Recommendations</div>
-          <div className="po-card-meta">{countText}</div>
         </div>
 
         <div className="po-table-wrap">
