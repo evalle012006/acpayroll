@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import api from "../api/axiosClient";
-import "../styles/LeaveTransactions.css";
 import "../styles/ResignationRequests.css";
 
 const toStr = (v) => String(v ?? "").trim();
@@ -668,321 +667,326 @@ const isHRDeptManager =
     );
   };
 
-  return (
-    <div className="approval-page resignation-page">
-      <div className="approval-page-header">
-        <div>
-          <h2 className="approval-title">Resignation</h2>
-          <p className="approval-subtitle">
-            Branch Manager → Area Manager → Regional Manager → Assistant Vice
-            President → Vice President → Admin/HR/Accounting.
-          </p>
-        </div>
+  const totalRequests=filteredRows.length;
+  const pendingRequests=filteredRows.filter((r)=>{
+    const s=norm(r.status);
+    return s!==norm(STATUS_APPROVED)&&s!==norm(STATUS_REJECTED);
+  }).length;
+  const approvedRequests=filteredRows.filter((r)=>norm(r.status)===norm(STATUS_APPROVED)).length;
+  const rejectedRequests=filteredRows.filter((r)=>norm(r.status)===norm(STATUS_REJECTED)).length;
 
-        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-          <button
-            className="btn-secondary"
-            onClick={() => navigate("/transactions")}
-            type="button"
-          >
-            ← Back
-          </button>
+  return(
+    <div className="reg-page">
 
-          <button className="btn-secondary" onClick={fetchAll} type="button">
-            Refresh
-          </button>
+      {/* HERO */}
+      <section className="reg-hero">
+        <div className="reg-hero-main">
+          <div className="reg-hero-copy">
+            <span className="reg-eyebrow">HRIS TRANSACTIONS</span>
 
-          {canCreate && (
-            <button className="btn-primary" onClick={openCreate} type="button">
-              + Add
-            </button>
-          )}
-        </div>
-      </div>
+            <h1>Resignation Requests</h1>
 
-      {error ? (
-        <div style={{ color: "#ff7e8b", fontWeight: 800 }}>{error}</div>
-      ) : null}
+            <p>
+              Create, review, approve and manage employee resignation
+              requests through the required approval process.
+            </p>
 
-      <div className="leave-searchbar">
-        <input
-          className="leave-search-input"
-          value={searchText}
-          onChange={(e) => setSearchText(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && setSearch(searchText)}
-          placeholder="Search request no, employee, branch, status..."
-        />
+            <div className="reg-flow">
+              <span>APPROVAL FLOW</span>
+              <b>
+                Branch Manager → Area Manager → Regional Manager →
+                Assistant Vice President → Vice President →
+                Admin / HR / Accounting
+              </b>
+            </div>
+          </div>
 
-        <button
-          className="btn-secondary"
-          type="button"
-          onClick={() => setSearch(searchText)}
-        >
-          Search
-        </button>
-
-        <button
-          className="btn-secondary"
-          type="button"
-          onClick={() => {
-            setSearchText("");
-            setSearch("");
-          }}
-        >
-          Clear
-        </button>
-
-        <span className="leave-search-count">{filteredRows.length} result(s)</span>
-      </div>
-
-      <div className="leave-pager">
-        <div className="leave-pager-left">
-          <span>Rows per page</span>
-
-          <select
-            value={pageSize}
-            onChange={(e) => setPageSize(Number(e.target.value))}
-          >
-            <option value={25}>25</option>
-            <option value={50}>50</option>
-            <option value={75}>75</option>
-            <option value={100}>100</option>
-          </select>
-        </div>
-
-        <div className="leave-pager-right">
-          <button
-            className="leave-page-btn"
-            type="button"
-            disabled={page <= 1}
-            onClick={() => setPage((p) => Math.max(1, p - 1))}
-          >
-            ‹
-          </button>
-
-          {getPageNumbers().map((p) => (
+          <div className="reg-hero-actions">
             <button
-              key={p}
-              className={`leave-page-number ${page === p ? "active" : ""}`}
+              className="reg-btn reg-btn-secondary"
               type="button"
-              onClick={() => setPage(p)}
+              onClick={()=>navigate("/transactions")}
             >
-              {p}
+              ← Back
             </button>
-          ))}
+
+            <button
+              className="reg-btn reg-btn-secondary"
+              type="button"
+              onClick={fetchAll}
+              disabled={loading}
+            >
+              {loading?"Refreshing...":"Refresh"}
+            </button>
+
+            {canCreate&&(
+              <button
+                className="reg-btn reg-btn-primary"
+                type="button"
+                onClick={openCreate}
+              >
+                + Add Resignation
+              </button>
+            )}
+          </div>
+        </div>
+      </section>
+
+      {/* SUMMARY */}
+      <section className="reg-summary-grid">
+        <article className="reg-summary-card reg-summary-total">
+          <div className="reg-summary-icon">ALL</div>
+          <div>
+            <span>Total Requests</span>
+            <strong>{totalRequests}</strong>
+            <small>All resignation records</small>
+          </div>
+        </article>
+
+        <article className="reg-summary-card reg-summary-pending">
+          <div className="reg-summary-icon">P</div>
+          <div>
+            <span>Pending</span>
+            <strong>{pendingRequests}</strong>
+            <small>Awaiting approval</small>
+          </div>
+        </article>
+
+        <article className="reg-summary-card reg-summary-approved">
+          <div className="reg-summary-icon">A</div>
+          <div>
+            <span>Approved</span>
+            <strong>{approvedRequests}</strong>
+            <small>Completed requests</small>
+          </div>
+        </article>
+
+        <article className="reg-summary-card reg-summary-rejected">
+          <div className="reg-summary-icon">R</div>
+          <div>
+            <span>Rejected</span>
+            <strong>{rejectedRequests}</strong>
+            <small>Rejected requests</small>
+          </div>
+        </article>
+      </section>
+
+      {error&&(
+        <div className="reg-error">{error}</div>
+      )}
+
+      {/* SEARCH */}
+      <section className="reg-search-panel">
+        <div className="reg-search-controls">
+          <input
+            className="reg-search-input"
+            type="text"
+            value={searchText}
+            onChange={(e)=>setSearchText(e.target.value)}
+            onKeyDown={(e)=>{
+              if(e.key==="Enter") setSearch(searchText);
+            }}
+            placeholder="Search request no, employee, branch, status..."
+          />
 
           <button
-            className="leave-page-btn"
+            className="reg-btn reg-btn-secondary"
             type="button"
-            disabled={page >= totalPages}
-            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+            onClick={()=>setSearch(searchText)}
           >
-            ›
+            Search
           </button>
 
-          <span className="leave-page-summary">
-            Page {page} of {totalPages}
-          </span>
+          <button
+            className="reg-btn reg-btn-secondary"
+            type="button"
+            onClick={()=>{
+              setSearchText("");
+              setSearch("");
+            }}
+          >
+            Clear
+          </button>
         </div>
-      </div>
 
-      <div className="table-card">
-        <div className="table-wrap">
-          <table className="table resignation-table">
+        <span className="reg-result-count">
+          {filteredRows.length}{" "}
+          {filteredRows.length===1?"result":"results"}
+        </span>
+      </section>
+
+      {/* TABLE */}
+      <section className="reg-list-card">
+        <div className="reg-table-wrap">
+          <table className="reg-table">
             <thead>
               <tr>
                 <th>Request No</th>
-                <th>Employee No</th>
                 <th>Employee</th>
                 <th>Branch</th>
                 <th>Resignation Date</th>
                 <th>Effective Date</th>
-                <th>Attachment</th>
                 <th>Status</th>
                 <th>Stage</th>
-                <th style={{ width: 190 }}>Actions</th>
+                <th>File</th>
+                <th>Actions</th>
               </tr>
             </thead>
 
             <tbody>
-              {loading ? (
+              {loading?(
                 <tr>
-                  <td colSpan={10} className="empty-state">
-                    Loading...
+                  <td colSpan={9} className="reg-empty">
+                    Loading resignation requests...
                   </td>
                 </tr>
-              ) : filteredRows.length === 0 ? (
+              ):filteredRows.length===0?(
                 <tr>
-                  <td colSpan={10} className="empty-state">
+                  <td colSpan={9} className="reg-empty">
                     No resignation requests found.
                   </td>
                 </tr>
-              ) : (
-                pagedRows.map((row) => {
-                  const canApprove = canApproveRow(row);
-                  const selectedFile = uploadFiles[row.id];
-                  const hasFile = Boolean(row.attachment_path || row.approved_attachment_path);
-                  const approved = norm(row.status) === norm(STATUS_APPROVED);
-                  const rejected = norm(row.status) === norm(STATUS_REJECTED);
+              ):(
+                pagedRows.map((row)=>{
+                  const canApprove=canApproveRow(row);
+                  const selectedFile=uploadFiles[row.id];
+                  const hasFile=Boolean(
+                    row.attachment_path||row.approved_attachment_path
+                  );
+                  const approved=norm(row.status)===norm(STATUS_APPROVED);
+                  const rejected=norm(row.status)===norm(STATUS_REJECTED);
 
-                  return (
+                  return(
                     <tr key={row.id}>
-                      <td className="td-strong">{row.request_no || row.id}</td>
-                      <td>{row.employee_no || "-"}</td>
-                      <td className="td-strong">{row.employee_name || "-"}</td>
+                      <td className="reg-request-no">
+                        {row.request_no||row.id}
+                      </td>
+
+                      <td>
+                        <div className="reg-employee-name">
+                          {row.employee_name||"-"}
+                        </div>
+
+                        <div className="reg-sub-info">
+                          Employee No: {row.employee_no||"-"}
+                        </div>
+                      </td>
+
                       <td>{branchLabel(row)}</td>
                       <td>{fmtDate(row.resignation_date)}</td>
                       <td>{fmtDate(row.effective_date)}</td>
 
                       <td>
-                        {hasFile ? (
+                        <span className={badgeClass(row.status)}>
+                          {row.status||STATUS_RM}
+                        </span>
+                      </td>
+
+                      <td>
+                        <span className="reg-stage">
+                          {actionLabel(row)}
+                        </span>
+                      </td>
+
+                      <td>
+                        {hasFile?(
                           <a
                             href={attachmentUrl(row)}
                             target="_blank"
                             rel="noreferrer"
-                            className="btn-secondary"
-                            style={{
-                              textDecoration: "none",
-                              display: "inline-flex",
-                              alignItems: "center",
-                            }}
+                            className="reg-action-btn reg-action-download"
                           >
                             View File
                           </a>
-                        ) : (
-                          "-"
-                        )}
+                        ):"-"}
                       </td>
 
                       <td>
-                        <span className={badgeClass(row.status)}>
-                          {row.status || STATUS_RM}
-                        </span>
-                      </td>
-
-                      <td>{actionLabel(row)}</td>
-
-                      <td>
-                        <div className="row-actions">
+                        <div className="reg-row-actions">
                           <button
-                            className="btn-secondary"
+                            className="reg-action-btn reg-action-view"
                             type="button"
-                            onClick={() => setViewRow(row)}
+                            onClick={()=>setViewRow(row)}
                           >
                             View
                           </button>
 
-                          {hasFile && (
-                            <a
-                              href={attachmentUrl(row)}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="btn-secondary"
-                              style={{
-                                textDecoration: "none",
-                                display: "inline-flex",
-                                justifyContent: "center",
-                              }}
-                            >
-                              Download Latest
-                            </a>
-                          )}
-
-                          {canApprove && !approved && !rejected && (
+                          {canApprove&&!approved&&!rejected&&(
                             <>
-                              <label
-                                className="btn-secondary"
-                                style={{
-                                  cursor: "pointer",
-                                  textAlign: "center",
-                                }}
-                              >
-                                {selectedFile?.name ? "Change File" : "Upload File"}
+                              <label className="reg-action-btn reg-action-upload">
+                                {selectedFile?.name?"Change File":"Choose File"}
                                 <input
                                   type="file"
-                                  style={{ display: "none" }}
-                                  onChange={(e) =>
-                                    setRowFile(row.id, e.target.files?.[0] || null)
+                                  hidden
+                                  onChange={(e)=>
+                                    setRowFile(row.id,e.target.files?.[0]||null)
                                   }
                                 />
                               </label>
 
-                              {selectedFile?.name ? (
-                                <span
-                                  style={{
-                                    fontSize: 11,
-                                    maxWidth: 140,
-                                    color: "#cbd5e1",
-                                    wordBreak: "break-word",
-                                  }}
-                                >
-                                  {selectedFile.name}
-                                </span>
-                              ) : null}
-
-                              {selectedFile && (
+                              {selectedFile&&(
                                 <button
-                                  className="btn-secondary"
+                                  className="reg-action-btn reg-action-download"
                                   type="button"
-                                  onClick={() => uploadOnly(row)}
-                                  disabled={processingId === `upload-${row.id}`}
+                                  onClick={()=>uploadOnly(row)}
+                                  disabled={processingId===`upload-${row.id}`}
                                 >
-                                  {processingId === `upload-${row.id}`
-                                    ? "Uploading..."
-                                    : "Upload File"}
+                                  {processingId===`upload-${row.id}`
+                                    ?"Uploading..."
+                                    :"Upload File"}
                                 </button>
                               )}
 
                               <button
-                                className="btn-success"
+                                className="reg-action-btn reg-action-approve"
                                 type="button"
-                                onClick={() => approveRequest(row)}
-                                disabled={processingId === `approve-${row.id}`}
+                                onClick={()=>approveRequest(row)}
+                                disabled={processingId===`approve-${row.id}`}
                               >
-                                {processingId === `approve-${row.id}`
-                                  ? "Approving..."
-                                  : "Upload + Approve"}
+                                {processingId===`approve-${row.id}`
+                                  ?"Approving..."
+                                  :"Approve"}
                               </button>
                             </>
                           )}
 
-                          {canRejectRow(row) && !approved && !rejected && (
+                          {canRejectRow(row)&&!approved&&!rejected&&(
                             <button
-                              className="btn-danger"
+                              className="reg-action-btn reg-action-reject"
                               type="button"
-                              onClick={() => {
+                              onClick={()=>{
                                 setRejectingRow(row);
                                 setRejectionReason("");
                               }}
-                              disabled={processingId === `reject-${row.id}`}
+                              disabled={processingId===`reject-${row.id}`}
                             >
                               Reject
                             </button>
                           )}
 
-                          {canRevokeRow(row) && (
+                          {canRevokeRow(row)&&(
                             <button
-                              className="btn-danger"
+                              className="reg-action-btn reg-action-reject"
                               type="button"
-                              onClick={() => openRevokeModal(row)}
-                              disabled={processingId === `revoke-${row.id}`}
+                              onClick={()=>openRevokeModal(row)}
+                              disabled={processingId===`revoke-${row.id}`}
                             >
-                              {processingId === `revoke-${row.id}`
-                                ? "Revoking..."
-                                : "Revoke"}
+                              {processingId===`revoke-${row.id}`
+                                ?"Revoking..."
+                                :"Revoke"}
                             </button>
                           )}
 
-                          {canDeleteRow(row) ? (
+                          {canDeleteRow(row)&&(
                             <button
-                              className="btn-secondary"
+                              className="reg-action-btn reg-action-delete"
                               type="button"
-                              onClick={() => deleteRequest(row)}
-                              disabled={processingId === `delete-${row.id}`}
+                              onClick={()=>deleteRequest(row)}
+                              disabled={processingId===`delete-${row.id}`}
                             >
                               Delete
                             </button>
-                          ) : null}
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -992,7 +996,62 @@ const isHRDeptManager =
             </tbody>
           </table>
         </div>
-      </div>
+
+        {/* PAGINATION */}
+        <div className="reg-pager">
+          <div className="reg-pager-left">
+            <span>Rows per page</span>
+
+            <select
+              value={pageSize}
+              onChange={(e)=>setPageSize(Number(e.target.value))}
+            >
+              {[25,50,75,100].map((size)=>(
+                <option key={size} value={size}>
+                  {size}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="reg-pager-right">
+            <button
+              type="button"
+              className="reg-page-btn"
+              disabled={page<=1}
+              onClick={()=>setPage((p)=>Math.max(1,p-1))}
+            >
+              ‹
+            </button>
+
+            {getPageNumbers().map((pageNumber)=>(
+              <button
+                key={pageNumber}
+                type="button"
+                className={`reg-page-number ${
+                  page===pageNumber?"active":""
+                }`}
+                onClick={()=>setPage(pageNumber)}
+              >
+                {pageNumber}
+              </button>
+            ))}
+
+            <button
+              type="button"
+              className="reg-page-btn"
+              disabled={page>=totalPages}
+              onClick={()=>setPage((p)=>Math.min(totalPages,p+1))}
+            >
+              ›
+            </button>
+
+            <span className="reg-page-summary">
+              Page {page} of {totalPages}
+            </span>
+          </div>
+        </div>
+      </section>
 
       {showCreate && (
         <div

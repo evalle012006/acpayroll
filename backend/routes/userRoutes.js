@@ -7,6 +7,36 @@ const bcrypt = require("bcryptjs");
 
 const clean = (v) => String(v ?? "").trim();
 
+const normalizeDepartmentScopes = (value, primaryDepartment = "") => {
+  let scopes = [];
+
+  if (Array.isArray(value)) {
+    scopes = value;
+  } else if (typeof value === "string" && value.trim()) {
+    scopes = value.split(",");
+  }
+
+  if (primaryDepartment) {
+    scopes.push(primaryDepartment);
+  }
+
+  const seen = new Set();
+
+  return scopes
+    .map((x) => clean(x))
+    .filter(Boolean)
+    .filter((x) => {
+      const key = x.toLowerCase();
+
+      if (seen.has(key)) {
+        return false;
+      }
+
+      seen.add(key);
+      return true;
+    });
+};
+
 const USER_RETURN_FIELDS = `
   id,
   username,
@@ -24,6 +54,92 @@ const USER_RETURN_FIELDS = `
   must_reset_password
 `;
 
+const attachDepartmentScopes = async (users) => {
+  const list = Array.isArray(users) ? users : [];
+
+  if (!list.length) {
+    return [];
+  }
+
+  const ids = list
+    .map((u) => Number(u.id))
+    .filter((id) => Number.isFinite(id));
+
+  if (!ids.length) {
+    return list.map((u) => ({
+      ...u,
+      department_scopes: [],
+    }));
+  }
+
+  const result = await pool.query(
+    `
+    SELECT
+      user_id,
+      department
+    FROM public.user_department_scopes
+    WHERE user_id = ANY($1::int[])
+    ORDER BY department
+    `,
+    [ids]
+  );
+
+  const scopeMap = new Map();
+
+  for (const row of result.rows) {
+    const key = String(row.user_id);
+
+    if (!scopeMap.has(key)) {
+      scopeMap.set(key, []);
+    }
+
+    scopeMap.get(key).push(row.department);
+  }
+
+  return list.map((u) => ({
+    ...u,
+    department_scopes:
+      scopeMap.get(String(u.id)) ||
+      (u.department ? [u.department] : []),
+  }));
+};
+
+const saveDepartmentScopes = async (
+  client,
+  userId,
+  scopes,
+  primaryDepartment
+) => {
+  const normalized = normalizeDepartmentScopes(
+    scopes,
+    primaryDepartment
+  );
+
+  await client.query(
+    `
+    DELETE FROM public.user_department_scopes
+    WHERE user_id = $1
+    `,
+    [userId]
+  );
+
+  for (const department of normalized) {
+    await client.query(
+      `
+      INSERT INTO public.user_department_scopes (
+        user_id,
+        department,
+        created_at,
+        updated_at
+      )
+      VALUES ($1, $2, NOW(), NOW())
+      ON CONFLICT DO NOTHING
+      `,
+      [userId, department]
+    );
+  }
+};
+
 router.get(
   "/",
   requireAuth,
@@ -38,7 +154,9 @@ router.get(
         `
       );
 
-      return res.json(result.rows);
+      const users = await attachDepartmentScopes(result.rows);
+
+      return res.json(users);
     } catch (e) {
       console.error("GET /api/users ERROR:", e.message);
       return res.status(500).json({ message: "Server error" });
@@ -51,6 +169,8 @@ router.post(
   requireAuth,
   requirePermission("users", "create"),
   async (req, res) => {
+    let client;
+
     try {
       const username = clean(req.body?.username);
       const password = clean(req.body?.password);
@@ -65,6 +185,11 @@ router.post(
       const middle_name = clean(req.body?.middle_name) || null;
       const last_name = clean(req.body?.last_name) || null;
       const department = clean(req.body?.department) || null;
+
+      const department_scopes = normalizeDepartmentScopes(
+        req.body?.department_scopes,
+        department
+      );
 
       const status =
         clean(req.body?.status).toLowerCase() === "inactive"
@@ -88,12 +213,17 @@ router.post(
       );
 
       if (exists.rows.length > 0) {
-        return res.status(409).json({ message: "Username already exists" });
+        return res.status(409).json({
+          message: "Username already exists",
+        });
       }
 
       const hashed = await bcrypt.hash(password, 10);
 
-      const result = await pool.query(
+      client = await pool.connect();
+      await client.query("BEGIN");
+
+      const result = await client.query(
         `
         INSERT INTO public.users (
           username,
@@ -110,7 +240,9 @@ router.post(
           status,
           created_at
         )
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,NOW())
+        VALUES (
+          $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,NOW()
+        )
         RETURNING ${USER_RETURN_FIELDS}
         `,
         [
@@ -129,13 +261,41 @@ router.post(
         ]
       );
 
+      const createdUser = result.rows[0];
+
+      await saveDepartmentScopes(
+        client,
+        createdUser.id,
+        department_scopes,
+        department
+      );
+
+      await client.query("COMMIT");
+
+      const [userWithScopes] = await attachDepartmentScopes([
+        createdUser,
+      ]);
+
       return res.json({
         message: "User created",
-        user: result.rows[0],
+        user: userWithScopes,
       });
     } catch (e) {
+      if (client) {
+        try {
+          await client.query("ROLLBACK");
+        } catch {}
+      }
+
       console.error("POST /api/users ERROR:", e.message);
-      return res.status(500).json({ message: "Server error" });
+
+      return res.status(500).json({
+        message: "Server error",
+      });
+    } finally {
+      if (client) {
+        client.release();
+      }
     }
   }
 );
@@ -145,11 +305,15 @@ router.put(
   requireAuth,
   requirePermission("users", "edit"),
   async (req, res) => {
+    let client;
+
     try {
       const id = Number(req.params.id);
 
       if (!Number.isFinite(id) || id <= 0) {
-        return res.status(400).json({ message: "Invalid user id" });
+        return res.status(400).json({
+          message: "Invalid user id",
+        });
       }
 
       const username = clean(req.body?.username);
@@ -164,6 +328,30 @@ router.put(
       const middle_name = clean(req.body?.middle_name) || null;
       const last_name = clean(req.body?.last_name) || null;
       const department = clean(req.body?.department) || null;
+
+      let department_scopes;
+
+      if (req.body?.department_scopes !== undefined) {
+        department_scopes = normalizeDepartmentScopes(
+          req.body.department_scopes,
+          department
+        );
+      } else {
+        const existingScopes = await pool.query(
+          `
+          SELECT department
+          FROM public.user_department_scopes
+          WHERE user_id = $1
+          ORDER BY department
+          `,
+          [id]
+        );
+
+        department_scopes = normalizeDepartmentScopes(
+          existingScopes.rows.map((row) => row.department),
+          department
+        );
+      }
 
       const status =
         clean(req.body?.status).toLowerCase() === "inactive"
@@ -188,7 +376,9 @@ router.put(
       );
 
       if (existing.rows.length > 0) {
-        return res.status(409).json({ message: "Username already exists" });
+        return res.status(409).json({
+          message: "Username already exists",
+        });
       }
 
       let hashed = null;
@@ -198,7 +388,10 @@ router.put(
         hashed = await bcrypt.hash(password, 10);
       }
 
-      const result = await pool.query(
+      client = await pool.connect();
+      await client.query("BEGIN");
+
+      const result = await client.query(
         `
         UPDATE public.users
         SET
@@ -215,7 +408,7 @@ router.put(
           status = $11,
           password = COALESCE($12, password),
           updated_at = NOW()
-          WHERE id = $13
+        WHERE id = $13
         RETURNING ${USER_RETURN_FIELDS}
         `,
         [
@@ -236,20 +429,52 @@ router.put(
       );
 
       if (result.rows.length === 0) {
-        return res.status(404).json({ message: "User not found" });
+        await client.query("ROLLBACK");
+
+        return res.status(404).json({
+          message: "User not found",
+        });
       }
+
+      await saveDepartmentScopes(
+        client,
+        id,
+        department_scopes,
+        department
+      );
+
+      await client.query("COMMIT");
+
+      const [userWithScopes] = await attachDepartmentScopes(
+        result.rows
+      );
 
       return res.json({
         message: "User updated",
-        user: result.rows[0],
+        user: userWithScopes,
       });
     } catch (e) {
-      console.error("PUT /api/users/:id ERROR:", e.message);
-      return res.status(500).json({ message: "Server error" });
+      if (client) {
+        try {
+          await client.query("ROLLBACK");
+        } catch {}
+      }
+
+      console.error(
+        "PUT /api/users/:id ERROR:",
+        e.message
+      );
+
+      return res.status(500).json({
+        message: "Server error",
+      });
+    } finally {
+      if (client) {
+        client.release();
+      }
     }
   }
 );
-
 
 router.put(
   "/:id/status",

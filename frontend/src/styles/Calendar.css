@@ -4718,3 +4718,14 @@ button.travel-forecast-plan-card:hover {
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
+
+.travel-status.incomplete,
+.travel-compliance-status.incomplete {
+  border: 1px solid
+    rgba(239, 68, 68, 0.48);
+
+  background:
+    rgba(239, 68, 68, 0.14);
+
+  color: #ef4444;
+}

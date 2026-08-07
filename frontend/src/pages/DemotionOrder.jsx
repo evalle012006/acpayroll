@@ -243,6 +243,7 @@ export default function DemotionOrder() {
       last_name: "",
       middle_name: "",
       prev_position: "",
+      new_position: "",
       prev_branch_id: "",
       to_branch_id: "",
       effective_date: "",
@@ -732,300 +733,408 @@ export default function DemotionOrder() {
   const isWaitingFinalUpload = (order) =>
     norm(order?.status) === "wait for admin order" || norm(order?.approval_stage) === "admin";
 
+  const totalDemotions = filteredOrders.length;
+  const pendingDemotions = filteredOrders.filter((order) => {
+    const status = norm(order?.status);
+    return !["approved", "rejected", "voided"].includes(status);
+  }).length;
+  const approvedDemotions = filteredOrders.filter(
+    (order) => norm(order?.status) === "approved"
+  ).length;
+  const closedDemotions = filteredOrders.filter((order) =>
+    ["rejected", "voided"].includes(norm(order?.status))
+  ).length;
+
+  const getPageNumbers = () => {
+    const pages = [];
+    const maxButtons = 5;
+
+    let first = Math.max(1, page - 2);
+    let last = Math.min(totalPages, first + maxButtons - 1);
+
+    if (last - first < maxButtons - 1) {
+      first = Math.max(1, last - maxButtons + 1);
+    }
+
+    for (let number = first; number <= last; number += 1) {
+      pages.push(number);
+    }
+
+    return pages;
+  };
+
   return (
-    <div className="po-page">
-      <div className="po-topbar">
-        <div>
-          <h2 className="po-title">Demotion</h2>
-          <p className="po-subtitle">
-            Operations approval goes through managers. Back office goes directly to Admin / IT / HR / Accounting.
-          </p>
-        </div>
+    <div className="demotion-page">
+      <section className="demotion-hero">
+        <div className="demotion-hero-main">
+          <div className="demotion-hero-copy">
+            <span className="demotion-hero-eyebrow">HRIS TRANSACTIONS</span>
 
-        <div className="po-topbar-actions">
-          <button className="po-btn po-btn-outline" type="button" onClick={() => navigate(-1)}>
-            ← Back
-          </button>
+            <h1 className="demotion-hero-title">Demotion Orders</h1>
 
-          <button className="po-btn" type="button" onClick={loadData} disabled={loading}>
-            Refresh
-          </button>
+            <p className="demotion-hero-subtitle">
+              Create, review, approve, and manage employee demotion orders
+              through the required approval process.
+            </p>
 
-          {canCreate ? (
-            <button className="po-btn po-btn-primary" type="button" onClick={openCreate}>
-              + Create Demotion
+            <div className="demotion-flow">
+              <span>APPROVAL FLOW</span>
+              <b>
+                Operation: AM → RM → AVP → VP → Final Upload
+                <br />
+                Back Office: Final Upload
+              </b>
+            </div>
+          </div>
+
+          <div className="demotion-hero-actions">
+            <button
+              className="demotion-btn demotion-btn-secondary"
+              type="button"
+              onClick={() => navigate(-1)}
+            >
+              ← Back
             </button>
-          ) : null}
+
+            <button
+              className="demotion-btn demotion-btn-secondary"
+              type="button"
+              onClick={loadData}
+              disabled={loading}
+            >
+              {loading ? "Refreshing..." : "Refresh"}
+            </button>
+
+            {canCreate && (
+              <button
+                className="demotion-btn demotion-btn-primary"
+                type="button"
+                onClick={openCreate}
+              >
+                + Create Demotion
+              </button>
+            )}
+          </div>
         </div>
-      </div>
+      </section>
 
-      {err ? <div style={{ color: "#ef4444", fontWeight: 900 }}>{err}</div> : null}
+      {err && <div className="demotion-error">{err}</div>}
 
-      <div className="po-card po-toolbar">
-        <div className="po-toolbar-left">
-          <input
-            className="po-search-input"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search order, employee, department, status, stage..."
-          />
+      <section className="demotion-summary-grid" aria-label="Demotion summary">
+        <article className="demotion-summary-card demotion-summary-total">
+          <div className="demotion-summary-icon">ALL</div>
+          <div>
+            <span>Total Orders</span>
+            <strong>{totalDemotions}</strong>
+            <small>All demotion records</small>
+          </div>
+        </article>
 
-          <select
-            className="po-page-size"
-            value={pageSize}
-            onChange={(e) => setPageSize(Number(e.target.value))}
-          >
-            <option value={25}>25 rows</option>
-            <option value={50}>50 rows</option>
-            <option value={75}>75 rows</option>
-            <option value={100}>100 rows</option>
-          </select>
+        <article className="demotion-summary-card demotion-summary-pending">
+          <div className="demotion-summary-icon">P</div>
+          <div>
+            <span>Pending</span>
+            <strong>{pendingDemotions}</strong>
+            <small>Awaiting action or upload</small>
+          </div>
+        </article>
 
-          <span className="po-result-pill">Results: {filteredOrders.length}</span>
-          <span className="po-result-pill">Showing: {pagedOrders.length}</span>
+        <article className="demotion-summary-card demotion-summary-approved">
+          <div className="demotion-summary-icon">A</div>
+          <div>
+            <span>Approved</span>
+            <strong>{approvedDemotions}</strong>
+            <small>Completed demotions</small>
+          </div>
+        </article>
+
+        <article className="demotion-summary-card demotion-summary-closed">
+          <div className="demotion-summary-icon">R</div>
+          <div>
+            <span>Rejected / Voided</span>
+            <strong>{closedDemotions}</strong>
+            <small>Closed without effect</small>
+          </div>
+        </article>
+      </section>
+
+      <section className="demotion-list-card">
+        <div className="demotion-search-panel">
+          <div className="demotion-search-controls">
+            <input
+              className="demotion-search-input"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Search order no, employee, department, branch, status, or stage..."
+            />
+
+            {search && (
+              <button
+                className="demotion-btn demotion-btn-secondary"
+                type="button"
+                onClick={() => setSearch("")}
+              >
+                Clear
+              </button>
+            )}
+          </div>
+
+          <span className="demotion-result-count">
+            {filteredOrders.length}{" "}
+            {filteredOrders.length === 1 ? "result" : "results"}
+          </span>
         </div>
-      </div>
 
-      <div className="po-card">
-        <div className="po-table-wrap">
-          <table className="po-table">
+        <div className="demotion-table-wrap">
+          <table className="demotion-table">
             <thead>
               <tr>
-                <th style={{ width: 130 }}>Order No</th>
+                <th>Order No</th>
                 <th>Employee</th>
-                <th style={{ width: 180 }}>Department</th>
-                <th style={{ width: 170 }}>Prev Position</th>
-                <th style={{ width: 170 }}>New Position</th>
-                <th style={{ width: 210 }}>Destination</th>
-                <th style={{ width: 130 }}>Effective</th>
-                <th style={{ width: 150 }}>Status</th>
-                <th style={{ width: 220 }}>Current Stage</th>
-                <th style={{ width: 300 }}>Files</th>
-                <th style={{ width: 380 }}>Actions</th>
+                <th>Department</th>
+                <th>Position Change</th>
+                <th>Destination</th>
+                <th>Effective Date</th>
+                <th>Status</th>
+                <th>Current Stage</th>
+                <th>File</th>
+                <th>Actions</th>
               </tr>
             </thead>
 
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={11} className="po-empty">
-                    Loading…
+                  <td colSpan={10} className="demotion-empty">
+                    Loading demotion orders...
                   </td>
                 </tr>
               ) : filteredOrders.length === 0 ? (
                 <tr>
-                  <td colSpan={11} className="po-empty">
+                  <td colSpan={10} className="demotion-empty">
                     No demotion orders found.
                   </td>
                 </tr>
               ) : (
-                pagedOrders.map((o) => {
-                  const statusLower = norm(o.status || "Pending");
-                  const approved = statusLower === "approved";
-                  const rejected = statusLower === "rejected";
-                  const voided = statusLower === "voided";
-                  const currentStage = getCurrentStage(o);
-                  const canAct = canActOnStage(o);
+                pagedOrders.map((order) => {
+                  const orderStatus = norm(order.status || "Pending");
+                  const approved = orderStatus === "approved";
+                  const rejected = orderStatus === "rejected";
+                  const voided = orderStatus === "voided";
+                  const currentStage = getCurrentStage(order);
+                  const canAct = canActOnStage(order);
                   const waitingFinal =
-                    isWaitingFinalUpload(o) &&
+                    isWaitingFinalUpload(order) &&
                     !approved &&
                     !rejected &&
                     !voided;
 
                   return (
-                    <tr key={o.id}>
-                      <td className="mono">{o.order_no || "-"}</td>
+                    <tr key={order.id}>
+                      <td>
+                        <strong className="demotion-order-no">
+                          {order.order_no || "-"}
+                        </strong>
+                      </td>
 
                       <td>
-                        <div className="td-strong">{o.employee_name}</div>
-                        <div className="po-dash" style={{ fontSize: 12 }}>
-                          ID: <span className="mono">{o.employee_id}</span>
+                        <div className="demotion-employee-name">
+                          {order.employee_name || "-"}
+                        </div>
+                        <small>Employee ID: {order.employee_id || "-"}</small>
+                      </td>
+
+                      <td>{order.department || "-"}</td>
+
+                      <td>
+                        <div className="demotion-position-change">
+                          <span>{order.old_position || "-"}</span>
+                          <b>→</b>
+                          <span>{order.new_position || "-"}</span>
                         </div>
                       </td>
 
-                      <td>{o.department || "-"}</td>
-                      <td>{o.old_position || <span className="po-dash">-</span>}</td>
-                      <td>{o.new_position || <span className="po-dash">-</span>}</td>
-                      <td>{o.to_branch_id ? branchLabel(o.to_branch_id) : "-"}</td>
-                      <td className="mono">{toDate10(o.effective_date) || "-"}</td>
+                      <td>
+                        {order.to_branch_id
+                          ? branchLabel(order.to_branch_id)
+                          : "-"}
+                      </td>
+
+                      <td>{toDate10(order.effective_date) || "-"}</td>
 
                       <td>
-                        <span className={badgeClass(o.status)}>{o.status || "Pending"}</span>
+                        <span className={badgeClass(order.status)}>
+                          {order.status || "Pending"}
+                        </span>
                       </td>
 
                       <td>
-                        {approved ? (
-                          <span>Approved</span>
-                        ) : rejected ? (
-                          <span>Rejected</span>
-                        ) : voided ? (
-                          <span>Voided</span>
+                        {approved
+                          ? "Approved"
+                          : rejected
+                          ? "Rejected"
+                          : voided
+                          ? "Voided"
+                          : STAGE_LABELS[currentStage] ||
+                            currentStage ||
+                            "-"}
+                      </td>
+
+                      <td>
+                        {order.attachment_path && canDownloadFile ? (
+                          <button
+                            className="demotion-mini-btn"
+                            type="button"
+                            onClick={() => downloadFile(order, "latest")}
+                          >
+                            Download
+                          </button>
                         ) : (
-                          <span>
-                            Pending: {STAGE_LABELS[currentStage] || currentStage || "-"}
-                          </span>
+                          <span className="demotion-muted">No file</span>
                         )}
                       </td>
 
                       <td>
-                        <div className="po-row-actions" style={{ flexWrap: "wrap" }}>
-                          {o.attachment_path && canDownloadFile ? (
-                            <button
-                              className="po-mini-btn"
-                              type="button"
-                              onClick={() => downloadFile(o, "latest")}
-                            >
-                              Download Latest
-                            </button>
-                          ) : null}
-
-                          {!o.attachment_path && !o.approved_attachment_path ? (
-                            <span className="po-dash" style={{ fontSize: 12 }}>
-                              No file
-                            </span>
-                          ) : null}
-                        </div>
-                      </td>
-
-                      <td>
-                        <div className="po-row-actions" style={{ flexWrap: "wrap" }}>
+                        <div className="demotion-row-actions">
                           <button
-                            className="po-mini-btn"
+                            className="demotion-mini-btn"
                             type="button"
-                            onClick={() => setViewOrder(o)}
+                            onClick={() => setViewOrder(order)}
                           >
                             View
                           </button>
 
-                          {canAct && !waitingFinal && !approved && !rejected && !voided ? (
+                          {canAct &&
+                            !waitingFinal &&
+                            !approved &&
+                            !rejected &&
+                            !voided && (
+                              <>
+                                <label className="demotion-mini-btn demotion-file-btn">
+                                  {approvalFiles[order.id]?.name
+                                    ? "Change File"
+                                    : "Upload File"}
+                                  <input
+                                    type="file"
+                                    onChange={(event) =>
+                                      setApprovalFiles((previous) => ({
+                                        ...previous,
+                                        [order.id]:
+                                          event.target.files?.[0] || null,
+                                      }))
+                                    }
+                                  />
+                                </label>
+
+                                <button
+                                  className="demotion-mini-btn demotion-approve"
+                                  type="button"
+                                  disabled={
+                                    processingId === `${order.id}-approve`
+                                  }
+                                  onClick={() =>
+                                    updateOrder(order, "approve")
+                                  }
+                                >
+                                  {processingId === `${order.id}-approve`
+                                    ? "Approving..."
+                                    : "Approve"}
+                                </button>
+
+                                <button
+                                  className="demotion-mini-btn demotion-danger"
+                                  type="button"
+                                  disabled={
+                                    processingId === `${order.id}-reject`
+                                  }
+                                  onClick={() => openReject(order)}
+                                >
+                                  Reject
+                                </button>
+                              </>
+                            )}
+
+                          {waitingFinal && canFinalUpload && (
                             <>
-                              <label className="po-mini-btn" style={{ cursor: "pointer" }}>
-                                {approvalFiles[o.id]?.name ? "Change File" : "Upload File"}
+                              <label className="demotion-mini-btn demotion-file-btn">
+                                {finalUploadFiles[order.id]?.name
+                                  ? "Change Final File"
+                                  : "Final File"}
                                 <input
                                   type="file"
-                                  style={{ display: "none" }}
-                                  onChange={(e) =>
-                                    setApprovalFiles((prev) => ({
-                                      ...prev,
-                                      [o.id]: e.target.files?.[0] || null,
+                                  onChange={(event) =>
+                                    setFinalUploadFiles((previous) => ({
+                                      ...previous,
+                                      [order.id]:
+                                        event.target.files?.[0] || null,
                                     }))
                                   }
                                 />
                               </label>
 
-                              {approvalFiles[o.id]?.name ? (
-                                <span style={{ fontSize: 11, maxWidth: 120 }}>
-                                  {approvalFiles[o.id].name}
-                                </span>
-                              ) : null}
-
                               <button
-                                className="po-mini-btn po-approve"
+                                className="demotion-mini-btn demotion-approve"
                                 type="button"
-                                disabled={processingId === `${o.id}-approve`}
-                                onClick={() => updateOrder(o, "approve")}
+                                disabled={
+                                  processingId === `${order.id}-final`
+                                }
+                                onClick={() => uploadFinalFile(order)}
                               >
-                                {processingId === `${o.id}-approve`
-                                  ? "Approving..."
-                                  : "Upload + Approve"}
-                              </button>
-
-                              <button
-                                className="po-mini-btn po-reject"
-                                type="button"
-                                disabled={processingId === `${o.id}-reject`}
-                                onClick={() => openReject(o)}
-                              >
-                                Reject
-                              </button>
-                            </>
-                          ) : null}
-
-                          {waitingFinal && canFinalUpload ? (
-                            <>
-                              <label className="po-mini-btn" style={{ cursor: "pointer" }}>
-                                {finalUploadFiles[o.id]?.name ? "Change Final File" : "Final File"}
-                                <input
-                                  type="file"
-                                  style={{ display: "none" }}
-                                  onChange={(e) =>
-                                    setFinalUploadFiles((prev) => ({
-                                      ...prev,
-                                      [o.id]: e.target.files?.[0] || null,
-                                    }))
-                                  }
-                                />
-                              </label>
-
-                              {finalUploadFiles[o.id]?.name ? (
-                                <span style={{ fontSize: 11, maxWidth: 120 }}>
-                                  {finalUploadFiles[o.id].name}
-                                </span>
-                              ) : null}
-
-                              <button
-                                className="po-mini-btn po-approve"
-                                type="button"
-                                disabled={processingId === `${o.id}-final`}
-                                onClick={() => uploadFinalFile(o)}
-                              >
-                                {processingId === `${o.id}-final`
+                                {processingId === `${order.id}-final`
                                   ? "Uploading..."
-                                  : "Upload Final + Approve"}
+                                  : "Final Approve"}
                               </button>
                             </>
-                          ) : null}
+                          )}
 
-                          {!canAct && !waitingFinal && !approved && !rejected && !voided ? (
-                            <span className="po-dash" style={{ fontSize: 12 }}>
-                              Waiting
-                            </span>
-                          ) : null}
+                          {!canAct &&
+                            !waitingFinal &&
+                            !approved &&
+                            !rejected &&
+                            !voided && (
+                              <span className="demotion-muted">Waiting</span>
+                            )}
 
-                          {approved && canVoidOrDelete ? (
+                          {approved && canVoidOrDelete && (
                             <button
-                              className="po-mini-btn po-reject"
+                              className="demotion-mini-btn demotion-warning"
                               type="button"
-                              disabled={processingId === `${o.id}-void`}
-                              onClick={() => voidOrder(o)}
+                              disabled={processingId === `${order.id}-void`}
+                              onClick={() => voidOrder(order)}
                             >
-                              {processingId === `${o.id}-void`
+                              {processingId === `${order.id}-void`
                                 ? "Voiding..."
                                 : "Void"}
                             </button>
-                          ) : null}
+                          )}
 
-                          {(rejected || voided) && canVoidOrDelete ? (
+                          {(rejected || voided) && canVoidOrDelete && (
                             <button
-                              className="po-mini-btn po-reject"
+                              className="demotion-mini-btn demotion-danger"
                               type="button"
-                              disabled={processingId === `${o.id}-delete`}
-                              onClick={() => deleteOrder(o)}
+                              disabled={
+                                processingId === `${order.id}-delete`
+                              }
+                              onClick={() => deleteOrder(order)}
                             >
-                              {processingId === `${o.id}-delete`
+                              {processingId === `${order.id}-delete`
                                 ? "Deleting..."
                                 : "Delete"}
                             </button>
-                          ) : null}
-
-                          {approved && !canVoidOrDelete ? (
-                            <span className="po-dash" style={{ fontSize: 12 }}>
-                              Approved
-                            </span>
-                          ) : null}
-
-                          {rejected && !canVoidOrDelete ? (
-                            <span className="po-dash" style={{ fontSize: 12 }}>
-                              Rejected
-                            </span>
-                          ) : null}
-
-                          {voided && !canVoidOrDelete ? (
-                            <span className="po-dash" style={{ fontSize: 12 }}>
-                              Voided
-                            </span>
-                          ) : null}
+                          )}
                         </div>
+
+                        {approvalFiles[order.id]?.name && (
+                          <small className="demotion-selected-file">
+                            {approvalFiles[order.id].name}
+                          </small>
+                        )}
+
+                        {finalUploadFiles[order.id]?.name && (
+                          <small className="demotion-selected-file">
+                            {finalUploadFiles[order.id].name}
+                          </small>
+                        )}
                       </td>
                     </tr>
                   );
@@ -1034,72 +1143,125 @@ export default function DemotionOrder() {
             </tbody>
           </table>
         </div>
-      </div>
 
-      <div className="po-card po-pager">
-        <div className="po-pager-inner">
-          <button
-            className="po-page-btn"
-            type="button"
-            disabled={page <= 1}
-            onClick={() => setPage((p) => Math.max(1, p - 1))}
-          >
-            Previous
-          </button>
+        <div className="demotion-pager">
+          <div className="demotion-pager-left">
+            <span>Rows per page</span>
 
-          <span className="po-page-info">
-            Page {page} of {totalPages}
-          </span>
+            <select
+              value={pageSize}
+              onChange={(event) =>
+                setPageSize(Number(event.target.value))
+              }
+            >
+              <option value={25}>25</option>
+              <option value={50}>50</option>
+              <option value={75}>75</option>
+              <option value={100}>100</option>
+            </select>
+          </div>
 
-          <button
-            className="po-page-btn"
-            type="button"
-            disabled={page >= totalPages}
-            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-          >
-            Next
-          </button>
+          <div className="demotion-pager-right">
+            <button
+              className="demotion-page-btn"
+              type="button"
+              disabled={page <= 1}
+              onClick={() =>
+                setPage((current) => Math.max(1, current - 1))
+              }
+            >
+              ‹
+            </button>
+
+            {getPageNumbers().map((pageNumber) => (
+              <button
+                key={pageNumber}
+                className={`demotion-page-number ${
+                  page === pageNumber ? "active" : ""
+                }`}
+                type="button"
+                onClick={() => setPage(pageNumber)}
+              >
+                {pageNumber}
+              </button>
+            ))}
+
+            <button
+              className="demotion-page-btn"
+              type="button"
+              disabled={page >= totalPages}
+              onClick={() =>
+                setPage((current) =>
+                  Math.min(totalPages, current + 1)
+                )
+              }
+            >
+              ›
+            </button>
+
+            <span className="demotion-page-summary">
+              Page {page} of {totalPages}
+            </span>
+          </div>
         </div>
-      </div>
+      </section>
 
       {showModal && (
         <div
-          className="po-modal-overlay"
-          onMouseDown={(e) => e.target.classList.contains("po-modal-overlay") && closeModal()}
+          className="demotion-modal-overlay"
+          onMouseDown={(event) =>
+            event.target.classList.contains("demotion-modal-overlay") &&
+            closeModal()
+          }
         >
-          <div className="po-modal" onMouseDown={(e) => e.stopPropagation()}>
-            <div className="po-modal-head">
+          <div
+            className="demotion-modal"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <div className="demotion-modal-head">
               <div>
-                <h3 className="po-modal-title">Create Demotion</h3>
-                <div className="po-modal-sub">
-                  Upload the first demotion file. Each approver uploads a signed file replacing the previous one.
-                </div>
+                <span className="demotion-modal-eyebrow">
+                  NEW TRANSACTION
+                </span>
+                <h3>Create Demotion Order</h3>
+                <p>
+                  Select an employee, define the new position and branch,
+                  then upload the supporting demotion file.
+                </p>
               </div>
 
-              <button className="po-x" type="button" onClick={closeModal}>
+              <button
+                className="demotion-modal-close"
+                type="button"
+                onClick={closeModal}
+              >
                 ✕
               </button>
             </div>
 
-            <form className="po-form" onSubmit={submitCreate}>
-              <div className="po-grid">
-                <div className="po-field full" ref={employeeBoxRef} style={{ position: "relative" }}>
+            <form className="demotion-form" onSubmit={submitCreate}>
+              <div className="demotion-form-grid">
+                <div
+                  className="demotion-field demotion-field-full demotion-picker"
+                  ref={employeeBoxRef}
+                >
                   <label>Employee</label>
 
                   <input
                     type="text"
-                    placeholder="Search employee ID, name, or employee no..."
+                    placeholder="Search employee ID, name, or employee number..."
                     value={employeeSearch}
-                    onChange={(e) => {
-                      setEmployeeSearch(e.target.value);
+                    onChange={(event) => {
+                      setEmployeeSearch(event.target.value);
                       setShowEmployeeDropdown(true);
-                      setForm((p) => ({
-                        ...p,
+                      setForm((previous) => ({
+                        ...previous,
                         employee_id: "",
                         first_name: "",
                         last_name: "",
                         middle_name: "",
                         prev_position: "",
+                        new_position: "",
                         prev_branch_id: "",
                       }));
                     }}
@@ -1107,45 +1269,24 @@ export default function DemotionOrder() {
                   />
 
                   {showEmployeeDropdown && (
-                    <div
-                      style={{
-                        position: "absolute",
-                        top: "100%",
-                        left: 0,
-                        right: 0,
-                        marginTop: 6,
-                        maxHeight: 240,
-                        overflowY: "auto",
-                        background: "var(--card, #0f172a)",
-                        border: "1px solid var(--border, rgba(255,255,255,0.1))",
-                        borderRadius: 10,
-                        zIndex: 50,
-                        boxShadow: "0 12px 30px rgba(0,0,0,0.25)",
-                      }}
-                    >
+                    <div className="demotion-search-dropdown">
                       {filteredStaff.length === 0 ? (
-                        <div style={{ padding: 12, color: "var(--muted)", fontSize: 14 }}>
-                          No employee found
+                        <div className="demotion-search-empty">
+                          No employee found.
                         </div>
                       ) : (
-                        filteredStaff.map((s) => (
+                        filteredStaff.slice(0, 30).map((employee) => (
                           <button
-                            key={s.id}
+                            key={employee.id}
                             type="button"
-                            onClick={() => onSelectEmployee(s.id)}
-                            style={{
-                              width: "100%",
-                              textAlign: "left",
-                              padding: "10px 12px",
-                              border: "none",
-                              borderBottom: "1px solid var(--border, rgba(255,255,255,0.08))",
-                              background: "transparent",
-                              color: "inherit",
-                              cursor: "pointer",
-                            }}
+                            className="demotion-search-item"
+                            onClick={() => onSelectEmployee(employee.id)}
                           >
-                            {s.id} — {displayNameParts(s)}{" "}
-                            {s.employee_no ? `(${s.employee_no})` : ""}
+                            <strong>{displayNameParts(employee)}</strong>
+                            <small>
+                              {employee.employee_no || employee.id} •{" "}
+                              {employee.position || "No position"}
+                            </small>
                           </button>
                         ))
                       )}
@@ -1153,105 +1294,147 @@ export default function DemotionOrder() {
                   )}
                 </div>
 
-                <div className="po-field">
+                <div className="demotion-field">
                   <label>Employee ID</label>
                   <input value={form.employee_id} readOnly />
                 </div>
 
-                <div className="po-field">
-                  <label>Last Name</label>
-                  <input value={form.last_name} readOnly />
+                <div className="demotion-field">
+                  <label>Employee Name</label>
+                  <input
+                    value={displayNameParts({
+                      last_name: form.last_name,
+                      first_name: form.first_name,
+                      middle_name: form.middle_name,
+                    })}
+                    readOnly
+                  />
                 </div>
 
-                <div className="po-field">
-                  <label>First Name</label>
-                  <input value={form.first_name} readOnly />
-                </div>
-
-                <div className="po-field">
-                  <label>Middle Name</label>
-                  <input value={form.middle_name} readOnly />
-                </div>
-
-                <div className="po-field">
+                <div className="demotion-field">
                   <label>Previous Position</label>
                   <input value={form.prev_position} readOnly />
                 </div>
 
-                <div className="po-field">
+                <div className="demotion-field">
                   <label>New Position</label>
                   <input
                     value={form.new_position}
-                    onChange={(e) => setForm((p) => ({ ...p, new_position: e.target.value }))}
+                    onChange={(event) =>
+                      setForm((previous) => ({
+                        ...previous,
+                        new_position: event.target.value,
+                      }))
+                    }
                     placeholder="Enter new position"
                     required
                   />
                 </div>
 
-                <div className="po-field">
+                <div className="demotion-field">
                   <label>Previous Branch</label>
-                  <input value={form.prev_branch_id ? branchLabel(form.prev_branch_id) : "-"} readOnly />
+                  <input
+                    value={
+                      form.prev_branch_id
+                        ? branchLabel(form.prev_branch_id)
+                        : "-"
+                    }
+                    readOnly
+                  />
                 </div>
 
-                <div className="po-field">
+                <div className="demotion-field">
                   <label>Destination Branch</label>
                   <select
                     value={form.to_branch_id}
-                    onChange={(e) => setForm((p) => ({ ...p, to_branch_id: e.target.value }))}
+                    onChange={(event) =>
+                      setForm((previous) => ({
+                        ...previous,
+                        to_branch_id: event.target.value,
+                      }))
+                    }
                     required
                   >
                     <option value="">Select branch</option>
+
                     {branches
-                      .filter((b) => String(b.id) !== String(form.prev_branch_id))
-                      .map((b) => (
-                        <option key={b.id} value={b.id}>
-                          {b.code} - {b.name}
+                      .filter(
+                        (branch) =>
+                          String(branch.id) !==
+                          String(form.prev_branch_id)
+                      )
+                      .map((branch) => (
+                        <option key={branch.id} value={branch.id}>
+                          {branch.code} - {branch.name}
                         </option>
                       ))}
                   </select>
                 </div>
 
-                <div className="po-field">
+                <div className="demotion-field">
                   <label>Effective Date</label>
                   <input
                     type="date"
                     value={form.effective_date}
-                    onChange={(e) => setForm((p) => ({ ...p, effective_date: e.target.value }))}
-                    required
-                  />
-                </div>
-
-                <div className="po-field">
-                  <label>Attach Demotion File</label>
-                  <input
-                    type="file"
-                    onChange={(e) =>
-                      setForm((p) => ({
-                        ...p,
-                        attachment: e.target.files?.[0] || null,
+                    onChange={(event) =>
+                      setForm((previous) => ({
+                        ...previous,
+                        effective_date: event.target.value,
                       }))
                     }
                     required
                   />
                 </div>
 
-                <div className="po-field full">
-                  <label>Details / Remarks</label>
+                <div className="demotion-field">
+                  <label>Demotion File</label>
                   <input
+                    type="file"
+                    onChange={(event) =>
+                      setForm((previous) => ({
+                        ...previous,
+                        attachment:
+                          event.target.files?.[0] || null,
+                      }))
+                    }
+                    required
+                  />
+                </div>
+
+                <div className="demotion-field demotion-field-full">
+                  <label>Details / Remarks</label>
+                  <textarea
                     value={form.details}
-                    onChange={(e) => setForm((p) => ({ ...p, details: e.target.value }))}
-                    placeholder="Optional"
+                    onChange={(event) =>
+                      setForm((previous) => ({
+                        ...previous,
+                        details: event.target.value,
+                      }))
+                    }
+                    placeholder="Enter demotion details or remarks..."
+                    rows={4}
                   />
                 </div>
               </div>
 
-              <div className="po-modal-actions">
-                <button className="po-btn po-btn-outline" type="button" onClick={closeModal} disabled={saving}>
+              {err && <div className="demotion-form-error">{err}</div>}
+
+              <div className="demotion-modal-actions">
+                <button
+                  className="demotion-btn demotion-btn-secondary"
+                  type="button"
+                  onClick={closeModal}
+                  disabled={saving}
+                >
                   Cancel
                 </button>
 
-                <button className="po-btn po-btn-primary" type="submit" disabled={saving}>
-                  {saving ? "Saving..." : "Create"}
+                <button
+                  className="demotion-btn demotion-btn-primary"
+                  type="submit"
+                  disabled={saving}
+                >
+                  {saving ? "Saving..." : "Create Demotion"}
                 </button>
               </div>
             </form>
@@ -1261,100 +1444,128 @@ export default function DemotionOrder() {
 
       {viewOrder && (
         <div
-          className="po-modal-overlay"
-          onMouseDown={(e) =>
-            e.target.classList.contains("po-modal-overlay") && setViewOrder(null)
+          className="demotion-modal-overlay"
+          onMouseDown={(event) =>
+            event.target.classList.contains("demotion-modal-overlay") &&
+            setViewOrder(null)
           }
         >
-          <div className="po-modal" onMouseDown={(e) => e.stopPropagation()}>
-            <div className="po-modal-head">
+          <div
+            className="demotion-modal demotion-view-modal"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <div className="demotion-modal-head">
               <div>
-                <h3 className="po-modal-title">Demotion Details</h3>
-                <div className="po-modal-sub">
-                  Order <b>{viewOrder.order_no || viewOrder.id}</b> — {viewOrder.employee_name}
-                </div>
+                <span className="demotion-modal-eyebrow">ORDER DETAILS</span>
+                <h3>Demotion Details</h3>
+                <p>
+                  {viewOrder.order_no || viewOrder.id} —{" "}
+                  {viewOrder.employee_name}
+                </p>
               </div>
 
-              <button className="po-x" type="button" onClick={() => setViewOrder(null)}>
+              <button
+                className="demotion-modal-close"
+                type="button"
+                onClick={() => setViewOrder(null)}
+              >
                 ✕
               </button>
             </div>
 
-            <div className="po-form">
-              <div className="po-grid">
-                <div className="po-field">
-                  <label>Current Pending Stage</label>
+            <div className="demotion-form">
+              <div className="demotion-detail-banner">
+                <span className={badgeClass(viewOrder.status)}>
+                  {viewOrder.status || "Pending"}
+                </span>
+
+                <strong>
+                  Current Stage:{" "}
+                  {norm(viewOrder.status) === "approved"
+                    ? "Approved"
+                    : norm(viewOrder.status) === "rejected"
+                    ? "Rejected"
+                    : norm(viewOrder.status) === "voided"
+                    ? "Voided"
+                    : STAGE_LABELS[getCurrentStage(viewOrder)] ||
+                      getCurrentStage(viewOrder)}
+                </strong>
+              </div>
+
+              <div className="demotion-form-grid">
+                <div className="demotion-field">
+                  <label>Employee</label>
+                  <input value={viewOrder.employee_name || "-"} readOnly />
+                </div>
+
+                <div className="demotion-field">
+                  <label>Department</label>
+                  <input value={viewOrder.department || "-"} readOnly />
+                </div>
+
+                <div className="demotion-field">
+                  <label>Previous Position</label>
+                  <input value={viewOrder.old_position || "-"} readOnly />
+                </div>
+
+                <div className="demotion-field">
+                  <label>New Position</label>
+                  <input value={viewOrder.new_position || "-"} readOnly />
+                </div>
+
+                <div className="demotion-field">
+                  <label>Destination Branch</label>
                   <input
                     value={
-                      norm(viewOrder.status) === "approved"
-                        ? "Approved"
-                        : norm(viewOrder.status) === "rejected"
-                        ? "Rejected"
-                        : STAGE_LABELS[getCurrentStage(viewOrder)] || getCurrentStage(viewOrder)
+                      viewOrder.to_branch_id
+                        ? branchLabel(viewOrder.to_branch_id)
+                        : "-"
                     }
                     readOnly
                   />
                 </div>
 
-                <div className="po-field">
-                  <label>Status</label>
-                  <input value={viewOrder.status || "Pending"} readOnly />
-                </div>
-
-                <div className="po-field">
-                  <label>Employee</label>
-                  <input value={viewOrder.employee_name || "-"} readOnly />
-                </div>
-
-                <div className="po-field">
-                  <label>Department</label>
-                  <input value={viewOrder.department || "-"} readOnly />
-                </div>
-
-                <div className="po-field">
-                  <label>Old Position</label>
-                  <input value={viewOrder.old_position || "-"} readOnly />
-                </div>
-
-                <div className="po-field">
-                  <label>New Position</label>
-                  <input value={viewOrder.new_position || "-"} readOnly />
-                </div>
-
-                <div className="po-field">
-                  <label>Destination Branch</label>
+                <div className="demotion-field">
+                  <label>Effective Date</label>
                   <input
-                    value={viewOrder.to_branch_id ? branchLabel(viewOrder.to_branch_id) : "-"}
+                    value={toDate10(viewOrder.effective_date) || "-"}
                     readOnly
                   />
                 </div>
 
-                <div className="po-field">
-                  <label>Effective Date</label>
-                  <input value={toDate10(viewOrder.effective_date) || "-"} readOnly />
-                </div>
-
-                <div className="po-field full">
+                <div className="demotion-field demotion-field-full">
                   <label>Approval Chain</label>
-                  <textarea value={renderChainSummary(viewOrder)} readOnly />
+                  <textarea
+                    value={renderChainSummary(viewOrder)}
+                    readOnly
+                    rows={3}
+                  />
                 </div>
 
-                <div className="po-field full">
-                  <label>Remarks / Details</label>
-                  <textarea value={viewOrder.details || "-"} readOnly />
+                <div className="demotion-field demotion-field-full">
+                  <label>Details / Remarks</label>
+                  <textarea
+                    value={viewOrder.details || "-"}
+                    readOnly
+                    rows={4}
+                  />
                 </div>
 
-                {viewOrder.rejection_reason ? (
-                  <div className="po-field full">
+                {viewOrder.rejection_reason && (
+                  <div className="demotion-field demotion-field-full">
                     <label>Rejection Reason</label>
-                    <textarea value={viewOrder.rejection_reason} readOnly />
+                    <textarea
+                      value={viewOrder.rejection_reason}
+                      readOnly
+                      rows={3}
+                    />
                   </div>
-                ) : null}
+                )}
               </div>
 
-              <div className="po-modal-actions">
+              <div className="demotion-modal-actions">
                 <button
-                  className="po-btn po-btn-outline"
+                  className="demotion-btn demotion-btn-secondary"
                   type="button"
                   onClick={() => setViewOrder(null)}
                 >
@@ -1368,43 +1579,65 @@ export default function DemotionOrder() {
 
       {rejecting && (
         <div
-          className="po-modal-overlay"
-          onMouseDown={(e) => e.target.classList.contains("po-modal-overlay") && closeReject()}
+          className="demotion-modal-overlay"
+          onMouseDown={(event) =>
+            event.target.classList.contains("demotion-modal-overlay") &&
+            closeReject()
+          }
         >
-          <div className="po-modal" onMouseDown={(e) => e.stopPropagation()}>
-            <div className="po-modal-head">
+          <div
+            className="demotion-modal demotion-reject-modal"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <div className="demotion-modal-head">
               <div>
-                <h3 className="po-modal-title">Reject Demotion</h3>
-                <div className="po-modal-sub">
-                  Order <b>{rejecting.order_no || rejecting.id}</b> — {rejecting.employee_name}
-                </div>
+                <span className="demotion-modal-eyebrow">REJECTION</span>
+                <h3>Reject Demotion</h3>
+                <p>
+                  {rejecting.order_no || rejecting.id} —{" "}
+                  {rejecting.employee_name}
+                </p>
               </div>
 
-              <button className="po-x" type="button" onClick={closeReject}>
+              <button
+                className="demotion-modal-close"
+                type="button"
+                onClick={closeReject}
+              >
                 ✕
               </button>
             </div>
 
-            <form className="po-form" onSubmit={submitReject}>
-              <div className="po-grid">
-                <div className="po-field full">
-                  <label>Rejection Reason</label>
-                  <input
-                    value={rejectReason}
-                    onChange={(e) => setRejectReason(e.target.value)}
-                    placeholder="Type reason..."
-                    required
-                  />
-                </div>
+            <form className="demotion-form" onSubmit={submitReject}>
+              <div className="demotion-field">
+                <label>Rejection Reason</label>
+                <textarea
+                  value={rejectReason}
+                  onChange={(event) =>
+                    setRejectReason(event.target.value)
+                  }
+                  placeholder="Explain why this demotion order is being rejected..."
+                  rows={5}
+                  required
+                />
               </div>
 
-              <div className="po-modal-actions">
-                <button className="po-btn po-btn-outline" type="button" onClick={closeReject} disabled={rejectSaving}>
+              <div className="demotion-modal-actions">
+                <button
+                  className="demotion-btn demotion-btn-secondary"
+                  type="button"
+                  onClick={closeReject}
+                  disabled={rejectSaving}
+                >
                   Cancel
                 </button>
 
-                <button className="po-btn po-btn-primary" type="submit" disabled={rejectSaving}>
-                  {rejectSaving ? "Rejecting..." : "Reject"}
+                <button
+                  className="demotion-btn demotion-btn-danger"
+                  type="submit"
+                  disabled={rejectSaving}
+                >
+                  {rejectSaving ? "Rejecting..." : "Reject Demotion"}
                 </button>
               </div>
             </form>

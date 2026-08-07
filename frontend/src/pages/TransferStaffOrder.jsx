@@ -380,6 +380,10 @@ export default function TransferStaffOrder() {
         return false;
       }
 
+      if (statusFilter === "Rejected" && status !== "rejected") {
+        return false;
+      }
+
       if (!q) return true;
 
       return [
@@ -412,7 +416,7 @@ export default function TransferStaffOrder() {
 
   useEffect(() => {
     setTablePage(1);
-  }, [appliedSearch, tablePageSize]);
+  }, [appliedSearch, statusFilter, tablePageSize]);
 
   const filteredStaff = useMemo(() => {
     const q = norm(employeeQuery);
@@ -1035,152 +1039,216 @@ export default function TransferStaffOrder() {
       ]
     : [];
 
+  const transferSummary = useMemo(() => {
+    return orders.reduce(
+      (summary, order) => {
+        const status = norm(order?.status);
+
+        summary.total += 1;
+
+        if (status.includes("pending") || status.includes("waiting")) {
+          summary.pending += 1;
+        }
+
+        if (status === "approved") {
+          summary.approved += 1;
+        }
+
+        if (status === "rejected") {
+          summary.rejected += 1;
+        }
+
+        return summary;
+      },
+      {
+        total: 0,
+        pending: 0,
+        approved: 0,
+        rejected: 0,
+      }
+    );
+  }, [orders]);
+
+  const getStatusClass = (statusValue) => {
+    const status = norm(statusValue);
+
+    if (status === "approved") return "approved";
+    if (status === "rejected") return "rejected";
+    if (status === "void" || status === "voided") return "voided";
+    if (status.includes("waiting") || status.includes("pending")) {
+      return "pending";
+    }
+
+    return "neutral";
+  };
+
   const colCount = 11;
 
   return (
-    <div className="order-page">
-      <div className="order-page-header">
-        <div>
-          <h2 className="order-title">Transfer Staff</h2>
-          <p className="order-subtitle">
-            All departments can create transfer Staff Order and after creating wait for the HR to upload the Approved File.
+    <div className="transfer-page">
+      <section className="transfer-hero">
+        <div className="transfer-hero-copy">
+          <span className="transfer-eyebrow">HRIS TRANSACTIONS</span>
+
+          <h1>Transfer Staff Orders</h1>
+
+          <p>
+            Create and track employee transfers between branches. HR uploads
+            the final approved file after the transfer request is completed.
           </p>
+
+          <div className="transfer-flow">
+            <span>Process</span>
+            <strong>Create Transfer → HR Review → Final File Upload</strong>
+          </div>
         </div>
 
-        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+        <div className="transfer-hero-actions">
           <button
-            className="btn-secondary"
+            className="transfer-btn secondary"
             onClick={() => navigate("/transactions")}
             type="button"
           >
             ← Back
           </button>
 
+          <button
+            className="transfer-btn secondary"
+            onClick={fetchOrders}
+            type="button"
+            disabled={loadingOrders}
+          >
+            {loadingOrders ? "Refreshing..." : "Refresh"}
+          </button>
+
           {canCreate ? (
-            <button className="btn-primary" onClick={openModal} type="button">
+            <button
+              className="transfer-btn primary"
+              onClick={openModal}
+              type="button"
+            >
               + Create Transfer
             </button>
           ) : null}
         </div>
-      </div>
+      </section>
 
-      {error ? (
-        <div className="card" style={{ padding: 12, marginBottom: 12 }}>
-          <strong style={{ color: "#ef4444" }}>{error}</strong>
-        </div>
-      ) : null}
-
-      <div className="order-card">
-        <div className="filters" style={{ padding: 12 }}>
-          {["All", "Pending", "Approved"].map((s) => (
-            <button
-              key={s}
-              type="button"
-              className={`chip ${statusFilter === s ? "active" : ""}`}
-              onClick={() => setStatusFilter(s)}
-            >
-              {s}
-            </button>
-          ))}
-        </div>
-        <div
-          className="order-card-head"
-          style={{
-            display: "flex",
-            gap: 12,
-            justifyContent: "space-between",
-            flexWrap: "wrap",
-          }}
+      <section className="transfer-summary-grid">
+        <button
+          type="button"
+          className={`transfer-summary-card total ${
+            statusFilter === "All" ? "active" : ""
+          }`}
+          onClick={() => setStatusFilter("All")}
         >
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 12,
-              flexWrap: "wrap",
+          <span className="transfer-summary-icon">ALL</span>
+          <span className="transfer-summary-content">
+            <small>Total Orders</small>
+            <strong>{transferSummary.total}</strong>
+            <em>All transfer records</em>
+          </span>
+        </button>
+
+        <button
+          type="button"
+          className={`transfer-summary-card pending ${
+            statusFilter === "Pending" ? "active" : ""
+          }`}
+          onClick={() => setStatusFilter("Pending")}
+        >
+          <span className="transfer-summary-icon">P</span>
+          <span className="transfer-summary-content">
+            <small>Pending</small>
+            <strong>{transferSummary.pending}</strong>
+            <em>Awaiting completion</em>
+          </span>
+        </button>
+
+        <button
+          type="button"
+          className={`transfer-summary-card approved ${
+            statusFilter === "Approved" ? "active" : ""
+          }`}
+          onClick={() => setStatusFilter("Approved")}
+        >
+          <span className="transfer-summary-icon">A</span>
+          <span className="transfer-summary-content">
+            <small>Approved</small>
+            <strong>{transferSummary.approved}</strong>
+            <em>Completed transfers</em>
+          </span>
+        </button>
+
+        <button
+          type="button"
+          className={`transfer-summary-card rejected ${
+            statusFilter === "Rejected" ? "active" : ""
+          }`}
+          onClick={() => setStatusFilter("Rejected")}
+        >
+          <span className="transfer-summary-icon">R</span>
+          <span className="transfer-summary-content">
+            <small>Rejected</small>
+            <strong>{transferSummary.rejected}</strong>
+            <em>Rejected requests</em>
+          </span>
+        </button>
+      </section>
+
+      {error ? <div className="transfer-error">{error}</div> : null}
+
+      <section className="transfer-search-panel">
+        <div className="transfer-search-copy">
+          <strong>Search Transfer Orders</strong>
+          <span>
+            Search by order number, employee, branch, division, area, region,
+            date, or status.
+          </span>
+        </div>
+
+        <div className="transfer-search-controls">
+          <input
+            type="search"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                setAppliedSearch(search);
+              }
+            }}
+            placeholder="Search order no, employee, branch..."
+            className="transfer-search-input"
+          />
+
+          <button
+            className="transfer-search-btn primary"
+            type="button"
+            onClick={() => setAppliedSearch(search)}
+          >
+            Search
+          </button>
+
+          <button
+            className="transfer-search-btn secondary"
+            type="button"
+            disabled={!search && !appliedSearch}
+            onClick={() => {
+              setSearch("");
+              setAppliedSearch("");
             }}
           >
-            <div className="order-card-title">Transfer Orders</div>
-
-            <div className="order-search-wrap">
-              <input
-                type="text"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && setAppliedSearch(search)}
-                placeholder="Search order no, employee, branch..."
-                className="order-search-input"
-              />
-
-              <button
-                className="btn-primary"
-                type="button"
-                onClick={() => setAppliedSearch(search)}
-              >
-                Search
-              </button>
-
-              <button
-                className="btn-secondary"
-                type="button"
-                onClick={() => {
-                  setSearch("");
-                  setAppliedSearch("");
-                }}
-              >
-                Clear
-              </button>
-            </div>
-          </div>
-
-          <div className="order-card-meta">{filteredOrders.length} Records</div>
+            Clear
+          </button>
         </div>
 
-        <div className="leave-pager">
-          <div className="leave-pager-left">
-            <span>Rows per page</span>
-            <select
-              value={tablePageSize}
-              onChange={(e) => setTablePageSize(Number(e.target.value))}
-            >
-              <option value={25}>25</option>
-              <option value={50}>50</option>
-              <option value={75}>75</option>
-              <option value={100}>100</option>
-            </select>
-          </div>
+        <span className="transfer-result-count">
+          {filteredOrders.length} result{filteredOrders.length === 1 ? "" : "s"}
+        </span>
+      </section>
 
-          <div className="leave-pager-right">
-            <button
-              className="leave-page-btn"
-              type="button"
-              disabled={tablePage <= 1}
-              onClick={() => setTablePage((p) => Math.max(1, p - 1))}
-            >
-              ‹
-            </button>
-
-            <button className="leave-page-number active" type="button">
-              {tablePage}
-            </button>
-
-            <button
-              className="leave-page-btn"
-              type="button"
-              disabled={tablePage >= totalPages}
-              onClick={() => setTablePage((p) => Math.min(totalPages, p + 1))}
-            >
-              ›
-            </button>
-
-            <span className="leave-page-summary">
-              Page {tablePage} of {totalPages}
-            </span>
-          </div>
-        </div>
-
-        <div className="table-wrap">
-          <table className="table">
+      <section className="transfer-table-card">
+        <div className="transfer-table-wrap">
+          <table className="transfer-table">
             <thead>
               <tr>
                 <th>Order No</th>
@@ -1193,58 +1261,88 @@ export default function TransferStaffOrder() {
                 <th>Date Created</th>
                 <th>Effective Date</th>
                 <th>Status</th>
-                <th>Actions</th>
+                <th>Action</th>
               </tr>
             </thead>
 
             <tbody>
               {loadingOrders ? (
                 <tr>
-                  <td colSpan={colCount} className="empty-state">
-                    Loading orders…
+                  <td colSpan={colCount} className="transfer-empty-state">
+                    Loading transfer orders…
                   </td>
                 </tr>
-              ) : filteredOrders.length === 0 ? (
+              ) : pagedOrders.length === 0 ? (
                 <tr>
-                  <td colSpan={colCount} className="empty-state">
+                  <td colSpan={colCount} className="transfer-empty-state">
                     No transfer orders found.
                   </td>
                 </tr>
               ) : (
-                pagedOrders.map((o) => (
-                  <tr key={o.id}>
-                    <td className="td-strong">{o.order_no}</td>
-                    <td>{o.employee_name}</td>
+                pagedOrders.map((order) => (
+                  <tr key={order.id}>
                     <td>
-                      {toStr(o.prev_branch_code)} - {toStr(o.prev_branch_name)}
+                      <strong className="transfer-order-no">
+                        {order.order_no || `#${order.id}`}
+                      </strong>
                     </td>
+
                     <td>
-                      {toStr(o.to_branch_code)} - {toStr(o.to_branch_name)}
-                    </td>
-                    <td>{o.division || "-"}</td>
-                    <td>{o.area || "-"}</td>
-                    <td>{o.region || "-"}</td>
-                    <td>{fmtDate(o.date_created)}</td>
-                    <td>{fmtDate(o.effective_date)}</td>
-                    <td>
-                      <strong>{o.status}</strong>
-                      {o.status === STATUS_REJECTED && o.rejection_reason ? (
-                        <div
-                          style={{
-                            fontSize: 12,
-                            color: "var(--muted)",
-                            marginTop: 4,
-                          }}
-                        >
-                          Reason: {o.rejection_reason}
+                      <div className="transfer-employee-cell">
+                        <span className="transfer-avatar">
+                          {toStr(order.employee_name).charAt(0).toUpperCase() ||
+                            "E"}
+                        </span>
+
+                        <div>
+                          <strong>{order.employee_name || "-"}</strong>
+                          <small>{order.department || "No department"}</small>
                         </div>
+                      </div>
+                    </td>
+
+                    <td>
+                      <div className="transfer-branch-cell">
+                        <strong>{toStr(order.prev_branch_code) || "-"}</strong>
+                        <span>{toStr(order.prev_branch_name) || "-"}</span>
+                      </div>
+                    </td>
+
+                    <td>
+                      <div className="transfer-branch-cell">
+                        <strong>{toStr(order.to_branch_code) || "-"}</strong>
+                        <span>{toStr(order.to_branch_name) || "-"}</span>
+                      </div>
+                    </td>
+
+                    <td>{order.division || "-"}</td>
+                    <td>{order.area || "-"}</td>
+                    <td>{order.region || "-"}</td>
+                    <td>{fmtDate(order.date_created)}</td>
+                    <td>{fmtDate(order.effective_date)}</td>
+
+                    <td>
+                      <span
+                        className={`transfer-status ${getStatusClass(
+                          order.status
+                        )}`}
+                      >
+                        {order.status || "Pending"}
+                      </span>
+
+                      {order.status === STATUS_REJECTED &&
+                      order.rejection_reason ? (
+                        <small className="transfer-rejection-reason">
+                          {order.rejection_reason}
+                        </small>
                       ) : null}
                     </td>
+
                     <td>
                       <button
-                        className="btn-secondary"
+                        className="transfer-view-btn"
                         type="button"
-                        onClick={() => openViewModal(o)}
+                        onClick={() => openViewModal(order)}
                       >
                         View
                       </button>
@@ -1255,16 +1353,51 @@ export default function TransferStaffOrder() {
             </tbody>
           </table>
         </div>
+      </section>
 
-        <div style={{ padding: 12, display: "flex", justifyContent: "flex-end" }}>
-          <button
-            className="btn-secondary"
-            onClick={fetchOrders}
-            type="button"
-            disabled={loadingOrders}
+      <div className="transfer-pager">
+        <div className="transfer-pager-left">
+          <span>Rows per page</span>
+
+          <select
+            value={tablePageSize}
+            onChange={(event) =>
+              setTablePageSize(Number(event.target.value))
+            }
           >
-            {loadingOrders ? "Refreshing..." : "Refresh"}
+            <option value={25}>25</option>
+            <option value={50}>50</option>
+            <option value={75}>75</option>
+            <option value={100}>100</option>
+          </select>
+        </div>
+
+        <div className="transfer-pager-right">
+          <button
+            type="button"
+            className="transfer-page-btn"
+            disabled={tablePage <= 1}
+            onClick={() => setTablePage((page) => Math.max(1, page - 1))}
+          >
+            ‹
           </button>
+
+          <span className="transfer-page-current">{tablePage}</span>
+
+          <button
+            type="button"
+            className="transfer-page-btn"
+            disabled={tablePage >= totalPages}
+            onClick={() =>
+              setTablePage((page) => Math.min(totalPages, page + 1))
+            }
+          >
+            ›
+          </button>
+
+          <span className="transfer-page-summary">
+            Page {tablePage} of {totalPages}
+          </span>
         </div>
       </div>
 

@@ -5,7 +5,7 @@ const path = require("path");
 const fs = require("fs");
 const multer = require("multer");
 
-const { requireAuth } = require("../middlewares/authMiddleware");
+const { requireAuth, hasDepartmentScope,} = require("../middlewares/authMiddleware");
 const { requirePermission } = require("../middlewares/permissionMiddleware");
 
 const toStr = (v) => String(v ?? "").trim();
@@ -50,6 +50,25 @@ const getUserArea = (req) => toStr(req.user?.area);
 const getUserRegion = (req) => toStr(req.user?.region);
 const getUserDivision = (req) => toStr(req.user?.division);
 const getUserDepartment = (req) => toStr(req.user?.department);
+const getUserDepartmentScopes = (req) => {
+  const primary = toStr(req.user?.department);
+
+  const scopes = Array.isArray(req.user?.department_scopes)
+    ? req.user.department_scopes.map(toStr).filter(Boolean)
+    : [];
+
+  const all = primary ? [primary, ...scopes] : scopes;
+
+  return [...new Map(
+    all.map((department) => [
+      norm(department),
+      department,
+    ])
+  ).values()];
+};
+
+const userCanApproveDepartment = (req, department) =>
+  hasDepartmentScope(req.user, department);
 
 const OPERATION_DEPARTMENTS = [
   "operation",
@@ -441,21 +460,51 @@ const ROLE_KEY_TO_STATUS = {
   Flow:
   Area Manager -> Assistant Vice President -> Vice President -> HR
 */
-const approverRoleExistsInDepartment = async (roleKey, department) => {
+const approverRoleExistsInDepartment = async (
+  roleKey,
+  department
+) => {
   const dept = toStr(department);
   const roles = ROLE_ALIASES[roleKey] || [];
 
-  if (!dept || roles.length === 0) return false;
+  if (!dept || roles.length === 0) {
+    return false;
+  }
 
-  const rolePlaceholders = roles.map((_, idx) => `$${idx + 2}`).join(",");
+  const rolePlaceholders = roles
+    .map((_, idx) => `$${idx + 2}`)
+    .join(",");
 
   const r = await pool.query(
     `
-    SELECT id
-    FROM public.users
-    WHERE LOWER(TRIM(COALESCE(department,''))) = LOWER(TRIM($1))
-      AND LOWER(TRIM(COALESCE(role,''))) IN (${rolePlaceholders})
-      AND LOWER(TRIM(COALESCE(status,'Active'))) = 'active'
+    SELECT u.id
+    FROM public.users u
+
+    LEFT JOIN public.user_department_scopes uds
+      ON uds.user_id = u.id
+
+    WHERE LOWER(TRIM(COALESCE(u.role,'')))
+          IN (${rolePlaceholders})
+
+      AND LOWER(
+        TRIM(
+          COALESCE(
+            u.status,
+            'Active'
+          )
+        )
+      ) = 'active'
+
+      AND (
+        LOWER(TRIM(COALESCE(u.department,''))) =
+          LOWER(TRIM($1))
+
+        OR
+
+        LOWER(TRIM(COALESCE(uds.department,''))) =
+          LOWER(TRIM($1))
+      )
+
     LIMIT 1
     `,
     [dept, ...roles]
@@ -948,45 +997,62 @@ const getNextStatusAfterApproval = async (
 const isCurrentStageApprover = (req, row) => {
   const status = toStr(row.status);
   const requestDepartment = toStr(row.department);
-  const userDepartment = getUserDepartment(req);
 
-  if (isBypassApprover(req) || isPresident(req)) return true;
+  if (isBypassApprover(req) || isPresident(req)) {
+    return true;
+  }
+
+  const hasScope =
+    userCanApproveDepartment(
+      req,
+      requestDepartment
+    );
 
   if (status === "Pending Branch Manager") {
     return (
       isBranchManager(req) &&
-      sameDepartment(
-        userDepartment,
-        requestDepartment
-      )
+      hasScope
     );
   }
 
   if (status === "Pending Area Manager") {
-    return isAreaManager(req) && sameDepartment(userDepartment, requestDepartment);
+    return (
+      isAreaManager(req) &&
+      hasScope
+    );
   }
 
   if (status === "Pending Regional Manager") {
     return (
-      isRegionalManager(req) && sameDepartment(userDepartment, requestDepartment)
+      isRegionalManager(req) &&
+      hasScope
     );
   }
 
-  if (status === "Pending Assistant Vice President") {
+  if (
+    status ===
+    "Pending Assistant Vice President"
+  ) {
     return (
       isAssistantVicePresident(req) &&
-      sameDepartment(userDepartment, requestDepartment)
+      hasScope
     );
   }
 
   if (status === "Pending Vice President") {
-    return isVicePresident(req) && sameDepartment(userDepartment, requestDepartment);
+    return (
+      isVicePresident(req) &&
+      hasScope
+    );
   }
 
-  if (status === "Pending Senior Vice President") {
+  if (
+    status ===
+    "Pending Senior Vice President"
+  ) {
     return (
       isSeniorVicePresident(req) &&
-      sameDepartment(userDepartment, requestDepartment)
+      hasScope
     );
   }
 
@@ -1162,15 +1228,45 @@ router.get(
       }
 
       const department = getUserDepartment(req);
+      const departmentScopes =
+        getUserDepartmentScopes(req);
 
-      if (departmentCanViewOwnDepartment(department)) {
+      if (
+        departmentCanViewOwnDepartment(
+          department
+        )
+      ) {
+        if (departmentScopes.length === 0) {
+          return res.json([]);
+        }
+
         const r = await pool.query(
           `
           ${baseLeaveSelect}
-          WHERE LOWER(TRIM(COALESCE(s.department,''))) = LOWER(TRIM($1))
-          ORDER BY lr.entry_date DESC NULLS LAST, lr.id DESC
+
+          WHERE EXISTS (
+            SELECT 1
+            FROM unnest($1::text[]) AS scope_department
+            WHERE LOWER(
+              TRIM(
+                COALESCE(
+                  s.department,
+                  ''
+                )
+              )
+            ) =
+            LOWER(
+              TRIM(
+                scope_department
+              )
+            )
+          )
+
+          ORDER BY
+            lr.entry_date DESC NULLS LAST,
+            lr.id DESC
           `,
-          [department]
+          [departmentScopes]
         );
 
         return res.json(r.rows);

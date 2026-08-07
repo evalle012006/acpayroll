@@ -50,19 +50,15 @@ const branchLabel = (s) => {
 
 const getReportType = (r) => toStr(r?.report_type) || "AWOL Report";
 
-const dateLabel = (reportType) => {
-  const t = norm(reportType);
-  if (t === "notice to explain") return "Notice Date";
-  if (t === "termination of contract") return "Termination Date";
-  return "AWOL Date";
-};
+const dateLabel = (reportType) =>
+  norm(reportType) === "incident report"
+    ? "Incident Date"
+    : "AWOL Date";
 
-const fileLabel = (reportType) => {
-  const t = norm(reportType);
-  if (t === "notice to explain") return "Upload NTE File";
-  if (t === "termination of contract") return "Upload Termination File";
-  return "Upload AWOL File";
-};
+const fileLabel = (reportType) =>
+  norm(reportType) === "incident report"
+    ? "Upload Incident Report"
+    : "Upload AWOL Report";
 
 export default function StaffReport() {
   const navigate = useNavigate();
@@ -535,7 +531,13 @@ export default function StaffReport() {
   const filteredReports = useMemo(() => {
     const q = norm(search);
 
-    return (reports || []).filter((r) => {
+    return (reports || [])
+      .filter((r) =>
+        ["awol report", "incident report"].includes(
+          norm(getReportType(r))
+        )
+      )
+      .filter((r) => {
       if (!q) return true;
 
       return [
@@ -591,111 +593,162 @@ export default function StaffReport() {
 
   const selectedReportType = selectedReport ? getReportType(selectedReport) : "Staff Report";
 
+  const totalReports = filteredReports.length;
+  const pendingReports = filteredReports.filter(
+    (report) =>
+      ![STATUS_APPROVED, STATUS_REJECTED, STATUS_VOID].includes(
+        report.status
+      )
+  ).length;
+  const approvedReports = filteredReports.filter(
+    (report) => report.status === STATUS_APPROVED
+  ).length;
+  const closedReports = filteredReports.filter(
+    (report) =>
+      report.status === STATUS_REJECTED ||
+      report.status === STATUS_VOID
+  ).length;
+
   return (
-    <div className="approval-page staff-report-page">
-      <div className="approval-page-header">
-        <div>
-          <h2 className="approval-title">Staff Report</h2>
-          <p className="approval-subtitle">
-            Create and manage AWOL and Termination of Contract reports.
-          </p>
-        </div>
+    <div className="staff-report-page">
+      <section className="staff-report-hero">
+        <div className="staff-report-hero-main">
+          <div>
+            <span className="staff-report-eyebrow">
+              HRIS TRANSACTIONS
+            </span>
 
-        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-          <button className="btn-secondary" onClick={() => navigate(-1)} type="button">
-            ← Back
-          </button>
+            <h1>Staff Reports</h1>
 
-          <button className="btn-secondary" onClick={refreshAll} type="button" disabled={loadingList}>
-            {loadingList ? "Refreshing..." : "Refresh"}
-          </button>
+            <p>
+              Create, review, and track AWOL and Incident Reports
+              through the required approval process.
+            </p>
 
-          {canCreate && (
-            <button className="btn-primary" onClick={openCreateModal} type="button">
-              + Create Staff Report
-            </button>
-          )}
-        </div>
-      </div>
+            <div className="staff-report-flow">
+              <span>APPROVAL FLOW</span>
+              <b>
+                BM → AM → RM → AVP → VP → Final File Upload
+              </b>
+            </div>
+          </div>
 
-      <div className="leave-searchbar">
-        <input
-          className="leave-search-input"
-          value={searchText}
-          onChange={(e) => setSearchText(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && setSearch(searchText)}
-          placeholder="Search report type, report no, employee, branch, status..."
-        />
-
-        <button className="btn-secondary" type="button" onClick={() => setSearch(searchText)}>
-          Search
-        </button>
-
-        <button
-          className="btn-secondary"
-          type="button"
-          onClick={() => {
-            setSearchText("");
-            setSearch("");
-          }}
-        >
-          Clear
-        </button>
-
-        <span className="leave-search-count">{filteredReports.length} result(s)</span>
-      </div>
-
-      <div className="leave-pager">
-        <div className="leave-pager-left">
-          <span>Rows per page</span>
-
-          <select value={pageSize} onChange={(e) => setPageSize(Number(e.target.value))}>
-            <option value={25}>25</option>
-            <option value={50}>50</option>
-            <option value={75}>75</option>
-            <option value={100}>100</option>
-          </select>
-        </div>
-
-        <div className="leave-pager-right">
-          <button
-            className="leave-page-btn"
-            type="button"
-            disabled={page <= 1}
-            onClick={() => setPage((p) => Math.max(1, p - 1))}
-          >
-            ‹
-          </button>
-
-          {getPageNumbers().map((p) => (
+          <div className="staff-report-hero-actions">
             <button
-              key={p}
-              className={`leave-page-number ${page === p ? "active" : ""}`}
+              className="staff-report-btn staff-report-btn-secondary"
               type="button"
-              onClick={() => setPage(p)}
+              onClick={() => navigate(-1)}
             >
-              {p}
+              ← Back
             </button>
-          ))}
 
-          <button
-            className="leave-page-btn"
-            type="button"
-            disabled={page >= totalPages}
-            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-          >
-            ›
-          </button>
+            <button
+              className="staff-report-btn staff-report-btn-secondary"
+              type="button"
+              onClick={refreshAll}
+              disabled={loadingList}
+            >
+              {loadingList ? "Refreshing..." : "Refresh"}
+            </button>
 
-          <span className="leave-page-summary">
-            Page {page} of {totalPages}
+            {canCreate && (
+              <button
+                className="staff-report-btn staff-report-btn-primary"
+                type="button"
+                onClick={openCreateModal}
+              >
+                + Create Staff Report
+              </button>
+            )}
+          </div>
+        </div>
+      </section>
+
+      <section className="staff-report-summary-grid">
+        <article className="staff-report-summary-card staff-report-summary-total">
+          <div className="staff-report-summary-icon">ALL</div>
+          <div>
+            <span>Total Reports</span>
+            <strong>{totalReports}</strong>
+            <small>AWOL and Incident records</small>
+          </div>
+        </article>
+
+        <article className="staff-report-summary-card staff-report-summary-pending">
+          <div className="staff-report-summary-icon">P</div>
+          <div>
+            <span>Pending</span>
+            <strong>{pendingReports}</strong>
+            <small>Awaiting approval or upload</small>
+          </div>
+        </article>
+
+        <article className="staff-report-summary-card staff-report-summary-approved">
+          <div className="staff-report-summary-icon">A</div>
+          <div>
+            <span>Approved</span>
+            <strong>{approvedReports}</strong>
+            <small>Completed reports</small>
+          </div>
+        </article>
+
+        <article className="staff-report-summary-card staff-report-summary-closed">
+          <div className="staff-report-summary-icon">R</div>
+          <div>
+            <span>Rejected / Voided</span>
+            <strong>{closedReports}</strong>
+            <small>Closed reports</small>
+          </div>
+        </article>
+      </section>
+
+      <section className="staff-report-list-card">
+        <div className="staff-report-search-panel">
+          <div className="staff-report-search-controls">
+            <input
+              className="staff-report-search-input"
+              value={searchText}
+              onChange={(event) =>
+                setSearchText(event.target.value)
+              }
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  setSearch(searchText);
+                }
+              }}
+              placeholder="Search report no, employee, branch, type, or status..."
+            />
+
+            <button
+              className="staff-report-btn staff-report-btn-secondary"
+              type="button"
+              onClick={() => setSearch(searchText)}
+            >
+              Search
+            </button>
+
+            <button
+              className="staff-report-btn staff-report-btn-secondary"
+              type="button"
+              onClick={() => {
+                setSearchText("");
+                setSearch("");
+              }}
+            >
+              Clear
+            </button>
+          </div>
+
+          <span className="staff-report-result-count">
+            {filteredReports.length}{" "}
+            {filteredReports.length === 1
+              ? "result"
+              : "results"}
           </span>
         </div>
-      </div>
 
-      <div className="table-card">
-        <div className="table-wrap">
-          <table className="table">
+        <div className="staff-report-table-wrap">
+          <table className="staff-report-table">
             <thead>
               <tr>
                 <th>Report No</th>
@@ -707,42 +760,61 @@ export default function StaffReport() {
                 <th>Date Created</th>
                 <th>Report Date</th>
                 <th>Status</th>
-                <th style={{ width: 150 }}>Action</th>
+                <th>Action</th>
               </tr>
             </thead>
 
             <tbody>
               {loadingList ? (
                 <tr>
-                  <td colSpan={10} className="empty-state">
-                    Loading…
+                  <td colSpan={10} className="staff-report-empty">
+                    Loading reports...
                   </td>
                 </tr>
               ) : filteredReports.length === 0 ? (
                 <tr>
-                  <td colSpan={10} className="empty-state">
-                    No staff reports found.
+                  <td colSpan={10} className="staff-report-empty">
+                    No AWOL or Incident Reports found.
                   </td>
                 </tr>
               ) : (
-                pagedReports.map((r) => (
-                  <tr key={r.id}>
-                    <td className="td-strong">{r.report_no}</td>
-                    <td>{getReportType(r)}</td>
-                    <td>{r.employee_name}</td>
-                    <td>
-                      {toStr(r.branch_code)} - {toStr(r.branch_name)}
+                pagedReports.map((report) => (
+                  <tr key={report.id}>
+                    <td className="staff-report-number">
+                      {report.report_no}
                     </td>
-                    <td>{r.area || "-"}</td>
-                    <td>{r.region || "-"}</td>
-                    <td>{fmtDate(r.date_created)}</td>
-                    <td>{fmtDate(r.awol_date)}</td>
-                    <td>
-                      <span className={badgeClass(r.status)}>{r.status}</span>
+
+                    <td>{getReportType(report)}</td>
+
+                    <td className="staff-report-employee">
+                      {report.employee_name}
                     </td>
+
                     <td>
-                      <div className="row-actions">
-                        <button className="btn-secondary" type="button" onClick={() => openViewModal(r)}>
+                      {branchLabel({
+                        branch_code: report.branch_code,
+                        branch_name: report.branch_name,
+                      })}
+                    </td>
+
+                    <td>{report.area || "-"}</td>
+                    <td>{report.region || "-"}</td>
+                    <td>{fmtDate(report.date_created)}</td>
+                    <td>{fmtDate(report.awol_date)}</td>
+
+                    <td>
+                      <span className={badgeClass(report.status)}>
+                        {report.status}
+                      </span>
+                    </td>
+
+                    <td>
+                      <div className="staff-report-row-actions">
+                        <button
+                          className="staff-report-view-btn"
+                          type="button"
+                          onClick={() => openViewModal(report)}
+                        >
                           View
                         </button>
                       </div>
@@ -753,67 +825,137 @@ export default function StaffReport() {
             </tbody>
           </table>
         </div>
-      </div>
+
+        <div className="staff-report-pager">
+          <div className="staff-report-pager-left">
+            <span>Rows per page</span>
+
+            <select
+              value={pageSize}
+              onChange={(event) =>
+                setPageSize(Number(event.target.value))
+              }
+            >
+              <option value={25}>25</option>
+              <option value={50}>50</option>
+              <option value={75}>75</option>
+              <option value={100}>100</option>
+            </select>
+          </div>
+
+          <div className="staff-report-pager-right">
+            <button
+              className="staff-report-page-btn"
+              type="button"
+              disabled={page <= 1}
+              onClick={() =>
+                setPage((current) => Math.max(1, current - 1))
+              }
+            >
+              ‹
+            </button>
+
+            {getPageNumbers().map((pageNumber) => (
+              <button
+                key={pageNumber}
+                className={`staff-report-page-number ${
+                  page === pageNumber ? "active" : ""
+                }`}
+                type="button"
+                onClick={() => setPage(pageNumber)}
+              >
+                {pageNumber}
+              </button>
+            ))}
+
+            <button
+              className="staff-report-page-btn"
+              type="button"
+              disabled={page >= totalPages}
+              onClick={() =>
+                setPage((current) =>
+                  Math.min(totalPages, current + 1)
+                )
+              }
+            >
+              ›
+            </button>
+
+            <span className="staff-report-page-summary">
+              Page {page} of {totalPages}
+            </span>
+          </div>
+        </div>
+      </section>
 
       {showCreateModal && (
         <div
           className="modal-overlay"
-          onMouseDown={(e) =>
-            e.target.classList.contains("modal-overlay") && closeCreateModal()
+          onMouseDown={(event) =>
+            event.target.classList.contains("modal-overlay") &&
+            closeCreateModal()
           }
         >
           <div
-            className="modal saas-modal"
-            onMouseDown={(e) => e.stopPropagation()}
-            style={{ overflow: "visible", maxWidth: 950, width: "95%" }}
+            className="modal saas-modal staff-report-create-modal"
+            onMouseDown={(event) => event.stopPropagation()}
           >
             <div className="modal-head">
               <div>
                 <h3 className="modal-title">Create Staff Report</h3>
                 <p className="modal-subtitle">
-                  Each approver downloads the latest file, uploads a new approved file, and that file becomes the latest file.
+                  Create an AWOL Report or Incident Report and upload
+                  the supporting file.
                 </p>
               </div>
 
-              <button className="modal-x" onClick={closeCreateModal} type="button">
+              <button
+                className="modal-x"
+                onClick={closeCreateModal}
+                type="button"
+              >
                 ✕
               </button>
             </div>
 
             <form onSubmit={createReport} className="modal-form">
-              <div className="modal-grid" style={{ overflow: "visible" }}>
+              <div className="modal-grid staff-report-modal-grid">
                 <div className="form-group">
                   <label>Report Type</label>
+
                   <select
                     value={form.report_type}
-                    onChange={(e) =>
-                      setForm((p) => ({
-                        ...p,
-                        report_type: e.target.value,
+                    onChange={(event) =>
+                      setForm((previous) => ({
+                        ...previous,
+                        report_type: event.target.value,
                       }))
                     }
                     required
                   >
-                    {REPORT_TYPES.map((t) => (
-                      <option key={t} value={t}>
-                        {t}
+                    {REPORT_TYPES.map((type) => (
+                      <option key={type} value={type}>
+                        {type}
                       </option>
                     ))}
                   </select>
                 </div>
 
-                <div className="form-group" ref={employeePickerRef} style={{ position: "relative", zIndex: 50 }}>
+                <div
+                  className="form-group staff-report-employee-picker"
+                  ref={employeePickerRef}
+                >
                   <label>Employee</label>
 
                   <input
                     type="text"
-                    placeholder="Search Employee..."
+                    placeholder="Search employee..."
                     value={employeeSearch}
-                    onChange={(e) => {
-                      setEmployeeSearch(e.target.value);
+                    onChange={(event) => {
+                      setEmployeeSearch(event.target.value);
                       setShowEmployeeDropdown(true);
-                      setForm((prev) => ({
-                        ...prev,
+                      setForm((previous) => ({
+                        ...previous,
                         employee_id: "",
                         employee_name: "",
                         branch_id: "",
@@ -831,16 +973,22 @@ export default function StaffReport() {
                   {showEmployeeDropdown && (
                     <div className="approval-search-dropdown">
                       {filteredEmployees.length === 0 ? (
-                        <div className="approval-search-empty">No results</div>
+                        <div className="approval-search-empty">
+                          No results
+                        </div>
                       ) : (
-                        filteredEmployees.map((s) => (
+                        filteredEmployees.map((employee) => (
                           <button
-                            key={s.id}
+                            key={employee.id}
                             type="button"
                             className="approval-search-item"
-                            onClick={() => handleChooseEmployee(s)}
+                            onClick={() =>
+                              handleChooseEmployee(employee)
+                            }
                           >
-                            {(s.employee_no ? `${s.employee_no} - ` : "") + displayName(s)}
+                            {(employee.employee_no
+                              ? `${employee.employee_no} - `
+                              : "") + displayName(employee)}
                           </button>
                         ))
                       )}
@@ -850,22 +998,38 @@ export default function StaffReport() {
 
                 <div className="form-group">
                   <label>Branch</label>
-                  <input value={branchLabel(form)} readOnly placeholder="Auto-filled" />
+                  <input
+                    value={branchLabel(form)}
+                    readOnly
+                    placeholder="Auto-filled"
+                  />
                 </div>
 
                 <div className="form-group">
                   <label>Area</label>
-                  <input value={form.area} readOnly placeholder="Auto-filled" />
+                  <input
+                    value={form.area}
+                    readOnly
+                    placeholder="Auto-filled"
+                  />
                 </div>
 
                 <div className="form-group">
                   <label>Region</label>
-                  <input value={form.region} readOnly placeholder="Auto-filled" />
+                  <input
+                    value={form.region}
+                    readOnly
+                    placeholder="Auto-filled"
+                  />
                 </div>
 
                 <div className="form-group">
                   <label>Division</label>
-                  <input value={form.division} readOnly placeholder="Auto-filled" />
+                  <input
+                    value={form.division}
+                    readOnly
+                    placeholder="Auto-filled"
+                  />
                 </div>
 
                 <div className="form-group">
@@ -873,7 +1037,12 @@ export default function StaffReport() {
                   <input
                     type="date"
                     value={form.date_created}
-                    onChange={(e) => setForm((p) => ({ ...p, date_created: e.target.value }))}
+                    onChange={(event) =>
+                      setForm((previous) => ({
+                        ...previous,
+                        date_created: event.target.value,
+                      }))
+                    }
                     required
                   />
                 </div>
@@ -883,7 +1052,12 @@ export default function StaffReport() {
                   <input
                     type="date"
                     value={form.awol_date}
-                    onChange={(e) => setForm((p) => ({ ...p, awol_date: e.target.value }))}
+                    onChange={(event) =>
+                      setForm((previous) => ({
+                        ...previous,
+                        awol_date: event.target.value,
+                      }))
+                    }
                     required
                   />
                 </div>
@@ -893,7 +1067,11 @@ export default function StaffReport() {
                   <input
                     type="file"
                     accept=".pdf,.png,.jpg,.jpeg,.doc,.docx"
-                    onChange={(e) => setAttachmentFile(e.target.files?.[0] || null)}
+                    onChange={(event) =>
+                      setAttachmentFile(
+                        event.target.files?.[0] || null
+                      )
+                    }
                   />
                 </div>
 
@@ -901,18 +1079,31 @@ export default function StaffReport() {
                   <label>Details</label>
                   <textarea
                     value={form.details}
-                    onChange={(e) => setForm((p) => ({ ...p, details: e.target.value }))}
+                    onChange={(event) =>
+                      setForm((previous) => ({
+                        ...previous,
+                        details: event.target.value,
+                      }))
+                    }
                     placeholder={`${form.report_type} details...`}
                   />
                 </div>
               </div>
 
               <div className="modal-buttons">
-                <button className="btn-secondary" type="button" onClick={closeCreateModal}>
+                <button
+                  className="btn-secondary"
+                  type="button"
+                  onClick={closeCreateModal}
+                >
                   Cancel
                 </button>
 
-                <button className="btn-primary" type="submit" disabled={loadingCreate}>
+                <button
+                  className="btn-primary"
+                  type="submit"
+                  disabled={loadingCreate}
+                >
                   {loadingCreate ? "Submitting..." : "Submit"}
                 </button>
               </div>
@@ -924,31 +1115,37 @@ export default function StaffReport() {
       {showViewModal && selectedReport && (
         <div
           className="modal-overlay"
-          onMouseDown={(e) =>
-            e.target.classList.contains("modal-overlay") && closeViewModal()
+          onMouseDown={(event) =>
+            event.target.classList.contains("modal-overlay") &&
+            closeViewModal()
           }
         >
-          <div className="modal saas-modal view-report-modal" onMouseDown={(e) => e.stopPropagation()}>
+          <div
+            className="modal saas-modal view-report-modal"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
             <div className="modal-head">
               <div>
-                <h3 className="modal-title">{selectedReportType} Details</h3>
+                <h3 className="modal-title">
+                  {selectedReportType} Details
+                </h3>
+
                 <p className="modal-subtitle">
-                  {selectedReport.report_no} — {selectedReport.status}
+                  {selectedReport.report_no} —{" "}
+                  {selectedReport.status}
                 </p>
               </div>
 
-              <button className="modal-x" onClick={closeViewModal} type="button">
+              <button
+                className="modal-x"
+                onClick={closeViewModal}
+                type="button"
+              >
                 ✕
               </button>
             </div>
 
-            <div
-              className="modal-grid"
-              style={{
-                gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-                gap: "18px",
-              }}
-            >
+            <div className="modal-grid staff-report-view-grid">
               <div className="form-group">
                 <label>Report Type</label>
                 <input value={selectedReportType} readOnly />
@@ -956,52 +1153,82 @@ export default function StaffReport() {
 
               <div className="form-group">
                 <label>Employee</label>
-                <input value={toStr(selectedReport.employee_name)} readOnly />
+                <input
+                  value={toStr(selectedReport.employee_name)}
+                  readOnly
+                />
               </div>
 
               <div className="form-group">
                 <label>Status</label>
-                <input value={toStr(selectedReport.status)} readOnly />
+                <input
+                  value={toStr(selectedReport.status)}
+                  readOnly
+                />
               </div>
 
               <div className="form-group">
                 <label>Branch</label>
-                <input value={`${toStr(selectedReport.branch_code)} - ${toStr(selectedReport.branch_name)}`} readOnly />
+                <input
+                  value={branchLabel({
+                    branch_code: selectedReport.branch_code,
+                    branch_name: selectedReport.branch_name,
+                  })}
+                  readOnly
+                />
               </div>
 
               <div className="form-group">
                 <label>Area</label>
-                <input value={toStr(selectedReport.area)} readOnly />
+                <input
+                  value={toStr(selectedReport.area)}
+                  readOnly
+                />
               </div>
 
               <div className="form-group">
                 <label>Region</label>
-                <input value={toStr(selectedReport.region)} readOnly />
+                <input
+                  value={toStr(selectedReport.region)}
+                  readOnly
+                />
               </div>
 
               <div className="form-group">
                 <label>Division</label>
-                <input value={toStr(selectedReport.division)} readOnly />
+                <input
+                  value={toStr(selectedReport.division)}
+                  readOnly
+                />
               </div>
 
               <div className="form-group">
                 <label>Date Created</label>
-                <input value={fmtDate(selectedReport.date_created)} readOnly />
+                <input
+                  value={fmtDate(selectedReport.date_created)}
+                  readOnly
+                />
               </div>
 
               <div className="form-group">
                 <label>{dateLabel(selectedReportType)}</label>
-                <input value={fmtDate(selectedReport.awol_date)} readOnly />
+                <input
+                  value={fmtDate(selectedReport.awol_date)}
+                  readOnly
+                />
               </div>
 
               <div className="form-group full">
                 <label>Details</label>
-                <textarea value={toStr(selectedReport.details)} readOnly />
+                <textarea
+                  value={toStr(selectedReport.details)}
+                  readOnly
+                />
               </div>
             </div>
 
-            <div className="table-card" style={{ marginTop: 14 }}>
-              <div className="table-wrap" style={{ maxHeight: "unset" }}>
+            <div className="staff-report-file-table table-card">
+              <div className="table-wrap">
                 <table className="table">
                   <thead>
                     <tr>
@@ -1016,11 +1243,17 @@ export default function StaffReport() {
                       <td>Latest File</td>
                       <td>{latestFileName(selectedReport)}</td>
                       <td>
-                        {selectedReport.approved_attachment_path || selectedReport.request_attachment_path ? (
+                        {selectedReport.approved_attachment_path ||
+                        selectedReport.request_attachment_path ? (
                           <button
                             className="btn-secondary"
                             type="button"
-                            onClick={() => downloadFile(selectedReport, latestFileType(selectedReport))}
+                            onClick={() =>
+                              downloadFile(
+                                selectedReport,
+                                latestFileType(selectedReport)
+                              )
+                            }
                           >
                             Download Latest
                           </button>
@@ -1032,13 +1265,18 @@ export default function StaffReport() {
 
                     <tr>
                       <td>Original Request File</td>
-                      <td>{selectedReport.request_attachment_name || "-"}</td>
+                      <td>
+                        {selectedReport.request_attachment_name ||
+                          "-"}
+                      </td>
                       <td>
                         {selectedReport.request_attachment_path ? (
                           <button
                             className="btn-secondary"
                             type="button"
-                            onClick={() => downloadFile(selectedReport, "request")}
+                            onClick={() =>
+                              downloadFile(selectedReport, "request")
+                            }
                           >
                             Download
                           </button>
@@ -1052,58 +1290,79 @@ export default function StaffReport() {
               </div>
             </div>
 
-            {canShowApprovalUpload(selectedReport) ? (
-              <div style={{ marginTop: 14 }}>
+            {canShowApprovalUpload(selectedReport) && (
+              <div className="staff-report-upload-box">
                 <div className="form-group">
-                  <label>Upload Approved File for Next Approver</label>
+                  <label>
+                    Upload Approved File for Next Approver
+                  </label>
+
                   <input
                     type="file"
                     accept=".pdf,.png,.jpg,.jpeg,.doc,.docx"
-                    onChange={(e) => setApprovalFile(e.target.files?.[0] || null)}
+                    onChange={(event) =>
+                      setApprovalFile(
+                        event.target.files?.[0] || null
+                      )
+                    }
                   />
                 </div>
 
                 <button
                   className="btn-success"
                   type="button"
-                  style={{ marginTop: 10 }}
-                  onClick={() => approveReportWithUpload(selectedReport)}
+                  onClick={() =>
+                    approveReportWithUpload(selectedReport)
+                  }
                   disabled={actionLoading}
                 >
-                  {actionLoading ? "Approving..." : "Upload File & Approve"}
+                  {actionLoading
+                    ? "Approving..."
+                    : "Upload File & Approve"}
                 </button>
               </div>
-            ) : null}
+            )}
 
-            {selectedReport.status === STATUS_WAITING_FINAL && canFinalUpload ? (
-              <div style={{ marginTop: 14 }}>
-                <div className="form-group">
-                  <label>Upload Final Approved File</label>
-                  <input
-                    type="file"
-                    accept=".pdf,.png,.jpg,.jpeg,.doc,.docx"
-                    onChange={(e) => setFinalFile(e.target.files?.[0] || null)}
-                  />
+            {selectedReport.status === STATUS_WAITING_FINAL &&
+              canFinalUpload && (
+                <div className="staff-report-upload-box">
+                  <div className="form-group">
+                    <label>Upload Final Approved File</label>
+
+                    <input
+                      type="file"
+                      accept=".pdf,.png,.jpg,.jpeg,.doc,.docx"
+                      onChange={(event) =>
+                        setFinalFile(
+                          event.target.files?.[0] || null
+                        )
+                      }
+                    />
+                  </div>
+
+                  <button
+                    className="btn-primary"
+                    type="button"
+                    onClick={uploadFinalFile}
+                    disabled={actionLoading}
+                  >
+                    {actionLoading
+                      ? "Uploading..."
+                      : "Upload Final File & Approve"}
+                  </button>
                 </div>
+              )}
 
-                <button
-                  className="btn-primary"
-                  type="button"
-                  style={{ marginTop: 10 }}
-                  onClick={uploadFinalFile}
-                  disabled={actionLoading}
-                >
-                  {actionLoading ? "Uploading..." : "Upload Final File & Approve"}
-                </button>
-              </div>
-            ) : null}
-
-            <div className="modal-buttons">
-              <button className="btn-secondary" type="button" onClick={closeViewModal}>
+            <div className="staff-report-view-actions">
+              <button
+                className="btn-secondary"
+                type="button"
+                onClick={closeViewModal}
+              >
                 Close
               </button>
 
-              {canRejectSelected(selectedReport) ? (
+              {canRejectSelected(selectedReport) && (
                 <button
                   className="btn-danger"
                   type="button"
@@ -1112,33 +1371,36 @@ export default function StaffReport() {
                 >
                   Reject
                 </button>
-              ) : null}
+              )}
 
               {canBypassApprove &&
-              selectedReport.status !== STATUS_WAITING_FINAL &&
-              selectedReport.status !== STATUS_APPROVED &&
-              selectedReport.status !== STATUS_REJECTED &&
-              selectedReport.status !== STATUS_VOID ? (
-                <button
-                  className="btn-success"
-                  type="button"
-                  disabled={actionLoading}
-                  onClick={() => bypassApprove(selectedReport)}
-                >
-                  Admin/IT Bypass
-                </button>
-              ) : null}
+                selectedReport.status !== STATUS_WAITING_FINAL &&
+                selectedReport.status !== STATUS_APPROVED &&
+                selectedReport.status !== STATUS_REJECTED &&
+                selectedReport.status !== STATUS_VOID && (
+                  <button
+                    className="btn-success"
+                    type="button"
+                    disabled={actionLoading}
+                    onClick={() =>
+                      bypassApprove(selectedReport)
+                    }
+                  >
+                    Admin/IT Bypass
+                  </button>
+                )}
 
-              {selectedReport.status === STATUS_APPROVED && canVoid ? (
-                <button
-                  className="btn-danger"
-                  type="button"
-                  disabled={actionLoading}
-                  onClick={() => voidReport(selectedReport)}
-                >
-                  Void
-                </button>
-              ) : null}
+              {selectedReport.status === STATUS_APPROVED &&
+                canVoid && (
+                  <button
+                    className="btn-danger"
+                    type="button"
+                    disabled={actionLoading}
+                    onClick={() => voidReport(selectedReport)}
+                  >
+                    Void
+                  </button>
+                )}
             </div>
           </div>
         </div>

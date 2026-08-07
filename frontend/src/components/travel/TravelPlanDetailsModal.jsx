@@ -66,9 +66,10 @@ export default function TravelPlanDetailsModal({
 
                           <b
                             className={`travel-detail-status ${
-                              normalizeValue(selectedPlan.status) ===
-                              "completed"
+                              normalizeValue(selectedPlan.status) === "completed"
                                 ? "completed"
+                                : normalizeValue(selectedPlan.status) === "incomplete"
+                                ? "incomplete"
                                 : "pending"
                             }`}
                           >
@@ -166,11 +167,12 @@ export default function TravelPlanDetailsModal({
                       <input
                         type="text"
                         value={selectedPlan.title || ""}
-                        disabled={
-                          normalizeValue(
-                            selectedPlan.status
-                          ) === "completed"
-                        }
+                        disabled={[
+                          "completed",
+                          "incomplete",
+                        ].includes(
+                          normalizeValue(selectedPlan.status)
+                        )}
                         onChange={(event) =>
                           setSelectedPlan((previous) => ({
                             ...previous,
@@ -212,11 +214,12 @@ export default function TravelPlanDetailsModal({
                         value={String(
                           selectedPlan.plan_date || ""
                         ).slice(0, 10)}
-                        disabled={
-                          normalizeValue(
-                            selectedPlan.status
-                          ) === "completed"
-                        }
+                        disabled={[
+                          "completed",
+                          "incomplete",
+                        ].includes(
+                          normalizeValue(selectedPlan.status)
+                        )}
                         onChange={(event) =>
                           setSelectedPlan((previous) => ({
                             ...previous,
@@ -234,11 +237,12 @@ export default function TravelPlanDetailsModal({
                         value={
                           selectedPlan.branch_name || ""
                         }
-                        disabled={
-                          normalizeValue(
-                            selectedPlan.status
-                          ) === "completed"
-                        }
+                        disabled={[
+                          "completed",
+                          "incomplete",
+                        ].includes(
+                          normalizeValue(selectedPlan.status)
+                        )}
                         onChange={(event) =>
                           setSelectedPlan((previous) => ({
                             ...previous,
@@ -257,11 +261,12 @@ export default function TravelPlanDetailsModal({
                         value={
                           selectedPlan.description || ""
                         }
-                        disabled={
-                          normalizeValue(
-                            selectedPlan.status
-                          ) === "completed"
-                        }
+                        disabled={[
+                          "completed",
+                          "incomplete",
+                        ].includes(
+                          normalizeValue(selectedPlan.status)
+                        )}
                         onChange={(event) =>
                           setSelectedPlan((previous) => ({
                             ...previous,
@@ -372,7 +377,12 @@ export default function TravelPlanDetailsModal({
                           location and time will be saved automatically.
                         </p>
 
-                        {normalizeValue(selectedPlan.status) !== "completed" && (
+                        {![
+                          "completed",
+                          "incomplete",
+                        ].includes(
+                          normalizeValue(selectedPlan.status)
+                        ) && (
                           <label className="travel-photo-upload-btn">
                             + Capture Time In Photo
 
@@ -413,7 +423,12 @@ export default function TravelPlanDetailsModal({
                           or other evidence related to this travel plan.
                         </p>
 
-                        {normalizeValue(selectedPlan.status) !== "completed" && (
+                        {![
+                          "completed",
+                          "incomplete",
+                        ].includes(
+                          normalizeValue(selectedPlan.status)
+                        ) && (
                           <label className="travel-photo-upload-btn">
                             + Upload Supporting Photos
 
@@ -446,7 +461,12 @@ export default function TravelPlanDetailsModal({
                           location and time will be saved automatically.
                         </p>
 
-                        {normalizeValue(selectedPlan.status) !== "completed" && (
+                        {![
+                          "completed",
+                          "incomplete",
+                        ].includes(
+                          normalizeValue(selectedPlan.status)
+                        ) && (
                           <label className="travel-photo-upload-btn">
                             + Capture Time Out Photo
 
@@ -503,9 +523,12 @@ export default function TravelPlanDetailsModal({
                       Close
                     </button>
 
-                    {normalizeValue(
-                      selectedPlan.status
-                    ) !== "completed" && (
+                    {![
+                      "completed",
+                      "incomplete",
+                    ].includes(
+                      normalizeValue(selectedPlan.status)
+                    ) && (
                       <>
                         <button
                           type="button"

@@ -1,0 +1,990 @@
+/* =========================================================
+   TERMINATION OF CONTRACT
+   MATCH LEAVE TRANSACTIONS DESIGN
+========================================================= */
+
+.termination-page {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+
+  width: 100%;
+  max-width: 100%;
+
+  padding: 0;
+
+  box-sizing: border-box;
+
+  color: var(--text);
+}
+
+.termination-page-embedded {
+  padding: 0;
+}
+
+
+/* =========================================================
+   HERO
+========================================================= */
+
+.termination-hero {
+  margin-bottom: 0;
+}
+
+.termination-hero-main {
+  position: relative;
+  overflow: hidden;
+
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+
+  gap: 28px;
+
+  padding: 24px;
+
+  border: 1px solid rgba(96, 165, 250, 0.2);
+  border-radius: 18px;
+
+  background:
+    radial-gradient(
+      circle at top right,
+      rgba(79, 70, 229, 0.3),
+      transparent 35%
+    ),
+    linear-gradient(
+      135deg,
+      #101f3a,
+      #0b172d
+    );
+
+  box-shadow:
+    0 18px 45px rgba(0, 0, 0, 0.22);
+}
+
+
+/* decorative circle like Leave */
+
+.termination-hero-main::after {
+  content: "";
+
+  position: absolute;
+
+  top: -75px;
+  right: -45px;
+
+  width: 210px;
+  height: 210px;
+
+  border: 30px solid rgba(96, 165, 250, 0.05);
+  border-radius: 50%;
+
+  pointer-events: none;
+}
+
+
+/* remove old hero decoration */
+
+.termination-hero::after {
+  display: none;
+}
+
+
+.termination-hero-copy {
+  position: relative;
+  z-index: 1;
+
+  min-width: 0;
+  max-width: 760px;
+}
+
+
+.termination-eyebrow {
+  display: block;
+
+  margin-bottom: 8px;
+
+  color: #60a5fa;
+
+  font-size: 11px;
+  font-weight: 900;
+
+  letter-spacing: 0.12em;
+}
+
+
+.termination-hero h1 {
+  margin: 0;
+
+  color: #f8fafc;
+
+  font-size: clamp(24px, 3vw, 34px);
+  line-height: 1.12;
+
+  font-weight: 950;
+
+  letter-spacing: -0.025em;
+}
+
+
+.termination-hero p {
+  max-width: 680px;
+
+  margin: 10px 0 0;
+
+  color: #9fb0c9;
+
+  font-size: 13px;
+  line-height: 1.65;
+
+  font-weight: 650;
+}
+
+
+/* =========================================================
+   APPROVAL FLOW
+========================================================= */
+
+.termination-flow {
+  display: inline-flex;
+
+  align-items: center;
+
+  flex-wrap: wrap;
+
+  gap: 12px;
+
+  margin-top: 18px;
+
+  padding: 9px 12px;
+
+  border: 1px solid rgba(96, 165, 250, 0.18);
+
+  border-radius: 10px;
+
+  background: rgba(2, 6, 23, 0.34);
+}
+
+
+.termination-flow span {
+  color: #7dd3fc;
+
+  font-size: 10px;
+
+  font-weight: 900;
+
+  text-transform: uppercase;
+
+  letter-spacing: 0.08em;
+}
+
+
+.termination-flow b {
+  color: #dbeafe;
+
+  font-size: 11px;
+
+  font-weight: 850;
+}
+
+
+/* =========================================================
+   HERO BUTTONS
+========================================================= */
+
+.termination-hero-actions {
+  position: relative;
+
+  z-index: 1;
+
+  display: flex;
+
+  justify-content: flex-end;
+
+  flex-wrap: wrap;
+
+  gap: 10px;
+}
+
+
+.termination-btn {
+  min-height: 40px;
+
+  display: inline-flex;
+
+  align-items: center;
+
+  justify-content: center;
+
+  padding: 10px 15px;
+
+  border-radius: 10px;
+
+  font-family: inherit;
+
+  font-size: 12px;
+
+  font-weight: 900;
+
+  cursor: pointer;
+
+  transition:
+    transform 0.15s ease,
+    background 0.15s ease,
+    border-color 0.15s ease;
+}
+
+
+.termination-btn:disabled {
+  opacity: 0.55;
+
+  cursor: not-allowed;
+}
+
+
+.termination-btn-secondary {
+  border: 1px solid rgba(148, 163, 184, 0.35);
+
+  background: rgba(2, 6, 23, 0.42);
+
+  color: #f8fafc;
+}
+
+
+.termination-btn-secondary:hover:not(:disabled) {
+  background: rgba(30, 41, 59, 0.8);
+}
+
+
+.termination-btn-primary {
+  border: 1px solid transparent;
+
+  background:
+    linear-gradient(
+      135deg,
+      #4f46e5,
+      #2563eb
+    );
+
+  color: #ffffff;
+}
+
+
+.termination-btn-primary:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+
+.termination-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+
+/* =========================================================
+   EMBEDDED TOOLBAR
+========================================================= */
+
+.termination-embedded-toolbar {
+  display: flex;
+
+  justify-content: flex-start;
+
+  gap: 10px;
+
+  flex-wrap: wrap;
+}
+
+
+/* =========================================================
+   SUMMARY CARDS
+========================================================= */
+
+.termination-summary-grid {
+  display: grid;
+
+  grid-template-columns:
+    repeat(4, minmax(0, 1fr));
+
+  gap: 14px;
+
+  margin-top: 0;
+}
+
+
+.termination-summary-card {
+  min-width: 0;
+
+  min-height: 112px;
+
+  display: flex;
+
+  align-items: center;
+
+  gap: 14px;
+
+  padding: 17px;
+
+  border: 1px solid var(--border);
+
+  border-radius: 16px;
+
+  background: var(--panel);
+
+  color: var(--text);
+
+  text-align: left;
+
+  box-shadow: var(--shadow-soft);
+}
+
+
+.termination-summary-icon {
+  display: grid;
+
+  place-items: center;
+
+  flex: 0 0 46px;
+
+  width: 46px;
+
+  height: 46px;
+
+  border-radius: 14px;
+
+  font-size: 10px;
+
+  font-weight: 950;
+}
+
+
+.termination-summary-card > div:last-child {
+  display: flex;
+
+  flex-direction: column;
+
+  min-width: 0;
+}
+
+
+.termination-summary-card span {
+  color: var(--muted);
+
+  font-size: 11px;
+
+  font-weight: 800;
+}
+
+
+.termination-summary-card strong {
+  margin-top: 4px;
+
+  color: var(--text);
+
+  font-size: 28px;
+
+  line-height: 1;
+
+  font-weight: 950;
+}
+
+
+.termination-summary-card small {
+  margin-top: 7px;
+
+  color: var(--muted);
+
+  font-size: 10px;
+
+  font-weight: 650;
+}
+
+
+/* total */
+
+.termination-summary-total {
+  border-color: rgba(59, 130, 246, 0.68);
+}
+
+.termination-summary-total .termination-summary-icon {
+  background: rgba(59, 130, 246, 0.14);
+
+  color: #3b82f6;
+}
+
+
+/* pending */
+
+.termination-summary-pending .termination-summary-icon {
+  background: rgba(245, 158, 11, 0.14);
+
+  color: #f59e0b;
+}
+
+
+/* approved */
+
+.termination-summary-approved .termination-summary-icon {
+  background: rgba(16, 185, 129, 0.14);
+
+  color: #10b981;
+}
+
+
+/* rejected / voided */
+
+.termination-summary-closed .termination-summary-icon {
+  background: rgba(124, 58, 237, 0.14);
+
+  color: #8b5cf6;
+}
+
+
+/* =========================================================
+   LIST CARD
+========================================================= */
+
+.termination-list-card {
+  display: flex;
+
+  flex-direction: column;
+
+  gap: 14px;
+
+  width: 100%;
+
+  max-width: 100%;
+
+  background: transparent;
+
+  border: none;
+
+  border-radius: 0;
+
+  box-shadow: none;
+
+  overflow: visible;
+}
+
+
+/* =========================================================
+   SEARCH BAR
+   MATCH LEAVE SEARCH
+========================================================= */
+
+.termination-search-panel {
+  display: flex;
+
+  align-items: center;
+
+  gap: 10px;
+
+  flex-wrap: wrap;
+
+  padding: 14px 16px;
+
+  margin: 0;
+
+  border: 1px solid rgba(148, 163, 184, 0.18);
+
+  border-radius: 16px;
+
+  background: rgba(15, 23, 42, 0.92);
+}
+
+
+.termination-search-controls {
+  display: flex;
+
+  align-items: center;
+
+  gap: 10px;
+
+  flex-wrap: wrap;
+
+  flex: 1;
+
+  min-width: 0;
+}
+
+
+.termination-search-input {
+  min-width: 320px;
+
+  min-height: 40px;
+
+  padding: 10px 14px;
+
+  border-radius: 12px;
+
+  border: 1px solid rgba(148, 163, 184, 0.22);
+
+  background: rgba(2, 6, 23, 0.5);
+
+  color: #e5edf8;
+
+  font-family: inherit;
+
+  font-weight: 800;
+
+  outline: none;
+}
+
+
+.termination-search-input::placeholder {
+  color: #77879f;
+}
+
+
+.termination-search-input:focus {
+  border-color: rgba(96, 165, 250, 0.7);
+
+  box-shadow:
+    0 0 0 3px rgba(59, 130, 246, 0.16);
+}
+
+
+.termination-result-count {
+  padding: 8px 12px;
+
+  border-radius: 999px;
+
+  background: rgba(79, 70, 229, 0.16);
+
+  border: 1px solid rgba(99, 102, 241, 0.24);
+
+  color: #c7d2fe;
+
+  font-size: 12px;
+
+  font-weight: 950;
+}
+
+
+/* light theme */
+
+[data-theme="light"] .termination-search-panel {
+  background: #ffffff;
+}
+
+
+[data-theme="light"] .termination-search-input {
+  background: #ffffff;
+
+  color: #0f172a;
+}
+
+
+/* =========================================================
+   TABLE
+========================================================= */
+
+.termination-table-wrap {
+  width: 100%;
+
+  max-height: 520px;
+
+  overflow: auto;
+
+  border: 1px solid var(--border);
+
+  border-radius: 14px;
+
+  background: var(--panel);
+
+  box-shadow: var(--shadow-soft);
+}
+
+
+.termination-table {
+  width: 100%;
+
+  min-width: 1100px;
+
+  border-collapse: collapse;
+
+  table-layout: auto;
+}
+
+
+.termination-table th {
+  position: sticky;
+
+  top: 0;
+
+  z-index: 2;
+
+  padding: 12px 10px;
+
+  background: var(--table-header);
+
+  color: #ffffff;
+
+  text-align: left;
+
+  white-space: nowrap;
+
+  font-size: 12px;
+
+  font-weight: 850;
+
+  text-transform: uppercase;
+
+  letter-spacing: 0.5px;
+}
+
+
+.termination-table td {
+  padding: 8px 10px;
+
+  border-bottom: 1px solid var(--border);
+
+  color: var(--text);
+
+  vertical-align: top;
+
+  font-size: 11px;
+}
+
+
+.termination-table tbody tr:hover {
+  background: var(--row-hover);
+}
+
+
+.termination-request-no,
+.termination-employee {
+  font-weight: 900;
+}
+
+
+.termination-empty {
+  padding: 30px !important;
+
+  color: var(--muted) !important;
+
+  text-align: center;
+
+  font-weight: 800;
+}
+
+
+/* =========================================================
+   ACTION COLUMN
+========================================================= */
+
+.termination-table th:last-child,
+.termination-table td:last-child {
+  width: 125px;
+
+  min-width: 125px;
+
+  text-align: center;
+}
+
+
+.termination-row-actions {
+  display: flex;
+
+  flex-direction: column;
+
+  align-items: center;
+
+  gap: 5px;
+
+  width: 115px;
+
+  margin: 0 auto;
+}
+
+
+.termination-view-btn {
+  width: 108px;
+
+  height: 30px;
+
+  padding: 0 8px;
+
+  border-radius: 10px;
+
+  border: 1px solid rgba(148, 163, 184, 0.25);
+
+  background: #0f172a;
+
+  color: #ffffff;
+
+  font-size: 11px;
+
+  font-weight: 800;
+
+  cursor: pointer;
+}
+
+
+.termination-view-btn:hover {
+  background: #1e293b;
+}
+
+
+/* =========================================================
+   PAGINATION
+   MATCH LEAVE
+========================================================= */
+
+.termination-pager {
+  display: flex;
+
+  align-items: center;
+
+  justify-content: space-between;
+
+  gap: 14px;
+
+  padding: 14px 16px;
+
+  border: 1px solid var(--border);
+
+  border-radius: 14px;
+
+  background: var(--panel);
+
+  box-shadow: var(--shadow-soft);
+
+  flex-wrap: wrap;
+}
+
+
+.termination-pager-left,
+.termination-pager-right {
+  display: flex;
+
+  align-items: center;
+
+  gap: 8px;
+}
+
+
+.termination-pager-left span,
+.termination-page-summary {
+  font-size: 12px;
+
+  font-weight: 900;
+
+  color: var(--muted);
+}
+
+
+.termination-pager select {
+  height: 36px;
+
+  min-width: 74px;
+
+  border-radius: 999px;
+
+  border: 1px solid var(--border);
+
+  background: var(--panel-2);
+
+  color: var(--text);
+
+  padding: 0 34px 0 14px;
+
+  font-weight: 900;
+
+  outline: none;
+
+  cursor: pointer;
+}
+
+
+.termination-pager select option {
+  background: var(--panel);
+
+  color: var(--text);
+}
+
+
+.termination-page-btn,
+.termination-page-number {
+  min-width: 36px;
+
+  height: 36px;
+
+  border-radius: 999px;
+
+  border: 1px solid var(--border);
+
+  background: var(--panel-2);
+
+  color: var(--text);
+
+  font-weight: 900;
+
+  cursor: pointer;
+
+  transition: 0.15s ease;
+}
+
+
+.termination-page-btn:hover:not(:disabled),
+.termination-page-number:hover {
+  background:
+    color-mix(
+      in srgb,
+      var(--primary) 18%,
+      transparent
+    );
+
+  border-color:
+    color-mix(
+      in srgb,
+      var(--primary) 45%,
+      var(--border)
+    );
+}
+
+
+.termination-page-number.active {
+  background: var(--primary);
+
+  border-color: var(--primary);
+
+  color: #ffffff;
+}
+
+
+.termination-page-btn:disabled {
+  opacity: 0.35;
+
+  cursor: not-allowed;
+}
+
+
+[data-theme="dark"] .termination-pager select {
+  color-scheme: dark;
+}
+
+
+[data-theme="dark"] .termination-pager select option {
+  background: #0f172a;
+
+  color: #ffffff;
+}
+
+
+/* =========================================================
+   STATUS BADGES
+========================================================= */
+
+.badge {
+  display: inline-flex;
+
+  align-items: center;
+
+  justify-content: center;
+
+  padding: 5px 10px;
+
+  border-radius: 999px;
+
+  font-size: 12px;
+
+  font-weight: 900;
+
+  border: 1px solid transparent;
+
+  white-space: nowrap;
+}
+
+
+.badge-approved {
+  background: rgba(16, 185, 129, 0.15);
+
+  color: #10b981;
+
+  border-color: rgba(16, 185, 129, 0.35);
+}
+
+
+.badge-rejected {
+  background: rgba(239, 68, 68, 0.15);
+
+  color: #ef4444;
+
+  border-color: rgba(239, 68, 68, 0.35);
+}
+
+
+.badge-pending {
+  background: rgba(245, 158, 11, 0.15);
+
+  color: #f59e0b;
+
+  border-color: rgba(245, 158, 11, 0.35);
+}
+
+
+/* =========================================================
+   RESPONSIVE
+========================================================= */
+
+@media (max-width: 1100px) {
+
+  .termination-summary-grid {
+    grid-template-columns:
+      repeat(2, minmax(0, 1fr));
+  }
+
+
+  .termination-hero-main {
+    flex-direction: column;
+  }
+
+
+  .termination-hero-actions {
+    justify-content: flex-start;
+  }
+}
+
+
+@media (max-width: 680px) {
+
+  .termination-summary-grid {
+    grid-template-columns: 1fr;
+  }
+
+
+  .termination-search-panel,
+  .termination-pager {
+    align-items: stretch;
+
+    flex-direction: column;
+  }
+
+
+  .termination-search-controls {
+    align-items: stretch;
+
+    flex-direction: column;
+  }
+
+
+  .termination-search-input {
+    width: 100%;
+
+    min-width: 0;
+  }
+
+
+  .termination-hero-actions {
+    display: grid;
+
+    grid-template-columns: 1fr;
+
+    width: 100%;
+  }
+
+
+  .termination-btn {
+    width: 100%;
+  }
+}

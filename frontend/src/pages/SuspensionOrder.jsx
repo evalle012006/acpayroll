@@ -798,68 +798,164 @@ export default function SuspensionOrder() {
     }
   };
 
-  return (
+  const totalRequests=filteredOrders.length;
+  const pendingRequests=filteredOrders.filter((o)=>norm(o.status)!=="approved"&&norm(o.status)!=="rejected").length;
+  const approvedRequests=filteredOrders.filter((o)=>norm(o.status)==="approved").length;
+  const rejectedRequests=filteredOrders.filter((o)=>norm(o.status)==="rejected").length;
+
+  const getPageNumbers=()=>{
+    const pages=[];
+    const maxButtons=5;
+    let start=Math.max(1,page-2);
+    let end=Math.min(totalPages,start+maxButtons-1);
+    if(end-start<maxButtons-1) start=Math.max(1,end-maxButtons+1);
+    for(let i=start;i<=end;i++) pages.push(i);
+    return pages;
+  };
+
+  return(
     <div className="po-page">
-      <div className="po-topbar">
-        <div>
-          <h2 className="po-title">Suspension Orders</h2>
-          <p className="po-subtitle">
-            Area Manager → Regional Manager → Assistant Vice President → Admin/HR/Accounting
-          </p>
-        </div>
 
-        <div className="po-topbar-actions">
-          <button className="po-btn po-btn-outline" onClick={() => navigate(-1)} type="button">
-            ← Back
-          </button>
+      {/* HERO */}
+      <section className="po-hero">
+        <div className="po-hero-main">
+          <div className="po-hero-copy">
+            <span className="po-eyebrow">HRIS TRANSACTIONS</span>
 
-          <button className="po-btn" onClick={loadData} disabled={loading} type="button">
-            Refresh
-          </button>
+            <h1>Suspension Orders</h1>
 
-          {canCreate && (
-            <button className="po-btn po-btn-primary" onClick={openCreate} type="button">
-              + Create Suspension
+            <p>
+              Create, review and manage employee suspension orders
+              through the required approval process.
+            </p>
+
+            <div className="po-flow">
+              <span>APPROVAL FLOW</span>
+              <b>
+                Area Manager → Regional Manager → Assistant Vice President
+                → Admin / HR / Accounting
+              </b>
+            </div>
+          </div>
+
+          <div className="po-hero-actions">
+            <button
+              className="po-btn po-btn-secondary"
+              type="button"
+              onClick={()=>navigate(-1)}
+            >
+              ← Back
             </button>
-          )}
-        </div>
-      </div>
 
-      {isBranchManager && (
-        <div className="po-card" style={{ marginBottom: 14, padding: 14 }}>
-          <strong>Branch Manager View:</strong> Showing suspension orders only for your branch.
-          Approved files are downloadable only after the order is approved.
+            <button
+              className="po-btn po-btn-secondary"
+              type="button"
+              onClick={loadData}
+              disabled={loading}
+            >
+              {loading?"Refreshing...":"Refresh"}
+            </button>
+
+            {canCreate&&(
+              <button
+                className="po-btn po-btn-primary"
+                type="button"
+                onClick={openCreate}
+              >
+                + Create Suspension
+              </button>
+            )}
+          </div>
+        </div>
+      </section>
+
+      {/* SUMMARY */}
+      <section className="po-summary-grid">
+        <article className="po-summary-card po-summary-total">
+          <div className="po-summary-icon">ALL</div>
+          <div>
+            <span>Total Requests</span>
+            <strong>{totalRequests}</strong>
+            <small>All suspension records</small>
+          </div>
+        </article>
+
+        <article className="po-summary-card po-summary-pending">
+          <div className="po-summary-icon">P</div>
+          <div>
+            <span>Pending</span>
+            <strong>{pendingRequests}</strong>
+            <small>Awaiting approval</small>
+          </div>
+        </article>
+
+        <article className="po-summary-card po-summary-approved">
+          <div className="po-summary-icon">A</div>
+          <div>
+            <span>Approved</span>
+            <strong>{approvedRequests}</strong>
+            <small>Completed suspension orders</small>
+          </div>
+        </article>
+
+        <article className="po-summary-card po-summary-rejected">
+          <div className="po-summary-icon">R</div>
+          <div>
+            <span>Rejected</span>
+            <strong>{rejectedRequests}</strong>
+            <small>Rejected suspension orders</small>
+          </div>
+        </article>
+      </section>
+
+      {isBranchManager&&(
+        <div className="po-scope-note">
+          <strong>Branch Manager View:</strong>{" "}
+          Showing suspension orders only for your branch.
+          Approved files are downloadable after approval.
         </div>
       )}
 
-      {err && <div style={{ color: "#ef4444", fontWeight: 900 }}>{err}</div>}
+      {err&&(
+        <div className="po-error">{err}</div>
+      )}
 
-      <div className="po-card po-toolbar">
-        <div className="po-toolbar-left">
+      {/* SEARCH */}
+      <section className="po-search-panel">
+        <div className="po-search-controls">
           <input
             className="po-search-input"
+            type="text"
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search employee, type, status, stage..."
+            onChange={(e)=>setSearch(e.target.value)}
+            placeholder="Search employee, suspension type, status, stage..."
           />
 
-          <select
-            className="po-page-size"
-            value={pageSize}
-            onChange={(e) => setPageSize(Number(e.target.value))}
+          <button
+            type="button"
+            className="po-btn po-btn-secondary"
+            onClick={()=>setSearch(search.trim())}
           >
-            <option value={25}>25 rows</option>
-            <option value={50}>50 rows</option>
-            <option value={75}>75 rows</option>
-            <option value={100}>100 rows</option>
-          </select>
+            Search
+          </button>
 
-          <span className="po-result-pill">Results: {filteredOrders.length}</span>
-          <span className="po-result-pill">Showing: {pagedOrders.length}</span>
+          <button
+            type="button"
+            className="po-btn po-btn-secondary"
+            onClick={()=>setSearch("")}
+          >
+            Clear
+          </button>
         </div>
-      </div>
 
-      <div className="po-card">
+        <span className="po-result-count">
+          {filteredOrders.length}{" "}
+          {filteredOrders.length===1?"result":"results"}
+        </span>
+      </section>
+
+      {/* TABLE */}
+      <section className="po-list-card">
         <div className="po-table-wrap">
           <table className="po-table">
             <thead>
@@ -878,145 +974,180 @@ export default function SuspensionOrder() {
             </thead>
 
             <tbody>
-              {loading ? (
+              {loading?(
                 <tr>
                   <td colSpan={10} className="po-empty">
-                    Loading...
+                    Loading suspension orders...
                   </td>
                 </tr>
-              ) : filteredOrders.length === 0 ? (
+              ):filteredOrders.length===0?(
                 <tr>
                   <td colSpan={10} className="po-empty">
                     No suspension orders found.
                   </td>
                 </tr>
-              ) : (
-                pagedOrders.map((o) => {
-                  const approved = norm(o.status) === "approved";
+              ):(
+                pagedOrders.map((o)=>{
+                  const approved=norm(o.status)==="approved";
 
-                  return (
+                  return(
                     <tr key={o.id}>
-                      <td>{o.employee_name}</td>
-                      <td>{o.suspension_type || "-"}</td>
-                      <td>{toDate10(o.start_date || o.suspension_start)}</td>
-                      <td>{toDate10(o.end_date || o.suspension_end)}</td>
-                      <td>{o.days_of_suspension ?? "-"}</td>
-                      <td>{money(o.total_deduction)}</td>
-
                       <td>
-                        <span className={badgeClass(o.status)}>{o.status || "Pending"}</span>
+                        <div className="po-employee-name">
+                          {o.employee_name||"-"}
+                        </div>
+
+                        {o.employee_no&&(
+                          <div className="po-sub-info">
+                            Employee No: {o.employee_no}
+                          </div>
+                        )}
                       </td>
 
-                      <td>{stageLabel(o)}</td>
+                      <td>{o.suspension_type||"-"}</td>
+
+                      <td>
+                        {toDate10(o.start_date||o.suspension_start)||"-"}
+                      </td>
+
+                      <td>
+                        {toDate10(o.end_date||o.suspension_end)||"-"}
+                      </td>
+
+                      <td>{o.days_of_suspension??"-"}</td>
+
+                      <td className="po-money">
+                        ₱{money(o.total_deduction)}
+                      </td>
+
+                      <td>
+                        <span className={badgeClass(o.status)}>
+                          {o.status||"Pending"}
+                        </span>
+                      </td>
+
+                      <td>
+                        <span className="po-stage">
+                          {stageLabel(o)}
+                        </span>
+                      </td>
 
                       <td>
                         <div className="po-file-actions">
-                          {o.attachment_path && canDownloadRequestFile ? (
+                          {o.attachment_path&&canDownloadRequestFile&&(
                             <button
-                              className="po-mini-btn"
+                              className="po-action-btn po-action-download"
                               type="button"
-                              onClick={() =>
-                                downloadFile(o.id, "request", o.attachment_name || "")
-                              }
-                            >
-                              Download Request
-                            </button>
-                          ) : null}
-
-                          {o.approved_attachment_path && canDownloadApprovedFile(o) ? (
-                            <button
-                              className="po-mini-btn"
-                              type="button"
-                              onClick={() =>
+                              onClick={()=>
                                 downloadFile(
                                   o.id,
-                                  "approved",
-                                  o.approved_attachment_name || ""
+                                  "request",
+                                  o.attachment_name||""
                                 )
                               }
                             >
-                              Download Approved
+                              Request File
                             </button>
-                          ) : null}
+                          )}
 
-                          {canUploadApprovedFile ? (
-                            <label className="po-mini-btn" style={{ cursor: "pointer" }}>
-                              {uploadingApproved[o.id] ? "Uploading..." : "Upload Approved"}
+                          {o.approved_attachment_path&&canDownloadApprovedFile(o)&&(
+                            <button
+                              className="po-action-btn po-action-download"
+                              type="button"
+                              onClick={()=>
+                                downloadFile(
+                                  o.id,
+                                  "approved",
+                                  o.approved_attachment_name||""
+                                )
+                              }
+                            >
+                              Approved File
+                            </button>
+                          )}
+
+                          {canUploadApprovedFile&&(
+                            <label className="po-action-btn po-action-upload">
+                              {uploadingApproved[o.id]
+                                ?"Uploading..."
+                                :"Upload Approved"}
+
                               <input
                                 type="file"
-                                style={{ display: "none" }}
-                                onChange={(e) =>
-                                  uploadApprovedFile(o.id, e.target.files?.[0] || null)
+                                hidden
+                                onChange={(e)=>
+                                  uploadApprovedFile(
+                                    o.id,
+                                    e.target.files?.[0]||null
+                                  )
                                 }
                               />
                             </label>
-                          ) : null}
+                          )}
 
-                          {!o.attachment_path &&
-                          !o.approved_attachment_path &&
-                          !canUploadApprovedFile ? (
-                            <span style={{ opacity: 0.7 }}>-</span>
-                          ) : null}
+                          {!o.attachment_path&&
+                          !o.approved_attachment_path&&
+                          !canUploadApprovedFile&&"-"}
                         </div>
                       </td>
 
                       <td>
-                        <div className="po-action-buttons">
+                        <div className="po-row-actions">
                           <button
-                            className="po-mini-btn po-view-btn"
+                            className="po-action-btn po-action-view"
                             type="button"
-                            onClick={() => setViewOrder(o)}
+                            onClick={()=>setViewOrder(o)}
                           >
                             View
                           </button>
 
-                          {canEditDelete && (
+                          {canEditDelete&&(
                             <>
                               <button
-                                className="po-mini-btn po-icon-btn"
-                                onClick={() => openEdit(o)}
-                                disabled={approved}
+                                className="po-action-btn po-action-edit"
                                 type="button"
-                                title="Edit"
+                                disabled={approved}
+                                onClick={()=>openEdit(o)}
                               >
-                                <FaEdit />
+                                Edit
                               </button>
 
                               <button
-                                className="po-mini-btn po-icon-btn po-reject"
-                                onClick={() => deleteOrder(o)}
-                                disabled={approved}
+                                className="po-action-btn po-action-delete"
                                 type="button"
-                                title="Delete"
+                                disabled={approved}
+                                onClick={()=>deleteOrder(o)}
                               >
-                                <FaTrash />
+                                Delete
                               </button>
                             </>
                           )}
 
-                          {canApproveStage(o) ? (
+                          {canApproveStage(o)&&(
                             <>
                               <button
-                                className="po-mini-btn po-icon-btn po-approve"
-                                onClick={() => approveOrder(o)}
+                                className="po-action-btn po-action-approve"
                                 type="button"
-                                title="Approve"
+                                onClick={()=>approveOrder(o)}
                               >
-                                <FaCheck />
+                                Approve
                               </button>
 
                               <button
-                                className="po-mini-btn po-icon-btn po-reject"
-                                onClick={() => openReject(o)}
+                                className="po-action-btn po-action-reject"
                                 type="button"
-                                title="Reject"
+                                onClick={()=>openReject(o)}
                               >
-                                <FaTimes />
+                                Reject
                               </button>
                             </>
-                          ) : !canEditDelete ? (
-                            <span style={{ opacity: 0.7 }}>View only</span>
-                          ) : null}
+                          )}
+
+                          {!canEditDelete&&!canApproveStage(o)&&(
+                            <span className="po-view-only">
+                              View only
+                            </span>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -1026,33 +1157,62 @@ export default function SuspensionOrder() {
             </tbody>
           </table>
         </div>
-      </div>
 
-      <div className="po-card po-pager">
-        <div className="po-pager-inner">
-          <button
-            className="po-page-btn"
-            type="button"
-            disabled={page <= 1}
-            onClick={() => setPage((p) => Math.max(1, p - 1))}
-          >
-            Previous
-          </button>
+        {/* PAGINATION */}
+        <div className="po-pager">
+          <div className="po-pager-left">
+            <span>Rows per page</span>
 
-          <span className="po-page-info">
-            Page {page} of {totalPages}
-          </span>
+            <select
+              value={pageSize}
+              onChange={(e)=>setPageSize(Number(e.target.value))}
+            >
+              {[25,50,75,100].map((size)=>(
+                <option key={size} value={size}>
+                  {size}
+                </option>
+              ))}
+            </select>
+          </div>
 
-          <button
-            className="po-page-btn"
-            type="button"
-            disabled={page >= totalPages}
-            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-          >
-            Next
-          </button>
+          <div className="po-pager-right">
+            <button
+              type="button"
+              className="po-page-btn"
+              disabled={page<=1}
+              onClick={()=>setPage((p)=>Math.max(1,p-1))}
+            >
+              ‹
+            </button>
+
+            {getPageNumbers().map((pageNumber)=>(
+              <button
+                key={pageNumber}
+                type="button"
+                className={`po-page-number ${
+                  page===pageNumber?"active":""
+                }`}
+                onClick={()=>setPage(pageNumber)}
+              >
+                {pageNumber}
+              </button>
+            ))}
+
+            <button
+              type="button"
+              className="po-page-btn"
+              disabled={page>=totalPages}
+              onClick={()=>setPage((p)=>Math.min(totalPages,p+1))}
+            >
+              ›
+            </button>
+
+            <span className="po-page-summary">
+              Page {page} of {totalPages}
+            </span>
+          </div>
         </div>
-      </div>
+      </section>
 
       {showModal && (
         <div

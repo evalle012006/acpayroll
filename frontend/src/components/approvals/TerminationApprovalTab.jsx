@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import api from "../../api/axiosClient";
-import "../../styles/StaffReport.css";
+import "../../styles/TerminationOfContract.css";
 
 const STATUS_WAITING_FINAL = "Waiting Final File Upload";
 const STATUS_APPROVED = "Approved";
@@ -498,97 +498,202 @@ export default function TerminationApprovalTab({ embedded = false }) {
     );
   }
 
+  const totalRequests = filteredRequests.length;
+
+  const pendingRequests = filteredRequests.filter(
+    (request) =>
+      ![
+        STATUS_APPROVED,
+        STATUS_REJECTED,
+        STATUS_VOID,
+      ].includes(request.status)
+  ).length;
+
+  const approvedRequests = filteredRequests.filter(
+    (request) => request.status === STATUS_APPROVED
+  ).length;
+
+  const closedRequests = filteredRequests.filter(
+    (request) =>
+      request.status === STATUS_REJECTED ||
+      request.status === STATUS_VOID
+  ).length;
+
   return (
-    <div className={embedded ? "" : "approval-page staff-report-page"}>
-      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 14 }}>
-        <button className="btn-secondary" onClick={refreshAll} type="button" disabled={loadingList}>
-          {loadingList ? "Refreshing..." : "Refresh"}
-        </button>
+    <div
+      className={
+        embedded
+          ? "termination-page termination-page-embedded"
+          : "termination-page"
+      }
+    >
+      {!embedded && (
+        <section className="termination-hero">
+          <div className="termination-hero-main">
+            <div className="termination-hero-copy">
+              <span className="termination-eyebrow">
+                HRIS TRANSACTIONS
+              </span>
 
-        {canCreate && (
-          <button className="btn-primary" onClick={openCreateModal} type="button">
-            + Create Termination Request
-          </button>
-        )}
-      </div>
+              <h1>Termination of Contract</h1>
 
-      <div className="leave-searchbar">
-        <input
-          className="leave-search-input"
-          value={searchText}
-          onChange={(e) => setSearchText(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && setSearch(searchText)}
-          placeholder="Search request no, employee, branch, status..."
-        />
+              <p>
+                Create, review, and process employee termination
+                requests through the required final approval workflow.
+              </p>
 
-        <button className="btn-secondary" type="button" onClick={() => setSearch(searchText)}>
-          Search
-        </button>
+              <div className="termination-flow">
+                <span>APPROVAL FLOW</span>
+                <b>
+                  HR / Accounting / IT / Admin → Final File Upload
+                </b>
+              </div>
+            </div>
 
-        <button
-          className="btn-secondary"
-          type="button"
-          onClick={() => {
-            setSearchText("");
-            setSearch("");
-          }}
-        >
-          Clear
-        </button>
+            <div className="termination-hero-actions">
+              <button
+                className="termination-btn termination-btn-secondary"
+                type="button"
+                onClick={() => window.history.back()}
+              >
+                ← Back
+              </button>
 
-        <span className="leave-search-count">{filteredRequests.length} result(s)</span>
-      </div>
+              <button
+                className="termination-btn termination-btn-secondary"
+                type="button"
+                onClick={refreshAll}
+                disabled={loadingList}
+              >
+                {loadingList ? "Refreshing..." : "Refresh"}
+              </button>
 
-      <div className="leave-pager">
-        <div className="leave-pager-left">
-          <span>Rows per page</span>
-          <select value={pageSize} onChange={(e) => setPageSize(Number(e.target.value))}>
-            <option value={25}>25</option>
-            <option value={50}>50</option>
-            <option value={75}>75</option>
-            <option value={100}>100</option>
-          </select>
-        </div>
+              {canCreate && (
+                <button
+                  className="termination-btn termination-btn-primary"
+                  type="button"
+                  onClick={openCreateModal}
+                >
+                  + Create Termination
+                </button>
+              )}
+            </div>
+          </div>
+        </section>
+      )}
 
-        <div className="leave-pager-right">
+      {embedded && (
+        <div className="termination-embedded-toolbar">
           <button
-            className="leave-page-btn"
+            className="termination-btn termination-btn-secondary"
             type="button"
-            disabled={page <= 1}
-            onClick={() => setPage((p) => Math.max(1, p - 1))}
+            onClick={refreshAll}
+            disabled={loadingList}
           >
-            ‹
+            {loadingList ? "Refreshing..." : "Refresh"}
           </button>
 
-          {getPageNumbers().map((p) => (
+          {canCreate && (
             <button
-              key={p}
-              className={`leave-page-number ${page === p ? "active" : ""}`}
+              className="termination-btn termination-btn-primary"
               type="button"
-              onClick={() => setPage(p)}
+              onClick={openCreateModal}
             >
-              {p}
+              + Create Termination
             </button>
-          ))}
+          )}
+        </div>
+      )}
 
-          <button
-            className="leave-page-btn"
-            type="button"
-            disabled={page >= totalPages}
-            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-          >
-            ›
-          </button>
+      <section className="termination-summary-grid">
+        <article className="termination-summary-card termination-summary-total">
+          <div className="termination-summary-icon">ALL</div>
 
-          <span className="leave-page-summary">
-            Page {page} of {totalPages}
+          <div>
+            <span>Total Requests</span>
+            <strong>{totalRequests}</strong>
+            <small>All termination records</small>
+          </div>
+        </article>
+
+        <article className="termination-summary-card termination-summary-pending">
+          <div className="termination-summary-icon">P</div>
+
+          <div>
+            <span>Pending</span>
+            <strong>{pendingRequests}</strong>
+            <small>Awaiting final action</small>
+          </div>
+        </article>
+
+        <article className="termination-summary-card termination-summary-approved">
+          <div className="termination-summary-icon">A</div>
+
+          <div>
+            <span>Approved</span>
+            <strong>{approvedRequests}</strong>
+            <small>Completed requests</small>
+          </div>
+        </article>
+
+        <article className="termination-summary-card termination-summary-closed">
+          <div className="termination-summary-icon">R</div>
+
+          <div>
+            <span>Rejected / Voided</span>
+            <strong>{closedRequests}</strong>
+            <small>Closed requests</small>
+          </div>
+        </article>
+      </section>
+
+      <section className="termination-list-card">
+        <div className="termination-search-panel">
+          <div className="termination-search-controls">
+            <input
+              className="termination-search-input"
+              value={searchText}
+              onChange={(event) =>
+                setSearchText(event.target.value)
+              }
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  setSearch(searchText);
+                }
+              }}
+              placeholder="Search request no, employee, branch, status..."
+            />
+
+            <button
+              className="termination-btn termination-btn-secondary"
+              type="button"
+              onClick={() => setSearch(searchText)}
+            >
+              Search
+            </button>
+
+            <button
+              className="termination-btn termination-btn-secondary"
+              type="button"
+              onClick={() => {
+                setSearchText("");
+                setSearch("");
+              }}
+            >
+              Clear
+            </button>
+          </div>
+
+          <span className="termination-result-count">
+            {filteredRequests.length}{" "}
+            {filteredRequests.length === 1
+              ? "result"
+              : "results"}
           </span>
         </div>
-      </div>
 
-      <div className="table-card">
-        <div className="table-wrap">
-          <table className="table">
+        <div className="termination-table-wrap">
+          <table className="termination-table">
             <thead>
               <tr>
                 <th>Request No</th>
@@ -599,38 +704,70 @@ export default function TerminationApprovalTab({ embedded = false }) {
                 <th>Date Created</th>
                 <th>Effective Date</th>
                 <th>Status</th>
-                <th style={{ width: 150 }}>Action</th>
+                <th>Action</th>
               </tr>
             </thead>
 
             <tbody>
               {loadingList ? (
                 <tr>
-                  <td colSpan={9} className="empty-state">Loading…</td>
+                  <td
+                    colSpan={9}
+                    className="termination-empty"
+                  >
+                    Loading termination requests...
+                  </td>
                 </tr>
               ) : filteredRequests.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="empty-state">
+                  <td
+                    colSpan={9}
+                    className="termination-empty"
+                  >
                     No termination requests found.
                   </td>
                 </tr>
               ) : (
-                pagedRequests.map((r) => (
-                  <tr key={r.id}>
-                    <td className="td-strong">{r.request_no}</td>
-                    <td>{r.employee_name}</td>
-                    <td>{toStr(r.branch_code)} - {toStr(r.branch_name)}</td>
-                    <td>{r.area || "-"}</td>
-                    <td>{r.region || "-"}</td>
-                    <td>{fmtDate(r.date_created)}</td>
-                    <td>{fmtDate(r.effective_date)}</td>
-                    <td>
-                      <span className={badgeClass(r.status)}>{r.status}</span>
+                pagedRequests.map((request) => (
+                  <tr key={request.id}>
+                    <td className="termination-request-no">
+                      {request.request_no || "-"}
                     </td>
+
+                    <td className="termination-employee">
+                      {request.employee_name || "-"}
+                    </td>
+
                     <td>
-                      <button className="btn-secondary" type="button" onClick={() => openViewModal(r)}>
-                        View
-                      </button>
+                      {branchLabel({
+                        branch_code: request.branch_code,
+                        branch_name: request.branch_name,
+                      })}
+                    </td>
+
+                    <td>{request.area || "-"}</td>
+                    <td>{request.region || "-"}</td>
+                    <td>{fmtDate(request.date_created)}</td>
+                    <td>{fmtDate(request.effective_date)}</td>
+
+                    <td>
+                      <span className={badgeClass(request.status)}>
+                        {request.status || "Pending"}
+                      </span>
+                    </td>
+
+                    <td>
+                      <div className="termination-row-actions">
+                        <button
+                          className="termination-view-btn"
+                          type="button"
+                          onClick={() =>
+                            openViewModal(request)
+                          }
+                        >
+                          View
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))
@@ -638,47 +775,128 @@ export default function TerminationApprovalTab({ embedded = false }) {
             </tbody>
           </table>
         </div>
-      </div>
+
+        <div className="termination-pager">
+          <div className="termination-pager-left">
+            <span>Rows per page</span>
+
+            <select
+              value={pageSize}
+              onChange={(event) =>
+                setPageSize(Number(event.target.value))
+              }
+            >
+              <option value={25}>25</option>
+              <option value={50}>50</option>
+              <option value={75}>75</option>
+              <option value={100}>100</option>
+            </select>
+          </div>
+
+          <div className="termination-pager-right">
+            <button
+              className="termination-page-btn"
+              type="button"
+              disabled={page <= 1}
+              onClick={() =>
+                setPage((current) =>
+                  Math.max(1, current - 1)
+                )
+              }
+            >
+              ‹
+            </button>
+
+            {getPageNumbers().map((pageNumber) => (
+              <button
+                key={pageNumber}
+                className={`termination-page-number ${
+                  page === pageNumber ? "active" : ""
+                }`}
+                type="button"
+                onClick={() => setPage(pageNumber)}
+              >
+                {pageNumber}
+              </button>
+            ))}
+
+            <button
+              className="termination-page-btn"
+              type="button"
+              disabled={page >= totalPages}
+              onClick={() =>
+                setPage((current) =>
+                  Math.min(totalPages, current + 1)
+                )
+              }
+            >
+              ›
+            </button>
+
+            <span className="termination-page-summary">
+              Page {page} of {totalPages}
+            </span>
+          </div>
+        </div>
+      </section>
 
       {showCreateModal && (
         <div
           className="modal-overlay"
-          onMouseDown={(e) =>
-            e.target.classList.contains("modal-overlay") && closeCreateModal()
+          onMouseDown={(event) =>
+            event.target.classList.contains("modal-overlay") &&
+            closeCreateModal()
           }
         >
           <div
-            className="modal saas-modal"
-            onMouseDown={(e) => e.stopPropagation()}
-            style={{ overflow: "visible", maxWidth: 950, width: "95%" }}
+            className="modal saas-modal termination-create-modal"
+            onMouseDown={(event) =>
+              event.stopPropagation()
+            }
           >
             <div className="modal-head">
               <div>
-                <h3 className="modal-title">Create Termination of Contract</h3>
+                <h3 className="modal-title">
+                  Create Termination of Contract
+                </h3>
+
                 <p className="modal-subtitle">
-                  After creation, HR / Accounting / IT / Admin uploads the final approved file.
+                  Select an employee, set the effective date,
+                  provide the reason, and upload the supporting
+                  request file.
                 </p>
               </div>
 
-              <button className="modal-x" onClick={closeCreateModal} type="button">
+              <button
+                className="modal-x"
+                onClick={closeCreateModal}
+                type="button"
+              >
                 ✕
               </button>
             </div>
 
-            <form onSubmit={createRequest} className="modal-form">
-              <div className="modal-grid" style={{ overflow: "visible" }}>
-                <div className="form-group" ref={employeePickerRef} style={{ position: "relative", zIndex: 50 }}>
+            <form
+              onSubmit={createRequest}
+              className="modal-form"
+            >
+              <div className="modal-grid termination-modal-grid">
+                <div
+                  className="form-group termination-employee-picker"
+                  ref={employeePickerRef}
+                >
                   <label>Employee</label>
 
                   <input
                     type="text"
                     placeholder="Search Employee..."
                     value={employeeSearch}
-                    onChange={(e) => {
-                      setEmployeeSearch(e.target.value);
+                    onChange={(event) => {
+                      setEmployeeSearch(event.target.value);
                       setShowEmployeeDropdown(true);
-                      setForm((prev) => ({
-                        ...prev,
+
+                      setForm((previous) => ({
+                        ...previous,
                         employee_id: "",
                         employee_name: "",
                         branch_id: "",
@@ -689,23 +907,31 @@ export default function TerminationApprovalTab({ embedded = false }) {
                         division: "",
                       }));
                     }}
-                    onFocus={() => setShowEmployeeDropdown(true)}
+                    onFocus={() =>
+                      setShowEmployeeDropdown(true)
+                    }
                     required={!form.employee_id}
                   />
 
                   {showEmployeeDropdown && (
                     <div className="approval-search-dropdown">
                       {filteredEmployees.length === 0 ? (
-                        <div className="approval-search-empty">No results</div>
+                        <div className="approval-search-empty">
+                          No results
+                        </div>
                       ) : (
-                        filteredEmployees.map((s) => (
+                        filteredEmployees.map((staff) => (
                           <button
-                            key={s.id}
+                            key={staff.id}
                             type="button"
                             className="approval-search-item"
-                            onClick={() => handleChooseEmployee(s)}
+                            onClick={() =>
+                              handleChooseEmployee(staff)
+                            }
                           >
-                            {(s.employee_no ? `${s.employee_no} - ` : "") + displayName(s)}
+                            {(staff.employee_no
+                              ? `${staff.employee_no} - `
+                              : "") + displayName(staff)}
                           </button>
                         ))
                       )}
@@ -715,58 +941,101 @@ export default function TerminationApprovalTab({ embedded = false }) {
 
                 <div className="form-group">
                   <label>Branch</label>
-                  <input value={branchLabel(form)} readOnly placeholder="Auto-filled" />
+
+                  <input
+                    value={branchLabel(form)}
+                    readOnly
+                    placeholder="Auto-filled"
+                  />
                 </div>
 
                 <div className="form-group">
                   <label>Area</label>
-                  <input value={form.area} readOnly placeholder="Auto-filled" />
+
+                  <input
+                    value={form.area}
+                    readOnly
+                    placeholder="Auto-filled"
+                  />
                 </div>
 
                 <div className="form-group">
                   <label>Region</label>
-                  <input value={form.region} readOnly placeholder="Auto-filled" />
+
+                  <input
+                    value={form.region}
+                    readOnly
+                    placeholder="Auto-filled"
+                  />
                 </div>
 
                 <div className="form-group">
                   <label>Division</label>
-                  <input value={form.division} readOnly placeholder="Auto-filled" />
+
+                  <input
+                    value={form.division}
+                    readOnly
+                    placeholder="Auto-filled"
+                  />
                 </div>
 
                 <div className="form-group">
                   <label>Date Created</label>
+
                   <input
                     type="date"
                     value={form.date_created}
-                    onChange={(e) => setForm((p) => ({ ...p, date_created: e.target.value }))}
+                    onChange={(event) =>
+                      setForm((previous) => ({
+                        ...previous,
+                        date_created: event.target.value,
+                      }))
+                    }
                     required
                   />
                 </div>
 
                 <div className="form-group">
                   <label>Effective Date</label>
+
                   <input
                     type="date"
                     value={form.effective_date}
-                    onChange={(e) => setForm((p) => ({ ...p, effective_date: e.target.value }))}
+                    onChange={(event) =>
+                      setForm((previous) => ({
+                        ...previous,
+                        effective_date: event.target.value,
+                      }))
+                    }
                     required
                   />
                 </div>
 
                 <div className="form-group">
                   <label>Upload Request File</label>
+
                   <input
                     type="file"
                     accept=".pdf,.png,.jpg,.jpeg,.doc,.docx"
-                    onChange={(e) => setAttachmentFile(e.target.files?.[0] || null)}
+                    onChange={(event) =>
+                      setAttachmentFile(
+                        event.target.files?.[0] || null
+                      )
+                    }
                   />
                 </div>
 
                 <div className="form-group full">
                   <label>Reason</label>
+
                   <textarea
                     value={form.reason}
-                    onChange={(e) => setForm((p) => ({ ...p, reason: e.target.value }))}
+                    onChange={(event) =>
+                      setForm((previous) => ({
+                        ...previous,
+                        reason: event.target.value,
+                      }))
+                    }
                     placeholder="Reason for termination..."
                     required
                   />
@@ -774,21 +1043,38 @@ export default function TerminationApprovalTab({ embedded = false }) {
 
                 <div className="form-group full">
                   <label>Remarks</label>
+
                   <textarea
                     value={form.remarks}
-                    onChange={(e) => setForm((p) => ({ ...p, remarks: e.target.value }))}
+                    onChange={(event) =>
+                      setForm((previous) => ({
+                        ...previous,
+                        remarks: event.target.value,
+                      }))
+                    }
                     placeholder="Remarks..."
                   />
                 </div>
               </div>
 
               <div className="modal-buttons">
-                <button className="btn-secondary" type="button" onClick={closeCreateModal}>
+                <button
+                  className="btn-secondary"
+                  type="button"
+                  onClick={closeCreateModal}
+                  disabled={loadingCreate}
+                >
                   Cancel
                 </button>
 
-                <button className="btn-primary" type="submit" disabled={loadingCreate}>
-                  {loadingCreate ? "Submitting..." : "Submit"}
+                <button
+                  className="btn-primary"
+                  type="submit"
+                  disabled={loadingCreate}
+                >
+                  {loadingCreate
+                    ? "Submitting..."
+                    : "Submit"}
                 </button>
               </div>
             </form>
@@ -799,78 +1085,145 @@ export default function TerminationApprovalTab({ embedded = false }) {
       {showViewModal && selectedRequest && (
         <div
           className="modal-overlay"
-          onMouseDown={(e) =>
-            e.target.classList.contains("modal-overlay") && closeViewModal()
+          onMouseDown={(event) =>
+            event.target.classList.contains("modal-overlay") &&
+            closeViewModal()
           }
         >
-          <div className="modal saas-modal view-report-modal" onMouseDown={(e) => e.stopPropagation()}>
+          <div
+            className="modal saas-modal view-report-modal termination-view-modal"
+            onMouseDown={(event) =>
+              event.stopPropagation()
+            }
+          >
             <div className="modal-head">
               <div>
-                <h3 className="modal-title">Termination Details</h3>
+                <h3 className="modal-title">
+                  Termination Details
+                </h3>
+
                 <p className="modal-subtitle">
-                  {selectedRequest.request_no} — {selectedRequest.status}
+                  {selectedRequest.request_no} —{" "}
+                  {selectedRequest.status}
                 </p>
               </div>
 
-              <button className="modal-x" onClick={closeViewModal} type="button">
+              <button
+                className="modal-x"
+                onClick={closeViewModal}
+                type="button"
+              >
                 ✕
               </button>
             </div>
 
-            <div className="modal-grid" style={{ gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 18 }}>
+            <div className="termination-view-status">
+              <span className={badgeClass(selectedRequest.status)}>
+                {selectedRequest.status}
+              </span>
+
+              <strong>
+                {selectedRequest.employee_name || "-"}
+              </strong>
+            </div>
+
+            <div className="modal-grid termination-view-grid">
               <div className="form-group">
                 <label>Employee</label>
-                <input value={toStr(selectedRequest.employee_name)} readOnly />
+                <input
+                  value={toStr(
+                    selectedRequest.employee_name
+                  )}
+                  readOnly
+                />
               </div>
 
               <div className="form-group">
                 <label>Status</label>
-                <input value={toStr(selectedRequest.status)} readOnly />
+                <input
+                  value={toStr(selectedRequest.status)}
+                  readOnly
+                />
               </div>
 
               <div className="form-group">
                 <label>Branch</label>
-                <input value={`${toStr(selectedRequest.branch_code)} - ${toStr(selectedRequest.branch_name)}`} readOnly />
+                <input
+                  value={branchLabel({
+                    branch_code:
+                      selectedRequest.branch_code,
+                    branch_name:
+                      selectedRequest.branch_name,
+                  })}
+                  readOnly
+                />
               </div>
 
               <div className="form-group">
                 <label>Area</label>
-                <input value={toStr(selectedRequest.area)} readOnly />
+                <input
+                  value={toStr(selectedRequest.area)}
+                  readOnly
+                />
               </div>
 
               <div className="form-group">
                 <label>Region</label>
-                <input value={toStr(selectedRequest.region)} readOnly />
+                <input
+                  value={toStr(selectedRequest.region)}
+                  readOnly
+                />
               </div>
 
               <div className="form-group">
                 <label>Division</label>
-                <input value={toStr(selectedRequest.division)} readOnly />
+                <input
+                  value={toStr(
+                    selectedRequest.division
+                  )}
+                  readOnly
+                />
               </div>
 
               <div className="form-group">
                 <label>Date Created</label>
-                <input value={fmtDate(selectedRequest.date_created)} readOnly />
+                <input
+                  value={fmtDate(
+                    selectedRequest.date_created
+                  )}
+                  readOnly
+                />
               </div>
 
               <div className="form-group">
                 <label>Effective Date</label>
-                <input value={fmtDate(selectedRequest.effective_date)} readOnly />
+                <input
+                  value={fmtDate(
+                    selectedRequest.effective_date
+                  )}
+                  readOnly
+                />
               </div>
 
               <div className="form-group full">
                 <label>Reason</label>
-                <textarea value={toStr(selectedRequest.reason)} readOnly />
+                <textarea
+                  value={toStr(selectedRequest.reason)}
+                  readOnly
+                />
               </div>
 
               <div className="form-group full">
                 <label>Remarks</label>
-                <textarea value={toStr(selectedRequest.remarks)} readOnly />
+                <textarea
+                  value={toStr(selectedRequest.remarks)}
+                  readOnly
+                />
               </div>
             </div>
 
-            <div className="table-card" style={{ marginTop: 14 }}>
-              <div className="table-wrap" style={{ maxHeight: "unset" }}>
+            <div className="termination-file-table table-card">
+              <div className="table-wrap">
                 <table className="table">
                   <thead>
                     <tr>
@@ -883,13 +1236,23 @@ export default function TerminationApprovalTab({ embedded = false }) {
                   <tbody>
                     <tr>
                       <td>Latest File</td>
-                      <td>{latestFileName(selectedRequest)}</td>
                       <td>
-                        {selectedRequest.approved_attachment_path || selectedRequest.request_attachment_path ? (
+                        {latestFileName(selectedRequest)}
+                      </td>
+                      <td>
+                        {selectedRequest.approved_attachment_path ||
+                        selectedRequest.request_attachment_path ? (
                           <button
                             className="btn-secondary"
                             type="button"
-                            onClick={() => downloadFile(selectedRequest, latestFileType(selectedRequest))}
+                            onClick={() =>
+                              downloadFile(
+                                selectedRequest,
+                                latestFileType(
+                                  selectedRequest
+                                )
+                              )
+                            }
                           >
                             Download Latest
                           </button>
@@ -901,13 +1264,21 @@ export default function TerminationApprovalTab({ embedded = false }) {
 
                     <tr>
                       <td>Original Request File</td>
-                      <td>{selectedRequest.request_attachment_name || "-"}</td>
+                      <td>
+                        {selectedRequest.request_attachment_name ||
+                          "-"}
+                      </td>
                       <td>
                         {selectedRequest.request_attachment_path ? (
                           <button
                             className="btn-secondary"
                             type="button"
-                            onClick={() => downloadFile(selectedRequest, "request")}
+                            onClick={() =>
+                              downloadFile(
+                                selectedRequest,
+                                "request"
+                              )
+                            }
                           >
                             Download
                           </button>
@@ -921,68 +1292,93 @@ export default function TerminationApprovalTab({ embedded = false }) {
               </div>
             </div>
 
-            {selectedRequest.status === STATUS_WAITING_FINAL && canFinalUpload ? (
-              <div style={{ marginTop: 14 }}>
-                <div className="form-group">
-                  <label>Upload Final Approved File</label>
-                  <input
-                    type="file"
-                    accept=".pdf,.png,.jpg,.jpeg,.doc,.docx"
-                    onChange={(e) => setFinalFile(e.target.files?.[0] || null)}
-                  />
+            {selectedRequest.status === STATUS_WAITING_FINAL &&
+              canFinalUpload && (
+                <div className="termination-upload-box">
+                  <div className="form-group">
+                    <label>
+                      Upload Final Approved File
+                    </label>
+
+                    <input
+                      type="file"
+                      accept=".pdf,.png,.jpg,.jpeg,.doc,.docx"
+                      onChange={(event) =>
+                        setFinalFile(
+                          event.target.files?.[0] || null
+                        )
+                      }
+                    />
+                  </div>
+
+                  <button
+                    className="btn-primary"
+                    type="button"
+                    onClick={uploadFinalFile}
+                    disabled={actionLoading}
+                  >
+                    {actionLoading
+                      ? "Uploading..."
+                      : "Upload Final File & Approve"}
+                  </button>
                 </div>
+              )}
 
-                <button
-                  className="btn-primary"
-                  type="button"
-                  style={{ marginTop: 10 }}
-                  onClick={uploadFinalFile}
-                  disabled={actionLoading}
-                >
-                  {actionLoading ? "Uploading..." : "Upload Final File & Approve"}
-                </button>
-              </div>
-            ) : null}
-
-            <div className="modal-buttons">
-              <button className="btn-secondary" type="button" onClick={closeViewModal}>
+            <div className="termination-view-actions">
+              <button
+                className="btn-secondary"
+                type="button"
+                onClick={closeViewModal}
+              >
                 Close
               </button>
 
-              {selectedRequest.status === STATUS_WAITING_FINAL && canReject ? (
-                <button
-                  className="btn-danger"
-                  type="button"
-                  disabled={actionLoading}
-                  onClick={() => rejectRequest(selectedRequest)}
-                >
-                  Reject
-                </button>
-              ) : null}
+              {selectedRequest.status ===
+                STATUS_WAITING_FINAL &&
+                canReject && (
+                  <button
+                    className="btn-danger"
+                    type="button"
+                    disabled={actionLoading}
+                    onClick={() =>
+                      rejectRequest(selectedRequest)
+                    }
+                  >
+                    Reject
+                  </button>
+                )}
 
-              {selectedRequest.status === STATUS_APPROVED && canVoid ? (
-                <button
-                  className="btn-danger"
-                  type="button"
-                  disabled={actionLoading}
-                  onClick={() => voidRequest(selectedRequest)}
-                >
-                  Void
-                </button>
-              ) : null}
+              {selectedRequest.status ===
+                STATUS_APPROVED &&
+                canVoid && (
+                  <button
+                    className="btn-danger"
+                    type="button"
+                    disabled={actionLoading}
+                    onClick={() =>
+                      voidRequest(selectedRequest)
+                    }
+                  >
+                    Void
+                  </button>
+                )}
 
-              {(selectedRequest.status === STATUS_REJECTED ||
-                selectedRequest.status === STATUS_VOID) &&
-              canDelete ? (
-                <button
-                  className="btn-danger"
-                  type="button"
-                  disabled={actionLoading}
-                  onClick={() => deleteRequest(selectedRequest)}
-                >
-                  Delete
-                </button>
-              ) : null}
+              {(selectedRequest.status ===
+                STATUS_REJECTED ||
+                selectedRequest.status ===
+                  STATUS_VOID) &&
+                canDelete && (
+                  <button
+                    className="btn-danger"
+                    type="button"
+                    disabled={actionLoading}
+                    onClick={() =>
+                      deleteRequest(selectedRequest)
+                    }
+                  >
+                    Delete
+                  </button>
+                )}
             </div>
           </div>
         </div>

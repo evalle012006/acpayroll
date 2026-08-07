@@ -581,46 +581,115 @@ export default function Deployment() {
     }
   };
 
+  const totalPending=visiblePendingStaff.length;
+
+  const submittedToday=visiblePendingStaff.filter((item)=>
+    toDate10(item.created_at)===new Date().toISOString().slice(0,10)
+  ).length;
+
+  const withBranch=visiblePendingStaff.filter((item)=>{
+    const payload=typeof item.payload==="string"
+      ?JSON.parse(item.payload||"{}")
+      :item.payload||{};
+    return Boolean(payload.branch_id);
+  }).length;
+
+  const withoutBranch=totalPending-withBranch;
+
   return (
     <div className="po-page">
-      <div className="po-topbar">
-        <h2 className="po-title">Deployment Orders</h2>
+      <section className="po-hero">
+        <div className="po-hero-main">
+          <div className="po-hero-copy">
+            <span className="po-eyebrow">HRIS TRANSACTIONS</span>
 
-        <div className="po-topbar-actions">
-          <button
-            className="po-btn"
-            type="button"
-            onClick={() => navigate("/transactions")}
-          >
-            ← Back
-          </button>
+            <h1>Deployment Orders</h1>
 
-          <button
-            className="po-btn"
-            type="button"
-            onClick={loadData}
-            disabled={loading}
-          >
-            Refresh
-          </button>
+            <p>
+              Create new staff deployment records, review pending staff
+              requests, and assign employees to their proper branch.
+            </p>
 
-          {canAddStaff && (
+            <div className="po-flow">
+              <span>WORKFLOW</span>
+              <b>Add Staff → Pending Review → Approve → Staff Information</b>
+            </div>
+          </div>
+
+          <div className="po-hero-actions">
             <button
-              className="po-btn"
+              className="po-btn po-btn-secondary"
               type="button"
-              onClick={() => setShowAddStaff(true)}
+              onClick={()=>navigate("/transactions")}
             >
-              + Add Staff
+              ← Back
             </button>
-          )}
-        </div>
-      </div>
 
-      {err ? (
-        <div style={{ marginBottom: 12, color: "#ef4444", fontWeight: 800 }}>
+            <button
+              className="po-btn po-btn-secondary"
+              type="button"
+              onClick={loadData}
+              disabled={loading}
+            >
+              {loading?"Refreshing...":"Refresh"}
+            </button>
+
+            {canAddStaff&&(
+              <button
+                className="po-btn po-btn-primary"
+                type="button"
+                onClick={()=>setShowAddStaff(true)}
+              >
+                + Add Staff
+              </button>
+            )}
+          </div>
+        </div>
+      </section>
+
+      <section className="po-summary-grid">
+        <article className="po-summary-card po-summary-total">
+          <div className="po-summary-icon">ALL</div>
+          <div>
+            <span>Pending Requests</span>
+            <strong>{totalPending}</strong>
+            <small>All pending staff records</small>
+          </div>
+        </article>
+
+        <article className="po-summary-card po-summary-pending">
+          <div className="po-summary-icon">T</div>
+          <div>
+            <span>Submitted Today</span>
+            <strong>{submittedToday}</strong>
+            <small>New requests today</small>
+          </div>
+        </article>
+
+        <article className="po-summary-card po-summary-approved">
+          <div className="po-summary-icon">B</div>
+          <div>
+            <span>Branch Assigned</span>
+            <strong>{withBranch}</strong>
+            <small>Ready with branch assignment</small>
+          </div>
+        </article>
+
+        <article className="po-summary-card po-summary-rejected">
+          <div className="po-summary-icon">N</div>
+          <div>
+            <span>No Branch</span>
+            <strong>{withoutBranch}</strong>
+            <small>Needs branch assignment</small>
+          </div>
+        </article>
+      </section>
+
+      {err&&(
+        <div className="po-error">
           {err}
         </div>
-      ) : null}
+      )}
 
       {showAddStaff && canAddStaff && (
         <StaffCreateModal
@@ -729,133 +798,143 @@ export default function Deployment() {
         </div>
       )}
 
-      <div className="po-card" style={{ marginTop: 16 }}>
-        <div
-          style={{
-            padding: "14px 16px",
-            borderBottom: "1px solid rgba(255,255,255,0.08)",
-          }}
-        >
-          <div className="po-title" style={{ fontSize: 18, margin: 0 }}>
-            Pending Staff Approval
+      <section className="po-list-card">
+        <div className="po-section-head">
+          <div>
+            <h3>Pending Staff Approval</h3>
+            <p>
+              Review staff requests before they move into Staff Information.
+            </p>
           </div>
 
-          <div style={{ fontSize: 12, opacity: 0.8, marginTop: 4 }}>
-            Review staff requests before they move into Staff Information.
-          </div>
+          <span className="po-result-count">
+            {visiblePendingStaff.length}{" "}
+            {visiblePendingStaff.length===1?"request":"requests"}
+          </span>
         </div>
 
-        <table className="po-table">
-          <thead>
-            <tr>
-              <th>Employee</th>
-              <th>Position</th>
-              <th>Branch</th>
-              <th>Status</th>
-              <th>Date Submitted</th>
-              <th style={{ width: 320 }}>Actions</th>
-            </tr>
-          </thead>
-
-          <tbody>
-            {loading ? (
+        <div className="po-table-wrap">
+          <table className="po-table">
+            <thead>
               <tr>
-                <td colSpan={6} style={{ padding: 16, opacity: 0.8 }}>
-                  Loading...
-                </td>
+                <th>Employee</th>
+                <th>Position</th>
+                <th>Branch</th>
+                <th>Status</th>
+                <th>Date Submitted</th>
+                <th>Actions</th>
               </tr>
-            ) : visiblePendingStaff.length === 0 ? (
-              <tr>
-                <td colSpan={6} style={{ padding: 16, opacity: 0.8 }}>
-                  No pending staff requests found.
-                </td>
-              </tr>
-            ) : (
-              visiblePendingStaff.map((item) => {
-                const payload =
-                  typeof item.payload === "string"
-                    ? JSON.parse(item.payload || "{}")
-                    : item.payload || {};
+            </thead>
 
-                const branch = branches.find(
-                  (b) => String(b.id) === String(payload.branch_id)
-                );
+            <tbody>
+              {loading?(
+                <tr>
+                  <td colSpan={6} className="po-empty">
+                    Loading pending staff requests...
+                  </td>
+                </tr>
+              ):visiblePendingStaff.length===0?(
+                <tr>
+                  <td colSpan={6} className="po-empty">
+                    No pending staff requests found.
+                  </td>
+                </tr>
+              ):(
+                visiblePendingStaff.map((item)=>{
+                  const payload=
+                    typeof item.payload==="string"
+                      ?JSON.parse(item.payload||"{}")
+                      :item.payload||{};
 
-                const employeeName =
-                  `${toStr(payload.last_name)}${
-                    payload.last_name && payload.first_name ? ", " : ""
-                  }${toStr(payload.first_name)}${
-                    payload.middle_name ? ` ${payload.middle_name}` : ""
-                  }`
-                    .replace(/\s+/g, " ")
-                    .trim() || "-";
+                  const branch=branches.find(
+                    (b)=>String(b.id)===String(payload.branch_id)
+                  );
 
-                const pending = norm(item.status) === "pending";
+                  const employeeName=
+                    `${toStr(payload.last_name)}${
+                      payload.last_name&&payload.first_name?", ":""
+                    }${toStr(payload.first_name)}${
+                      payload.middle_name?` ${payload.middle_name}`:""
+                    }`
+                      .replace(/\s+/g," ")
+                      .trim()||"-";
 
-                return (
-                  <tr key={item.id}>
-                    <td>
-                      <div className="td-strong">{employeeName}</div>
-                      <div style={{ fontSize: 12, opacity: 0.8 }}>
-                        {payload.employee_no || "No employee no"}
-                      </div>
-                    </td>
+                  const pending=norm(item.status)==="pending";
 
-                    <td>{payload.position || "-"}</td>
+                  return(
+                    <tr key={item.id}>
+                      <td>
+                        <div className="po-employee-name">
+                          {employeeName}
+                        </div>
 
-                    <td>{branch ? `${branch.code} • ${branch.name}` : "-"}</td>
+                        <div className="po-sub-info">
+                          Employee No: {payload.employee_no||"-"}
+                        </div>
+                      </td>
 
-                    <td>
-                      <span className="mono">{item.status || "Pending"}</span>
-                    </td>
+                      <td>{payload.position||"-"}</td>
 
-                    <td className="mono">{toDate10(item.created_at) || "-"}</td>
+                      <td>
+                        {branch
+                          ?`${branch.code} • ${branch.name}`
+                          :"-"}
+                      </td>
 
-                    <td>
-                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                        <button
-                          className="po-mini-btn"
-                          type="button"
-                          onClick={() => openEditPending(item)}
-                          disabled={norm(item.status) !== "pending"}
-                        >
-                          Edit
-                        </button>
+                      <td>
+                        <span className="po-badge po-pending">
+                          {item.status||"Pending"}
+                        </span>
+                      </td>
 
-                        {canApprovePendingStaff && (
-                          <>
-                            <button
-                              className="po-mini-btn"
-                              type="button"
-                              onClick={() => approvePendingStaff(item.id)}
-                              disabled={!pending || approvingPendingId === item.id}
-                            >
-                              {approvingPendingId === item.id
-                                ? "Approving..."
-                                : "Approve"}
-                            </button>
+                      <td>{toDate10(item.created_at)||"-"}</td>
 
-                            <button
-                              className="po-mini-btn"
-                              type="button"
-                              onClick={() => rejectPendingStaff(item.id)}
-                              disabled={!pending || rejectingPendingId === item.id}
-                            >
-                              {rejectingPendingId === item.id
-                                ? "Rejecting..."
-                                : "Reject"}
-                            </button>
-                          </>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })
-            )}
-          </tbody>
-        </table>
-      </div>
+                      <td>
+                        <div className="po-row-actions">
+                          <button
+                            className="po-action-btn po-action-edit"
+                            type="button"
+                            onClick={()=>openEditPending(item)}
+                            disabled={!pending}
+                          >
+                            Edit
+                          </button>
+
+                          {canApprovePendingStaff&&(
+                            <>
+                              <button
+                                className="po-action-btn po-action-approve"
+                                type="button"
+                                onClick={()=>approvePendingStaff(item.id)}
+                                disabled={!pending||approvingPendingId===item.id}
+                              >
+                                {approvingPendingId===item.id
+                                  ?"Approving..."
+                                  :"Approve"}
+                              </button>
+
+                              <button
+                                className="po-action-btn po-action-reject"
+                                type="button"
+                                onClick={()=>rejectPendingStaff(item.id)}
+                                disabled={!pending||rejectingPendingId===item.id}
+                              >
+                                {rejectingPendingId===item.id
+                                  ?"Rejecting..."
+                                  :"Reject"}
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
     </div>
   );
 }

@@ -183,10 +183,12 @@ export default function StaffScopePlansModal({
 
                   <b
                     className={`travel-status ${
-                      normalizeValue(
-                        plan.status
-                      ) === "completed"
+                      normalizeValue(plan.status) ===
+                        "completed"
                         ? "completed"
+                        : normalizeValue(plan.status) ===
+                            "incomplete"
+                        ? "incomplete"
                         : "pending"
                     }`}
                   >
@@ -204,9 +206,12 @@ export default function StaffScopePlansModal({
                         openPlan(plan);
                       }}
                     >
-                      {normalizeValue(
-                        plan.status
-                      ) === "completed"
+                      {[
+                        "completed",
+                        "incomplete",
+                      ].includes(
+                        normalizeValue(plan.status)
+                      )
                         ? "View"
                         : "Edit"}
                     </button>

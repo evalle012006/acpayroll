@@ -576,83 +576,132 @@ export default function Soa() {
 
   const money = (v) => toNum(v).toLocaleString();
 
-  if (!canView) {
-    return (
-      <div className="approval-page">
-        <div className="approval-page-header">
-          <div>
-            <h2 className="approval-title">Statement of Accounts</h2>
-            <p className="approval-subtitle">Access denied</p>
-          </div>
-        </div>
+  const totalRecords=filteredSettlements.length;
+  const totalBenefitsSum=filteredSettlements.reduce((sum,r)=>sum+toNum(r.total_benefits),0);
+  const totalLiabilitiesSum=filteredSettlements.reduce((sum,r)=>sum+toNum(r.liabilities),0);
+  const totalNetSum=filteredSettlements.reduce((sum,r)=>sum+toNum(r.net_settlement),0);
+
+  const getPageNumbers=()=>{
+    const pages=[];
+    const maxButtons=5;
+    let start=Math.max(1,page-2);
+    let end=Math.min(totalPages,start+maxButtons-1);
+    if(end-start<maxButtons-1) start=Math.max(1,end-maxButtons+1);
+    for(let i=start;i<=end;i++) pages.push(i);
+    return pages;
+  };
+
+  if(!canView){
+    return(
+      <div className="soa-page">
+        <div className="empty-state">You do not have access to Statement of Accounts.</div>
       </div>
     );
   }
 
-  return (
-    <div className="approval-page">
-      <div className="approval-page-header">
-        <div>
-          <h2 className="approval-title">Statement of Accounts</h2>
-          <p className="approval-subtitle">
-            Create settlements, assign to a branch, and upload settlement files.
-          </p>
-        </div>
+  return(
+    <div className="soa-page">
 
-        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-          <button className="btn-secondary" onClick={() => navigate(-1)} type="button">
-            ← Back
-          </button>
+      {/* HERO */}
+      <section className="soa-hero">
+        <div className="soa-hero-main">
+          <div className="soa-hero-copy">
+            <span className="soa-eyebrow">HRIS TRANSACTIONS</span>
+            <h1>Statement of Accounts</h1>
+            <p>Create settlements, assign settlement branches, manage employee benefits and liabilities, and upload settlement files.</p>
 
-          <button className="btn-secondary" onClick={loadSettlements} type="button">
-            Refresh
-          </button>
+            <div className="soa-flow">
+              <span>WORKFLOW</span>
+              <b>Create Settlement → Review → Settlement Record</b>
+            </div>
+          </div>
 
-          {canCreate && (
-            <button className="btn-primary" onClick={() => setShowCreate(true)} type="button">
-              + Create
+          <div className="soa-hero-actions">
+            <button type="button" className="soa-btn soa-btn-secondary" onClick={()=>navigate(-1)}>
+              ← Back
             </button>
-          )}
-        </div>
-      </div>
 
-      <div className="soa-toolbar" style={{ marginBottom: 14 }}>
-        <div
-          style={{
-            display: "flex",
-            gap: 12,
-            flexWrap: "wrap",
-            alignItems: "center",
-          }}
-        >
+            <button type="button" className="soa-btn soa-btn-secondary" onClick={loadSettlements} disabled={loadingList}>
+              {loadingList?"Refreshing...":"Refresh"}
+            </button>
+
+            {canCreate&&(
+              <button type="button" className="soa-btn soa-btn-primary" onClick={()=>setShowCreate(true)}>
+                + Create
+              </button>
+            )}
+          </div>
+        </div>
+      </section>
+
+      {/* SUMMARY */}
+      <section className="soa-summary-grid">
+        <article className="soa-summary-card soa-summary-total">
+          <div className="soa-summary-icon">ALL</div>
+          <div>
+            <span>Total Records</span>
+            <strong>{totalRecords}</strong>
+            <small>All settlement records</small>
+          </div>
+        </article>
+
+        <article className="soa-summary-card soa-summary-benefits">
+          <div className="soa-summary-icon">B</div>
+          <div>
+            <span>Total Benefits</span>
+            <strong>₱{money(totalBenefitsSum)}</strong>
+            <small>Total employee benefits</small>
+          </div>
+        </article>
+
+        <article className="soa-summary-card soa-summary-liabilities">
+          <div className="soa-summary-icon">L</div>
+          <div>
+            <span>Total Liabilities</span>
+            <strong>₱{money(totalLiabilitiesSum)}</strong>
+            <small>Total deductions/liabilities</small>
+          </div>
+        </article>
+
+        <article className="soa-summary-card soa-summary-net">
+          <div className="soa-summary-icon">N</div>
+          <div>
+            <span>Net Settlement</span>
+            <strong>₱{money(totalNetSum)}</strong>
+            <small>Net payable amount</small>
+          </div>
+        </article>
+      </section>
+
+      {/* SEARCH */}
+      <section className="soa-search-panel">
+        <div className="soa-search-controls">
           <input
-            className="soa-search"
+            type="text"
+            className="soa-search-input"
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e)=>setSearch(e.target.value)}
             placeholder="Search employee, branch, description..."
-            style={{ maxWidth: 420 }}
           />
 
-          <select
-            className="soa-page-size"
-            value={pageSize}
-            onChange={(e) => setPageSize(Number(e.target.value))}
-            style={{ maxWidth: 140 }}
-          >
-            <option value={25}>25 rows</option>
-            <option value={50}>50 rows</option>
-            <option value={75}>75 rows</option>
-            <option value={100}>100 rows</option>
-          </select>
+          <button type="button" className="soa-btn soa-btn-secondary" onClick={()=>setSearch(search.trim())}>
+            Search
+          </button>
 
-          <span className="soa-count-pill">Results: {filteredSettlements.length}</span>
-          <span className="soa-count-pill">Showing: {pagedSettlements.length}</span>
+          <button type="button" className="soa-btn soa-btn-secondary" onClick={()=>setSearch("")}>
+            Clear
+          </button>
         </div>
-      </div>
 
-      <div className="table-card">
-        <div className="table-wrap">
-          <table className="table">
+        <span className="soa-result-count">
+          {filteredSettlements.length} {filteredSettlements.length===1?"result":"results"}
+        </span>
+      </section>
+
+      {/* TABLE */}
+      <section className="soa-list-card">
+        <div className="soa-table-wrap">
+          <table className="soa-table">
             <thead>
               <tr>
                 <th>ID</th>
@@ -665,97 +714,88 @@ export default function Soa() {
                 <th>Description</th>
                 <th>File</th>
                 <th>Created</th>
-                <th style={{ width: 240 }}>Action</th>
+                <th>Action</th>
               </tr>
             </thead>
 
             <tbody>
-              {loadingList ? (
+              {loadingList?(
                 <tr>
-                  <td colSpan={11} className="empty-state">
-                    Loading…
-                  </td>
+                  <td colSpan={11} className="soa-empty">Loading settlement records...</td>
                 </tr>
-              ) : filteredSettlements.length === 0 ? (
+              ):filteredSettlements.length===0?(
                 <tr>
-                  <td colSpan={11} className="empty-state">
-                    No settlement records found.
-                  </td>
+                  <td colSpan={11} className="soa-empty">No settlement records found.</td>
                 </tr>
-              ) : (
-                pagedSettlements.map((r) => (
+              ):(
+                pagedSettlements.map((r)=>(
                   <tr key={r.id}>
-                    <td>{r.id}</td>
-
-                    <td className="td-strong">
-                      {r.employee_name || "-"}
-                      <div style={{ fontSize: 12, opacity: 0.8 }}>
-                        Employee No: {r.employee_no || "-"}
-                      </div>
-                    </td>
-
-                    <td>{r.prev_branch || "-"}</td>
+                    <td className="soa-id">{r.id}</td>
 
                     <td>
-                      {r.settlement_branch_code || r.settlement_branch_name
-                        ? `${r.settlement_branch_code || ""} - ${
-                            r.settlement_branch_name || ""
-                          }`
-                        : "-"}
+                      <div className="soa-employee-name">{r.employee_name||"-"}</div>
+                      <div className="soa-sub-info">Employee No: {r.employee_no||"-"}</div>
                     </td>
 
-                    <td>{money(r.total_benefits)}</td>
-                    <td>{money(r.liabilities)}</td>
-                    <td>{money(r.net_settlement)}</td>
+                    <td>{r.prev_branch||"-"}</td>
+
                     <td>
+                      {r.settlement_branch_code||r.settlement_branch_name
+                        ?`${r.settlement_branch_code||""} - ${r.settlement_branch_name||""}`
+                        :"-"}
+                    </td>
+
+                    <td className="soa-money">₱{money(r.total_benefits)}</td>
+                    <td className="soa-money">₱{money(r.liabilities)}</td>
+                    <td className="soa-money soa-net">₱{money(r.net_settlement)}</td>
+
+                    <td className="soa-description">
                       {r.description
-                        ? r.description.length > 60
-                          ? `${r.description.slice(0, 60)}...`
-                          : r.description
-                        : "-"}
+                        ?r.description.length>60
+                          ?`${r.description.slice(0,60)}...`
+                          :r.description
+                        :"-"}
                     </td>
 
                     <td>
-                      {r.attachment_path ? (
+                      {r.attachment_path?(
                         <button
-                          className="btn-secondary"
                           type="button"
-                          onClick={() => downloadSettlementFile(r.id, r.attachment_name)}
+                          className="soa-action-btn soa-action-download"
+                          onClick={()=>downloadSettlementFile(r.id,r.attachment_name)}
                         >
-                          Download File
+                          Download
                         </button>
-                      ) : (
-                        "-"
-                      )}
+                      ):"-"}
                     </td>
 
                     <td>{fmtDate(r.created_at)}</td>
 
                     <td>
-                      <div className="row-actions">
+                      <div className="soa-row-actions">
                         <button
-                          className="btn-secondary"
                           type="button"
-                          onClick={() => setViewRow(r)}
+                          className="soa-action-btn soa-action-view"
+                          onClick={()=>setViewRow(r)}
                         >
                           View
                         </button>
 
-                        {canEdit && (
+                        {canEdit&&(
                           <button
-                            className="btn-secondary"
                             type="button"
-                            onClick={() => openEditSettlement(r)}
+                            className="soa-action-btn soa-action-edit"
+                            onClick={()=>openEditSettlement(r)}
                           >
                             Edit
                           </button>
                         )}
 
-                        {canDelete && (
+                        {canDelete&&(
                           <button
-                            className="btn-danger"
                             type="button"
-                            onClick={() => deleteSettlement(r.id)}
+                            className="soa-action-btn soa-action-delete"
+                            onClick={()=>deleteSettlement(r.id)}
                           >
                             Delete
                           </button>
@@ -768,39 +808,53 @@ export default function Soa() {
             </tbody>
           </table>
         </div>
-      </div>
 
-      <div className="soa-pager" style={{ marginTop: 14 }}>
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            gap: 12,
-            flexWrap: "wrap",
-          }}
-        >
-          <button
-            className="soa-page-btn"
-            type="button"
-            disabled={page <= 1}
-            onClick={() => setPage((p) => Math.max(1, p - 1))}
-          >
-            Previous
-          </button>
+        {/* PAGINATION */}
+        <div className="soa-pager-new">
+          <div className="soa-pager-left">
+            <span>Rows per page</span>
 
-          <strong className="soa-page-info">Page {page} of {totalPages}</strong>
+            <select value={pageSize} onChange={(e)=>setPageSize(Number(e.target.value))}>
+              {[25,50,75,100].map((size)=>(
+                <option key={size} value={size}>{size}</option>
+              ))}
+            </select>
+          </div>
 
-          <button
-            className="soa-page-btn"
-            type="button"
-            disabled={page >= totalPages}
-            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-          >
-            Next
-          </button>
+          <div className="soa-pager-right">
+            <button
+              type="button"
+              className="soa-page-btn-new"
+              disabled={page<=1}
+              onClick={()=>setPage((p)=>Math.max(1,p-1))}
+            >
+              ‹
+            </button>
+
+            {getPageNumbers().map((pageNumber)=>(
+              <button
+                key={pageNumber}
+                type="button"
+                className={`soa-page-number ${page===pageNumber?"active":""}`}
+                onClick={()=>setPage(pageNumber)}
+              >
+                {pageNumber}
+              </button>
+            ))}
+
+            <button
+              type="button"
+              className="soa-page-btn-new"
+              disabled={page>=totalPages}
+              onClick={()=>setPage((p)=>Math.min(totalPages,p+1))}
+            >
+              ›
+            </button>
+
+            <span className="soa-page-summary">Page {page} of {totalPages}</span>
+          </div>
         </div>
-      </div>
+      </section>
 
       {showCreate && canCreate && (
         <div

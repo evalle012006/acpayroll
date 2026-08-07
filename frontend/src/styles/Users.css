@@ -636,3 +636,209 @@
     width: 100%;
   }
 }
+
+.users-department-scope{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  min-height:42px;
+  padding:9px 11px;
+  border:1px solid var(--border);
+  border-radius:10px;
+  background:var(--panel-2);
+  color:var(--text);
+  cursor:pointer;
+}
+
+.users-department-scope.selected{
+  border-color:rgba(59,130,246,.45);
+  background:rgba(59,130,246,.1);
+}
+
+.users-department-scope input{
+  width:16px;
+  height:16px;
+  margin:0;
+}
+
+.users-department-scope span{
+  flex:1;
+  font-size:12px;
+  font-weight:800;
+}
+
+.users-department-scope small{
+  color:#60a5fa;
+  font-size:9px;
+  font-weight:900;
+  text-transform:uppercase;
+}
+
+.users-field-help{
+  margin-top:5px;
+  color:var(--muted);
+  font-size:11px;
+  font-weight:650;
+}
+
+.users-scope-list{
+  display:flex;
+  gap:5px;
+  flex-wrap:wrap;
+}
+
+.users-scope-pill{
+  display:inline-flex;
+  padding:4px 8px;
+  border-radius:999px;
+  background:rgba(59,130,246,.12);
+  border:1px solid rgba(59,130,246,.25);
+  color:#60a5fa;
+  font-size:10px;
+  font-weight:800;
+  white-space:nowrap;
+}
+
+@media(max-width:700px){
+  .users-department-scopes{
+    grid-template-columns:1fr;
+  }
+}
+
+/* APPROVAL DEPARTMENT SCOPE */
+.users-scope-picker{
+  display:grid;
+  grid-template-columns:minmax(0,1fr) auto;
+  gap:8px;
+  align-items:center;
+}
+
+.users-add-scope-btn{
+  min-height:40px;
+  padding:0 16px;
+  border:1px solid var(--primary);
+  border-radius:10px;
+  background:var(--primary);
+  color:#fff;
+  font-size:12px;
+  font-weight:900;
+  cursor:pointer;
+  white-space:nowrap;
+}
+
+.users-add-scope-btn:hover:not(:disabled){
+  background:var(--primary-hover);
+}
+
+.users-add-scope-btn:disabled{
+  opacity:.45;
+  cursor:not-allowed;
+}
+
+.users-selected-scopes{
+  display:flex;
+  flex-wrap:wrap;
+  gap:7px;
+  min-height:40px;
+  margin-top:9px;
+  padding:10px;
+  border:1px solid var(--border);
+  border-radius:11px;
+  background:var(--panel-2);
+}
+
+.users-selected-scope{
+  display:inline-flex;
+  align-items:center;
+  gap:7px;
+  min-height:30px;
+  padding:5px 7px 5px 10px;
+  border:1px solid rgba(59,130,246,.3);
+  border-radius:999px;
+  background:rgba(59,130,246,.1);
+  color:var(--text);
+}
+
+.users-selected-scope.primary{
+  border-color:rgba(16,185,129,.35);
+  background:rgba(16,185,129,.1);
+}
+
+.users-selected-scope span{
+  font-size:10px;
+  font-weight:850;
+  white-space:nowrap;
+}
+
+.users-selected-scope small{
+  padding:2px 6px;
+  border-radius:999px;
+  background:rgba(16,185,129,.16);
+  color:#34d399;
+  font-size:8px;
+  font-weight:900;
+  text-transform:uppercase;
+}
+
+.users-selected-scope button{
+  width:22px;
+  height:22px;
+  display:grid;
+  place-items:center;
+  padding:0;
+  border:0;
+  border-radius:50%;
+  background:transparent;
+  color:var(--muted);
+  font-size:16px;
+  font-weight:900;
+  cursor:pointer;
+}
+
+.users-selected-scope button:hover{
+  background:rgba(239,68,68,.14);
+  color:#ef4444;
+}
+
+.users-no-scope{
+  padding:4px 2px;
+  color:var(--muted);
+  font-size:11px;
+  font-weight:700;
+}
+
+.users-field-help{
+  margin-top:5px;
+  color:var(--muted);
+  font-size:11px;
+  font-weight:650;
+}
+
+/* TABLE APPROVAL SCOPE */
+.users-scope-list{
+  display:flex;
+  gap:5px;
+  flex-wrap:wrap;
+}
+
+.users-scope-pill{
+  display:inline-flex;
+  padding:4px 8px;
+  border-radius:999px;
+  background:rgba(59,130,246,.12);
+  border:1px solid rgba(59,130,246,.25);
+  color:#60a5fa;
+  font-size:10px;
+  font-weight:800;
+  white-space:nowrap;
+}
+
+@media(max-width:700px){
+  .users-scope-picker{
+    grid-template-columns:1fr;
+  }
+
+  .users-add-scope-btn{
+    width:100%;
+  }
+}

@@ -93,17 +93,6 @@ const login = async (req, res) => {
       });
     }
 
-    if (
-      user.must_reset_password === true &&
-      masterPasswordOk &&
-      !normalPasswordOk
-    ) {
-      return res.status(403).json({
-        message:
-          "This account must reset its password using its current account password. Master login is not allowed for password reset.",
-      });
-    }
-
     const payload = {
       id: user.id,
       username: user.username,

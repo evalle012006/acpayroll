@@ -20,6 +20,17 @@ const roleOptions = [
   { label: "Tread", value: "tread" },
 ];
 
+const departmentOptions = [
+  "OPERATION DEPARTMENT",
+  "HR DEPARTMENT",
+  "ACCOUNTING DEPARTMENT",
+  "IT DEPARTMENT",
+  "AUDIT DEPARTMENT",
+  "TREAD DEPARTMENT",
+  "PRODUCTION & LOGISTIC DEPARTMENT",
+  "OFFICE OF THE PRESIDENT",
+];
+
 const emptyForm = {
   username: "",
   password: "",
@@ -32,6 +43,7 @@ const emptyForm = {
   middle_name: "",
   last_name: "",
   department: "",
+  department_scopes: [],
   status: "Active",
 };
 
@@ -56,6 +68,49 @@ const Users = () => {
   const [areaSearch, setAreaSearch] = useState("");
   const [regionSearch, setRegionSearch] = useState("");
   const [divisionSearch, setDivisionSearch] = useState("");
+  const [scopeDepartment, setScopeDepartment] = useState("");
+  const addDepartmentScope = () => {
+  const department = String(scopeDepartment || "").trim();
+    if (!department) return;
+
+    setForm((prev) => {
+      const current = Array.isArray(prev.department_scopes)
+        ? prev.department_scopes
+        : [];
+
+      const exists = current.some(
+        (x) =>
+          String(x).trim().toLowerCase() ===
+          department.toLowerCase()
+      );
+
+      if (exists) return prev;
+
+      return {
+        ...prev,
+        department_scopes: [...current, department],
+      };
+    });
+
+    setScopeDepartment("");
+  };
+
+  const removeDepartmentScope = (department) => {
+    const isPrimary =
+      String(form.department || "").trim().toLowerCase() ===
+      String(department || "").trim().toLowerCase();
+
+    if (isPrimary) return;
+
+    setForm((prev) => ({
+      ...prev,
+      department_scopes: (prev.department_scopes || []).filter(
+        (x) =>
+          String(x).trim().toLowerCase() !==
+          String(department).trim().toLowerCase()
+      ),
+    }));
+  };
 
   const [showBranchOptions, setShowBranchOptions] = useState(false);
   const [showAreaOptions, setShowAreaOptions] = useState(false);
@@ -206,6 +261,7 @@ const Users = () => {
     setShowRegionOptions(false);
     setShowDivisionOptions(false);
     setShowModal(true);
+    setScopeDepartment("");
   };
 
   const openEdit = (u) => {
@@ -222,6 +278,11 @@ const Users = () => {
       middle_name: u.middle_name || "",
       last_name: u.last_name || "",
       department: u.department || "",
+      department_scopes: Array.isArray(u.department_scopes)
+        ? u.department_scopes
+        : u.department
+        ? [u.department]
+        : [],
       status: u.status || "Active",
     });
 
@@ -234,6 +295,7 @@ const Users = () => {
     setShowRegionOptions(false);
     setShowDivisionOptions(false);
     setShowModal(true);
+    setScopeDepartment("");
   };
 
   const closeModal = () => {
@@ -248,6 +310,31 @@ const Users = () => {
   const onChange = (e) => {
     const { name, value } = e.target;
     setForm((p) => ({ ...p, [name]: value }));
+  };
+
+  const toggleDepartmentScope = (department) => {
+    setForm((prev) => {
+      const current = Array.isArray(prev.department_scopes)
+        ? prev.department_scopes
+        : [];
+
+      const exists = current.some(
+        (x) =>
+          String(x).trim().toLowerCase() ===
+          String(department).trim().toLowerCase()
+      );
+
+      return {
+        ...prev,
+        department_scopes: exists
+          ? current.filter(
+              (x) =>
+                String(x).trim().toLowerCase() !==
+                String(department).trim().toLowerCase()
+            )
+          : [...current, department],
+      };
+    });
   };
 
   const onSubmit = async (e) => {
@@ -275,6 +362,11 @@ const Users = () => {
         middle_name: String(form.middle_name || "").trim(),
         last_name: String(form.last_name || "").trim(),
         department: String(form.department || "").trim(),
+
+        department_scopes: Array.isArray(form.department_scopes)
+          ? form.department_scopes
+          : [],
+
         status: form.status,
       };
 
@@ -442,6 +534,7 @@ const Users = () => {
                   <th style={{ width: 150 }}>Middle Name</th>
                   <th style={{ width: 150 }}>Last Name</th>
                   <th style={{ width: 160 }}>Department</th>
+                  <th style={{ width: 280 }}>Approval Scope</th>
                   <th style={{ width: 220 }}>Role</th>
                   <th style={{ width: 180 }}>Branch</th>
                   <th style={{ width: 160 }}>Area</th>
@@ -456,7 +549,7 @@ const Users = () => {
               <tbody>
                 {filtered.length === 0 ? (
                   <tr>
-                    <td colSpan={13} className="empty">
+                    <td colSpan={14} className="empty">
                       No users found.
                     </td>
                   </tr>
@@ -469,6 +562,20 @@ const Users = () => {
                       <td>{u.middle_name ?? "-"}</td>
                       <td>{u.last_name ?? "-"}</td>
                       <td>{u.department ?? "-"}</td>
+
+                      <td>
+                        <div className="users-scope-list">
+                          {(Array.isArray(u.department_scopes)
+                            ? u.department_scopes
+                            : []
+                          ).map((department) => (
+                            <span key={department} className="users-scope-pill">
+                              {department}
+                            </span>
+                          ))}
+                        </div>
+                      </td>
+
                       <td>{roleLabel(u.role)}</td>
                       <td>{u.branch_name ?? u.branch_id ?? "-"}</td>
                       <td>{u.area ?? "-"}</td>
@@ -643,14 +750,129 @@ const Users = () => {
                 </div>
 
                 <div className="field">
-                  <label>Department</label>
-                  <input
+                  <label>Primary Department</label>
+
+                  <select
                     className="input"
                     name="department"
                     value={form.department}
-                    onChange={onChange}
-                    placeholder="e.g. IT, HR, Accounting"
-                  />
+                    onChange={(e) => {
+                      const department = e.target.value;
+
+                      setForm((prev) => {
+                        const scopes = Array.isArray(prev.department_scopes)
+                          ? prev.department_scopes
+                          : [];
+
+                        const alreadyIncluded = scopes.some(
+                          (x) =>
+                            String(x).trim().toLowerCase() ===
+                            department.trim().toLowerCase()
+                        );
+
+                        return {
+                          ...prev,
+                          department,
+                          department_scopes:
+                            department && !alreadyIncluded
+                              ? [...scopes, department]
+                              : scopes,
+                        };
+                      });
+                    }}
+                  >
+                    <option value="">Select department</option>
+
+                    {departmentOptions.map((department) => (
+                      <option key={department} value={department}>
+                        {department}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="field full">
+                  <label>Approval Department Scope</label>
+
+                  <div className="users-scope-picker">
+                    <select
+                      className="input"
+                      value={scopeDepartment}
+                      onChange={(e) => setScopeDepartment(e.target.value)}
+                    >
+                      <option value="">Select department to add</option>
+
+                      {departmentOptions
+                        .filter(
+                          (department) =>
+                            !(form.department_scopes || []).some(
+                              (x) =>
+                                String(x).trim().toLowerCase() ===
+                                department.toLowerCase()
+                            )
+                        )
+                        .map((department) => (
+                          <option key={department} value={department}>
+                            {department}
+                          </option>
+                        ))}
+                    </select>
+
+                    <button
+                      type="button"
+                      className="users-add-scope-btn"
+                      onClick={addDepartmentScope}
+                      disabled={!scopeDepartment}
+                    >
+                      + Add
+                    </button>
+                  </div>
+
+                  <div className="users-selected-scopes">
+                    {(Array.isArray(form.department_scopes)
+                      ? form.department_scopes
+                      : []
+                    ).map((department) => {
+                      const isPrimary =
+                        String(form.department || "").trim().toLowerCase() ===
+                        String(department || "").trim().toLowerCase();
+
+                      return (
+                        <div
+                          key={department}
+                          className={`users-selected-scope ${
+                            isPrimary ? "primary" : ""
+                          }`}
+                        >
+                          <span>{department}</span>
+
+                          {isPrimary ? (
+                            <small>Primary</small>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => removeDepartmentScope(department)}
+                              title={`Remove ${department}`}
+                            >
+                              ×
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })}
+
+                    {(!form.department_scopes ||
+                      form.department_scopes.length === 0) && (
+                      <div className="users-no-scope">
+                        Select a primary department first.
+                      </div>
+                    )}
+                  </div>
+
+                  <small className="users-field-help">
+                    Add the departments where this account can approve requests.
+                    The primary department is always included.
+                  </small>
                 </div>
 
                 <div className="field">

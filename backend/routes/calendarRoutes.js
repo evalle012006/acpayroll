@@ -67,6 +67,29 @@ const calculateInclusiveDays = (dateFrom, dateTo) => {
   return Math.floor((to - from) / millisecondsPerDay) + 1;
 };
 
+const markExpiredTravelPlansIncomplete = async (
+  client = pool
+) => {
+  await client.query(`
+    UPDATE public.travel_plans
+
+    SET
+      status = 'Incomplete',
+      updated_at =
+        NOW() AT TIME ZONE 'Asia/Manila'
+
+    WHERE LOWER(
+      TRIM(
+        COALESCE(status, '')
+      )
+    ) = 'pending'
+
+      AND plan_date < (
+        NOW() AT TIME ZONE 'Asia/Manila'
+      )::date
+  `);
+};
+
 // =====================================================
 // CHECK 3 CONSECUTIVE VISITS TO THE SAME BRANCH
 // =====================================================
@@ -914,6 +937,8 @@ router.get(
         });
       }
 
+      await markExpiredTravelPlansIncomplete(pool);
+
       const role = normalizeRole(req.user?.role);
 
       const department = normalizeDepartment(
@@ -1625,6 +1650,7 @@ router.put("/travel-plans/:id", requireAuth, async (req, res) => {
       SELECT
         id,
         status,
+        plan_date,
         created_by
       FROM public.travel_plans
       WHERE id = $1
@@ -1641,10 +1667,54 @@ router.put("/travel-plans/:id", requireAuth, async (req, res) => {
 
     const existingPlan = existingResult.rows[0];
 
-    if (norm(existingPlan.status) === "completed") {
+    const todayResult = await client.query(`
+      SELECT (
+        NOW() AT TIME ZONE 'Asia/Manila'
+      )::date AS today
+    `);
+
+    const today = String(
+      todayResult.rows[0]?.today || ""
+    ).slice(0, 10);
+
+    const existingPlanDate = String(
+      existingPlan.plan_date || ""
+    ).slice(0, 10);
+
+    const existingStatus = norm(
+      existingPlan.status
+    );
+
+    if (existingStatus === "completed") {
       return res.status(400).json({
         message:
           "Completed travel plans can no longer be edited.",
+      });
+    }
+
+    if (
+      existingStatus === "incomplete" ||
+      (
+        existingStatus === "pending" &&
+        existingPlanDate &&
+        existingPlanDate < today
+      )
+    ) {
+      await client.query(
+        `
+        UPDATE public.travel_plans
+        SET
+          status = 'Incomplete',
+          updated_at =
+            NOW() AT TIME ZONE 'Asia/Manila'
+        WHERE id = $1
+        `,
+        [id]
+      );
+
+      return res.status(400).json({
+        message:
+          "This travel plan was not completed on its scheduled date and can no longer be edited.",
       });
     }
 
@@ -3626,7 +3696,8 @@ router.post(
         `
         SELECT
           id,
-          status
+          status,
+          plan_date
         FROM public.travel_plans
         WHERE id = $1
         LIMIT 1
@@ -3640,10 +3711,54 @@ router.post(
         });
       }
 
-      if (norm(planResult.rows[0].status) === "completed") {
+      const plan = planResult.rows[0];
+
+      const todayResult = await pool.query(`
+        SELECT (
+          NOW() AT TIME ZONE 'Asia/Manila'
+        )::date AS today
+      `);
+
+      const today = String(
+        todayResult.rows[0]?.today || ""
+      ).slice(0, 10);
+
+      const planDate = String(
+        plan.plan_date || ""
+      ).slice(0, 10);
+
+      const planStatus = norm(plan.status);
+
+      if (planStatus === "completed") {
         return res.status(400).json({
           message:
             "Photos cannot be added to a completed travel plan.",
+        });
+      }
+
+      if (
+        planStatus === "incomplete" ||
+        (
+          planStatus === "pending" &&
+          planDate &&
+          planDate < today
+        )
+      ) {
+        await pool.query(
+          `
+          UPDATE public.travel_plans
+          SET
+            status = 'Incomplete',
+            updated_at =
+              NOW() AT TIME ZONE 'Asia/Manila'
+          WHERE id = $1
+          `,
+          [travelPlanId]
+        );
+
+        return res.status(400).json({
+          message:
+            "This travel plan is incomplete. Photos can no longer be uploaded.",
         });
       }
 
@@ -4180,6 +4295,7 @@ router.put(
           id,
           title,
           status,
+          plan_date,
           created_by
         FROM public.travel_plans
         WHERE id = $1
@@ -4204,6 +4320,50 @@ router.put(
 
         return res.status(400).json({
           message: "This travel plan is already completed.",
+        });
+      }
+
+      const todayResult = await client.query(`
+        SELECT (
+          NOW() AT TIME ZONE 'Asia/Manila'
+        )::date AS today
+      `);
+
+      const today = String(
+        todayResult.rows[0]?.today || ""
+      ).slice(0, 10);
+
+      const planDate = String(
+        existingPlan.plan_date || ""
+      ).slice(0, 10);
+
+      if (
+        norm(existingPlan.status) ===
+          "incomplete" ||
+        (
+          norm(existingPlan.status) ===
+            "pending" &&
+          planDate &&
+          planDate < today
+        )
+      ) {
+        await client.query(
+          `
+          UPDATE public.travel_plans
+          SET
+            status = 'Incomplete',
+            updated_at =
+              NOW() AT TIME ZONE 'Asia/Manila'
+          WHERE id = $1
+          `,
+          [travelPlanId]
+        );
+
+        await client.query("COMMIT");
+
+        return res.status(400).json({
+          message:
+            "This travel plan was not completed on its scheduled date and is now incomplete.",
         });
       }
 
@@ -5194,7 +5354,7 @@ router.get(
             WHEN $1::date < (
                 NOW() AT TIME ZONE 'Asia/Manila'
               )::date
-            THEN 'Not Submitted'
+            THEN 'Incomplete'
 
             ELSE 'Pending'
 

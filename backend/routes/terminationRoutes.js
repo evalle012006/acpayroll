@@ -32,19 +32,21 @@ const normalizeDepartment = (value) =>
 const normalizeRole = (value) =>
   norm(value).replace(/\s+/g, " ");
 
-const isOperationVicePresident = (req) => {
-  const role = normalizeRole(
-    req.user?.role
-  );
+const isOperationViewer = (req) => {
+  const role = normalizeRole(req.user?.role);
+  const department = normalizeDepartment(req.user?.department);
 
-  const department = normalizeDepartment(
-    req.user?.department
-  );
+  if (department !== "operation department") {
+    return false;
+  }
 
-  return (
-    department === "operation department" &&
-    role === "vice president"
-  );
+  return [
+    "branch manager",
+    "area manager",
+    "regional manager",
+    "assistant vice president",
+    "vice president",
+  ].includes(role);
 };
 
 const toInt = (v) => {
@@ -71,7 +73,7 @@ const canManageTermination = (req) =>
 
 const canViewTermination = (req) =>
   canManageTermination(req) ||
-  isOperationVicePresident(req);
+  isOperationViewer(req);
 
 const canDeleteTermination = (req) =>
   isAdmin(req) || isIT(req);

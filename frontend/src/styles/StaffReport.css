@@ -1,17 +1,433 @@
 .staff-report-page {
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 16px;
+  width: 100%;
+  max-width: 100%;
+  padding: 22px;
+  box-sizing: border-box;
+  color: var(--text);
+  overflow-x: hidden;
 }
 
-.staff-report-actions {
+.staff-report-hero {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  background:
+    radial-gradient(circle at top right, rgba(79, 70, 229, 0.24), transparent 34%),
+    linear-gradient(135deg, var(--panel), var(--panel-2));
+  box-shadow: var(--shadow-soft);
+}
+
+.staff-report-hero::after {
+  content: "";
+  position: absolute;
+  width: 260px;
+  height: 260px;
+  right: -110px;
+  bottom: -145px;
+  border-radius: 50%;
+  background: rgba(99, 102, 241, 0.14);
+}
+
+.staff-report-hero-main {
+  position: relative;
+  z-index: 1;
   display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 24px;
+  padding: 22px;
+}
+
+.staff-report-eyebrow {
+  display: inline-flex;
+  margin-bottom: 8px;
+  color: #60a5fa;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.14em;
+}
+
+.staff-report-hero h1 {
+  margin: 0;
+  color: var(--text);
+  font-size: 32px;
+  line-height: 1.05;
+  font-weight: 950;
+}
+
+.staff-report-hero p {
+  max-width: 700px;
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.6;
+  font-weight: 600;
+}
+
+.staff-report-flow {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 18px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  background: rgba(59, 130, 246, 0.08);
+}
+
+.staff-report-flow span {
+  color: #60a5fa;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.09em;
+}
+
+.staff-report-flow b {
+  color: var(--text);
+  font-size: 11px;
+}
+
+.staff-report-hero-actions {
+  display: flex;
+  justify-content: flex-end;
   gap: 10px;
   flex-wrap: wrap;
 }
 
+.staff-report-btn {
+  min-height: 38px;
+  padding: 9px 14px;
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  background: var(--panel);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 850;
+  cursor: pointer;
+}
+
+.staff-report-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.staff-report-btn-secondary:hover:not(:disabled) {
+  background: var(--hover);
+}
+
+.staff-report-btn-primary {
+  border-color: transparent;
+  background: var(--primary);
+  color: #fff;
+}
+
+.staff-report-btn-primary:hover:not(:disabled) {
+  background: var(--primary-hover);
+}
+
+.staff-report-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.staff-report-summary-card {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  min-width: 0;
+  padding: 17px;
+  border: 1px solid var(--border);
+  border-radius: 17px;
+  background: var(--panel);
+  box-shadow: var(--shadow-soft);
+}
+
+.staff-report-summary-icon {
+  display: grid;
+  place-items: center;
+  flex: 0 0 44px;
+  width: 44px;
+  height: 44px;
+  border-radius: 14px;
+  font-size: 10px;
+  font-weight: 950;
+}
+
+.staff-report-summary-card > div:last-child {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.staff-report-summary-card span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.staff-report-summary-card strong {
+  margin-top: 3px;
+  color: var(--text);
+  font-size: 27px;
+  line-height: 1;
+  font-weight: 950;
+}
+
+.staff-report-summary-card small {
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 650;
+}
+
+.staff-report-summary-total {
+  border-color: rgba(59, 130, 246, 0.68);
+}
+
+.staff-report-summary-total .staff-report-summary-icon {
+  background: rgba(59, 130, 246, 0.14);
+  color: #3b82f6;
+}
+
+.staff-report-summary-pending .staff-report-summary-icon {
+  background: rgba(245, 158, 11, 0.14);
+  color: #f59e0b;
+}
+
+.staff-report-summary-approved .staff-report-summary-icon {
+  background: rgba(16, 185, 129, 0.14);
+  color: #10b981;
+}
+
+.staff-report-summary-closed .staff-report-summary-icon {
+  background: rgba(124, 58, 237, 0.14);
+  color: #8b5cf6;
+}
+
+.staff-report-list-card {
+  width: 100%;
+  max-width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 17px;
+  background: var(--panel);
+  box-shadow: var(--shadow-soft);
+  overflow: hidden;
+}
+
+.staff-report-search-panel {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.staff-report-search-controls {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex: 1;
+  min-width: 0;
+}
+
+.staff-report-search-input {
+  width: min(450px, 100%);
+  min-width: 260px;
+  height: 39px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  background: var(--panel-2);
+  color: var(--text);
+  outline: none;
+}
+
+.staff-report-search-input:focus {
+  border-color: rgba(59, 130, 246, 0.62);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.12);
+}
+
+.staff-report-result-count {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.staff-report-table-wrap {
+  width: 100%;
+  max-height: 500px;
+  overflow: auto;
+}
+
+.staff-report-table {
+  width: 100%;
+  min-width: 1180px;
+  border-collapse: collapse;
+}
+
+.staff-report-table th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  padding: 12px;
+  background: var(--table-header);
+  color: #fff;
+  text-align: left;
+  white-space: nowrap;
+  font-size: 11px;
+  font-weight: 850;
+}
+
+.staff-report-table td {
+  padding: 12px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
+  vertical-align: top;
+  font-size: 11px;
+}
+
+.staff-report-table tbody tr:hover {
+  background: var(--row-hover);
+}
+
+.staff-report-number,
+.staff-report-employee {
+  font-weight: 900;
+}
+
+.staff-report-empty {
+  padding: 30px !important;
+  color: var(--muted) !important;
+  text-align: center;
+  font-weight: 800;
+}
+
+.staff-report-row-actions {
+  display: flex;
+  justify-content: center;
+}
+
+.staff-report-view-btn {
+  min-width: 96px;
+  height: 32px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel-2);
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 850;
+  cursor: pointer;
+}
+
+.staff-report-view-btn:hover {
+  background: var(--hover);
+}
+
+.staff-report-pager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border-top: 1px solid var(--border);
+}
+
+.staff-report-pager-left,
+.staff-report-pager-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.staff-report-pager-left span,
+.staff-report-page-summary {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 750;
+}
+
+.staff-report-pager select {
+  height: 33px;
+  padding: 0 9px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--panel-2);
+  color: var(--text);
+}
+
+.staff-report-page-btn,
+.staff-report-page-number {
+  min-width: 33px;
+  height: 33px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--panel-2);
+  color: var(--text);
+  font-weight: 850;
+  cursor: pointer;
+}
+
+.staff-report-page-number.active {
+  border-color: transparent;
+  background: var(--primary);
+  color: #fff;
+}
+
+.staff-report-page-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.staff-report-create-modal {
+  width: min(950px, 95vw);
+  overflow: visible;
+}
+
+.staff-report-modal-grid {
+  overflow: visible;
+}
+
+.staff-report-employee-picker {
+  position: relative;
+  z-index: 50;
+}
+
+.staff-report-view-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  padding: 16px;
+}
+
 .staff-report-file-table {
-  margin-top: 14px;
+  margin: 0 16px 14px;
+}
+
+.staff-report-file-table .table-wrap {
+  max-height: none;
+}
+
+.staff-report-file-table .table {
+  min-width: 700px;
+}
+
+.staff-report-upload-box {
+  margin: 14px 16px 0;
+  padding: 14px;
+  border: 1px dashed var(--border);
+  border-radius: 14px;
+  background: var(--panel-2);
+}
+
+.staff-report-upload-box .btn-primary,
+.staff-report-upload-box .btn-success {
+  margin-top: 10px;
 }
 
 .staff-report-view-actions {
@@ -19,88 +435,59 @@
   justify-content: flex-end;
   gap: 10px;
   flex-wrap: wrap;
-  margin-top: 14px;
+  padding: 16px;
 }
 
-.staff-report-upload-box {
-  margin-top: 14px;
-  padding: 14px;
-  border: 1px dashed var(--border);
-  border-radius: 14px;
-  background: var(--panel-2);
+@media (max-width: 1100px) {
+  .staff-report-summary-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .staff-report-hero-main {
+    flex-direction: column;
+  }
+
+  .staff-report-hero-actions {
+    justify-content: flex-start;
+  }
 }
 
-.staff-report-upload-box .btn-primary {
-  margin-top: 10px;
-}
+@media (max-width: 680px) {
+  .staff-report-page {
+    padding: 14px;
+  }
 
-.staff-report-status-reason {
-  margin-top: 6px;
-  font-size: 12px;
-  color: var(--muted);
-  font-weight: 700;
-}
+  .staff-report-summary-grid {
+    grid-template-columns: 1fr;
+  }
 
-.staff-report-row-actions {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-}
+  .staff-report-search-panel,
+  .staff-report-pager {
+    align-items: stretch;
+    flex-direction: column;
+  }
 
-.staff-report-row-actions .btn-secondary {
-  width: 110px;
-  height: 34px;
-  border-radius: 12px;
-  font-weight: 900;
-}
+  .staff-report-search-controls {
+    align-items: stretch;
+    flex-direction: column;
+  }
 
-.staff-report-modal-table .table {
-  min-width: 700px;
-}
+  .staff-report-search-input {
+    width: 100%;
+    min-width: 0;
+  }
 
-.staff-report-modal-table .table-wrap {
-  max-height: unset;
-}
+  .staff-report-view-grid {
+    grid-template-columns: 1fr;
+  }
 
-@media (max-width: 900px) {
-  .staff-report-actions {
+  .staff-report-hero-actions {
+    display: grid;
+    grid-template-columns: 1fr;
     width: 100%;
   }
 
-  .staff-report-actions button {
-    flex: 1;
-  }
-
-  .staff-report-row-actions .btn-secondary {
+  .staff-report-btn {
     width: 100%;
   }
-}
-
-.staff-report-page,
-.approval-page {
-  max-width: 100%;
-  overflow-x: hidden;
-}
-
-.staff-report-page .table-card,
-.staff-report-page .leave-searchbar,
-.staff-report-page .leave-pager {
-  width: 100%;
-  max-width: 100%;
-  box-sizing: border-box;
-}
-
-.staff-report-page .table {
-  min-width: 1050px;
-}
-
-.staff-report-page .table-wrap {
-  width: 100%;
-  max-height: 480px;
-  overflow: auto;
-}
-
-.staff-report-page .leave-search-input {
-  min-width: 280px;
-  max-width: 420px;
 }

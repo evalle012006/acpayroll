@@ -608,111 +608,156 @@ export default function NoticeToExplain() {
 
   const selectedReportType = selectedReport ? getReportType(selectedReport) : "Staff Report";
 
+  const totalNoticeReports = filteredReports.length;
+
+  const pendingNoticeReports = filteredReports.filter(
+    (report) =>
+      ![STATUS_APPROVED, STATUS_REJECTED, STATUS_VOID].includes(
+        report.status
+      )
+  ).length;
+
+  const approvedNoticeReports = filteredReports.filter(
+    (report) => report.status === STATUS_APPROVED
+  ).length;
+
+  const closedNoticeReports = filteredReports.filter(
+    (report) =>
+      report.status === STATUS_REJECTED ||
+      report.status === STATUS_VOID
+  ).length;
+
   return (
-    <div className="approval-page notice-explain-page">
-      <div className="approval-page-header">
-        <div>
-          <h2 className="approval-title">Notice to Explain</h2>
-          <p className="approval-subtitle">
-            Create and manage Notice To Explain reports.
-          </p>
-        </div>
+    <div className="notice-explain-page">
+      <section className="notice-hero">
+        <div className="notice-hero-main">
+          <div className="notice-hero-copy">
+            <span className="notice-hero-eyebrow">HRIS TRANSACTIONS</span>
 
-        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-          <button className="btn-secondary" onClick={() => navigate(-1)} type="button">
-            ← Back
-          </button>
+            <h1 className="notice-hero-title">Notice to Explain</h1>
 
-          <button className="btn-secondary" onClick={refreshAll} type="button" disabled={loadingList}>
-            {loadingList ? "Refreshing..." : "Refresh"}
-          </button>
+            <p className="notice-hero-subtitle">
+              Create, review, and track Notice to Explain reports through the
+              required approval process.
+            </p>
 
-          {canCreate && (
-            <button className="btn-primary" onClick={openCreateModal} type="button">
-              + Create Staff Report
-            </button>
-          )}
-        </div>
-      </div>
+            <div className="notice-approval-flow">
+              <span>APPROVAL FLOW</span>
+              <b>AM → RM → AVP → VP → Final File Upload</b>
+            </div>
+          </div>
 
-      <div className="leave-searchbar">
-        <input
-          className="leave-search-input"
-          value={searchText}
-          onChange={(e) => setSearchText(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && setSearch(searchText)}
-          placeholder="Search report type, report no, employee, branch, status..."
-        />
-
-        <button className="btn-secondary" type="button" onClick={() => setSearch(searchText)}>
-          Search
-        </button>
-
-        <button
-          className="btn-secondary"
-          type="button"
-          onClick={() => {
-            setSearchText("");
-            setSearch("");
-          }}
-        >
-          Clear
-        </button>
-
-        <span className="leave-search-count">{filteredReports.length} result(s)</span>
-      </div>
-
-      <div className="leave-pager">
-        <div className="leave-pager-left">
-          <span>Rows per page</span>
-
-          <select value={pageSize} onChange={(e) => setPageSize(Number(e.target.value))}>
-            <option value={25}>25</option>
-            <option value={50}>50</option>
-            <option value={75}>75</option>
-            <option value={100}>100</option>
-          </select>
-        </div>
-
-        <div className="leave-pager-right">
-          <button
-            className="leave-page-btn"
-            type="button"
-            disabled={page <= 1}
-            onClick={() => setPage((p) => Math.max(1, p - 1))}
-          >
-            ‹
-          </button>
-
-          {getPageNumbers().map((p) => (
+          <div className="notice-hero-actions">
             <button
-              key={p}
-              className={`leave-page-number ${page === p ? "active" : ""}`}
+              className="notice-btn notice-btn-secondary"
+              onClick={() => navigate(-1)}
               type="button"
-              onClick={() => setPage(p)}
             >
-              {p}
+              ← Back
             </button>
-          ))}
 
-          <button
-            className="leave-page-btn"
-            type="button"
-            disabled={page >= totalPages}
-            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-          >
-            ›
-          </button>
+            <button
+              className="notice-btn notice-btn-secondary"
+              onClick={refreshAll}
+              type="button"
+              disabled={loadingList}
+            >
+              {loadingList ? "Refreshing..." : "Refresh"}
+            </button>
 
-          <span className="leave-page-summary">
-            Page {page} of {totalPages}
+            {canCreate && (
+              <button
+                className="notice-btn notice-btn-primary"
+                onClick={openCreateModal}
+                type="button"
+              >
+                + Create Staff Report
+              </button>
+            )}
+          </div>
+        </div>
+      </section>
+
+      <section className="notice-summary-grid" aria-label="Notice summary">
+        <article className="notice-summary-card notice-summary-total">
+          <div className="notice-summary-icon">ALL</div>
+          <div className="notice-summary-copy">
+            <span>Total Reports</span>
+            <strong>{totalNoticeReports}</strong>
+            <small>All Notice to Explain records</small>
+          </div>
+        </article>
+
+        <article className="notice-summary-card notice-summary-pending">
+          <div className="notice-summary-icon">P</div>
+          <div className="notice-summary-copy">
+            <span>Pending</span>
+            <strong>{pendingNoticeReports}</strong>
+            <small>Awaiting approval or upload</small>
+          </div>
+        </article>
+
+        <article className="notice-summary-card notice-summary-approved">
+          <div className="notice-summary-icon">A</div>
+          <div className="notice-summary-copy">
+            <span>Approved</span>
+            <strong>{approvedNoticeReports}</strong>
+            <small>Completed reports</small>
+          </div>
+        </article>
+
+        <article className="notice-summary-card notice-summary-closed">
+          <div className="notice-summary-icon">R</div>
+          <div className="notice-summary-copy">
+            <span>Rejected / Voided</span>
+            <strong>{closedNoticeReports}</strong>
+            <small>Closed without approval</small>
+          </div>
+        </article>
+      </section>
+
+      <section className="notice-list-card">
+        <div className="notice-search-panel">
+          <div className="notice-search-controls">
+            <input
+              className="notice-search-input"
+              value={searchText}
+              onChange={(event) => setSearchText(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  setSearch(searchText);
+                }
+              }}
+              placeholder="Search report no, employee, branch, status..."
+            />
+
+            <button
+              className="notice-btn notice-btn-secondary"
+              type="button"
+              onClick={() => setSearch(searchText)}
+            >
+              Search
+            </button>
+
+            <button
+              className="notice-btn notice-btn-secondary"
+              type="button"
+              onClick={() => {
+                setSearchText("");
+                setSearch("");
+              }}
+            >
+              Clear
+            </button>
+          </div>
+
+          <span className="notice-result-count">
+            {filteredReports.length} {filteredReports.length === 1 ? "result" : "results"}
           </span>
         </div>
-      </div>
 
-      <div className="table-card">
-        <div className="table-wrap">
-          <table className="table">
+        <div className="notice-table-wrap">
+          <table className="notice-table">
             <thead>
               <tr>
                 <th>Report No</th>
@@ -724,42 +769,48 @@ export default function NoticeToExplain() {
                 <th>Date Created</th>
                 <th>Report Date</th>
                 <th>Status</th>
-                <th style={{ width: 150 }}>Action</th>
+                <th>Action</th>
               </tr>
             </thead>
 
             <tbody>
               {loadingList ? (
                 <tr>
-                  <td colSpan={10} className="empty-state">
-                    Loading…
+                  <td colSpan={10} className="notice-empty-state">
+                    Loading reports...
                   </td>
                 </tr>
               ) : filteredReports.length === 0 ? (
                 <tr>
-                  <td colSpan={10} className="empty-state">
-                    No staff reports found.
+                  <td colSpan={10} className="notice-empty-state">
+                    No Notice to Explain reports found.
                   </td>
                 </tr>
               ) : (
-                pagedReports.map((r) => (
-                  <tr key={r.id}>
-                    <td className="td-strong">{r.report_no}</td>
-                    <td>{getReportType(r)}</td>
-                    <td>{r.employee_name}</td>
+                pagedReports.map((report) => (
+                  <tr key={report.id}>
+                    <td className="notice-report-no">{report.report_no}</td>
+                    <td>{getReportType(report)}</td>
+                    <td className="notice-employee-cell">{report.employee_name}</td>
                     <td>
-                      {toStr(r.branch_code)} - {toStr(r.branch_name)}
+                      {toStr(report.branch_code)} - {toStr(report.branch_name)}
                     </td>
-                    <td>{r.area || "-"}</td>
-                    <td>{r.region || "-"}</td>
-                    <td>{fmtDate(r.date_created)}</td>
-                    <td>{fmtDate(r.awol_date)}</td>
+                    <td>{report.area || "-"}</td>
+                    <td>{report.region || "-"}</td>
+                    <td>{fmtDate(report.date_created)}</td>
+                    <td>{fmtDate(report.awol_date)}</td>
                     <td>
-                      <span className={badgeClass(r.status)}>{r.status}</span>
+                      <span className={badgeClass(report.status)}>
+                        {report.status}
+                      </span>
                     </td>
                     <td>
-                      <div className="row-actions">
-                        <button className="btn-secondary" type="button" onClick={() => openViewModal(r)}>
+                      <div className="notice-row-actions">
+                        <button
+                          className="notice-view-btn"
+                          type="button"
+                          onClick={() => openViewModal(report)}
+                        >
                           View
                         </button>
                       </div>
@@ -770,7 +821,61 @@ export default function NoticeToExplain() {
             </tbody>
           </table>
         </div>
-      </div>
+
+        <div className="notice-pager">
+          <div className="notice-pager-left">
+            <span>Rows per page</span>
+            <select
+              value={pageSize}
+              onChange={(event) => setPageSize(Number(event.target.value))}
+            >
+              <option value={25}>25</option>
+              <option value={50}>50</option>
+              <option value={75}>75</option>
+              <option value={100}>100</option>
+            </select>
+          </div>
+
+          <div className="notice-pager-right">
+            <button
+              className="notice-page-btn"
+              type="button"
+              disabled={page <= 1}
+              onClick={() => setPage((current) => Math.max(1, current - 1))}
+            >
+              ‹
+            </button>
+
+            {getPageNumbers().map((pageNumber) => (
+              <button
+                key={pageNumber}
+                className={`notice-page-number ${
+                  page === pageNumber ? "active" : ""
+                }`}
+                type="button"
+                onClick={() => setPage(pageNumber)}
+              >
+                {pageNumber}
+              </button>
+            ))}
+
+            <button
+              className="notice-page-btn"
+              type="button"
+              disabled={page >= totalPages}
+              onClick={() =>
+                setPage((current) => Math.min(totalPages, current + 1))
+              }
+            >
+              ›
+            </button>
+
+            <span className="notice-page-summary">
+              Page {page} of {totalPages}
+            </span>
+          </div>
+        </div>
+      </section>
 
       {showCreateModal && (
         <div

@@ -107,6 +107,15 @@ export default function TravelPlanPage() {
     useState(null);
 
   const [selectedPlan, setSelectedPlan] = useState(null);
+  const selectedPlanStatus = normalizeValue(
+    selectedPlan?.status
+  );
+
+  const isSelectedPlanReadOnly = [
+    "completed",
+    "incomplete",
+  ].includes(selectedPlanStatus);
+
   const [detailTab, setDetailTab] = useState("checkin");
   const [previewPhoto, setPreviewPhoto] = useState(null);
 
@@ -810,8 +819,26 @@ const selectedBranchPlans = useMemo(() => {
     }
   };
 
-  const uploadPlanPhotos = async (type, files) => {
-    if (!selectedPlan?.id || !files?.length) return;
+  const uploadPlanPhotos = async (
+    type,
+    files
+  ) => {
+    if (
+      !selectedPlan?.id ||
+      !files?.length
+    ) {
+      return;
+    }
+
+    if (isSelectedPlanReadOnly) {
+      alert(
+        selectedPlanStatus === "incomplete"
+          ? "Incomplete travel plans can no longer be modified."
+          : "Completed travel plans can no longer be modified."
+      );
+
+      return;
+    }
 
     try {
       const position = await new Promise((resolve, reject) => {
@@ -844,9 +871,30 @@ const selectedBranchPlans = useMemo(() => {
     }
   };
 
-  const deletePlanPhoto = async (photoId) => {
-    if (!selectedPlan?.id) return;
-    if (!window.confirm("Delete this photo?")) return;
+  const deletePlanPhoto = async (
+    photoId
+  ) => {
+    if (!selectedPlan?.id) {
+      return;
+    }
+
+    if (isSelectedPlanReadOnly) {
+      alert(
+        selectedPlanStatus === "incomplete"
+          ? "Photos from an incomplete travel plan cannot be deleted."
+          : "Photos from a completed travel plan cannot be deleted."
+      );
+
+      return;
+    }
+
+    if (
+      !window.confirm(
+        "Delete this photo?"
+      )
+    ) {
+      return;
+    }
 
     try {
       await api.delete(`/travel-plans/photos/${photoId}`);
@@ -887,7 +935,19 @@ const selectedBranchPlans = useMemo(() => {
   };
 
   const createNote = async (type) => {
-    if (!selectedPlan?.id) return;
+    if (!selectedPlan?.id) {
+      return;
+    }
+
+    if (isSelectedPlanReadOnly) {
+      alert(
+        selectedPlanStatus === "incomplete"
+          ? "Notes cannot be added to an incomplete travel plan."
+          : "Notes cannot be added to a completed travel plan."
+      );
+
+      return;
+    }
 
     if (type === "REVIEW") {
       const hasReviewFinding =
@@ -1150,6 +1210,16 @@ const selectedBranchPlans = useMemo(() => {
       return;
     }
 
+    if (isSelectedPlanReadOnly) {
+      alert(
+        selectedPlanStatus === "incomplete"
+          ? "Notes from an incomplete travel plan cannot be edited."
+          : "Notes from a completed travel plan cannot be edited."
+      );
+
+      return;
+    }
+
     const noteType =
       String(note.note_type || "")
         .trim()
@@ -1229,9 +1299,30 @@ const selectedBranchPlans = useMemo(() => {
     setShowNoteForm(true);
   };
 
-  const deleteNote = async (noteId) => {
-    if (!selectedPlan?.id) return;
-    if (!window.confirm("Delete this record?")) return;
+  const deleteNote = async (
+    noteId
+  ) => {
+    if (!selectedPlan?.id) {
+      return;
+    }
+
+    if (isSelectedPlanReadOnly) {
+      alert(
+        selectedPlanStatus === "incomplete"
+          ? "Notes from an incomplete travel plan cannot be deleted."
+          : "Notes from a completed travel plan cannot be deleted."
+      );
+
+      return;
+    }
+
+    if (
+      !window.confirm(
+        "Delete this record?"
+      )
+    ) {
+      return;
+    }
 
     try {
       await api.delete(`/travel-plans/notes/${noteId}`);
@@ -1284,12 +1375,14 @@ const selectedBranchPlans = useMemo(() => {
       formatTime={formatTime}
       setPreviewPhoto={setPreviewPhoto}
       deletePlanPhoto={deletePlanPhoto}
+      readOnly={isSelectedPlanReadOnly}
     />
   );
 
   const renderNotes = (type) => (
     <TravelPlanNote
       type={type}
+      readOnly={isSelectedPlanReadOnly}
       planNotes={planNotes}
       selectedPlan={selectedPlan}
       formatTime={formatTime}
@@ -1302,6 +1395,7 @@ const selectedBranchPlans = useMemo(() => {
   const renderNoteTab = (type) => (
     <TravelPlanNoteTab
       type={type}
+      readOnly={isSelectedPlanReadOnly}
 
       selectedPlan={selectedPlan}
 
@@ -1336,7 +1430,19 @@ const selectedBranchPlans = useMemo(() => {
   );
 
   const updateTravelPlan = async () => {
-    if (!selectedPlan?.id) return;
+    if (!selectedPlan?.id) {
+      return;
+    }
+
+    if (isSelectedPlanReadOnly) {
+      alert(
+        selectedPlanStatus === "incomplete"
+          ? "This travel plan is incomplete and can no longer be edited."
+          : "This travel plan is completed and can no longer be edited."
+      );
+
+      return;
+    }
 
     if (!selectedPlan.title || !selectedPlan.plan_date) {
       alert("Title and date are required.");
@@ -1364,9 +1470,27 @@ const selectedBranchPlans = useMemo(() => {
   };
 
   const submitPlan = async () => {
-    if (!selectedPlan?.id) return;
+    if (!selectedPlan?.id) {
+      return;
+    }
 
-    if (!window.confirm("Submit this travel plan as completed?")) return;
+    if (isSelectedPlanReadOnly) {
+      alert(
+        selectedPlanStatus === "incomplete"
+          ? "This travel plan is incomplete and can no longer be completed."
+          : "This travel plan is already completed."
+      );
+
+      return;
+    }
+
+    if (
+      !window.confirm(
+        "Submit this travel plan as completed?"
+      )
+    ) {
+      return;
+    }
 
     try {
       const res = await api.put(`/travel-plans/${selectedPlan.id}/submit`);
@@ -1498,6 +1622,7 @@ const selectedBranchPlans = useMemo(() => {
             <TravelPlanDetailsModal
               selectedPlan={selectedPlan}
               closePlan={closePlan}
+              readOnly={isSelectedPlanReadOnly}
 
               detailTab={detailTab}
               setDetailTab={setDetailTab}
