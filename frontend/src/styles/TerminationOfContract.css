@@ -907,21 +907,16 @@
 
 .badge-rejected {
   background: rgba(239, 68, 68, 0.15);
-
   color: #ef4444;
-
   border-color: rgba(239, 68, 68, 0.35);
 }
 
 
 .badge-pending {
   background: rgba(245, 158, 11, 0.15);
-
   color: #f59e0b;
-
   border-color: rgba(245, 158, 11, 0.35);
 }
-
 
 /* =========================================================
    RESPONSIVE
@@ -934,17 +929,14 @@
       repeat(2, minmax(0, 1fr));
   }
 
-
   .termination-hero-main {
     flex-direction: column;
   }
-
 
   .termination-hero-actions {
     justify-content: flex-start;
   }
 }
-
 
 @media (max-width: 680px) {
 
@@ -952,39 +944,141 @@
     grid-template-columns: 1fr;
   }
 
-
   .termination-search-panel,
   .termination-pager {
     align-items: stretch;
-
     flex-direction: column;
   }
-
 
   .termination-search-controls {
     align-items: stretch;
-
     flex-direction: column;
   }
 
-
   .termination-search-input {
     width: 100%;
-
     min-width: 0;
   }
 
-
   .termination-hero-actions {
     display: grid;
-
     grid-template-columns: 1fr;
-
     width: 100%;
   }
-
 
   .termination-btn {
     width: 100%;
   }
+}
+
+/* =========================================================
+   TERMINATION EMPLOYEE SEARCH DROPDOWN
+========================================================= */
+
+.termination-create-modal {
+  width: min(950px, 95vw);
+  overflow: visible !important;
+}
+
+.termination-modal-grid {
+  overflow: visible !important;
+}
+
+.termination-employee-picker {
+  position: relative;
+  z-index: 100;
+}
+
+/* dropdown container */
+
+.termination-employee-picker .approval-search-dropdown {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  z-index: 99999;
+  max-height: 240px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--panel);
+  box-shadow:
+    0 16px 35px rgba(0, 0, 0, 0.35);
+}
+
+/* employee option */
+
+.termination-employee-picker .approval-search-item {
+  display: block;
+  width: 100%;
+  padding: 10px 12px;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+
+/* remove last border */
+
+.termination-employee-picker
+.approval-search-item:last-child {
+  border-bottom: none;
+}
+
+/* hover */
+
+.termination-employee-picker
+.approval-search-item:hover {
+  background: var(--row-hover);
+}
+
+/* no result */
+
+.termination-employee-picker
+.approval-search-empty {
+  padding: 12px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+/* =========================================================
+   DARK MODE
+========================================================= */
+
+[data-theme="dark"]
+.termination-employee-picker
+.approval-search-dropdown {
+  background: #0f1f3d;
+  border-color:
+    rgba(255, 255, 255, 0.1);
+}
+
+/* =========================================================
+   LIGHT MODE
+========================================================= */
+
+[data-theme="light"]
+.termination-employee-picker
+.approval-search-dropdown {
+  background: #ffffff;
+}
+
+/* scrollbar */
+
+.termination-employee-picker
+.approval-search-dropdown::-webkit-scrollbar {
+  width: 7px;
+}
+
+.termination-employee-picker
+.approval-search-dropdown::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.35);
+  border-radius: 999px;
 }

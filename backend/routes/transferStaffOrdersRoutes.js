@@ -576,9 +576,9 @@
 
             date_created = $14::date,
             effective_date = $15::date,
-            details = $16,
+            details = $16
 
-          WHERE id = $1
+            WHERE id = $1
           RETURNING *
           `,
           [
