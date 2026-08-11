@@ -456,7 +456,6 @@ async function ensureBalanceRow(client, employeeNo) {
       cbu,
       cashbond,
       utility,
-      salary_loan,
       salary_advance,
       motorcycle_loan,
       special_advance,
@@ -477,7 +476,6 @@ async function ensureBalanceRow(client, employeeNo) {
       0, -- cbu
       0, -- cashbond
       0, -- utility
-      0, -- salary_loan
       0, -- salary_advance
       0, -- motorcycle_loan
       0, -- special_advance
@@ -498,7 +496,6 @@ async function ensureBalanceRow(client, employeeNo) {
 function loanTypeToBalanceColumn(loanType) {
   const lt = norm(loanType);
 
-  if (lt === "salary loan") return "salary_loan";
   if (lt === "salary advance") return "salary_advance";
   if (lt === "special loan") return "special_advance";
   if (lt === "special advance") return "special_advance";
