@@ -456,6 +456,7 @@ async function ensureBalanceRow(client, employeeNo) {
       cbu,
       cashbond,
       utility,
+      salary_loan,
       salary_advance,
       motorcycle_loan,
       special_advance,
@@ -473,16 +474,17 @@ async function ensureBalanceRow(client, employeeNo) {
       s.last_name,
       s.first_name,
       s.middle_name,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
+      0, -- cbu
+      0, -- cashbond
+      0, -- utility
+      0, -- salary_loan
+      0, -- salary_advance
+      0, -- motorcycle_loan
+      0, -- special_advance
+      0, -- cash_advance
+      0, -- pag_ibig_loan
+      0, -- other_receivable
+      0, -- staff_accounts_payable
       NOW(),
       NOW()
     FROM public.staff s
@@ -496,6 +498,7 @@ async function ensureBalanceRow(client, employeeNo) {
 function loanTypeToBalanceColumn(loanType) {
   const lt = norm(loanType);
 
+  if (lt === "salary loan") return "salary_loan";
   if (lt === "salary advance") return "salary_advance";
   if (lt === "special loan") return "special_advance";
   if (lt === "special advance") return "special_advance";
@@ -559,34 +562,58 @@ async function validateSalaryAdvance(client, employeeNo, amount) {
   return maxLoanable;
 }
 
-function buildLoanSchedule(totalAmount, monthlyAmount) {
+function buildLoanSchedule(
+  totalAmount,
+  monthlyAmount,
+  startDate = new Date()
+) {
   const rows = [];
 
   let remaining =
     Math.round(toNum(totalAmount) * 100) / 100;
 
-  let current = new Date();
-  current.setMonth(current.getMonth() + 1);
-  current.setDate(26);
+  const monthly = toNum(monthlyAmount);
+
+  if (remaining <= 0 || monthly <= 0) {
+    return rows;
+  }
+
+  const approvedDate = new Date(startDate);
+  const current = new Date(approvedDate);
+
+  if (approvedDate.getDate() <= 25) {
+    current.setDate(25);
+  } else {
+    current.setMonth(current.getMonth() + 1);
+    current.setDate(25);
+  }
 
   while (remaining > 0) {
-    const deduction =
-      remaining > monthlyAmount
-        ? monthlyAmount
-        : remaining;
+    const deduction = Math.min(
+      remaining,
+      monthly
+    );
 
     rows.push({
       month: current.toLocaleString("en-US", {
         month: "long",
         year: "numeric",
       }),
-      amount: deduction,
+      date: current.toISOString().slice(0, 10),
+      amount:
+        Math.round(deduction * 100) / 100,
     });
 
     remaining =
-      Math.round((remaining - deduction) * 100) / 100;
+      Math.round(
+        (remaining - deduction) * 100
+      ) / 100;
 
-    current.setMonth(current.getMonth() + 1);
+    current.setMonth(
+      current.getMonth() + 1
+    );
+
+    current.setDate(25);
   }
 
   return rows;
@@ -1704,11 +1731,12 @@ router.post(
       );
 
       const balanceColumn = loanTypeToBalanceColumn(loan.loan_type);
+
       const total =
-        approvedAmount ||
         approvedTotal ||
-        toNum(loan.amount) ||
-        toNum(loan.total);
+        approvedAmount ||
+        toNum(loan.total) ||
+        toNum(loan.amount);
 
       if (loan.employee_no && balanceColumn) {
         await ensureBalanceRow(client, loan.employee_no);
@@ -1812,10 +1840,10 @@ router.put(
       const balanceColumn = loanTypeToBalanceColumn(loan.loan_type);
 
       const total =
-        toNum(loan.approved_amount) ||
         toNum(loan.approved_total) ||
-        toNum(loan.amount) ||
-        toNum(loan.total);
+        toNum(loan.approved_amount) ||
+        toNum(loan.total) ||
+        toNum(loan.amount);
 
       if (loan.employee_no && balanceColumn) {
         await ensureBalanceRow(client, loan.employee_no);

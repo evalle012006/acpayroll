@@ -121,19 +121,20 @@ const getRawApprovalChain = (department, position) => {
   const pos = norm(position);
 
   if (isOperationDepartment(dept)) {
+  // SVP applicant -> Accounting final only
     if (isSVPPos(pos)) {
       return [ACCOUNTING_FINAL];
     }
 
-    /*
-      Check Assistant Vice President before
-      Vice President because the AVP title also
-      contains the words "vice president".
-    */
+    // AVP applicant -> VP -> Accounting
     if (isAVPPos(pos)) {
-      return ["Vice President"];
+      return [
+        "Vice President",
+        ACCOUNTING_FINAL,
+      ];
     }
 
+    // VP applicant -> SVP -> Accounting
     if (isVPPos(pos)) {
       return [
         "Senior Vice President",
@@ -141,29 +142,44 @@ const getRawApprovalChain = (department, position) => {
       ];
     }
 
+    // Regional Manager -> AVP -> VP -> Accounting
     if (isRegionalManagerPos(pos)) {
-      return ["Assistant Vice President", "Vice President"];
+      return [
+        "Assistant Vice President",
+        "Vice President",
+        ACCOUNTING_FINAL,
+      ];
     }
 
+    // Area Manager -> RM -> AVP -> VP -> Accounting
     if (isAreaManagerPos(pos)) {
-      return ["Regional Manager", "Assistant Vice President", "Vice President"];
+      return [
+        "Regional Manager",
+        "Assistant Vice President",
+        "Vice President",
+        ACCOUNTING_FINAL,
+      ];
     }
 
+    // Branch Manager -> AM -> RM -> AVP -> VP -> Accounting
     if (isBranchManagerPos(pos)) {
       return [
         "Area Manager",
         "Regional Manager",
         "Assistant Vice President",
         "Vice President",
+        ACCOUNTING_FINAL,
       ];
     }
 
+    // Loan Officer / other Operation staff
     return [
       "Branch Manager",
       "Area Manager",
       "Regional Manager",
       "Assistant Vice President",
       "Vice President",
+      ACCOUNTING_FINAL,
     ];
   }
 

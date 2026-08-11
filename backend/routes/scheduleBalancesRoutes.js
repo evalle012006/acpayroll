@@ -107,196 +107,469 @@ const buildLiveSql = (whereSql = "") => `
   WITH cutoff AS (
     SELECT
       $1::date AS month_start,
-      ${monthEndExpr("$1")} AS month_end
+      ${monthEndExpr("$1")} AS month_end,
+      ($1::date + INTERVAL '24 days')::date AS posting_date
   ),
 
-  loan_remaining AS (
+  eligible_loans AS (
     SELECT
-      lr.staff_id,
+      lr.*,
 
-      SUM(
-        CASE  
-          WHEN LOWER(COALESCE(lr.loan_type, '')) = 'salary loan'
-          THEN GREATEST(
-            COALESCE(lr.approved_total, lr.total, lr.approved_amount, lr.amount, 0) -
-            (
-              GREATEST(
-                (
-                  DATE_PART(
-                    'year',
-                    AGE((SELECT month_end FROM cutoff), COALESCE(lr.disbursement_date, lr.approved_at))
-                  )::int * 12
-                ) +
-                DATE_PART(
-                  'month',
-                  AGE((SELECT month_end FROM cutoff), COALESCE(lr.disbursement_date, lr.approved_at))
-                )::int,
-                0
-              ) * COALESCE(lr.approved_per_month, lr.per_month, 0)
-            ),
-            0
+      CASE
+        WHEN COALESCE(
+          lr.disbursement_date,
+          lr.approved_at
+        )::date
+        <=
+        (
+          DATE_TRUNC(
+            'month',
+            COALESCE(
+              lr.disbursement_date,
+              lr.approved_at
+            )::date
           )
-          ELSE 0
-        END
-      )::numeric(12,2) AS salary_loan,
+          + INTERVAL '24 days'
+        )::date
 
-      SUM(
-        CASE
-          WHEN LOWER(COALESCE(lr.loan_type, '')) = 'salary advance'
-          THEN GREATEST(
-            COALESCE(lr.approved_total, lr.total, lr.approved_amount, lr.amount, 0) -
-            (
-              GREATEST(
-                (
-                  DATE_PART(
-                    'year',
-                    AGE((SELECT month_end FROM cutoff), COALESCE(lr.disbursement_date, lr.approved_at))
-                  )::int * 12
-                ) +
-                DATE_PART(
-                  'month',
-                  AGE((SELECT month_end FROM cutoff), COALESCE(lr.disbursement_date, lr.approved_at))
-                )::int,
-                0
-              ) * COALESCE(lr.approved_per_month, lr.per_month, 0)
-            ),
-            0
+        THEN
+        (
+          DATE_TRUNC(
+            'month',
+            COALESCE(
+              lr.disbursement_date,
+              lr.approved_at
+            )::date
           )
-          ELSE 0
-        END
-      )::numeric(12,2) AS salary_advance,
+          + INTERVAL '24 days'
+        )::date
 
-      SUM(
-        CASE
-          WHEN LOWER(COALESCE(lr.loan_type, '')) = 'motorcycle loan'
-          THEN GREATEST(
-            COALESCE(lr.approved_total, lr.total, lr.approved_amount, lr.amount, 0) -
-            (
-              GREATEST(
-                (
-                  DATE_PART(
-                    'year',
-                    AGE((SELECT month_end FROM cutoff), COALESCE(lr.disbursement_date, lr.approved_at))
-                  )::int * 12
-                ) +
-                DATE_PART(
-                  'month',
-                  AGE((SELECT month_end FROM cutoff), COALESCE(lr.disbursement_date, lr.approved_at))
-                )::int,
-                0
-              ) * COALESCE(lr.approved_per_month, lr.per_month, 0)
-            ),
-            0
+        ELSE
+        (
+          DATE_TRUNC(
+            'month',
+            COALESCE(
+              lr.disbursement_date,
+              lr.approved_at
+            )::date
           )
-          ELSE 0
-        END
-      )::numeric(12,2) AS motorcycle_loan,
-
-      SUM(
-        CASE
-          WHEN LOWER(COALESCE(lr.loan_type, '')) IN ('special loan', 'special advance')
-          THEN GREATEST(
-            COALESCE(lr.approved_total, lr.total, lr.approved_amount, lr.amount, 0) -
-            (
-              GREATEST(
-                (
-                  DATE_PART(
-                    'year',
-                    AGE((SELECT month_end FROM cutoff), COALESCE(lr.disbursement_date, lr.approved_at))
-                  )::int * 12
-                ) +
-                DATE_PART(
-                  'month',
-                  AGE((SELECT month_end FROM cutoff), COALESCE(lr.disbursement_date, lr.approved_at))
-                )::int,
-                0
-              ) * COALESCE(lr.approved_per_month, lr.per_month, 0)
-            ),
-            0
-          )
-          ELSE 0
-        END
-      )::numeric(12,2) AS special_advance,
-
-      SUM(
-        CASE
-          WHEN LOWER(COALESCE(lr.loan_type, '')) IN ('cash loan', 'cash advance')
-          THEN GREATEST(
-            COALESCE(lr.approved_total, lr.total, lr.approved_amount, lr.amount, 0) -
-            (
-              GREATEST(
-                (
-                  DATE_PART(
-                    'year',
-                    AGE((SELECT month_end FROM cutoff), COALESCE(lr.disbursement_date, lr.approved_at))
-                  )::int * 12
-                ) +
-                DATE_PART(
-                  'month',
-                  AGE((SELECT month_end FROM cutoff), COALESCE(lr.disbursement_date, lr.approved_at))
-                )::int,
-                0
-              ) * COALESCE(lr.approved_per_month, lr.per_month, 0)
-            ),
-            0
-          )
-          ELSE 0
-        END
-      )::numeric(12,2) AS cash_advance
+          + INTERVAL '1 month'
+          + INTERVAL '24 days'
+        )::date
+      END AS first_deduction_date
 
     FROM public.loan_requests lr
-    CROSS JOIN cutoff c
+
     WHERE
       lr.staff_id IS NOT NULL
-      AND LOWER(COALESCE(lr.status, '')) = 'approved'
-      AND COALESCE(lr.disbursement_date, lr.approved_at) IS NOT NULL
-      AND COALESCE(lr.disbursement_date, lr.approved_at) <= c.month_end
-    GROUP BY lr.staff_id
+      AND LOWER(TRIM(COALESCE(lr.status, ''))) = 'approved'
+      AND COALESCE(
+        lr.disbursement_date,
+        lr.approved_at
+      ) IS NOT NULL
   ),
+
+    loan_remaining AS (
+      SELECT
+        lr.staff_id,
+
+        SUM(
+          CASE
+            WHEN LOWER(TRIM(COALESCE(lr.loan_type, ''))) = 'salary loan'
+            THEN GREATEST(
+              COALESCE(
+                lr.approved_total,
+                lr.total,
+                lr.approved_amount,
+                lr.amount,
+                0
+              )
+              -
+              (
+                CASE
+                  WHEN c.posting_date < lr.first_deduction_date
+                  THEN 0
+                  ELSE
+                    (
+                      (
+                        EXTRACT(
+                          YEAR FROM c.posting_date
+                        )::int
+                        -
+                        EXTRACT(
+                          YEAR FROM lr.first_deduction_date
+                        )::int
+                      ) * 12
+                      +
+                      (
+                        EXTRACT(
+                          MONTH FROM c.posting_date
+                        )::int
+                        -
+                        EXTRACT(
+                          MONTH FROM lr.first_deduction_date
+                        )::int
+                      )
+                      + 1
+                    )
+                END
+                *
+                COALESCE(
+                  lr.approved_per_month,
+                  lr.per_month,
+                  0
+                )
+              ),
+              0
+            )
+            ELSE 0
+          END
+        )::numeric(12,2) AS salary_loan,
+
+        SUM(
+          CASE
+            WHEN LOWER(TRIM(COALESCE(lr.loan_type, ''))) = 'salary advance'
+            THEN GREATEST(
+              COALESCE(
+                lr.approved_total,
+                lr.total,
+                lr.approved_amount,
+                lr.amount,
+                0
+              )
+              -
+              (
+                CASE
+                  WHEN c.posting_date < lr.first_deduction_date
+                  THEN 0
+                  ELSE
+                    (
+                      (
+                        EXTRACT(
+                          YEAR FROM c.posting_date
+                        )::int
+                        -
+                        EXTRACT(
+                          YEAR FROM lr.first_deduction_date
+                        )::int
+                      ) * 12
+                      +
+                      (
+                        EXTRACT(
+                          MONTH FROM c.posting_date
+                        )::int
+                        -
+                        EXTRACT(
+                          MONTH FROM lr.first_deduction_date
+                        )::int
+                      )
+                      + 1
+                    )
+                END
+                *
+                COALESCE(
+                  lr.approved_per_month,
+                  lr.per_month,
+                  0
+                )
+              ),
+              0
+            )
+            ELSE 0
+          END
+        )::numeric(12,2) AS salary_advance,
+
+        SUM(
+          CASE
+            WHEN LOWER(TRIM(COALESCE(lr.loan_type, ''))) = 'motorcycle loan'
+            THEN GREATEST(
+              COALESCE(
+                lr.approved_total,
+                lr.total,
+                lr.approved_amount,
+                lr.amount,
+                0
+              )
+              -
+              (
+                CASE
+                  WHEN c.posting_date < lr.first_deduction_date
+                  THEN 0
+                  ELSE
+                    (
+                      (
+                        EXTRACT(
+                          YEAR FROM c.posting_date
+                        )::int
+                        -
+                        EXTRACT(
+                          YEAR FROM lr.first_deduction_date
+                        )::int
+                      ) * 12
+                      +
+                      (
+                        EXTRACT(
+                          MONTH FROM c.posting_date
+                        )::int
+                        -
+                        EXTRACT(
+                          MONTH FROM lr.first_deduction_date
+                        )::int
+                      )
+                      + 1
+                    )
+                END
+                *
+                COALESCE(
+                  lr.approved_per_month,
+                  lr.per_month,
+                  0
+                )
+              ),
+              0
+            )
+            ELSE 0
+          END
+        )::numeric(12,2) AS motorcycle_loan,
+
+        SUM(
+          CASE
+            WHEN LOWER(TRIM(COALESCE(lr.loan_type, ''))) IN (
+              'special loan',
+              'special advance'
+            )
+            THEN GREATEST(
+              COALESCE(
+                lr.approved_total,
+                lr.total,
+                lr.approved_amount,
+                lr.amount,
+                0
+              )
+              -
+              (
+                CASE
+                  WHEN c.posting_date < lr.first_deduction_date
+                  THEN 0
+                  ELSE
+                    (
+                      (
+                        EXTRACT(
+                          YEAR FROM c.posting_date
+                        )::int
+                        -
+                        EXTRACT(
+                          YEAR FROM lr.first_deduction_date
+                        )::int
+                      ) * 12
+                      +
+                      (
+                        EXTRACT(
+                          MONTH FROM c.posting_date
+                        )::int
+                        -
+                        EXTRACT(
+                          MONTH FROM lr.first_deduction_date
+                        )::int
+                      )
+                      + 1
+                    )
+                END
+                *
+                COALESCE(
+                  lr.approved_per_month,
+                  lr.per_month,
+                  0
+                )
+              ),
+              0
+            )
+            ELSE 0
+          END
+        )::numeric(12,2) AS special_advance,
+
+        SUM(
+          CASE
+            WHEN LOWER(TRIM(COALESCE(lr.loan_type, ''))) IN (
+              'cash loan',
+              'cash advance'
+            )
+            THEN GREATEST(
+              COALESCE(
+                lr.approved_total,
+                lr.total,
+                lr.approved_amount,
+                lr.amount,
+                0
+              )
+              -
+              (
+                CASE
+                  WHEN c.posting_date < lr.first_deduction_date
+                  THEN 0
+                  ELSE
+                    (
+                      (
+                        EXTRACT(
+                          YEAR FROM c.posting_date
+                        )::int
+                        -
+                        EXTRACT(
+                          YEAR FROM lr.first_deduction_date
+                        )::int
+                      ) * 12
+                      +
+                      (
+                        EXTRACT(
+                          MONTH FROM c.posting_date
+                        )::int
+                        -
+                        EXTRACT(
+                          MONTH FROM lr.first_deduction_date
+                        )::int
+                      )
+                      + 1
+                    )
+                END
+                *
+                COALESCE(
+                  lr.approved_per_month,
+                  lr.per_month,
+                  0
+                )
+              ),
+              0
+            )
+            ELSE 0
+          END
+        )::numeric(12,2) AS cash_advance
+
+      FROM eligible_loans lr
+      CROSS JOIN cutoff c
+
+      WHERE
+        COALESCE(
+          lr.disbursement_date,
+          lr.approved_at
+        )::date <= c.posting_date
+
+      GROUP BY lr.staff_id
+    ),
 
   opening_loan_remaining AS (
     SELECT
       ob.staff_id,
 
       SUM(
-        CASE WHEN LOWER(COALESCE(ob.loan_type, '')) = 'salary advance'
-        THEN COALESCE(ob.remaining_balance, 0) ELSE 0 END
+        CASE
+          WHEN LOWER(TRIM(COALESCE(ob.loan_type, ''))) = 'salary advance'
+          THEN GREATEST(
+            COALESCE(
+              ob.remaining_balance,
+              ob.total_amount,
+              ob.original_amount,
+              0
+            ),
+            0
+          )
+          ELSE 0
+        END
       )::numeric(12,2) AS opening_salary_advance,
 
       SUM(
-        CASE WHEN LOWER(COALESCE(ob.loan_type, '')) = 'motorcycle loan'
-        THEN COALESCE(ob.remaining_balance, 0) ELSE 0 END
+        CASE
+          WHEN LOWER(TRIM(COALESCE(ob.loan_type, ''))) = 'motorcycle loan'
+          THEN GREATEST(
+            COALESCE(
+              ob.remaining_balance,
+              ob.total_amount,
+              ob.original_amount,
+              0
+            ),
+            0
+          )
+          ELSE 0
+        END
       )::numeric(12,2) AS opening_motorcycle_loan,
 
       SUM(
-        CASE WHEN LOWER(COALESCE(ob.loan_type, '')) = 'special advance'
-        THEN COALESCE(ob.remaining_balance, 0) ELSE 0 END
+        CASE
+          WHEN LOWER(TRIM(COALESCE(ob.loan_type, ''))) IN (
+            'special advance',
+            'special loan'
+          )
+          THEN GREATEST(
+            COALESCE(
+              ob.remaining_balance,
+              ob.total_amount,
+              ob.original_amount,
+              0
+            ),
+            0
+          )
+          ELSE 0
+        END
       )::numeric(12,2) AS opening_special_advance,
 
       SUM(
-        CASE WHEN LOWER(COALESCE(ob.loan_type, '')) = 'cash advance'
-        THEN COALESCE(ob.remaining_balance, 0) ELSE 0 END
+        CASE
+          WHEN LOWER(TRIM(COALESCE(ob.loan_type, ''))) IN (
+            'cash advance',
+            'cash loan'
+          )
+          THEN GREATEST(
+            COALESCE(
+              ob.remaining_balance,
+              ob.total_amount,
+              ob.original_amount,
+              0
+            ),
+            0
+          )
+          ELSE 0
+        END
       )::numeric(12,2) AS opening_cash_advance
 
     FROM public.staff_loan_opening_balances ob
     CROSS JOIN cutoff c
+
     WHERE
       ob.staff_id IS NOT NULL
-      AND LOWER(COALESCE(ob.status, '')) = 'active'
-      AND (ob.effective_date IS NULL OR ob.effective_date <= c.month_end)
+      AND LOWER(TRIM(COALESCE(ob.status, ''))) = 'active'
+      AND COALESCE(ob.effective_date, ob.start_date) <= c.posting_date
+
     GROUP BY ob.staff_id
   ),
 
   sap_payable AS (
     SELECT
       sap.employee_no,
-      SUM(COALESCE(sap.amount, 0))::numeric(12,2) AS staff_accounts_payable
+
+      SUM(
+        GREATEST(
+          COALESCE(sap.balance, sap.amount, 0),
+          0
+        )
+      )::numeric(12,2) AS staff_accounts_payable
+
     FROM public.staff_accounts_payable sap
     CROSS JOIN cutoff c
+
     WHERE
       sap.employee_no IS NOT NULL
-      AND LOWER(COALESCE(sap.status, '')) = 'approved'
-      AND COALESCE(sap.release_date, sap.approved_at, sap.created_at) <= c.month_end
+
+      AND LOWER(
+        TRIM(
+          COALESCE(sap.status, '')
+        )
+      ) = 'approved'
+
+      AND COALESCE(
+        sap.release_date,
+        sap.approved_at,
+        sap.created_at
+      ) <= c.posting_date
+
     GROUP BY sap.employee_no
   ),
 
@@ -306,14 +579,15 @@ const buildLiveSql = (whereSql = "") => `
 
       SUM(
         GREATEST(
-          COALESCE(ore.amount, 0) -
+          COALESCE(ore.amount, 0)
+          -
           (
             GREATEST(
               (
                 DATE_PART(
                   'year',
                   AGE(
-                    (SELECT month_end FROM cutoff),
+                    c.posting_date,
                     COALESCE(
                       ore.deduction_start_date,
                       ore.release_date,
@@ -322,11 +596,12 @@ const buildLiveSql = (whereSql = "") => `
                     )
                   )
                 )::int * 12
-              ) +
+              )
+              +
               DATE_PART(
                 'month',
                 AGE(
-                  (SELECT month_end FROM cutoff),
+                  c.posting_date,
                   COALESCE(
                     ore.deduction_start_date,
                     ore.release_date,
@@ -345,15 +620,17 @@ const buildLiveSql = (whereSql = "") => `
 
     FROM public.other_receivables ore
     CROSS JOIN cutoff c
+
     WHERE
       ore.employee_no IS NOT NULL
-      AND LOWER(COALESCE(ore.status, '')) = 'approved'
+      AND LOWER(TRIM(COALESCE(ore.status, ''))) = 'approved'
+
       AND COALESCE(
         ore.deduction_start_date,
         ore.release_date,
         ore.approved_at,
         ore.created_at
-      ) <= c.month_end
+      ) <= c.posting_date
 
     GROUP BY ore.employee_no
   ),
@@ -531,43 +808,6 @@ router.get(
     } catch (e) {
       console.error("GET /api/schedule-balances/live ERROR:", e);
       return res.status(500).json({ message: e.message || "Server error" });
-    }
-  }
-);
-
-router.post(
-  "/deduct",
-  requireAuth,
-  requirePermission("schedule_balance", "edit"),
-  async (req, res) => {
-    try {
-      const { staff_id, month } = req.body;
-      const snapshotMonth = monthToDate(month);
-
-      if (!staff_id || !snapshotMonth) {
-        return res.status(400).json({ message: "Missing staff_id or month" });
-      }
-
-      const result = await pool.query(
-        `
-        UPDATE public.schedule_balance_snapshots
-        SET
-          salary_advance = GREATEST(0, salary_advance - (salary_advance / 12)),
-          motorcycle_loan = GREATEST(0, motorcycle_loan - (motorcycle_loan / 12)),
-          special_advance = GREATEST(0, special_advance - (special_advance / 12)),
-          cash_advance = GREATEST(0, cash_advance - (cash_advance / 12)),
-          updated_at = NOW()
-        WHERE staff_id = $1
-          AND snapshot_month = $2::date
-        RETURNING *;
-        `,
-        [staff_id, snapshotMonth]
-      );
-
-      return res.json(result.rows[0] || {});
-    } catch (err) {
-      console.error("POST /schedule-balances/deduct ERROR:", err);
-      return res.status(500).json({ message: "Deduction failed" });
     }
   }
 );
