@@ -302,47 +302,57 @@ router.get(
     try {
       const scope = getOperationScope(req);
 
-      const result = await pool.query(
-        `
-        SELECT DISTINCT
-          ${selectSbfFields}
+      let query = "";
+      let params = [];
 
-        FROM public.sbf_orders so
+      // =================================================
+      // OPERATION DEPARTMENT
+      // Needs staff JOIN because BM/AM/RM/AVP scope
+      // depends on branch/area/region/division.
+      // =================================================
+      if (isOperationDepartment(req)) {
+        query = `
+          SELECT DISTINCT
+            ${selectSbfFields}
 
-        LEFT JOIN public.staff s
-          ON LOWER(
-               TRIM(
-                 COALESCE(
-                   s.employee_no,
-                   ''
-                 )
-               )
-             )
-           =
-             LOWER(
-               TRIM(
-                 COALESCE(
-                   so.employee_no,
-                   ''
-                 )
-               )
-             )
+          FROM public.sbf_orders so
 
-        WHERE 1 = 1
+          LEFT JOIN public.staff s
+            ON LOWER(TRIM(COALESCE(s.employee_no, '')))
+             = LOWER(TRIM(COALESCE(so.employee_no, '')))
 
-        ${scope.where}
+          WHERE 1 = 1
 
-        ORDER BY so.id DESC
-        `,
-        scope.params
-      );
+          ${scope.where}
+
+          ORDER BY so.id DESC
+        `;
+
+        params = scope.params;
+      }
+
+      // =================================================
+      // ADMIN / IT / HR / ACCOUNTING / OTHER DEPARTMENTS
+      // No staff JOIN is needed.
+      // =================================================
+      else {
+        query = `
+          SELECT
+            ${selectSbfFields}
+
+          FROM public.sbf_orders so
+
+          ORDER BY so.id DESC
+        `;
+
+        params = [];
+      }
+
+      const result = await pool.query(query, params);
 
       return res.json(result.rows);
     } catch (err) {
-      console.error(
-        "GET SBF ORDERS ERROR:",
-        err
-      );
+      console.error("GET SBF ORDERS ERROR:", err);
 
       return res.status(500).json({
         message: err.message,

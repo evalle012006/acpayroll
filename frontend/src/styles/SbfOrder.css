@@ -242,107 +242,77 @@
 
 .sbf-summary-icon {
   flex: 0 0 48px;
-
   width: 48px;
   height: 48px;
-
   display: grid;
   place-items: center;
-
   border:
     1px solid rgba(59, 130, 246, 0.25);
-
   border-radius: 14px;
-
   background:
     rgba(37, 99, 235, 0.11);
-
   color: #2563eb;
-
   font-size: 12px;
   font-weight: 950;
 }
-
 
 .sbf-summary-card.pending
 .sbf-summary-icon {
   border-color:
     rgba(245, 158, 11, 0.34);
-
   background:
     rgba(245, 158, 11, 0.12);
-
   color: #d97706;
 }
-
 
 .sbf-summary-card.approved
 .sbf-summary-icon {
   border-color:
     rgba(16, 185, 129, 0.34);
-
   background:
     rgba(16, 185, 129, 0.12);
-
   color: #059669;
 }
-
 
 .sbf-summary-card.rejected
 .sbf-summary-icon {
   border-color:
     rgba(239, 68, 68, 0.34);
-
   background:
     rgba(239, 68, 68, 0.12);
-
   color: #dc2626;
 }
 
-
 .sbf-summary-content {
   min-width: 0;
-
   display: flex;
   flex-direction: column;
 }
 
-
 .sbf-summary-content small {
   color: var(--muted);
-
   font-size: 11px;
   font-weight: 850;
 }
 
-
 .sbf-summary-content strong {
   margin-top: 3px;
-
   color: var(--text);
-
   font-size: 28px;
   line-height: 1;
-
   font-weight: 950;
 }
 
-
 .sbf-summary-content em {
   margin-top: 7px;
-
   overflow: hidden;
-
   color: var(--muted);
-
   font-size: 10px;
   font-style: normal;
   font-weight: 750;
-
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-
 
 /* =========================================================
    SEARCH PANEL
@@ -350,128 +320,89 @@
 
 .sbf-search-panel {
   display: grid;
-
   grid-template-columns:
     minmax(180px, 0.8fr)
     minmax(420px, 1.8fr)
     auto;
-
   align-items: center;
-
   gap: 16px;
-
   padding: 16px;
-
   border: 1px solid var(--border);
   border-radius: 16px;
-
   background: var(--panel);
-
   box-shadow: var(--shadow-soft);
 }
-
 
 .sbf-search-copy {
   display: flex;
   flex-direction: column;
-
   gap: 4px;
 }
 
-
 .sbf-search-copy strong {
   color: var(--text);
-
   font-size: 13px;
   font-weight: 900;
 }
 
-
 .sbf-search-copy span {
   color: var(--muted);
-
   font-size: 11px;
   line-height: 1.45;
-
   font-weight: 650;
 }
-
 
 .sbf-search-controls {
   display: flex;
   align-items: center;
-
   gap: 9px;
 }
 
-
 .sbf-search-input {
   flex: 1;
-
   min-width: 0;
   height: 40px;
-
   padding: 0 13px;
-
   border: 1px solid var(--border);
   border-radius: 10px;
-
   background: var(--panel-2);
-
   color: var(--text);
-
   outline: none;
-
   font-family: inherit;
 }
-
 
 .sbf-search-input:focus {
   border-color:
     rgba(59, 130, 246, 0.58);
-
   box-shadow:
     0 0 0 3px rgba(59, 130, 246, 0.12);
 }
-
 
 .sbf-search-input::placeholder {
   color: var(--muted);
 }
 
-
 .sbf-search-btn {
   min-height: 40px;
-
   padding: 9px 14px;
-
   border-radius: 10px;
-
   font-size: 12px;
   font-weight: 900;
 }
-
 
 .sbf-search-btn.secondary {
   border: 1px solid var(--border);
-
   background: var(--panel-2);
-
   color: var(--text);
 }
 
-
 .sbf-result-count {
   min-width: 92px;
-
   color: #3b82f6;
-
   font-size: 12px;
   font-weight: 900;
-
   text-align: right;
 }
-
 
 /* =========================================================
    TABLE
@@ -479,88 +410,62 @@
 
 .sbf-table-card {
   overflow: hidden;
-
   border: 1px solid var(--border);
   border-radius: 16px;
-
   background: var(--panel);
-
   box-shadow: var(--shadow-soft);
 }
 
-
 .sbf-table-wrap {
   width: 100%;
-
   overflow-x: auto;
 }
 
-
 .sbf-table {
   width: 100%;
-
   min-width: 1120px;
-
   border-collapse: collapse;
 }
 
-
 .sbf-table th {
   padding: 13px 12px;
-
   background: var(--table-header);
-
   color: #fff;
-
   text-align: left;
-
   font-size: 12px;
   font-weight: 900;
-
   white-space: nowrap;
 }
 
-
 .sbf-table td {
   padding: 11px 12px;
-
   border-bottom:
     1px solid var(--border);
-
   color: var(--text);
-
   font-size: 12px;
-
   vertical-align: middle;
 }
-
 
 .sbf-table tbody tr {
   transition:
     background 0.16s ease;
 }
 
-
 .sbf-table tbody tr:hover {
   background:
     rgba(59, 130, 246, 0.055);
 }
 
-
 .sbf-table tbody tr:last-child td {
   border-bottom: 0;
 }
 
-
 .sbf-order-no {
   color: #3b82f6;
-
   font-size: 12px;
   font-weight: 900;
-
   white-space: nowrap;
 }
-
 
 /* =========================================================
    EMPLOYEE
@@ -568,89 +473,64 @@
 
 .sbf-employee-cell {
   min-width: 175px;
-
   display: flex;
   align-items: center;
-
   gap: 10px;
 }
 
-
 .sbf-avatar {
   flex: 0 0 34px;
-
   width: 34px;
   height: 34px;
-
   display: grid;
   place-items: center;
-
   border:
     1px solid rgba(59, 130, 246, 0.25);
-
   border-radius: 10px;
-
   background:
     rgba(59, 130, 246, 0.11);
-
   color: #3b82f6;
-
   font-size: 12px;
   font-weight: 950;
 }
 
-
 .sbf-employee-cell > div:not(.sbf-avatar),
 .sbf-branch-cell {
   min-width: 0;
-
   display: flex;
   flex-direction: column;
-
   gap: 2px;
 }
-
 
 .sbf-employee-cell strong,
 .sbf-branch-cell strong {
   color: var(--text);
-
   font-size: 12px;
   font-weight: 900;
 }
 
-
 .sbf-employee-cell small,
 .sbf-branch-cell span {
   color: var(--muted);
-
   font-size: 10px;
   line-height: 1.3;
-
   font-weight: 650;
 }
-
 
 .sbf-branch-cell {
   min-width: 135px;
 }
 
-
 .sbf-assistance {
   display: block;
-
   max-width: 210px;
-
   line-height: 1.35;
-
   font-weight: 750;
 }
-
 
 .sbf-amount {
   white-space: nowrap;
 }
-
 
 /* =========================================================
    STATUS
@@ -660,60 +540,42 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-
   min-height: 28px;
   min-width: 80px;
-
   padding: 5px 9px;
-
   border: 1px solid var(--border);
   border-radius: 999px;
-
   background: var(--panel-2);
-
   color: var(--text);
-
   font-size: 10px;
   line-height: 1.2;
-
   font-weight: 900;
-
   text-align: center;
 }
-
 
 .sbf-status.pending {
   border-color:
     rgba(245, 158, 11, 0.35);
-
   background:
     rgba(245, 158, 11, 0.12);
-
   color: #d97706;
 }
-
 
 .sbf-status.approved {
   border-color:
     rgba(16, 185, 129, 0.35);
-
   background:
     rgba(16, 185, 129, 0.12);
-
   color: #059669;
 }
-
 
 .sbf-status.rejected {
   border-color:
     rgba(239, 68, 68, 0.35);
-
   background:
     rgba(239, 68, 68, 0.12);
-
   color: #dc2626;
 }
-
 
 /* =========================================================
    FILE
@@ -721,31 +583,22 @@
 
 .sbf-file-btn {
   min-height: 30px;
-
   padding: 6px 10px;
-
   border:
     1px solid rgba(14, 165, 233, 0.30);
-
   border-radius: 8px;
-
   background:
     rgba(14, 165, 233, 0.10);
-
   color: #0ea5e9;
-
   font-size: 10px;
   font-weight: 900;
 }
 
-
 .sbf-no-file {
   color: var(--muted);
-
   font-size: 10px;
   font-weight: 750;
 }
-
 
 /* =========================================================
    ACTIONS
@@ -755,77 +608,54 @@
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-
   gap: 6px;
 }
-
 
 .sbf-view-btn {
   min-width: 70px;
   min-height: 32px;
-
   padding: 7px 11px;
-
   border:
     1px solid rgba(59, 130, 246, 0.34);
-
   border-radius: 9px;
-
   background:
     rgba(59, 130, 246, 0.10);
-
   color: #3b82f6;
-
   font-size: 11px;
   font-weight: 900;
 }
 
-
 .sbf-action-btn {
   min-height: 32px;
-
   padding: 7px 10px;
-
   border-radius: 9px;
-
   font-size: 10px;
   font-weight: 900;
 }
 
-
 .sbf-action-btn.approve {
   border:
     1px solid rgba(16, 185, 129, 0.35);
-
   background:
     rgba(16, 185, 129, 0.12);
-
   color: #059669;
 }
-
 
 .sbf-action-btn.reject {
   border:
     1px solid rgba(239, 68, 68, 0.35);
-
   background:
     rgba(239, 68, 68, 0.12);
-
   color: #dc2626;
 }
 
-
 .sbf-empty-state {
   padding: 32px !important;
-
   color: var(--muted) !important;
-
   font-size: 13px !important;
   font-weight: 800 !important;
-
   text-align: center !important;
 }
-
 
 /* =========================================================
    PAGINATION
@@ -835,83 +665,59 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-
   gap: 14px;
-
   padding: 3px 2px 0;
 }
-
 
 .sbf-pager-left,
 .sbf-pager-right {
   display: flex;
   align-items: center;
-
   gap: 8px;
 }
-
 
 .sbf-pager-left span,
 .sbf-page-summary {
   color: var(--muted);
-
   font-size: 11px;
   font-weight: 750;
 }
 
-
 .sbf-pager-left select {
   height: 34px;
-
   padding:
     0 30px 0 10px;
-
   border: 1px solid var(--border);
   border-radius: 9px;
-
   background: var(--panel);
-
   color: var(--text);
-
   font-family: inherit;
-
   font-size: 11px;
   font-weight: 800;
 }
-
 
 .sbf-page-btn,
 .sbf-page-current {
   width: 34px;
   height: 34px;
-
   display: inline-grid;
   place-items: center;
-
   border: 1px solid var(--border);
   border-radius: 9px;
-
   background: var(--panel);
-
   color: var(--text);
-
   font-size: 15px;
   font-weight: 900;
 }
 
-
 .sbf-page-current {
   border-color:
     rgba(37, 99, 235, 0.70);
-
   background:
     rgba(37, 99, 235, 0.12);
-
   color: #2563eb;
-
   font-size: 11px;
 }
-
 
 /* =========================================================
    MODAL
@@ -919,121 +725,83 @@
 
 .sbf-modal-overlay {
   position: fixed;
-
   inset: 0;
-
   z-index: 9999;
-
   display: flex;
   align-items: center;
   justify-content: center;
-
   padding: 20px;
-
   background:
     rgba(2, 6, 23, 0.70);
-
   backdrop-filter: blur(3px);
 }
-
 
 .sbf-modal {
   width: 100%;
   max-width: 900px;
-
   max-height: 92vh;
-
   overflow-y: auto;
-
   border: 1px solid var(--border);
   border-radius: 18px;
-
   background: var(--panel);
-
   box-shadow:
     0 24px 70px rgba(0, 0, 0, 0.35);
 }
-
 
 .sbf-view-modal {
   max-width: 780px;
 }
 
-
 .sbf-modal-head {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
-
   gap: 20px;
-
   padding: 20px 22px;
-
   border-bottom:
     1px solid var(--border);
 }
 
-
 .sbf-modal-eyebrow {
   display: block;
-
   margin-bottom: 5px;
-
   color: #3b82f6;
-
   font-size: 10px;
   font-weight: 900;
-
   letter-spacing: 0.10em;
 }
 
-
 .sbf-modal-head h3 {
   margin: 0;
-
   color: var(--text);
-
   font-size: 20px;
   font-weight: 950;
 }
 
-
 .sbf-modal-head p {
   margin: 5px 0 0;
-
   color: var(--muted);
-
   font-size: 11px;
   line-height: 1.5;
-
   font-weight: 650;
 }
 
-
 .sbf-modal-close {
   flex: 0 0 36px;
-
   width: 36px;
   height: 36px;
-
   border: 1px solid var(--border);
   border-radius: 10px;
-
   background: var(--panel-2);
-
   color: var(--text);
-
   cursor: pointer;
-
   font-size: 14px;
   font-weight: 900;
 }
 
-
 .sbf-modal-close:hover {
   background: var(--hover);
 }
-
 
 /* =========================================================
    FORM
@@ -1043,99 +811,72 @@
   padding: 20px 22px;
 }
 
-
 .sbf-form-grid {
   display: grid;
-
   grid-template-columns:
     repeat(2, minmax(0, 1fr));
-
   gap: 14px;
 }
-
 
 .sbf-field {
   display: flex;
   flex-direction: column;
-
   gap: 6px;
 }
-
 
 .sbf-field.full {
   grid-column: span 2;
 }
 
-
 .sbf-field label {
   color: var(--text);
-
   font-size: 11px;
   font-weight: 850;
 }
-
 
 .sbf-field input,
 .sbf-field textarea,
 .sbf-field select {
   width: 100%;
-
   box-sizing: border-box;
-
   padding: 10px 12px;
-
   border: 1px solid var(--border);
   border-radius: 10px;
-
   background: var(--panel-2);
-
   color: var(--text);
-
   outline: none;
-
   font-family: inherit;
 }
-
 
 .sbf-field input:focus,
 .sbf-field textarea:focus,
 .sbf-field select:focus {
   border-color:
     rgba(59, 130, 246, 0.55);
-
   box-shadow:
     0 0 0 3px rgba(59, 130, 246, 0.12);
 }
 
-
 .sbf-field textarea {
   min-height: 90px;
-
   resize: vertical;
 }
 
-
 .sbf-selected-file {
   color: var(--muted);
-
   font-size: 10px;
   font-weight: 700;
 }
 
-
 .sbf-modal-actions {
   display: flex;
   justify-content: flex-end;
-
   gap: 10px;
-
   margin-top: 20px;
   padding-top: 16px;
-
   border-top:
     1px solid var(--border);
 }
-
 
 /* =========================================================
    VIEW MODAL
@@ -1143,74 +884,53 @@
 
 .sbf-view-grid {
   display: grid;
-
   grid-template-columns:
     repeat(2, minmax(0, 1fr));
-
   gap: 14px;
-
   padding: 22px;
 }
-
 
 .sbf-view-item {
   display: flex;
   flex-direction: column;
-
   gap: 5px;
-
   padding: 13px;
-
   border: 1px solid var(--border);
   border-radius: 12px;
-
   background: var(--panel-2);
 }
-
 
 .sbf-view-item.full {
   grid-column: span 2;
 }
 
-
 .sbf-view-item > span:first-child {
   color: var(--muted);
-
   font-size: 10px;
   font-weight: 800;
-
   text-transform: uppercase;
-
   letter-spacing: 0.04em;
 }
 
-
 .sbf-view-item strong {
   color: var(--text);
-
   font-size: 13px;
   font-weight: 900;
 }
 
-
 .sbf-view-box {
   color: var(--text);
-
   font-size: 12px;
   line-height: 1.6;
-
   font-weight: 650;
 }
-
 
 .sbf-attachment-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-
   gap: 14px;
 }
-
 
 /* =========================================================
    DARK MODE TUNING
@@ -1222,34 +942,28 @@
 [data-theme="dark"] .sbf-page-btn,
 [data-theme="dark"] .sbf-page-current {
   background: #12264b;
-
   border-color:
     rgba(255, 255, 255, 0.09);
 }
-
 
 [data-theme="dark"] .sbf-table td {
   border-bottom-color:
     rgba(255, 255, 255, 0.06);
 }
 
-
 /* =========================================================
    RESPONSIVE
 ========================================================= */
 
 @media (max-width: 1100px) {
-
   .sbf-summary-grid {
     grid-template-columns:
       repeat(2, minmax(0, 1fr));
   }
 
-
   .sbf-search-panel {
     grid-template-columns: 1fr;
   }
-
 
   .sbf-result-count {
     text-align: left;
@@ -1294,7 +1008,6 @@
 }
 
 @media (max-width: 560px) {
-
   .sbf-summary-grid {
     grid-template-columns: 1fr;
   }
