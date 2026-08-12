@@ -124,20 +124,55 @@ const chainByDepartmentAndPosition = (department, position) => {
   const pos = getApplicantRole({ position });
 
   if (isOperationDepartment(dept)) {
-    if (isSvpPos(pos)) return [ACCOUNTING_FINAL];
+    // Senior Vice President
+    // -> Accounting final
+    if (isSvpPos(pos)) {
+      return [
+        ACCOUNTING_FINAL,
+      ];
+    }
 
-    if (isVpPos(pos)) return ["Senior Vice President", ACCOUNTING_FINAL];
+    // Vice President
+    // -> SVP -> Accounting final
+    if (isVpPos(pos)) {
+      return [
+        "Senior Vice President",
+        ACCOUNTING_FINAL,
+      ];
+    }
 
-    if (isAvpPos(pos)) return ["Vice President"];
+    // Assistant Vice President
+    // -> VP -> Accounting final
+    if (isAvpPos(pos)) {
+      return [
+        "Vice President",
+        ACCOUNTING_FINAL,
+      ];
+    }
 
+    // Regional Manager
+    // -> AVP -> VP -> Accounting final
     if (isRegionalManagerPos(pos)) {
-      return ["Assistant Vice President", "Vice President"];
+      return [
+        "Assistant Vice President",
+        "Vice President",
+        ACCOUNTING_FINAL,
+      ];
     }
 
+    // Area Manager
+    // -> RM -> AVP -> VP -> Accounting final
     if (isAreaManagerPos(pos)) {
-      return ["Regional Manager", "Assistant Vice President", "Vice President"];
+      return [
+        "Regional Manager",
+        "Assistant Vice President",
+        "Vice President",
+        ACCOUNTING_FINAL,
+      ];
     }
 
+    // Branch Manager
+    // -> AM -> RM -> AVP -> VP FINAL
     if (isBranchManagerPos(pos)) {
       return [
         "Area Manager",
@@ -147,8 +182,9 @@ const chainByDepartmentAndPosition = (department, position) => {
       ];
     }
 
+    // Loan Officer / other Operation staff
+    // -> AM -> RM -> AVP -> VP FINAL
     return [
-      "Branch Manager",
       "Area Manager",
       "Regional Manager",
       "Assistant Vice President",
@@ -746,7 +782,7 @@ export default function CBUWithdrawApprovalTab() {
             <div className="mini">
               {loading
                 ? "Loading CBU withdraw requests..."
-                : "Download latest file → upload signed file → approve. Vice President is the final approver for Operation Department requests."}
+                : "Download latest file → upload signed file → approve. For Loan Officer and Branch Manager requests, Vice President is final. Area Manager to Senior Vice President requests require Accounting Department final approval."}
             </div>
           </div>
         </div>

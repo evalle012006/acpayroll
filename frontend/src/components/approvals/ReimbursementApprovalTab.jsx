@@ -1,11 +1,4 @@
-import React, {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
-
+import React, { useCallback, useEffect, useMemo, useRef, useState, } from "react";
 import api from "../../api/axiosClient";
 
 const WAITING_FINAL_FILE = "Waiting Final File Upload";
@@ -103,32 +96,8 @@ const canBypass = (role, department = "") =>
   );
 
 const canFinalUpload = (role, department = "") =>
-  ["admin", "it", "accounting", "hr"].includes(norm(role)) ||
-  (
-    norm(department).includes("accounting") &&
-    [
-      "branch manager",
-      "area manager",
-      "regional manager",
-      "assistant vice president",
-      "vice president",
-      "senior vice president",
-    ].includes(norm(role))
-  ) ||
-  (
-    norm(department).includes("it") &&
-    [
-      "branch manager",
-      "acting branch manager",
-      "area manager",
-      "acting area manager",
-      "regional manager",
-      "acting regional manager",
-      "assistant vice president",
-      "vice president",
-      "senior vice president",
-    ].includes(norm(role))
-  );
+  norm(role) === "accounting" ||
+  norm(department).includes("accounting");
 
 const canVoid = (role, department = "") =>
   ["admin", "it"].includes(norm(role)) ||
@@ -888,7 +857,7 @@ const isITDeptManager =
     }
 
     if (!canFinalUpload(role, department)) {
-      return alert("Only Admin/IT/Accounting/HR can upload final file.");
+      return alert("Only Accounting Department can upload the final file.");
     }
 
     if (
@@ -1524,7 +1493,7 @@ const isITDeptManager =
                     ) : null}
 
                     <small style={{ opacity: 0.75, display: "block", marginTop: 8 }}>
-                      Admin/IT/Accounting/HR final upload will fully approve this reimbursement.
+                      Accounting Department final upload will fully approve this reimbursement.
                     </small>
                   </div>
                 ) : null}

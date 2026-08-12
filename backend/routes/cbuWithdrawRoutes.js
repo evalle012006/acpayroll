@@ -121,20 +121,26 @@ const getRawApprovalChain = (department, position) => {
   const pos = norm(position);
 
   if (isOperationDepartment(dept)) {
-  // SVP applicant -> Accounting final only
-    if (isSVPPos(pos)) {
-      return [ACCOUNTING_FINAL];
-    }
+    // =====================================================
+    // OPERATION DEPARTMENT CBU WITHDRAWAL
+    //
+    // LO / BM:
+    // AM -> RM -> AVP -> VP FINAL
+    //
+    // AM to SVP:
+    // continues to Accounting Department FINAL
+    // =====================================================
 
-    // AVP applicant -> VP -> Accounting
-    if (isAVPPos(pos)) {
+    // Senior Vice President applicant
+    // -> Accounting final only
+    if (isSVPPos(pos)) {
       return [
-        "Vice President",
         ACCOUNTING_FINAL,
       ];
     }
 
-    // VP applicant -> SVP -> Accounting
+    // Vice President applicant
+    // -> SVP -> Accounting final
     if (isVPPos(pos)) {
       return [
         "Senior Vice President",
@@ -142,7 +148,17 @@ const getRawApprovalChain = (department, position) => {
       ];
     }
 
-    // Regional Manager -> AVP -> VP -> Accounting
+    // Assistant Vice President applicant
+    // -> VP -> Accounting final
+    if (isAVPPos(pos)) {
+      return [
+        "Vice President",
+        ACCOUNTING_FINAL,
+      ];
+    }
+
+    // Regional Manager applicant
+    // -> AVP -> VP -> Accounting final
     if (isRegionalManagerPos(pos)) {
       return [
         "Assistant Vice President",
@@ -151,7 +167,8 @@ const getRawApprovalChain = (department, position) => {
       ];
     }
 
-    // Area Manager -> RM -> AVP -> VP -> Accounting
+    // Area Manager applicant
+    // -> RM -> AVP -> VP -> Accounting final
     if (isAreaManagerPos(pos)) {
       return [
         "Regional Manager",
@@ -161,25 +178,24 @@ const getRawApprovalChain = (department, position) => {
       ];
     }
 
-    // Branch Manager -> AM -> RM -> AVP -> VP -> Accounting
+    // Branch Manager applicant
+    // -> AM -> RM -> AVP -> VP FINAL
     if (isBranchManagerPos(pos)) {
       return [
         "Area Manager",
         "Regional Manager",
         "Assistant Vice President",
         "Vice President",
-        ACCOUNTING_FINAL,
       ];
     }
 
     // Loan Officer / other Operation staff
+    // -> AM -> RM -> AVP -> VP FINAL
     return [
-      "Branch Manager",
       "Area Manager",
       "Regional Manager",
       "Assistant Vice President",
       "Vice President",
-      ACCOUNTING_FINAL,
     ];
   }
 

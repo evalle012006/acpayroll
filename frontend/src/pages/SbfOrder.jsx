@@ -13,86 +13,112 @@ const readUser = () => {
 
 const norm = (v) => String(v ?? "").trim().toLowerCase();
 
+const formatAmount = (value) =>
+  Number(value || 0).toLocaleString("en-PH", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+
+const formatDate = (value) => {
+  if (!value) return "—";
+  return String(value).slice(0, 10);
+};
+
+const getInitial = (name) => {
+  const value = String(name || "").trim();
+  return value ? value.charAt(0).toUpperCase() : "?";
+};
+
+const getStatusClass = (status) => {
+  const s = norm(status);
+
+  if (s === "approved") return "approved";
+  if (s === "rejected") return "rejected";
+
+  return "pending";
+};
+
 export default function SbfOrder() {
   const navigate = useNavigate();
+
   const user = useMemo(() => readUser(), []);
+
   const role = norm(user?.role);
   const department = norm(user?.department);
 
-const isAdmin = role === "admin";
-const isIt = role === "it";
-const isHr = role === "hr";
-const isAccounting = role === "accounting";
-const isBranchManager = role === "branch manager";
-const isAreaManager = role === "area manager";
-const isRegionalManager = role === "regional manager";
-const isAssistantVicePresident = role === "assistant vice president";
-const isVicePresident = role === "vice president";
-const isSeniorVicePresident = role === "senior vice president";
-const isPresident = role === "president";
+  /* =========================================================
+     USER / ROLE FLAGS
+  ========================================================= */
 
-const isOfficeOfPresident = department === "office of the president";
-const isOperationDepartment = department === "operation department";
-const isAuditDepartment = department === "audit department";
-const isItDepartment = department === "it department";
-  const itManager =
-    isItDepartment &&
-    (
-      isBranchManager ||
-      isAreaManager ||
-      isRegionalManager ||
-      isAssistantVicePresident ||
-      isVicePresident ||
-      isSeniorVicePresident
-    );
+  const isAdmin = role === "admin";
+  const isIt = role === "it";
+  const isHr = role === "hr";
+  const isAccounting = role === "accounting";
+  const isPresident = role === "president";
 
-const isTreadDepartment = department === "tread department";
+  const isBranchManager = role === "branch manager";
+  const isAreaManager = role === "area manager";
+  const isRegionalManager = role === "regional manager";
+  const isAssistantVicePresident = role === "assistant vice president";
+  const isVicePresident = role === "vice president";
+  const isSeniorVicePresident = role === "senior vice president";
 
-const isHrDepartment = department === "hr department";
-    const hrManager =
-      isHrDepartment &&
-      (
-        isBranchManager ||
-        isAreaManager ||
-        isRegionalManager ||
-        isAssistantVicePresident ||
-        isVicePresident ||
-        isSeniorVicePresident
-      );
+  const isOperationDepartment = department === "operation department";
+  const isOfficeOfPresident = department === "office of the president";
+  const isTreadDepartment = department === "tread department";
+  const isItDepartment = department === "it department";
+  const isHrDepartment = department === "hr department";
+  const isAccountingDepartment = department === "accounting department";
 
-const isAccountingDepartment = department === "accounting department";
-
-  const accountingManager =
-    isAccountingDepartment &&
-    (
-      isBranchManager ||
-      isAreaManager ||
-      isRegionalManager ||
-      isAssistantVicePresident ||
-      isVicePresident ||
-      isSeniorVicePresident
-    );
-
-  const operationManager =
-  isOperationDepartment &&
-  (
+  const managerRole =
+    isBranchManager ||
+    isAreaManager ||
+    isRegionalManager ||
+    isAssistantVicePresident ||
     isVicePresident ||
-    isSeniorVicePresident
-  );
+    isSeniorVicePresident;
 
-const canView =
-  isAdmin ||
-  isIt ||
-  isHr ||
-  isAccounting ||
-  isPresident ||
-  isOfficeOfPresident ||
-  isTreadDepartment ||
-  accountingManager ||
-  itManager ||
-  hrManager ||
-  operationManager;
+  const itManager = isItDepartment && managerRole;
+  const hrManager = isHrDepartment && managerRole;
+  const accountingManager = isAccountingDepartment && managerRole;
 
+  /*
+    OPERATION:
+    BM   = view/download branch only
+    AM   = view/download area only
+    RM   = view/download region only
+    AVP  = view/download division only
+    VP   = view/download Operation + CREATE
+    SVP  = view/download Operation + CREATE
+
+    Backend handles the actual record scoping.
+  */
+
+  const operationCanView =
+    isOperationDepartment &&
+    (isBranchManager ||
+      isAreaManager ||
+      isRegionalManager ||
+      isAssistantVicePresident ||
+      isVicePresident ||
+      isSeniorVicePresident);
+
+  const operationCanCreate =
+    isOperationDepartment &&
+    (isVicePresident || isSeniorVicePresident);
+
+  const canView =
+    isAdmin ||
+    isIt ||
+    isHr ||
+    isAccounting ||
+    isPresident ||
+    isOfficeOfPresident ||
+    isTreadDepartment ||
+    accountingManager ||
+    itManager ||
+    hrManager ||
+    operationCanView;
 
   const canCreate =
     isAdmin ||
@@ -104,7 +130,7 @@ const canView =
     accountingManager ||
     itManager ||
     hrManager ||
-    operationManager;
+    operationCanCreate;
 
   const canApprove =
     isAdmin ||
@@ -115,21 +141,30 @@ const canView =
     isOfficeOfPresident ||
     accountingManager ||
     itManager ||
-    hrManager ||
-    operationManager;
+    hrManager;
 
-  const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState("All");
-
-  const [showCreate, setShowCreate] = useState(false);
-  const [showView, setShowView] = useState(false);
-  const [selectedOrder, setSelectedOrder] = useState(null);
+  /* =========================================================
+     STATE
+  ========================================================= */
 
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
+  const [searchInput, setSearchInput] = useState("");
+  const [search, setSearch] = useState("");
+
+  const [statusFilter, setStatusFilter] = useState("All");
+
+  const [showCreate, setShowCreate] = useState(false);
+  const [showView, setShowView] = useState(false);
+
+  const [selectedOrder, setSelectedOrder] = useState(null);
+
   const [attachment, setAttachment] = useState(null);
+
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
   const [form, setForm] = useState({
     employee_no: "",
@@ -143,20 +178,142 @@ const canView =
     effective_date: "",
   });
 
-  const filteredOrders = orders.filter((o) => {
-    const text = `${o.order_no || ""} ${o.employee_no || ""} ${
-      o.employee_name || ""
-    } ${o.branch_code || ""} ${o.branch_name || ""} ${
-      o.assistance_type || ""
-    }`.toLowerCase();
+  /* =========================================================
+     LOAD DATA
+  ========================================================= */
 
-    const matchesSearch = text.includes(search.toLowerCase());
-    const matchesStatus = statusFilter === "All" || o.status === statusFilter;
+  const fetchOrders = async () => {
+    try {
+      setLoading(true);
 
-    return matchesSearch && matchesStatus;
-  });
+      const res = await api.get("/sbf-orders");
 
-  const closeModal = () => {
+      setOrders(Array.isArray(res.data) ? res.data : []);
+    } catch (err) {
+      console.error("Failed to fetch SBF orders:", err);
+
+      setOrders([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (canView) {
+      fetchOrders();
+    }
+  }, [canView]);
+
+  /* =========================================================
+     COUNTS
+  ========================================================= */
+
+  const counts = useMemo(() => {
+    const total = orders.length;
+
+    const pending = orders.filter(
+      (item) => norm(item.status) === "pending"
+    ).length;
+
+    const approved = orders.filter(
+      (item) => norm(item.status) === "approved"
+    ).length;
+
+    const rejected = orders.filter(
+      (item) => norm(item.status) === "rejected"
+    ).length;
+
+    return {
+      total,
+      pending,
+      approved,
+      rejected,
+    };
+  }, [orders]);
+
+  /* =========================================================
+     FILTER
+  ========================================================= */
+
+  const filteredOrders = useMemo(() => {
+    const q = norm(search);
+
+    return orders.filter((item) => {
+      const searchable = [
+        item.order_no,
+        item.employee_no,
+        item.employee_name,
+        item.branch_code,
+        item.branch_name,
+        item.assistance_type,
+        item.status,
+      ]
+        .map((v) => String(v || ""))
+        .join(" ")
+        .toLowerCase();
+
+      const matchesSearch = !q || searchable.includes(q);
+
+      const matchesStatus =
+        statusFilter === "All" ||
+        norm(item.status) === norm(statusFilter);
+
+      return matchesSearch && matchesStatus;
+    });
+  }, [orders, search, statusFilter]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [search, statusFilter, pageSize]);
+
+  /* =========================================================
+     PAGINATION
+  ========================================================= */
+
+  const totalPages = Math.max(
+    1,
+    Math.ceil(filteredOrders.length / pageSize)
+  );
+
+  useEffect(() => {
+    if (page > totalPages) {
+      setPage(totalPages);
+    }
+  }, [page, totalPages]);
+
+  const paginatedOrders = useMemo(() => {
+    const start = (page - 1) * pageSize;
+
+    return filteredOrders.slice(start, start + pageSize);
+  }, [filteredOrders, page, pageSize]);
+
+  /* =========================================================
+     SEARCH
+  ========================================================= */
+
+  const handleSearch = () => {
+    setSearch(searchInput);
+    setPage(1);
+  };
+
+  const handleClearSearch = () => {
+    setSearchInput("");
+    setSearch("");
+    setStatusFilter("All");
+    setPage(1);
+  };
+
+  const handleSearchKeyDown = (e) => {
+    if (e.key === "Enter") {
+      handleSearch();
+    }
+  };
+
+  /* =========================================================
+     MODALS
+  ========================================================= */
+
+  const closeCreateModal = () => {
     setShowCreate(false);
   };
 
@@ -169,6 +326,10 @@ const canView =
     setSelectedOrder(null);
     setShowView(false);
   };
+
+  /* =========================================================
+     FORM
+  ========================================================= */
 
   const resetForm = () => {
     setForm({
@@ -185,8 +346,13 @@ const canView =
 
     setAttachment(null);
 
-    const fileInput = document.getElementById("sbf-attachment-input");
-    if (fileInput) fileInput.value = "";
+    const fileInput = document.getElementById(
+      "sbf-attachment-input"
+    );
+
+    if (fileInput) {
+      fileInput.value = "";
+    }
   };
 
   const handleChange = (e) => {
@@ -198,24 +364,9 @@ const canView =
     }));
   };
 
-  const fetchOrders = async () => {
-    try {
-      setLoading(true);
-      const res = await api.get("/sbf-orders");
-      setOrders(Array.isArray(res.data) ? res.data : []);
-    } catch (err) {
-      console.error("Failed to fetch SBF orders:", err);
-      setOrders([]);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    if (canView) {
-      fetchOrders();
-    }
-  }, [canView]);
+  /* =========================================================
+     CREATE
+  ========================================================= */
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -247,16 +398,26 @@ const canView =
       });
 
       alert("SBF Order created successfully");
+
       resetForm();
       setShowCreate(false);
-      fetchOrders();
+
+      await fetchOrders();
     } catch (err) {
       console.error("Create SBF error:", err);
-      alert(err?.response?.data?.message || "Failed to create SBF order");
+
+      alert(
+        err?.response?.data?.message ||
+          "Failed to create SBF order"
+      );
     } finally {
       setSubmitting(false);
     }
   };
+
+  /* =========================================================
+     APPROVE
+  ========================================================= */
 
   const handleApprove = async (id) => {
     if (!canApprove) {
@@ -264,15 +425,31 @@ const canView =
       return;
     }
 
+    const ok = window.confirm(
+      "Are you sure you want to approve this SBF order?"
+    );
+
+    if (!ok) return;
+
     try {
       await api.put(`/sbf-orders/${id}/approve`);
+
       alert("SBF Order approved");
-      fetchOrders();
+
+      await fetchOrders();
     } catch (err) {
       console.error("Approve error:", err);
-      alert(err?.response?.data?.message || "Failed to approve order");
+
+      alert(
+        err?.response?.data?.message ||
+          "Failed to approve order"
+      );
     }
   };
+
+  /* =========================================================
+     REJECT
+  ========================================================= */
 
   const handleReject = async (id) => {
     if (!canApprove) {
@@ -280,269 +457,600 @@ const canView =
       return;
     }
 
-    const ok = window.confirm("Are you sure you want to reject this SBF order?");
+    const ok = window.confirm(
+      "Are you sure you want to reject this SBF order?"
+    );
+
     if (!ok) return;
 
     try {
       await api.put(`/sbf-orders/${id}/reject`);
+
       alert("SBF Order rejected");
-      fetchOrders();
+
+      await fetchOrders();
     } catch (err) {
       console.error("Reject error:", err);
-      alert(err?.response?.data?.message || "Failed to reject order");
+
+      alert(
+        err?.response?.data?.message ||
+          "Failed to reject order"
+      );
     }
   };
+
+  /* =========================================================
+     DOWNLOAD
+  ========================================================= */
 
   const handleDownload = async (order) => {
     if (!order?.id) return;
 
     try {
-      const res = await api.get(`/sbf-orders/${order.id}/download`, {
-        responseType: "blob",
-      });
+      const res = await api.get(
+        `/sbf-orders/${order.id}/download`,
+        {
+          responseType: "blob",
+        }
+      );
 
-      const blobUrl = window.URL.createObjectURL(new Blob([res.data]));
+      const blobUrl = window.URL.createObjectURL(
+        new Blob([res.data])
+      );
+
       const link = document.createElement("a");
 
       link.href = blobUrl;
-      link.download = order.attachment_name || `SBF-${order.id}-attachment`;
+
+      link.download =
+        order.attachment_name ||
+        `SBF-${order.id}-attachment`;
+
       document.body.appendChild(link);
+
       link.click();
 
       link.remove();
+
       window.URL.revokeObjectURL(blobUrl);
     } catch (err) {
       console.error("Download SBF file error:", err);
-      alert(err?.response?.data?.message || "Failed to download file");
+
+      alert(
+        err?.response?.data?.message ||
+          "Failed to download file"
+      );
     }
   };
 
-  const formatAmount = (value) => {
-    return Number(value || 0).toLocaleString();
-  };
-
-  const formatDate = (value) => {
-    return value ? String(value).slice(0, 10) : "";
-  };
+  /* =========================================================
+     ACCESS DENIED
+  ========================================================= */
 
   if (!canView) {
     return (
-      <div className="exit-page">
-        <div className="exit-topbar">
-          <div>
-            <h2 className="exit-title">SBF Order</h2>
-            <p className="exit-subtitle">Access denied</p>
+      <div className="sbf-page">
+        <section className="sbf-hero">
+          <div className="sbf-hero-copy">
+            <span className="sbf-eyebrow">
+              HRIS TRANSACTIONS
+            </span>
+
+            <h1>SBF Orders</h1>
+
+            <p>
+              You do not have permission to view Staff
+              Benevolent Fund orders.
+            </p>
           </div>
 
-          <div className="exit-actions">
+          <div className="sbf-hero-actions">
             <button
-              className="exit-btn exit-btn-ghost"
               type="button"
+              className="sbf-main-btn secondary"
               onClick={() => navigate(-1)}
             >
               ← Back
             </button>
           </div>
-        </div>
-
-        <div className="exit-card">
-          <div className="exit-empty">You do not have access to this page.</div>
-        </div>
+        </section>
       </div>
     );
   }
 
+  /* =========================================================
+     PAGE
+  ========================================================= */
+
   return (
-    <div className="exit-page">
-      <div className="exit-topbar">
-        <div>
-          <h2 className="exit-title">SBF Order</h2>
-          <p className="exit-subtitle">
-            Manage Staff Benevolent Fund requests and approvals.
+    <div className="sbf-page">
+
+      {/* =====================================================
+          HERO
+      ===================================================== */}
+
+      <section className="sbf-hero">
+        <div className="sbf-hero-copy">
+          <span className="sbf-eyebrow">
+            HRIS TRANSACTIONS
+          </span>
+
+          <h1>SBF Orders</h1>
+
+          <p>
+            Create and manage Staff Benevolent Fund requests,
+            supporting documents, approvals and assistance
+            records.
           </p>
+
+          <div className="sbf-flow">
+            <span>PROCESS</span>
+
+            <strong>
+              Create SBF → Review Request → Approval
+            </strong>
+          </div>
         </div>
 
-        <div className="exit-actions">
+        <div className="sbf-hero-actions">
+
           <button
-            className="exit-btn exit-btn-ghost"
             type="button"
+            className="sbf-main-btn secondary"
             onClick={() => navigate(-1)}
           >
             ← Back
           </button>
 
+          <button
+            type="button"
+            className="sbf-main-btn secondary"
+            onClick={fetchOrders}
+            disabled={loading}
+          >
+            {loading ? "Loading..." : "Refresh"}
+          </button>
+
           {canCreate && (
             <button
-              className="exit-btn exit-btn-primary"
               type="button"
+              className="sbf-main-btn primary"
               onClick={() => setShowCreate(true)}
             >
               + Create SBF
             </button>
           )}
         </div>
-      </div>
+      </section>
 
-      <div className="exit-card">
-        <div className="exit-card-head">
-          <div className="exit-card-title">Staff Benevolent Fund</div>
-          <div className="exit-card-meta">{orders.length} Records</div>
+      {/* =====================================================
+          SUMMARY CARDS
+      ===================================================== */}
+
+      <section className="sbf-summary-grid">
+        <button
+          type="button"
+          className={`sbf-summary-card ${
+            statusFilter === "All" ? "active" : ""
+          }`}
+          onClick={() => setStatusFilter("All")}
+        >
+          <div className="sbf-summary-icon">
+            ALL
+          </div>
+
+          <div className="sbf-summary-content">
+            <small>Total Orders</small>
+            <strong>{counts.total}</strong>
+            <em>All SBF records</em>
+          </div>
+        </button>
+
+        <button
+          type="button"
+          className={`sbf-summary-card pending ${
+            statusFilter === "Pending" ? "active" : ""
+          }`}
+          onClick={() => setStatusFilter("Pending")}
+        >
+          <div className="sbf-summary-icon">
+            P
+          </div>
+
+          <div className="sbf-summary-content">
+            <small>Pending</small>
+            <strong>{counts.pending}</strong>
+            <em>Awaiting completion</em>
+          </div>
+        </button>
+
+        <button
+          type="button"
+          className={`sbf-summary-card approved ${
+            statusFilter === "Approved" ? "active" : ""
+          }`}
+          onClick={() => setStatusFilter("Approved")}
+        >
+          <div className="sbf-summary-icon">
+            A
+          </div>
+
+          <div className="sbf-summary-content">
+            <small>Approved</small>
+            <strong>{counts.approved}</strong>
+            <em>Completed SBF orders</em>
+          </div>
+        </button>
+
+        <button
+          type="button"
+          className={`sbf-summary-card rejected ${
+            statusFilter === "Rejected" ? "active" : ""
+          }`}
+          onClick={() => setStatusFilter("Rejected")}
+        >
+          <div className="sbf-summary-icon">
+            R
+          </div>
+
+          <div className="sbf-summary-content">
+            <small>Rejected</small>
+            <strong>{counts.rejected}</strong>
+            <em>Rejected requests</em>
+          </div>
+        </button>
+      </section>
+
+      {/* =====================================================
+          SEARCH
+      ===================================================== */}
+
+      <section className="sbf-search-panel">
+        <div className="sbf-search-copy">
+          <strong>Search SBF Orders</strong>
+
+          <span>
+            Search by order number, employee, branch,
+            assistance type or status.
+          </span>
         </div>
 
-        <br />
+        <div className="sbf-search-controls">
+          <input
+            type="text"
+            className="sbf-search-input"
+            placeholder="Search order no, employee, branch..."
+            value={searchInput}
+            onChange={(e) =>
+              setSearchInput(e.target.value)
+            }
+            onKeyDown={handleSearchKeyDown}
+          />
 
-        {loading ? (
-          <div className="exit-empty">Loading...</div>
-        ) : orders.length === 0 ? (
-          <div className="exit-empty">No SBF orders found.</div>
-        ) : (
-          <div className="exit-table-wrap">
-            <div className="exit-filters">
-              <input
-                className="exit-field exit-search"
-                placeholder="Search order, employee..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-              />
+          <button
+            type="button"
+            className="sbf-search-btn primary"
+            onClick={handleSearch}
+          >
+            Search
+          </button>
 
-              <select
-                className="exit-field exit-filter-select"
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value)}
-              >
-                <option value="All">All Status</option>
-                <option value="Pending">Pending</option>
-                <option value="Approved">Approved</option>
-                <option value="Rejected">Rejected</option>
-              </select>
-            </div>
+          <button
+            type="button"
+            className="sbf-search-btn secondary"
+            onClick={handleClearSearch}
+          >
+            Clear
+          </button>
+        </div>
 
-            <table className="exit-table">
-              <thead>
+        <div className="sbf-result-count">
+          {filteredOrders.length}{" "}
+          {filteredOrders.length === 1
+            ? "result"
+            : "results"}
+        </div>
+      </section>
+
+      {/* =====================================================
+          TABLE
+      ===================================================== */}
+
+      <section className="sbf-table-card">
+        <div className="sbf-table-wrap">
+          <table className="sbf-table">
+            <thead>
+              <tr>
+                <th>Order No</th>
+                <th>Employee</th>
+                <th>Branch</th>
+                <th>Assistance Type</th>
+                <th>Amount</th>
+                <th>Date Created</th>
+                <th>File</th>
+                <th>Status</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+
+            <tbody>
+              {loading ? (
                 <tr>
-                  <th>Order No</th>
-                  <th>Employee No</th>
-                  <th>Employee Name</th>
-                  <th>Branch Code</th>
-                  <th>Branch Name</th>
-                  <th>Assistance Type</th>
-                  <th>Date Created</th>
-                  <th>File</th>
-                  <th>Status</th>
-                  <th>Action</th>
+                  <td
+                    colSpan="9"
+                    className="sbf-empty-state"
+                  >
+                    Loading SBF orders...
+                  </td>
                 </tr>
-              </thead>
-
-              <tbody>
-                {filteredOrders.map((item) => (
+              ) : paginatedOrders.length === 0 ? (
+                <tr>
+                  <td
+                    colSpan="9"
+                    className="sbf-empty-state"
+                  >
+                    No SBF orders found.
+                  </td>
+                </tr>
+              ) : (
+                paginatedOrders.map((item) => (
                   <tr key={item.id}>
-                    <td>{item.order_no}</td>
-                    <td>{item.employee_no}</td>
-                    <td>{item.employee_name}</td>
-                    <td>{item.branch_code}</td>
-                    <td>{item.branch_name}</td>
-                    <td>{item.assistance_type}</td>
-                    <td>{formatDate(item.date_created)}</td>
+                    <td>
+                      <span className="sbf-order-no">
+                        {item.order_no || "—"}
+                      </span>
+                    </td>
+
+                    <td>
+                      <div className="sbf-employee-cell">
+                        <div className="sbf-avatar">
+                          {getInitial(
+                            item.employee_name
+                          )}
+                        </div>
+
+                        <div>
+                          <strong>
+                            {item.employee_name || "—"}
+                          </strong>
+
+                          <small>
+                            {item.employee_no || "—"}
+                          </small>
+                        </div>
+                      </div>
+                    </td>
+
+                    <td>
+                      <div className="sbf-branch-cell">
+                        <strong>
+                          {item.branch_code || "—"}
+                        </strong>
+
+                        <span>
+                          {item.branch_name || "—"}
+                        </span>
+                      </div>
+                    </td>
+
+                    <td>
+                      <span className="sbf-assistance">
+                        {item.assistance_type || "—"}
+                      </span>
+                    </td>
+
+                    <td>
+                      <strong className="sbf-amount">
+                        ₱{formatAmount(item.amount)}
+                      </strong>
+                    </td>
+
+                    <td>
+                      {formatDate(item.date_created)}
+                    </td>
+
                     <td>
                       {item.attachment_path ? (
                         <button
-                          className="sbf-btn sbf-btn-view"
                           type="button"
-                          onClick={() => handleDownload(item)}
+                          className="sbf-file-btn"
+                          onClick={() =>
+                            handleDownload(item)
+                          }
                         >
                           Download
                         </button>
                       ) : (
-                        <span className="sbf-done">No File</span>
+                        <span className="sbf-no-file">
+                          No File
+                        </span>
                       )}
                     </td>
+
                     <td>
                       <span
-                        className={
-                          item.status === "Approved"
-                            ? "badge badge-approved"
-                            : item.status === "Rejected"
-                            ? "badge badge-rejected"
-                            : "badge badge-pending"
-                        }
+                        className={`sbf-status ${getStatusClass(
+                          item.status
+                        )}`}
                       >
                         {item.status || "Pending"}
                       </span>
                     </td>
+
                     <td>
-                      <div className="sbf-actions">
+                      <div className="sbf-row-actions">
                         <button
-                          className="sbf-btn sbf-btn-view"
                           type="button"
-                          onClick={() => openViewModal(item)}
+                          className="sbf-view-btn"
+                          onClick={() =>
+                            openViewModal(item)
+                          }
                         >
                           View
                         </button>
 
-                        {canApprove && item.status === "Pending" ? (
-                          <>
-                            <button
-                              className="sbf-btn sbf-btn-approve"
-                              type="button"
-                              onClick={() => handleApprove(item.id)}
-                            >
-                              Approve
-                            </button>
+                        {canApprove &&
+                          norm(item.status) ===
+                            "pending" && (
+                            <>
+                              <button
+                                type="button"
+                                className="sbf-action-btn approve"
+                                onClick={() =>
+                                  handleApprove(item.id)
+                                }
+                              >
+                                Approve
+                              </button>
 
-                            <button
-                              className="sbf-btn sbf-btn-reject"
-                              type="button"
-                              onClick={() => handleReject(item.id)}
-                            >
-                              Reject
-                            </button>
-                          </>
-                        ) : item.status === "Pending" ? (
-                          <span className="sbf-done">Pending</span>
-                        ) : (
-                          <span className="sbf-done">Done</span>
-                        )}
+                              <button
+                                type="button"
+                                className="sbf-action-btn reject"
+                                onClick={() =>
+                                  handleReject(item.id)
+                                }
+                              >
+                                Reject
+                              </button>
+                            </>
+                          )}
                       </div>
                     </td>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
 
-            {filteredOrders.length === 0 && (
-              <div className="exit-empty">No matching SBF orders found.</div>
-            )}
+      {/* =====================================================
+          PAGINATION
+      ===================================================== */}
+
+      {!loading && filteredOrders.length > 0 && (
+        <div className="sbf-pager">
+          <div className="sbf-pager-left">
+            <span>Rows per page</span>
+            <select
+              value={pageSize}
+              onChange={(e) =>
+                setPageSize(Number(e.target.value))
+              }
+            >
+              <option value={10}>10</option>
+              <option value={25}>25</option>
+              <option value={50}>50</option>
+              <option value={100}>100</option>
+            </select>
+
+            <span>
+              Showing{" "}
+              {(page - 1) * pageSize + 1}–
+              {Math.min(
+                page * pageSize,
+                filteredOrders.length
+              )}{" "}
+              of {filteredOrders.length}
+            </span>
           </div>
-        )}
-      </div>
+
+          <div className="sbf-pager-right">
+            <button
+              type="button"
+              className="sbf-page-btn"
+              disabled={page <= 1}
+              onClick={() =>
+                setPage((p) => Math.max(1, p - 1))
+              }
+            >
+              ‹
+            </button>
+
+            <div className="sbf-page-current">
+              {page}
+            </div>
+
+            <span className="sbf-page-summary">
+              of {totalPages}
+            </span>
+
+            <button
+              type="button"
+              className="sbf-page-btn"
+              disabled={page >= totalPages}
+              onClick={() =>
+                setPage((p) =>
+                  Math.min(totalPages, p + 1)
+                )
+              }
+            >
+              ›
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* =====================================================
+          CREATE MODAL
+      ===================================================== */}
 
       {showCreate && canCreate && (
         <div
-          className="exit-modal-overlay"
+          className="sbf-modal-overlay"
           onMouseDown={(e) => {
-            if (e.target.classList.contains("exit-modal-overlay")) {
-              closeModal();
+            if (
+              e.target.classList.contains(
+                "sbf-modal-overlay"
+              )
+            ) {
+              closeCreateModal();
             }
           }}
         >
-          <div className="exit-modal" onMouseDown={(e) => e.stopPropagation()}>
-            <div className="exit-modal-head">
+
+          <div
+            className="sbf-modal"
+            onMouseDown={(e) =>
+              e.stopPropagation()
+            }
+          >
+
+            <div className="sbf-modal-head">
+
               <div>
-                <h3 className="exit-modal-title">Create SBF Order</h3>
-                <p className="exit-modal-sub">
-                  Create a new Staff Benevolent Fund request.
+                <span className="sbf-modal-eyebrow">
+                  STAFF BENEVOLENT FUND
+                </span>
+
+                <h3>Create SBF Order</h3>
+
+                <p>
+                  Create a new Staff Benevolent Fund
+                  request.
                 </p>
               </div>
 
-              <button className="exit-x" type="button" onClick={closeModal}>
+              <button
+                type="button"
+                className="sbf-modal-close"
+                onClick={closeCreateModal}
+              >
                 ✕
               </button>
+
             </div>
 
-            <form className="exit-form" onSubmit={handleSubmit}>
-              <div className="exit-grid">
-                <div className="exit-field">
+            <form
+              className="sbf-form"
+              onSubmit={handleSubmit}
+            >
+
+              <div className="sbf-form-grid">
+
+                <div className="sbf-field">
                   <label>Employee No</label>
+
                   <input
                     type="text"
                     name="employee_no"
@@ -553,8 +1061,9 @@ const canView =
                   />
                 </div>
 
-                <div className="exit-field">
+                <div className="sbf-field">
                   <label>Employee Name</label>
+
                   <input
                     type="text"
                     name="employee_name"
@@ -565,8 +1074,9 @@ const canView =
                   />
                 </div>
 
-                <div className="exit-field">
+                <div className="sbf-field">
                   <label>Branch Code</label>
+
                   <input
                     type="text"
                     name="branch_code"
@@ -577,8 +1087,9 @@ const canView =
                   />
                 </div>
 
-                <div className="exit-field">
+                <div className="sbf-field">
                   <label>Branch Name</label>
+
                   <input
                     type="text"
                     name="branch_name"
@@ -589,38 +1100,48 @@ const canView =
                   />
                 </div>
 
-                <div className="exit-field">
+                <div className="sbf-field">
                   <label>Assistance Type</label>
+
                   <select
                     name="assistance_type"
                     value={form.assistance_type}
                     onChange={handleChange}
                     required
                   >
-                    <option value="">Select assistance type</option>
+                    <option value="">
+                      Select assistance type
+                    </option>
+
                     <option value="Medical Assistance">
                       Medical Assistance
                     </option>
+
                     <option value="Cash Gift Assistance (Child Birth)">
                       Cash Gift Assistance (Child Birth)
                     </option>
+
                     <option value="Financial Assistance">
                       Financial Assistance
                     </option>
+
                     <option value="Death Benefits Assistance">
                       Death Benefits Assistance
                     </option>
+
                     <option value="Burial Assistance (Immediate Family)">
                       Burial Assistance (Immediate Family)
                     </option>
+
                     <option value="Calamity Financial Assistance">
                       Calamity Financial Assistance
                     </option>
                   </select>
                 </div>
 
-                <div className="exit-field">
+                <div className="sbf-field">
                   <label>Amount</label>
+
                   <input
                     type="number"
                     name="amount"
@@ -633,8 +1154,9 @@ const canView =
                   />
                 </div>
 
-                <div className="exit-field">
+                <div className="sbf-field">
                   <label>Date Created</label>
+
                   <input
                     type="date"
                     name="date_created"
@@ -644,8 +1166,9 @@ const canView =
                   />
                 </div>
 
-                <div className="exit-field">
+                <div className="sbf-field">
                   <label>Effective Date</label>
+
                   <input
                     type="date"
                     name="effective_date"
@@ -655,51 +1178,59 @@ const canView =
                   />
                 </div>
 
-                <div className="exit-field full">
+                <div className="sbf-field full">
                   <label>Attachment</label>
+
                   <input
                     id="sbf-attachment-input"
                     type="file"
                     onChange={(e) =>
-                      setAttachment(e.target.files?.[0] || null)
+                      setAttachment(
+                        e.target.files?.[0] || null
+                      )
                     }
                   />
 
                   {attachment && (
-                    <small className="view-value">
-                      Selected file: {attachment.name}
+                    <small className="sbf-selected-file">
+                      Selected: {attachment.name}
                     </small>
                   )}
                 </div>
 
-                <div className="exit-field full">
+                <div className="sbf-field full">
                   <label>Reason</label>
+
                   <textarea
-                    rows={3}
                     name="reason"
+                    rows={4}
                     value={form.reason}
                     onChange={handleChange}
                     placeholder="Enter reason"
                     required
                   />
                 </div>
+
               </div>
 
-              <div className="exit-modal-actions">
+              <div className="sbf-modal-actions">
+
                 <button
-                  className="exit-btn exit-btn-ghost"
                   type="button"
-                  onClick={closeModal}
+                  className="sbf-main-btn modal-secondary"
+                  onClick={closeCreateModal}
                 >
                   Cancel
                 </button>
 
                 <button
-                  className="exit-btn exit-btn-primary"
                   type="submit"
+                  className="sbf-main-btn primary"
                   disabled={submitting}
                 >
-                  {submitting ? "Saving..." : "Create Order"}
+                  {submitting
+                    ? "Saving..."
+                    : "Create Order"}
                 </button>
               </div>
             </form>
@@ -707,119 +1238,192 @@ const canView =
         </div>
       )}
 
+      {/* =====================================================
+          VIEW MODAL
+      ===================================================== */}
+
       {showView && selectedOrder && (
+
         <div
-          className="exit-modal-overlay"
+          className="sbf-modal-overlay"
           onMouseDown={(e) => {
-            if (e.target.classList.contains("exit-modal-overlay")) {
+            if (
+              e.target.classList.contains(
+                "sbf-modal-overlay"
+              )
+            ) {
               closeViewModal();
             }
           }}
         >
-          <div
-            className="exit-modal view-modal"
-            onMouseDown={(e) => e.stopPropagation()}
-          >
-            <div className="exit-modal-head">
-              <h3 className="exit-modal-title">SBF Order Details</h3>
 
-              <button className="exit-x" type="button" onClick={closeViewModal}>
+          <div
+            className="sbf-modal sbf-view-modal"
+            onMouseDown={(e) =>
+              e.stopPropagation()
+            }
+          >
+
+            <div className="sbf-modal-head">
+
+              <div>
+                <span className="sbf-modal-eyebrow">
+                  {selectedOrder.order_no}
+                </span>
+
+                <h3>SBF Order Details</h3>
+
+                <p>
+                  Staff Benevolent Fund request
+                  information.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                className="sbf-modal-close"
+                onClick={closeViewModal}
+              >
                 ✕
               </button>
+
             </div>
 
-            <div className="view-grid">
-              <div className="view-row">
-                <span className="view-label">Order No</span>
-                <span className="view-value">{selectedOrder.order_no}</span>
+            <div className="sbf-view-grid">
+
+              <div className="sbf-view-item">
+                <span>Order No</span>
+                <strong>
+                  {selectedOrder.order_no || "—"}
+                </strong>
               </div>
 
-              <div className="view-row">
-                <span className="view-label">Employee No</span>
-                <span className="view-value">{selectedOrder.employee_no}</span>
+              <div className="sbf-view-item">
+                <span>Status</span>
+
+                <div>
+                  <span
+                    className={`sbf-status ${getStatusClass(
+                      selectedOrder.status
+                    )}`}
+                  >
+                    {selectedOrder.status ||
+                      "Pending"}
+                  </span>
+                </div>
               </div>
 
-              <div className="view-row">
-                <span className="view-label">Employee Name</span>
-                <span className="view-value">
-                  {selectedOrder.employee_name}
-                </span>
+              <div className="sbf-view-item">
+                <span>Employee No</span>
+                <strong>
+                  {selectedOrder.employee_no || "—"}
+                </strong>
               </div>
 
-              <div className="view-row">
-                <span className="view-label">Branch</span>
-                <span className="view-value">
-                  {selectedOrder.branch_code} - {selectedOrder.branch_name}
-                </span>
+              <div className="sbf-view-item">
+                <span>Employee Name</span>
+                <strong>
+                  {selectedOrder.employee_name ||
+                    "—"}
+                </strong>
               </div>
 
-              <div className="view-row">
-                <span className="view-label">Assistance Type</span>
-                <span className="view-value">
-                  {selectedOrder.assistance_type}
-                </span>
+              <div className="sbf-view-item">
+                <span>Branch Code</span>
+                <strong>
+                  {selectedOrder.branch_code || "—"}
+                </strong>
               </div>
 
-              <div className="view-row">
-                <span className="view-label">Amount</span>
-                <span className="view-value">
-                  {formatAmount(selectedOrder.amount)}
-                </span>
+              <div className="sbf-view-item">
+                <span>Branch Name</span>
+                <strong>
+                  {selectedOrder.branch_name || "—"}
+                </strong>
               </div>
 
-              <div className="view-row">
-                <span className="view-label">Status</span>
-                <span className="view-value">{selectedOrder.status}</span>
+              <div className="sbf-view-item">
+                <span>Assistance Type</span>
+                <strong>
+                  {selectedOrder.assistance_type ||
+                    "—"}
+                </strong>
               </div>
 
-              <div className="view-row">
-                <span className="view-label">Date Created</span>
-                <span className="view-value">
-                  {formatDate(selectedOrder.date_created)}
-                </span>
+              <div className="sbf-view-item">
+                <span>Amount</span>
+                <strong>
+                  ₱
+                  {formatAmount(
+                    selectedOrder.amount
+                  )}
+                </strong>
               </div>
 
-              <div className="view-row">
-                <span className="view-label">Effective Date</span>
-                <span className="view-value">
-                  {formatDate(selectedOrder.effective_date)}
-                </span>
+              <div className="sbf-view-item">
+                <span>Date Created</span>
+                <strong>
+                  {formatDate(
+                    selectedOrder.date_created
+                  )}
+                </strong>
               </div>
 
-              <div className="view-row full">
-                <span className="view-label">Attachment</span>
+              <div className="sbf-view-item">
+                <span>Effective Date</span>
+                <strong>
+                  {formatDate(
+                    selectedOrder.effective_date
+                  )}
+                </strong>
+              </div>
 
-                {selectedOrder.attachment_path ? (
-                  <div className="view-reason">
-                    <div>
-                      {selectedOrder.attachment_name || "Uploaded File"}
+              <div className="sbf-view-item full">
+                <span>Reason</span>
+
+                <div className="sbf-view-box">
+                  {selectedOrder.reason || "—"}
+                </div>
+              </div>
+
+              <div className="sbf-view-item full">
+                <span>Attachment</span>
+
+                <div className="sbf-view-box">
+
+                  {selectedOrder.attachment_path ? (
+                    <div className="sbf-attachment-row">
+
+                      <strong>
+                        {selectedOrder.attachment_name ||
+                          "Uploaded File"}
+                      </strong>
+
+                      <button
+                        type="button"
+                        className="sbf-main-btn primary"
+                        onClick={() =>
+                          handleDownload(
+                            selectedOrder
+                          )
+                        }
+                      >
+                        Download File
+                      </button>
+
                     </div>
+                  ) : (
+                    "No file uploaded"
+                  )}
 
-                    <br />
-
-                    <button
-                      className="exit-btn exit-btn-primary"
-                      type="button"
-                      onClick={() => handleDownload(selectedOrder)}
-                    >
-                      Download File
-                    </button>
-                  </div>
-                ) : (
-                  <div className="view-reason">No file uploaded</div>
-                )}
-              </div>
-
-              <div className="view-row full">
-                <span className="view-label">Reason</span>
-                <div className="view-reason">{selectedOrder.reason}</div>
+                </div>
               </div>
             </div>
+            <div className="sbf-modal-actions">
 
-            <div className="exit-modal-actions">
               <button
-                className="exit-btn exit-btn-primary"
                 type="button"
+                className="sbf-main-btn modal-secondary"
                 onClick={closeViewModal}
               >
                 Close

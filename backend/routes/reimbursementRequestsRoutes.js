@@ -138,8 +138,7 @@ const upload = multer({
    APPROVAL CHAIN
 ====================================================== */
 
-const OPERATION_DEFAULT_CHAIN = [
-  "branch manager",
+const OPERATION_LOAN_OFFICER_CHAIN = [
   "area manager",
   "regional manager",
   "assistant vice president",
@@ -164,7 +163,15 @@ const OPERATION_REGIONAL_MANAGER_CHAIN = [
   "vice president",
 ];
 
-const OPERATION_AVP_CHAIN = ["vice president"];
+const OPERATION_AVP_CHAIN = [
+  "vice president",
+];
+
+const OPERATION_VP_CHAIN = [
+  "senior vice president",
+];
+
+const OPERATION_SVP_CHAIN = [];
 
 const BACK_OFFICE_SVP_CHAIN = ["senior vice president"];
 const BACK_OFFICE_AVP_CHAIN = ["assistant vice president"];
@@ -200,27 +207,49 @@ const getApprovalChain = (staffDepartment, staffPosition) => {
   const position = norm(staffPosition);
 
   if (isOperationDepartment(department)) {
-    if (position.includes("branch manager")) {
-      return OPERATION_BRANCH_MANAGER_CHAIN;
+    // Senior Vice President applicant
+    // Accounting final only
+    if (position.includes("senior vice president")) {
+      return OPERATION_SVP_CHAIN;
     }
 
-    if (position.includes("area manager")) {
-      return OPERATION_AREA_MANAGER_CHAIN;
+    // Vice President applicant
+    // SVP -> Accounting final
+    if (
+      position.includes("vice president") &&
+      !position.includes("assistant vice president") &&
+      !position.includes("senior vice president")
+    ) {
+      return OPERATION_VP_CHAIN;
     }
 
-    if (position.includes("regional manager")) {
-      return OPERATION_REGIONAL_MANAGER_CHAIN;
-    }
-
+    // Assistant Vice President applicant
+    // VP -> Accounting final
     if (position.includes("assistant vice president")) {
       return OPERATION_AVP_CHAIN;
     }
 
-    if (position.includes("vice president")) {
-      return ["vice president"];
+    // Regional Manager applicant
+    // AVP -> VP -> Accounting final
+    if (position.includes("regional manager")) {
+      return OPERATION_REGIONAL_MANAGER_CHAIN;
     }
 
-    return OPERATION_DEFAULT_CHAIN;
+    // Area Manager applicant
+    // RM -> AVP -> VP -> Accounting final
+    if (position.includes("area manager")) {
+      return OPERATION_AREA_MANAGER_CHAIN;
+    }
+
+    // Branch Manager applicant
+    // AM -> RM -> AVP -> VP FINAL
+    if (position.includes("branch manager")) {
+      return OPERATION_BRANCH_MANAGER_CHAIN;
+    }
+
+    // Loan Officer / other Operation staff
+    // AM -> RM -> AVP -> VP FINAL
+    return OPERATION_LOAN_OFFICER_CHAIN;
   }
 
   if (isTreadDepartment(department)) {
@@ -662,8 +691,24 @@ router.post(
         });
       }
 
-      const chain = getApprovalChain(staff.department, staff.position);
-      const approvalStage = chain[0];
+      const chain = getApprovalChain(
+        staff.department,
+        staff.position
+      );
+
+      const isOperationSvpApplicant =
+        isOperationDepartment(staff.department) &&
+        norm(staff.position).includes("senior vice president");
+
+      const approvalStage =
+        isOperationSvpApplicant
+          ? WAITING_FINAL_FILE
+          : chain[0];
+
+      const initialStatus =
+        isOperationSvpApplicant
+          ? WAITING_FINAL_FILE
+          : "Pending";
 
       const attachmentPath = `/uploads/reimbursements/${req.file.filename}`;
       const attachmentName = req.file.originalname || null;
@@ -704,15 +749,15 @@ router.post(
         (
           $1, $2, $3, $4, $5, $6, $7, NULL,
 
-          'Pending',
           $8,
           $9,
+          $10,
 
-          $10, $11, $12, $13, $14, $15, $16,
+          $11, $12, $13, $14, $15, $16, $17,
 
-          $17, $18,
+          $18, $19,
 
-          $19,
+          $20,
           NOW(),
           NOW()
         )
@@ -727,6 +772,7 @@ router.post(
           requestDate,
           requestType,
 
+          initialStatus,
           approvalStage,
           JSON.stringify(chain),
 
@@ -1027,13 +1073,71 @@ current,
 chain
 );
 
-if(
-nxt&&
-norm(nxt)!==
-norm(
-WAITING_FINAL_FILE
-)
-){
+const isOperationRequest =
+  isOperationDepartment(row.staff_department);
+
+const applicantPosition =
+  norm(row.staff_position);
+
+const vpIsFinalForOperation =
+  isOperationRequest &&
+  (
+    applicantPosition.includes("loan officer") ||
+    applicantPosition.includes("branch manager")
+  ) &&
+  norm(current) === "vice president";
+
+
+// =====================================================
+// OPERATION LO / BM
+// VICE PRESIDENT IS FINAL APPROVER
+// =====================================================
+if (vpIsFinalForOperation) {
+
+  const r = await client.query(
+    `
+    UPDATE reimbursement_requests
+    SET
+      ${col} = 'Approved',
+
+      status = 'Approved',
+      approval_stage = 'approved',
+
+      attachment_path = $2,
+      attachment_name = $3,
+
+      approved_by = $4,
+      approved_at = NOW(),
+
+      updated_at = NOW()
+
+    WHERE id = $1
+    RETURNING *
+    `,
+    [
+      id,
+      attachmentPath,
+      attachmentName,
+      req.user?.id
+    ]
+  );
+
+  await client.query("COMMIT");
+
+  return res.json({
+    ...r.rows[0],
+    requires_final_upload: false
+  });
+}
+
+
+// =====================================================
+// MOVE TO NEXT NORMAL APPROVER
+// =====================================================
+if (
+  nxt &&
+  norm(nxt) !== norm(WAITING_FINAL_FILE)
+) {
 
 const r=
 await client.query(`
