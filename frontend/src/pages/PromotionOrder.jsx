@@ -200,14 +200,30 @@ export default function PromotionOrder() {
     isOperationDepartment(department);
 
   const isAdmin = role === "admin";
-  const isIt = role === "it";
+  
+  const isIt =
+    role === "it" ||
+    department === "it" ||
+    department === "it department";
+    
   const isHr =
     role === "hr" ||
     department === "hr" ||
     department === "hr department" ||
     department === "human resources" ||
     department === "human resources department";
-  const isAccounting = role === "accounting";
+  
+  const isAccounting =
+    role === "accounting" ||
+    department === "accounting" ||
+    department === "accounting department";
+
+  const canEditPromotion =
+    isAdmin ||
+    isIt ||
+    isHr ||
+    isAccounting;
+
   const isTread =
     role === "tread" ||
     department === "tread" ||
@@ -271,6 +287,8 @@ export default function PromotionOrder() {
   const [uploadingId, setUploadingId] = useState("");
 
   const [showCreate, setShowCreate] = useState(false);
+  const [editingOrder, setEditingOrder] = useState(null);
+
   const [approvalFiles, setApprovalFiles] = useState({});
   const [viewOrder, setViewOrder] = useState(null);
 
@@ -483,15 +501,145 @@ export default function PromotionOrder() {
     });
   };
 
+  const openEditPromotion = (order) => {
+  if (!order?.id) return;
+
+  if (norm(order.status) !== "pending") {
+    alert("Only pending promotion orders can be edited.");
+    return;
+  }
+
+  if (!canEditPromotion) {
+    alert(
+      "Only Admin, IT Department, HR Department, and Accounting Department can edit."
+    );
+    return;
+  }
+
+  const employee =
+    staff.find(
+      (s) =>
+        Number(s.id) === Number(order.employee_id)
+    ) || null;
+
+  const presentBranch =
+    order.present_branch_id
+      ? branchMap.get(
+          Number(order.present_branch_id)
+        )
+      : null;
+
+  setEditingOrder(order);
+  setSelectedEmployee(employee);
+
+  setForm({
+    employee_id: String(order.employee_id || ""),
+
+    employee_name:
+      order.employee_name ||
+      employee?.fullname ||
+      "",
+
+    department:
+      getDepartment(order) ||
+      employee?.department ||
+      "",
+
+    old_position:
+      order.old_position || "",
+
+    new_position:
+      order.new_position || "",
+
+    old_salary:
+      String(toNum(order.old_salary)),
+
+    new_salary:
+      String(toNum(order.new_salary)),
+
+    old_ecola:
+      String(toNum(order.old_ecola)),
+
+    new_ecola:
+      String(toNum(order.new_ecola)),
+
+    effective_date:
+      fmtDate(order.effective_date) === "-"
+        ? ""
+        : fmtDate(order.effective_date),
+
+    remarks:
+      order.details ||
+      order.remarks ||
+      "",
+
+    prev_branch_id:
+      String(order.prev_branch_id || ""),
+
+    prev_branch_code:
+      order.prev_branch_code || "",
+
+    prev_branch_name:
+      order.prev_branch_name || "",
+
+    present_branch_id:
+      String(order.present_branch_id || ""),
+
+    present_branch_code:
+      order.present_branch_code || "",
+
+    present_branch_name:
+      order.present_branch_name || "",
+  });
+
+  setEmployeeSearch(
+    employee
+      ? `${employee.employee_no ? `${employee.employee_no} - ` : ""}${
+          employee.fullname || ""
+        }`
+      : order.employee_name || ""
+  );
+
+  setEmployeeQuery(
+    employee
+      ? `${employee.employee_no ? `${employee.employee_no} - ` : ""}${
+          employee.fullname || ""
+        }`
+      : order.employee_name || ""
+  );
+
+  setBranchSearch(
+    presentBranch
+      ? `${presentBranch.code || ""} - ${
+          presentBranch.name || ""
+        }`
+      : `${order.present_branch_code || ""} - ${
+          order.present_branch_name || ""
+        }`
+  );
+
+  // Existing attachment remains unless user chooses another file
+  setAttachmentFile(null);
+
+  setViewOrder(null);
+  setShowCreate(true);
+};
+
   const closeModal = () => {
     setShowCreate(false);
+    setEditingOrder(null);
+
     resetForm();
+
     setEmployeeSearch("");
     setEmployeeQuery("");
     setBranchSearch("");
+
     setSelectedEmployee(null);
+
     setShowEmployeeResults(false);
     setShowBranchResults(false);
+
     setAttachmentFile(null);
   };
 
@@ -652,7 +800,9 @@ export default function PromotionOrder() {
     if (!form.new_position.trim()) return alert("New position is required.");
     if (!form.effective_date.trim()) return alert("Effective date is required.");
     if (!form.present_branch_id.trim()) return alert("Present branch is required.");
-    if (!attachmentFile) return alert("Promotion request file is required.");
+    if (!editingOrder && !attachmentFile) {
+      return alert("Promotion request file is required.");
+    }
 
     try {
       setSaving(true);
@@ -675,13 +825,35 @@ export default function PromotionOrder() {
       formData.append("present_branch_id", form.present_branch_id ? Number(form.present_branch_id) : "");
       formData.append("present_branch_code", form.present_branch_code);
       formData.append("present_branch_name", form.present_branch_name);
-      formData.append("attachment", attachmentFile);
+      if (attachmentFile) {
+        formData.append("attachment", attachmentFile);
+      }
 
-      await api.post("/promotion-orders", formData, {
-        headers: { "Content-Type": "multipart/form-data" },
-      });
+      if (editingOrder?.id) {
+        await api.put(
+          `/promotion-orders/${editingOrder.id}`,
+          formData,
+          {
+            headers: {
+              "Content-Type": "multipart/form-data",
+            },
+          }
+        );
 
-      alert("Promotion recommendation created.");
+        alert("Promotion recommendation updated.");
+      } else {
+        await api.post(
+          "/promotion-orders",
+          formData,
+          {
+            headers: {
+              "Content-Type": "multipart/form-data",
+            },
+          }
+        );
+
+        alert("Promotion recommendation created.");
+      }
       closeModal();
       await loadOrders();
     } catch (err) {
@@ -1196,6 +1368,16 @@ export default function PromotionOrder() {
                         {canAct && isPending ? (
                           <div className="po-action-stack">
                             <div className="po-file-actions">
+                              {canEditPromotion && norm(o.status) === "pending" && (
+                                <button
+                                  className="po-mini-btn po-edit-btn"
+                                  type="button"
+                                  onClick={() => openEditPromotion(o)}
+                                >
+                                  Edit
+                                </button>
+                              )}
+
                               <button
                                 className="po-mini-btn po-view-btn"
                                 type="button"
@@ -1265,6 +1447,16 @@ export default function PromotionOrder() {
                               >
                                 View
                               </button>
+
+                              {canEditPromotion && norm(o.status) === "pending" && (
+                                <button
+                                  className="po-mini-btn po-edit-btn"
+                                  type="button"
+                                  onClick={() => openEditPromotion(o)}
+                                >
+                                  Edit
+                                </button>
+                              )}
 
                               {canPowerAction && norm(o.status) === "approved" && (
                                 <button
@@ -1401,7 +1593,10 @@ export default function PromotionOrder() {
           <div className="po-modal" onMouseDown={(e) => e.stopPropagation()}>
             <div className="po-modal-head">
               <div>
-                <h3 className="po-modal-title">Create Promotion Recommendation</h3>
+                <h3 className="po-modal-title">
+                  {editingOrder
+                    ? "Edit Promotion Recommendation"
+                    : "Create Promotion Recommendation"}</h3>
                 <p className="po-modal-sub">
                   Approval chain is based on the staff department and current position.
                 </p>
@@ -1550,12 +1745,19 @@ export default function PromotionOrder() {
                 </div>
 
                 <div className="po-field full">
-                  <label>Attach Recommendation File</label>
+                  <label>
+                    {editingOrder
+                      ? "Replace Recommendation File (Optional)"
+                      : "Attach Recommendation File"}
+                  </label>
+
                   <input
                     type="file"
                     accept=".pdf,.png,.jpg,.jpeg,.doc,.docx"
-                    required
-                    onChange={(e) => setAttachmentFile(e.target.files?.[0] || null)}
+                    required={!editingOrder}
+                    onChange={(e) =>
+                      setAttachmentFile(e.target.files?.[0] || null)
+                    }
                   />
                 </div>
 
@@ -1575,8 +1777,18 @@ export default function PromotionOrder() {
                   Cancel
                 </button>
 
-                <button className="po-btn po-btn-primary" type="submit" disabled={saving || !form.employee_id}>
-                  {saving ? "Creating..." : "Create Recommendation"}
+                <button
+                  className="po-btn po-btn-primary"
+                  type="submit"
+                  disabled={saving || !form.employee_id}
+                >
+                  {saving
+                    ? editingOrder
+                      ? "Updating..."
+                      : "Creating..."
+                    : editingOrder
+                    ? "Update Promotion"
+                    : "Create Promotion"}
                 </button>
               </div>
             </form>

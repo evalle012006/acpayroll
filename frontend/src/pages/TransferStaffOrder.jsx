@@ -1959,8 +1959,8 @@ export default function TransferStaffOrder() {
                 ) : viewFiles.length === 0 ? (
                   <div className="empty-state">No final file uploaded yet.</div>
                 ) : (
-                  <div className="table-wrap">
-                    <table className="table">
+                  <div className="transfer-file-table-wrap">
+                    <table className="transfer-file-table">
                       <thead>
                         <tr>
                           <th>File Name</th>

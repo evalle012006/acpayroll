@@ -756,3 +756,118 @@
     flex: 1;
   }
 }
+
+/* =====================================================
+   TRANSFER FILE TABLE
+   Keep Download button visible without horizontal scroll
+   ===================================================== */
+
+.transfer-file-table-wrap {
+  width: 100%;
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.transfer-file-table {
+  width: 100%;
+  min-width: 0 !important;
+  table-layout: fixed;
+  border-collapse: collapse;
+}
+
+.transfer-file-table th,
+.transfer-file-table td {
+  padding: 10px 10px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
+  font-size: 11px;
+  vertical-align: middle;
+}
+
+.transfer-file-table th {
+  background: var(--table-header);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 900;
+  text-align: left;
+  white-space: nowrap;
+}
+
+/* File name */
+.transfer-file-table th:nth-child(1),
+.transfer-file-table td:nth-child(1) {
+  width: 45%;
+}
+
+/* Size */
+.transfer-file-table th:nth-child(2),
+.transfer-file-table td:nth-child(2) {
+  width: 14%;
+  white-space: nowrap;
+}
+
+/* Uploaded date */
+.transfer-file-table th:nth-child(3),
+.transfer-file-table td:nth-child(3) {
+  width: 21%;
+  white-space: nowrap;
+}
+
+/* Download */
+.transfer-file-table th:nth-child(4),
+.transfer-file-table td:nth-child(4) {
+  width: 20%;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.transfer-file-table td:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.transfer-file-table .btn-secondary {
+  min-width: 0;
+  padding: 7px 10px;
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+/* iPhone / small screens */
+@media (max-width: 600px) {
+  .transfer-file-table th,
+  .transfer-file-table td {
+    padding: 8px 5px;
+    font-size: 9px;
+  }
+
+  .transfer-file-table th {
+    font-size: 8px;
+  }
+
+  .transfer-file-table th:nth-child(1),
+  .transfer-file-table td:nth-child(1) {
+    width: 39%;
+  }
+
+  .transfer-file-table th:nth-child(2),
+  .transfer-file-table td:nth-child(2) {
+    width: 14%;
+  }
+
+  .transfer-file-table th:nth-child(3),
+  .transfer-file-table td:nth-child(3) {
+    width: 25%;
+  }
+
+  .transfer-file-table th:nth-child(4),
+  .transfer-file-table td:nth-child(4) {
+    width: 22%;
+  }
+
+  .transfer-file-table .btn-secondary {
+    padding: 6px 7px;
+    font-size: 9px;
+  }
+}

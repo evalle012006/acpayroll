@@ -772,9 +772,14 @@ router.put("/exit-staff/:id/reapply",
 
       await client.query(
         `
-       UPDATE public.exit_staff_orders
+        UPDATE public.exit_staff_orders
         SET
-          remarks = TRIM(COALESCE(remarks, '') || E'\nRe-applied on ' || $2::text)
+          status = 'Re-Applied',
+          remarks = TRIM(
+            COALESCE(remarks, '') ||
+            E'\nRe-applied on ' ||
+            $2::text
+          )
         WHERE employee_no = $1
           AND LOWER(TRIM(COALESCE(status, ''))) = 'approved'
         `,

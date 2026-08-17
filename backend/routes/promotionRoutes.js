@@ -78,6 +78,12 @@ const isAccountingDepartmentUser = (req) =>
 const isFinalPowerUser = (req) =>
   isAdmin(req) || isIT(req) || isHrDepartmentUser(req) || isAccountingDepartmentUser(req);
 
+const canEditPromotion = (req) =>
+  isAdmin(req) ||
+  isITDepartmentUser(req) ||
+  isHrDepartmentUser(req) ||
+  isAccountingDepartmentUser(req);
+
 const canBypassApproval = (req) => isAdmin(req) || isSeniorVicePresident(req);
 
 const canDeletePromotion = (req) => isAdmin(req);
@@ -927,6 +933,270 @@ router.post(
       await client.query("ROLLBACK");
       console.error("POST /api/promotion-orders ERROR:", e);
       return res.status(500).json({ message: e?.message || "Server error" });
+    } finally {
+      client.release();
+    }
+  }
+);
+
+router.put(
+  "/promotion-orders/:id",
+  requireAuth,
+  requirePermission("promotion_order", "edit"),
+  upload.single("attachment"),
+  async (req, res) => {
+    const client = await pool.connect();
+
+    try {
+      await client.query("BEGIN");
+
+      const id = toInt(req.params.id);
+
+      if (!id) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({
+          message: "Invalid promotion order id",
+        });
+      }
+
+      // Only Admin, IT Dept, HR Dept, Accounting Dept
+      if (!canEditPromotion(req)) {
+        await client.query("ROLLBACK");
+        return res.status(403).json({
+          message:
+            "Only Admin, IT Department, HR Department, and Accounting Department can edit promotion orders.",
+        });
+      }
+
+      const existingRes = await client.query(
+        `
+        SELECT *
+        FROM public.promotion_orders
+        WHERE id = $1
+        FOR UPDATE
+        `,
+        [id]
+      );
+
+      if (!existingRes.rowCount) {
+        await client.query("ROLLBACK");
+        return res.status(404).json({
+          message: "Promotion order not found",
+        });
+      }
+
+      const existing = existingRes.rows[0];
+
+      // Editing is allowed only while overall status is Pending
+      if (norm(existing.status) !== "pending") {
+        await client.query("ROLLBACK");
+        return res.status(400).json({
+          message: "Only pending promotion orders can be edited.",
+        });
+      }
+
+      const b = req.body || {};
+
+      const employee_id =
+        toInt(b.employee_id) || existing.employee_id;
+
+      const effective_date =
+        toDateOrNull(b.effective_date) ||
+        toDateOrNull(existing.effective_date);
+
+      const employee_name =
+        toStr(b.employee_name) ||
+        toStr(existing.employee_name);
+
+      const department =
+        toStr(b.department) ||
+        toStr(existing.department);
+
+      const old_position =
+        toStr(b.old_position) ||
+        toStr(existing.old_position);
+
+      const new_position =
+        toStr(b.new_position) ||
+        toStr(existing.new_position);
+
+      const old_salary =
+        b.old_salary !== undefined
+          ? toNum(b.old_salary)
+          : toNum(existing.old_salary);
+
+      const new_salary =
+        b.new_salary !== undefined
+          ? toNum(b.new_salary)
+          : toNum(existing.new_salary);
+
+      const old_ecola =
+        b.old_ecola !== undefined
+          ? toNum(b.old_ecola)
+          : toNum(existing.old_ecola);
+
+      const new_ecola =
+        b.new_ecola !== undefined
+          ? toNum(b.new_ecola)
+          : toNum(existing.new_ecola);
+
+      const details =
+        toStr(b.details || b.remarks) ||
+        toStr(existing.details);
+
+      const prev_branch_id =
+        toInt(b.prev_branch_id) ||
+        existing.prev_branch_id;
+
+      const prev_branch_code =
+        toStr(b.prev_branch_code) ||
+        toStr(existing.prev_branch_code);
+
+      const prev_branch_name =
+        toStr(b.prev_branch_name) ||
+        toStr(existing.prev_branch_name);
+
+      const present_branch_id =
+        toInt(b.present_branch_id) ||
+        existing.present_branch_id;
+
+      const present_branch_code =
+        toStr(b.present_branch_code) ||
+        toStr(existing.present_branch_code);
+
+      const present_branch_name =
+        toStr(b.present_branch_name) ||
+        toStr(existing.present_branch_name);
+
+      if (!employee_id) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({
+          message: "Employee is required",
+        });
+      }
+
+      if (!new_position) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({
+          message: "New position is required",
+        });
+      }
+
+      if (!effective_date) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({
+          message: "Effective date is required",
+        });
+      }
+
+      let attachment_path = existing.attachment_path;
+      let attachment_name = existing.attachment_name;
+      let attachment_mime = existing.attachment_mime;
+
+      // If a replacement file was uploaded
+      const oldAttachmentPath = existing.attachment_path;
+
+        if (req.file) {
+          attachment_path =
+            `/uploads/promotion-orders/${req.file.filename}`;
+
+          attachment_name =
+            req.file.originalname || null;
+
+          attachment_mime =
+            req.file.mimetype || null;
+        }
+
+      const updated = await client.query(
+        `
+        UPDATE public.promotion_orders
+        SET
+          employee_id = $2,
+          employee_name = $3,
+          department = $4,
+
+          old_position = $5,
+          new_position = $6,
+
+          old_salary = $7,
+          new_salary = $8,
+
+          old_ecola = $9,
+          new_ecola = $10,
+
+          effective_date = $11::date,
+          details = $12,
+
+          prev_branch_id = $13,
+          prev_branch_code = $14,
+          prev_branch_name = $15,
+
+          present_branch_id = $16,
+          present_branch_code = $17,
+          present_branch_name = $18,
+
+          attachment_path = $19,
+          attachment_name = $20,
+          attachment_mime = $21
+
+        WHERE id = $1
+
+        RETURNING *
+        `,
+        [
+          id,
+          employee_id,
+          employee_name,
+          department,
+
+          old_position,
+          new_position,
+
+          old_salary,
+          new_salary,
+
+          old_ecola,
+          new_ecola,
+
+          effective_date,
+          details || null,
+
+          prev_branch_id,
+          prev_branch_code || null,
+          prev_branch_name || null,
+
+          present_branch_id,
+          present_branch_code || null,
+          present_branch_name || null,
+
+          attachment_path,
+          attachment_name,
+          attachment_mime,
+        ]
+      );
+
+      await client.query("COMMIT");
+
+      if (  
+        req.file &&
+        oldAttachmentPath &&
+        oldAttachmentPath !== attachment_path
+      ) {
+        removeStoredFile(oldAttachmentPath);
+      }
+
+      return res.json(updated.rows[0]);
+    } catch (e) {
+      await client.query("ROLLBACK");
+
+      console.error(
+        "PUT /api/promotion-orders/:id ERROR:",
+        e
+      );
+
+      return res.status(500).json({
+        message: e?.message || "Server error",
+      });
     } finally {
       client.release();
     }

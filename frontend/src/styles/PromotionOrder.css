@@ -1362,3 +1362,13 @@ body.dark .po-reject {
 .po-hero-main .po-btn-primary {
   color: #ffffff !important;
 }
+
+.po-edit-btn {
+  border-color: rgba(59, 130, 246, 0.4);
+  background: rgba(59, 130, 246, 0.12);
+  color: #60a5fa;
+}
+
+.po-edit-btn:hover {
+  background: rgba(59, 130, 246, 0.2);
+}

@@ -30,6 +30,7 @@ const STATUS_SVP = "Pending Senior Vice President";
 const STATUS_ADMIN = "Pending Admin";
 const STATUS_APPROVED = "Approved";
 const STATUS_REJECTED = "Rejected";
+const STATUS_REVOKED = "Revoked";
 
 export default function ResignationRequests() {
   const navigate = useNavigate();
@@ -111,9 +112,13 @@ const isHRDeptManager =
   const [uploadFiles, setUploadFiles] = useState({});
 
   const [revokeRow, setRevokeRow] = useState(null);
-  const [revokeForm, setRevokeForm] = useState({
+  const [revokeRemarks, setRevokeRemarks] = useState("");
+
+  const [reapplyRow, setReapplyRow] = useState(null);
+  const [reapplyForm, setReapplyForm] = useState({
     effective_date: "",
     branch_id: "",
+    department: "",
     position: "",
     remarks: "",
     attachment: null,
@@ -509,61 +514,130 @@ const isHRDeptManager =
 
   const openRevokeModal = (row) => {
     setRevokeRow(row);
-    setRevokeForm({
-      effective_date: "",
-      branch_id: "",
-      department: "",
-      position: "",
-      remarks: "",
-      attachment: null,
-    });
+    setRevokeRemarks("");
   };
 
   const closeRevokeModal = () => {
     setRevokeRow(null);
-    setRevokeForm({
-      effective_date: "",
-      branch_id: "",
-      position: "",
-      remarks: "",
-      attachment: null,
-    });
+    setRevokeRemarks("");
   };
 
   const submitRevokeRequest = async (e) => {
-    e.preventDefault();
+  e.preventDefault();
 
-    if (!revokeRow?.id) return;
-    if (!revokeForm.effective_date) return alert("Effective date is required.");
-    if (!revokeForm.branch_id) return alert("Branch resume is required.");
-    if (!revokeForm.department) return alert("Department is required.");
-    if (!revokeForm.position) return alert("New position is required.");
-    if (!revokeForm.attachment) return alert("Revoke file is required.");
+  if (!revokeRow?.id) return;
 
-    try {
-      setProcessingId(`revoke-${revokeRow.id}`);
+  if (!window.confirm("Revoke this resignation before its effective date?")) {
+    return;
+  }
 
-      const fd = new FormData();
-      fd.append("effective_date", revokeForm.effective_date);
-      fd.append("branch_id", revokeForm.branch_id);
-      fd.append("department", revokeForm.department);
-      fd.append("position", revokeForm.position);
-      fd.append("remarks", revokeForm.remarks || "");
-      fd.append("attachment", revokeForm.attachment);
+  try {
+    setProcessingId(`revoke-${revokeRow.id}`);
 
-      await api.put(`/resignation-requests/${revokeRow.id}/revoke`, fd, {
-        headers: { "Content-Type": "multipart/form-data" },
-      });
+    await api.put(`/resignation-requests/${revokeRow.id}/revoke`, {
+      remarks: revokeRemarks || "",
+    });
 
-      alert("Re-apply request submitted for approval.");
-      closeRevokeModal();
-      await fetchAll();
-    } catch (err) {
-      alert(err?.response?.data?.message || "Failed to submit revoke request.");
-    } finally {
-      setProcessingId("");
-    }
-  };
+    alert("Resignation revoked successfully.");
+
+    closeRevokeModal();
+    await fetchAll();
+  } catch (err) {
+    alert(
+      err?.response?.data?.message ||
+        "Failed to revoke resignation request."
+    );
+  } finally {
+    setProcessingId("");
+  }
+};
+
+const openReapplyModal = (row) => {
+  setReapplyRow(row);
+
+  setReapplyForm({
+    effective_date: "",
+    branch_id: "",
+    department: "",
+    position: "",
+    remarks: "",
+    attachment: null,
+  });
+};
+
+const closeReapplyModal = () => {
+  setReapplyRow(null);
+
+  setReapplyForm({
+    effective_date: "",
+    branch_id: "",
+    department: "",
+    position: "",
+    remarks: "",
+    attachment: null,
+  });
+};
+
+const submitReapplyRequest = async (e) => {
+  e.preventDefault();
+
+  if (!reapplyRow?.id) return;
+
+  if (!reapplyForm.effective_date) {
+    return alert("Re-Apply effective date is required.");
+  }
+
+  if (!reapplyForm.branch_id) {
+    return alert("Branch resume is required.");
+  }
+
+  if (!reapplyForm.department) {
+    return alert("Department is required.");
+  }
+
+  if (!reapplyForm.position) {
+    return alert("New position is required.");
+  }
+
+  if (!reapplyForm.attachment) {
+    return alert("Re-Apply file is required.");
+  }
+
+  try {
+    setProcessingId(`reapply-${reapplyRow.id}`);
+
+    const fd = new FormData();
+
+    fd.append("effective_date", reapplyForm.effective_date);
+    fd.append("branch_id", reapplyForm.branch_id);
+    fd.append("department", reapplyForm.department);
+    fd.append("position", reapplyForm.position);
+    fd.append("remarks", reapplyForm.remarks || "");
+    fd.append("attachment", reapplyForm.attachment);
+
+    await api.put(
+      `/resignation-requests/${reapplyRow.id}/reapply`,
+      fd,
+      {
+        headers: {
+          "Content-Type": "multipart/form-data",
+        },
+      }
+    );
+
+    alert("Re-Apply request submitted for approval.");
+
+    closeReapplyModal();
+    await fetchAll();
+  } catch (err) {
+    alert(
+      err?.response?.data?.message ||
+        "Failed to submit Re-Apply request."
+    );
+  } finally {
+    setProcessingId("");
+  }
+};
 
   const deleteRequest = async (row) => {
     if (!window.confirm("Delete this resignation request?")) return;
@@ -585,7 +659,8 @@ const isHRDeptManager =
     if (
       (isAdmin || isHr || isAccounting || isSeniorVicePresident || isHRDeptManager) &&
       status !== STATUS_APPROVED &&
-      status !== STATUS_REJECTED
+      status !== STATUS_REJECTED &&
+      status !== STATUS_REVOKED
     ) {
       return true;
     }
@@ -611,10 +686,36 @@ const isHRDeptManager =
     );
   };
 
+  const getToday = () => {
+    return new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Manila",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(new Date());
+  };
+
   const canRevokeRow = (row) => {
+    const effectiveDate = toDate10(row.effective_date);
+    const today = getToday();
+
     return (
       canFinalAction &&
-      norm(row.status) === norm(STATUS_APPROVED)
+      norm(row.status) === norm(STATUS_APPROVED) &&
+      effectiveDate &&
+      effectiveDate > today
+    );
+  };
+
+  const canReapplyRow = (row) => {
+    const effectiveDate = toDate10(row.effective_date);
+    const today = getToday();
+
+    return (
+      canFinalAction &&
+      norm(row.status) === norm(STATUS_APPROVED) &&
+      effectiveDate &&
+      effectiveDate <= today
     );
   };
 
@@ -622,6 +723,7 @@ const isHRDeptManager =
     const s = norm(status);
     if (s === norm(STATUS_APPROVED)) return "badge badge-approved";
     if (s === norm(STATUS_REJECTED)) return "badge badge-rejected";
+    if (s === norm(STATUS_REVOKED)) return "badge badge-rejected";
     return "badge badge-pending";
   };
 
@@ -644,6 +746,7 @@ const isHRDeptManager =
     if (status === STATUS_ADMIN) return "For Admin";
     if (status === STATUS_APPROVED) return "Approved";
     if (status === STATUS_REJECTED) return "Rejected";
+    if (status === STATUS_REVOKED) return "Revoked";
 
     return "-";
   };
@@ -665,13 +768,19 @@ const isHRDeptManager =
       row?.attachment_path?.split("/")?.pop() ||
       "Latest File"
     );
-  };
+  };  
 
   const totalRequests=filteredRows.length;
-  const pendingRequests=filteredRows.filter((r)=>{
-    const s=norm(r.status);
-    return s!==norm(STATUS_APPROVED)&&s!==norm(STATUS_REJECTED);
+  const pendingRequests = filteredRows.filter((r) => {
+    const s = norm(r.status);
+
+    return (
+      s !== norm(STATUS_APPROVED) &&
+      s !== norm(STATUS_REJECTED) &&
+      s !== norm(STATUS_REVOKED)
+    );
   }).length;
+
   const approvedRequests=filteredRows.filter((r)=>norm(r.status)===norm(STATUS_APPROVED)).length;
   const rejectedRequests=filteredRows.filter((r)=>norm(r.status)===norm(STATUS_REJECTED)).length;
 
@@ -855,6 +964,7 @@ const isHRDeptManager =
                   );
                   const approved=norm(row.status)===norm(STATUS_APPROVED);
                   const rejected=norm(row.status)===norm(STATUS_REJECTED);
+                  const revoked=norm(row.status)===norm(STATUS_REVOKED);
 
                   return(
                     <tr key={row.id}>
@@ -911,7 +1021,7 @@ const isHRDeptManager =
                             View
                           </button>
 
-                          {canApprove&&!approved&&!rejected&&(
+                          {canApprove && !approved && !rejected && !revoked && (
                             <>
                               <label className="reg-action-btn reg-action-upload">
                                 {selectedFile?.name?"Change File":"Choose File"}
@@ -950,7 +1060,7 @@ const isHRDeptManager =
                             </>
                           )}
 
-                          {canRejectRow(row)&&!approved&&!rejected&&(
+                          {canRejectRow(row) && !approved && !rejected && !revoked && (
                             <button
                               className="reg-action-btn reg-action-reject"
                               type="button"
@@ -974,6 +1084,19 @@ const isHRDeptManager =
                               {processingId===`revoke-${row.id}`
                                 ?"Revoking..."
                                 :"Revoke"}
+                            </button>
+                          )}
+
+                          {canReapplyRow(row) && (
+                            <button
+                              className="reg-action-btn reg-action-approve"
+                              type="button"
+                              onClick={() => openReapplyModal(row)}
+                              disabled={processingId === `reapply-${row.id}`}
+                            >
+                              {processingId === `reapply-${row.id}`
+                                ? "Submitting..."
+                                : "Re-Apply"}
                             </button>
                           )}
 
@@ -1334,42 +1457,142 @@ const isHRDeptManager =
         <div
           className="modal-overlay"
           onMouseDown={(e) =>
-            e.target.classList.contains("modal-overlay") && closeRevokeModal()
+            e.target.classList.contains("modal-overlay") &&
+            closeRevokeModal()
           }
         >
-          <div className="modal saas-modal" onMouseDown={(e) => e.stopPropagation()}>
+          <div
+            className="modal saas-modal"
+            onMouseDown={(e) => e.stopPropagation()}
+            style={{ maxWidth: 560 }}
+          >
             <div className="modal-head">
               <div>
-                <h3 className="modal-title">Re-Apply / Revoke Resignation</h3>
+                <h3 className="modal-title">
+                  Revoke Resignation
+                </h3>
+
                 <p className="modal-subtitle">
-                  {revokeRow.employee_name || "-"} will be re-applied and transferred after approval.
+                  {revokeRow.employee_name || "-"} has not yet reached the resignation effective date.
                 </p>
               </div>
 
-              <button className="modal-x" type="button" onClick={closeRevokeModal}>
+              <button
+                className="modal-x"
+                type="button"
+                onClick={closeRevokeModal}
+              >
                 ✕
               </button>
             </div>
 
-            <form className="modal-form" onSubmit={submitRevokeRequest}>
+            <form
+              className="modal-form"
+              onSubmit={submitRevokeRequest}
+            >
+              <div className="modal-grid">
+                <div className="form-group full">
+                  <label>Remarks</label>
+
+                  <textarea
+                    value={revokeRemarks}
+                    onChange={(e) =>
+                      setRevokeRemarks(e.target.value)
+                    }
+                    placeholder="Reason for revoking resignation..."
+                  />
+                </div>
+              </div>
+
+              <div className="modal-buttons">
+                <button
+                  className="btn-secondary"
+                  type="button"
+                  onClick={closeRevokeModal}
+                >
+                  Cancel
+                </button>
+
+                <button
+                  className="btn-danger"
+                  type="submit"
+                  disabled={
+                    processingId === `revoke-${revokeRow.id}`
+                  }
+                >
+                  {processingId === `revoke-${revokeRow.id}`
+                    ? "Revoking..."
+                    : "Revoke Resignation"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {reapplyRow && (
+        <div
+          className="modal-overlay"
+          onMouseDown={(e) =>
+            e.target.classList.contains("modal-overlay") &&
+            closeReapplyModal()
+          }
+        >
+          <div
+            className="modal saas-modal"
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <div className="modal-head">
+              <div>
+                <h3 className="modal-title">
+                  Re-Apply Staff
+                </h3>
+
+                <p className="modal-subtitle">
+                  {reapplyRow.employee_name || "-"} will return to Active status after final approval.
+                </p>
+              </div>
+
+              <button
+                className="modal-x"
+                type="button"
+                onClick={closeReapplyModal}
+              >
+                ✕
+              </button>
+            </div>
+
+            <form
+              className="modal-form"
+              onSubmit={submitReapplyRequest}
+            >
               <div className="modal-grid">
                 <div className="form-group">
                   <label>Employee No</label>
-                  <input value={revokeRow.employee_no || "-"} readOnly />
+                  <input
+                    value={reapplyRow.employee_no || "-"}
+                    readOnly
+                  />
                 </div>
 
                 <div className="form-group">
                   <label>Employee Name</label>
-                  <input value={revokeRow.employee_name || "-"} readOnly />
+                  <input
+                    value={reapplyRow.employee_name || "-"}
+                    readOnly
+                  />
                 </div>
 
                 <div className="form-group">
-                  <label>Effective Date</label>
+                  <label>Re-Apply Effective Date</label>
                   <input
                     type="date"
-                    value={revokeForm.effective_date}
+                    value={reapplyForm.effective_date}
                     onChange={(e) =>
-                      setRevokeForm((p) => ({ ...p, effective_date: e.target.value }))
+                      setReapplyForm((p) => ({
+                        ...p,
+                        effective_date: e.target.value,
+                      }))
                     }
                     required
                   />
@@ -1378,16 +1601,22 @@ const isHRDeptManager =
                 <div className="form-group">
                   <label>Branch Resume</label>
                   <select
-                    value={revokeForm.branch_id}
+                    value={reapplyForm.branch_id}
                     onChange={(e) =>
-                      setRevokeForm((p) => ({ ...p, branch_id: e.target.value }))
+                      setReapplyForm((p) => ({
+                        ...p,
+                        branch_id: e.target.value,
+                      }))
                     }
                     required
                   >
                     <option value="">Select branch</option>
+
                     {branches.map((b) => (
                       <option key={b.id} value={b.id}>
-                        {b.code ? `${b.code} - ${b.name}` : b.name}
+                        {b.code
+                          ? `${b.code} - ${b.name}`
+                          : b.name}
                       </option>
                     ))}
                   </select>
@@ -1395,20 +1624,36 @@ const isHRDeptManager =
 
                 <div className="form-group">
                   <label>Department</label>
+
                   <select
-                    value={revokeForm.department}
+                    value={reapplyForm.department}
                     onChange={(e) =>
-                      setRevokeForm((p) => ({ ...p, department: e.target.value }))
+                      setReapplyForm((p) => ({
+                        ...p,
+                        department: e.target.value,
+                      }))
                     }
                     required
                   >
                     <option value="">Select department</option>
-                    <option value="OPERATION DEPARTMENT">OPERATION DEPARTMENT</option>
-                    <option value="IT DEPARTMENT">IT DEPARTMENT</option>
-                    <option value="HR DEPARTMENT">HR DEPARTMENT</option>
-                    <option value="ACCOUNTING DEPARTMENT">ACCOUNTING DEPARTMENT</option>
-                    <option value="AUDIT DEPARTMENT">AUDIT DEPARTMENT</option>
-                    <option value="TREAD DEPARTMENT">TREAD DEPARTMENT</option>
+                    <option value="OPERATION DEPARTMENT">
+                      OPERATION DEPARTMENT
+                    </option>
+                    <option value="IT DEPARTMENT">
+                      IT DEPARTMENT
+                    </option>
+                    <option value="HR DEPARTMENT">
+                      HR DEPARTMENT
+                    </option>
+                    <option value="ACCOUNTING DEPARTMENT">
+                      ACCOUNTING DEPARTMENT
+                    </option>
+                    <option value="AUDIT DEPARTMENT">
+                      AUDIT DEPARTMENT
+                    </option>
+                    <option value="TREAD DEPARTMENT">
+                      TREAD DEPARTMENT
+                    </option>
                     <option value="PRODUCTION & LOGISTIC DEPARTMENT">
                       PRODUCTION & LOGISTIC DEPARTMENT
                     </option>
@@ -1420,10 +1665,14 @@ const isHRDeptManager =
 
                 <div className="form-group">
                   <label>New Position</label>
+
                   <input
-                    value={revokeForm.position}
+                    value={reapplyForm.position}
                     onChange={(e) =>
-                      setRevokeForm((p) => ({ ...p, position: e.target.value }))
+                      setReapplyForm((p) => ({
+                        ...p,
+                        position: e.target.value,
+                      }))
                     }
                     placeholder="Enter new position"
                     required
@@ -1432,12 +1681,14 @@ const isHRDeptManager =
 
                 <div className="form-group full">
                   <label>Re-Apply File</label>
+
                   <input
                     type="file"
                     onChange={(e) =>
-                      setRevokeForm((p) => ({
+                      setReapplyForm((p) => ({
                         ...p,
-                        attachment: e.target.files?.[0] || null,
+                        attachment:
+                          e.target.files?.[0] || null,
                       }))
                     }
                     required
@@ -1446,10 +1697,14 @@ const isHRDeptManager =
 
                 <div className="form-group full">
                   <label>Remarks</label>
+
                   <textarea
-                    value={revokeForm.remarks}
+                    value={reapplyForm.remarks}
                     onChange={(e) =>
-                      setRevokeForm((p) => ({ ...p, remarks: e.target.value }))
+                      setReapplyForm((p) => ({
+                        ...p,
+                        remarks: e.target.value,
+                      }))
                     }
                     placeholder="Optional remarks..."
                   />
@@ -1457,16 +1712,22 @@ const isHRDeptManager =
               </div>
 
               <div className="modal-buttons">
-                <button className="btn-secondary" type="button" onClick={closeRevokeModal}>
+                <button
+                  className="btn-secondary"
+                  type="button"
+                  onClick={closeReapplyModal}
+                >
                   Cancel
                 </button>
 
                 <button
                   className="btn-primary"
                   type="submit"
-                  disabled={processingId === `revoke-${revokeRow.id}`}
+                  disabled={
+                    processingId === `reapply-${reapplyRow.id}`
+                  }
                 >
-                  {processingId === `revoke-${revokeRow.id}`
+                  {processingId === `reapply-${reapplyRow.id}`
                     ? "Submitting..."
                     : "Submit Re-Apply"}
                 </button>

@@ -47,8 +47,8 @@ const isVicePresident = (req) =>
 const isSeniorVicePresident = (req) =>
   roleLower(req) === "senior vice president";
 
-const userBranchId = (req) =>
-  Number(req.user?.branch_id || 0);
+const userBranchCode = (req) =>
+  toStr(req.user?.branch_id);
 
 const userArea = (req) =>
   toStr(req.user?.area);
@@ -93,76 +93,116 @@ const getOperationScope = (req) => {
     };
   }
 
-  // VP / SVP → all Operation Department
+  // =====================================================
+  // VP / SVP
+  // All SBF records under Operation branches
+  // =====================================================
   if (
     isVicePresident(req) ||
     isSeniorVicePresident(req)
   ) {
     return {
       where: `
-        AND LOWER(TRIM(COALESCE(s.department, '')))
-            LIKE '%operation%'
+        AND b.id IS NOT NULL
       `,
       params: [],
     };
   }
 
-  // AVP → own division
+  // =====================================================
+  // AVP
+  // All branches under the same division
+  // =====================================================
   if (isAssistantVicePresident(req)) {
+    const division = userDivision(req);
+
+    if (!division) {
+      return {
+        where: "AND 1 = 0",
+        params: [],
+      };
+    }
+
     return {
       where: `
-        AND LOWER(TRIM(COALESCE(s.department, '')))
-            LIKE '%operation%'
-
-        AND LOWER(TRIM(COALESCE(s.division, '')))
+        AND LOWER(TRIM(COALESCE(b.division, '')))
             = LOWER(TRIM($1))
       `,
-      params: [userDivision(req)],
+      params: [division],
     };
   }
 
-  // RM → own region
+  // =====================================================
+  // REGIONAL MANAGER
+  // All branches under the same region
+  // =====================================================
   if (isRegionalManager(req)) {
+    const region = userRegion(req);
+
+    if (!region) {
+      return {
+        where: "AND 1 = 0",
+        params: [],
+      };
+    }
+
     return {
       where: `
-        AND LOWER(TRIM(COALESCE(s.department, '')))
-            LIKE '%operation%'
-
-        AND LOWER(TRIM(COALESCE(s.region, '')))
+        AND LOWER(TRIM(COALESCE(b.region, '')))
             = LOWER(TRIM($1))
       `,
-      params: [userRegion(req)],
+      params: [region],
     };
   }
 
-  // AM → own area
+  // =====================================================
+  // AREA MANAGER
+  // All branches under the same area
+  // =====================================================
   if (isAreaManager(req)) {
+    const area = userArea(req);
+
+    if (!area) {
+      return {
+        where: "AND 1 = 0",
+        params: [],
+      };
+    }
+
     return {
       where: `
-        AND LOWER(TRIM(COALESCE(s.department, '')))
-            LIKE '%operation%'
-
-        AND LOWER(TRIM(COALESCE(s.area, '')))
+        AND LOWER(TRIM(COALESCE(b.area, '')))
             = LOWER(TRIM($1))
       `,
-      params: [userArea(req)],
+      params: [area],
     };
   }
 
-  // BM → own branch
+  // =====================================================
+  // BRANCH MANAGER
+  // Own branch only
+  // req.user.branch_id contains the BRANCH CODE
+  // =====================================================
   if (isBranchManager(req)) {
+    const branchCode = userBranchCode(req);
+
+    if (!branchCode) {
+      return {
+        where: "AND 1 = 0",
+        params: [],
+      };
+    }
+
     return {
       where: `
-        AND LOWER(TRIM(COALESCE(s.department, '')))
-            LIKE '%operation%'
-
-        AND s.branch_id = $1
+        AND LOWER(TRIM(COALESCE(b.code, '')))
+            = LOWER(TRIM($1))
       `,
-      params: [userBranchId(req)],
+      params: [branchCode],
     };
   }
 
-  // Any other Operation role → no SBF records
+  // Other Operation roles
   return {
     where: "AND 1 = 0",
     params: [],
@@ -317,9 +357,9 @@ router.get(
 
           FROM public.sbf_orders so
 
-          LEFT JOIN public.staff s
-            ON LOWER(TRIM(COALESCE(s.employee_no, '')))
-             = LOWER(TRIM(COALESCE(so.employee_no, '')))
+          LEFT JOIN public.branches b
+            ON LOWER(TRIM(COALESCE(b.code, '')))
+            = LOWER(TRIM(COALESCE(so.branch_code, '')))
 
           WHERE 1 = 1
 
@@ -405,24 +445,9 @@ router.get(
 
         FROM public.sbf_orders so
 
-        LEFT JOIN public.staff s
-          ON LOWER(
-               TRIM(
-                 COALESCE(
-                   s.employee_no,
-                   ''
-                 )
-               )
-             )
-           =
-             LOWER(
-               TRIM(
-                 COALESCE(
-                   so.employee_no,
-                   ''
-                 )
-               )
-             )
+       LEFT JOIN public.branches b
+        ON LOWER(TRIM(COALESCE(b.code, '')))
+        = LOWER(TRIM(COALESCE(so.branch_code, '')))
 
         WHERE so.id = $1
 
@@ -639,25 +664,9 @@ router.get(
 
           FROM public.sbf_orders so
 
-          LEFT JOIN public.staff s
-            ON LOWER(
-                 TRIM(
-                   COALESCE(
-                     s.employee_no,
-                     ''
-                   )
-                 )
-               )
-             =
-               LOWER(
-                 TRIM(
-                   COALESCE(
-                     so.employee_no,
-                     ''
-                   )
-                 )
-               )
-
+          LEFT JOIN public.branches b
+            ON LOWER(TRIM(COALESCE(b.code, '')))
+            = LOWER(TRIM(COALESCE(so.branch_code, '')))
           WHERE so.id = $1
 
           ${shiftedWhere}

@@ -7,7 +7,7 @@ const { requirePermission } = require("../middlewares/permissionMiddleware");
 
 const {
   uploadToTemp,
-  moveFromTemp,
+  moveFromTempKeepExisting,
   getSignedDownloadUrl,
 } = require("../services/spacesUpload");
 
@@ -459,15 +459,16 @@ async function finalizeCbuWithdrawal({ client, row, staff, fileKey, fileName }) 
   const result = await client.query(
     `
     UPDATE public.cbu_withdrawals
-    SET status = 'Approved',
+    SET
+        status = 'Approved',
         approval_stage = 'Approved',
         approved_at = NOW(),
-        attachment_path = $1,
-        attachment_name = $2,
+
         approved_attachment_path = $1,
         approved_attachment_name = $2,
+
         final_status = 'Approved',
-        updated_at = NOW()
+    updated_at = NOW()
     WHERE id = $3
     RETURNING *
     `,
@@ -616,13 +617,12 @@ router.post(
         });
       }
 
-      const attachmentPath = await moveFromTemp(
+      const attachmentPath = await moveFromTempKeepExisting(
         req.file.key,
-        "cbu-withdrawals/latest",
+        "cbu-withdrawals/request",
         String(employeeId),
         req.file.originalname || "request-file"
       );
-
       const attachmentName = req.file.originalname || null;
 
       const result = await client.query(
@@ -924,7 +924,7 @@ router.put(
         });
       }
 
-      const latestFileKey = await moveFromTemp(
+      const latestFileKey = await moveFromTempKeepExisting(
         req.file.key,
         "cbu-withdrawals/latest",
         String(id),
@@ -994,15 +994,25 @@ router.put(
       const updated = await client.query(
         `
         UPDATE public.cbu_withdrawals
-        SET status = 'Pending',
-            approval_stage = $1,
-            attachment_path = $2,
-            attachment_name = $3,
-            updated_at = NOW()
+        SET
+          status = 'Pending',
+          approval_stage = $1,
+
+          approved_attachment_path = $2,
+          approved_attachment_name = $3,
+
+          updated_at = NOW()
+
         WHERE id = $4
+
         RETURNING *
         `,
-        [next, latestFileKey, latestFileName, id]
+        [
+          next,
+          latestFileKey,
+          latestFileName,
+          id,
+        ]
       );
 
       await client.query("COMMIT");
@@ -1078,7 +1088,7 @@ router.post(
         });
       }
 
-      const finalKey = await moveFromTemp(
+      const finalKey = await moveFromTempKeepExisting(
         req.file.key,
         "cbu-withdrawals/approved",
         String(id),
