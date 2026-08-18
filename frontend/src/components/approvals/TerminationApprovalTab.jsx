@@ -56,9 +56,23 @@ export default function TerminationApprovalTab({ embedded = false }) {
   const isHR = role === "hr";
   const isAccounting = role === "accounting";
 
-  const isOperationVicePresident =
+  const isOperationViewer =
     dept === "operation department" &&
-    role === "vice president";
+    [
+      "branch manager",
+      "area manager",
+      "regional manager",
+      "assistant vice president",
+      "vice president",
+      "senior vice president",
+    ].includes(role);
+
+  const isOperationVpOrSvp =
+    dept === "operation department" &&
+    [
+      "vice president",
+      "senior vice president",
+    ].includes(role);
 
   const canManage =
     isAdmin ||
@@ -71,9 +85,12 @@ export default function TerminationApprovalTab({ embedded = false }) {
 
   const canView =
     canManage ||
-    isOperationVicePresident;
+    isOperationViewer;
 
-  const canCreate = canManage;
+  const canCreate =
+    canManage ||
+    isOperationVpOrSvp;
+
   const canFinalUpload = canManage;
   const canReject = canManage;
   const canVoid = canManage;

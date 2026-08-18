@@ -1,10 +1,4 @@
-const {
-  S3Client,
-  DeleteObjectCommand,
-  ListObjectsV2Command,
-  CopyObjectCommand,
-  GetObjectCommand,
-} = require("@aws-sdk/client-s3");
+const { S3Client, DeleteObjectCommand, ListObjectsV2Command, CopyObjectCommand, GetObjectCommand, } = require("@aws-sdk/client-s3");
 const { getSignedUrl } = require("@aws-sdk/s3-request-presigner");
 const multer = require("multer");
 const multerS3 = require("multer-s3");
@@ -129,6 +123,31 @@ const getSignedDownloadUrl = async (key, expiresIn = 3600) => {
   return getSignedUrl(s3Client, cmd, { expiresIn });
 };
 
+const uploadAttachmentToTemp = multer({
+  storage: multerS3({
+    s3: s3Client,
+    bucket: BUCKET,
+
+    key: (_req, file, cb) => {
+      const timestamp = Date.now();
+
+      const safeName = file.originalname.replace(
+        /[^a-zA-Z0-9._-]/g,
+        "_"
+      );
+
+      cb(
+        null,
+        `${ROOT}/temp/${timestamp}-${safeName}`
+      );
+    },
+  }),
+
+  limits: {
+    fileSize: 50 * 1024 * 1024,
+  },
+}).single("attachment");
+
 const uploadPhotosToTemp = multer({
   storage: multerS3({
     s3: s3Client,
@@ -144,6 +163,7 @@ const uploadPhotosToTemp = multer({
 
 module.exports = {
   uploadToTemp,
+  uploadAttachmentToTemp,
   uploadPhotosToTemp,
   moveFromTemp,
   moveFromTempKeepExisting,

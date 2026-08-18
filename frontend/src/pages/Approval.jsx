@@ -59,56 +59,122 @@ export default function Approval() {
 
   return (
     <div className="approval-page">
-      <div className="approval-page-header">
-        <div>
-          <h2 className="approval-title">Approvals</h2>
+      {/* =========================
+          PAGE HEADER
+      ========================== */}
+      <section className="approval-main-header">
+        <div className="approval-main-header-content">
+          <div>
+            <div className="approval-header-label">
+              FINANCE APPROVAL
+            </div>
 
-          <p className="approval-subtitle">
-            Loan approvals, CBU withdrawals, and reimbursement requests
-          </p>
+            <h1 className="approval-title">
+              Approvals
+            </h1>
+
+            <p className="approval-subtitle">
+              Review and manage loan requests, CBU withdrawals,
+              and reimbursement requests.
+            </p>
+          </div>
+
+          <div className="approval-header-decoration">
+            <div className="approval-decoration-circle circle-one" />
+            <div className="approval-decoration-circle circle-two" />
+          </div>
         </div>
-      </div>
+      </section>
 
-      <div className="approval-tabs">
-        {canAccessLoanApproval && (
+      {/* =========================
+          APPROVAL TYPE NAVIGATION
+      ========================== */}
+      <section className="approval-navigation">
+        <div className="approval-navigation-title">
+          <span>Approval Type</span>
+          <small>Select a transaction to review</small>
+        </div>
+
+        <div className="approval-tabs">
+          {canAccessLoanApproval && (
+            <button
+              type="button"
+              className={safeActiveTab === "loan" ? "active" : ""}
+              onClick={() => setActiveTab("loan")}
+            >
+              <span className="approval-tab-icon">₱</span>
+
+              <span className="approval-tab-text">
+                <strong>Loan Requests</strong>
+                <small>Employee loan applications</small>
+              </span>
+            </button>
+          )}
+
           <button
             type="button"
-            className={safeActiveTab === "loan" ? "active" : ""}
-            onClick={() => setActiveTab("loan")}
+            className={safeActiveTab === "cbu" ? "active" : ""}
+            onClick={() => setActiveTab("cbu")}
           >
-            Loan Requests
+            <span className="approval-tab-icon">CBU</span>
+
+            <span className="approval-tab-text">
+              <strong>CBU Withdrawals</strong>
+              <small>Capital build-up requests</small>
+            </span>
           </button>
-        )}
 
-        <button
-          type="button"
-          className={safeActiveTab === "cbu" ? "active" : ""}
-          onClick={() => setActiveTab("cbu")}
-        >
-          CBU Withdraw
-        </button>
+          <button
+            type="button"
+            className={
+              safeActiveTab === "reimbursement" ? "active" : ""
+            }
+            onClick={() => setActiveTab("reimbursement")}
+          >
+            <span className="approval-tab-icon">R</span>
 
-        <button
-          type="button"
-          className={safeActiveTab === "reimbursement" ? "active" : ""}
-          onClick={() => setActiveTab("reimbursement")}
-        >
-          Reimbursement Requests
-        </button>
-      </div>
+            <span className="approval-tab-text">
+              <strong>Reimbursements</strong>
+              <small>Expense reimbursement requests</small>
+            </span>
+          </button>
+        </div>
+      </section>
 
-      <div className="approval-content">
-        {safeActiveTab === "loan" &&
-          canAccessLoanApproval && <LoanApprovalTab />}
+      {/* =========================
+          ACTIVE APPROVAL CONTENT
+      ========================== */}
+      <section className="approval-workspace">
+        <div className="approval-workspace-header">
+          <div>
+            <span className="approval-workspace-label">
+              CURRENT VIEW
+            </span>
 
-        {safeActiveTab === "cbu" && (
-          <CBUWithdrawApprovalTab />
-        )}
+            <h2>
+              {safeActiveTab === "loan" && "Loan Requests"}
+              {safeActiveTab === "cbu" && "CBU Withdrawals"}
+              {safeActiveTab === "reimbursement" &&
+                "Reimbursement Requests"}
+            </h2>
+          </div>
+        </div>
 
-        {safeActiveTab === "reimbursement" && (
-          <ReimbursementApprovalTab />
-        )}
-      </div>
+        <div className="approval-content">
+          {safeActiveTab === "loan" &&
+            canAccessLoanApproval && (
+              <LoanApprovalTab />
+            )}
+
+          {safeActiveTab === "cbu" && (
+            <CBUWithdrawApprovalTab />
+          )}
+
+          {safeActiveTab === "reimbursement" && (
+            <ReimbursementApprovalTab />
+          )}
+        </div>
+      </section>
     </div>
   );
 }

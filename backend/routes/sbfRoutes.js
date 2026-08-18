@@ -1,10 +1,8 @@
 const express = require("express");
 const router = express.Router();
 const pool = require("../db");
-
-const fs = require("fs");
-const path = require("path");
-const multer = require("multer");
+const { uploadAttachmentToTemp, moveFromTempKeepExisting, deleteKey, getSignedDownloadUrl, 
+} = require("../services/spacesUpload");
 
 const { requireAuth } = require("../middlewares/authMiddleware");
 const {
@@ -95,7 +93,7 @@ const getOperationScope = (req) => {
 
   // =====================================================
   // VP / SVP
-  // All SBF records under Operation branches
+  // See ALL staff under OPERATION DEPARTMENT
   // =====================================================
   if (
     isVicePresident(req) ||
@@ -103,7 +101,8 @@ const getOperationScope = (req) => {
   ) {
     return {
       where: `
-        AND b.id IS NOT NULL
+        AND LOWER(TRIM(COALESCE(s.department, '')))
+            LIKE '%operation%'
       `,
       params: [],
     };
@@ -111,7 +110,7 @@ const getOperationScope = (req) => {
 
   // =====================================================
   // AVP
-  // All branches under the same division
+  // Own division
   // =====================================================
   if (isAssistantVicePresident(req)) {
     const division = userDivision(req);
@@ -125,7 +124,9 @@ const getOperationScope = (req) => {
 
     return {
       where: `
-        AND LOWER(TRIM(COALESCE(b.division, '')))
+        AND LOWER(TRIM(COALESCE(s.department, '')))
+            LIKE '%operation%'
+        AND LOWER(TRIM(COALESCE(s.division, '')))
             = LOWER(TRIM($1))
       `,
       params: [division],
@@ -134,7 +135,7 @@ const getOperationScope = (req) => {
 
   // =====================================================
   // REGIONAL MANAGER
-  // All branches under the same region
+  // Own region
   // =====================================================
   if (isRegionalManager(req)) {
     const region = userRegion(req);
@@ -148,7 +149,9 @@ const getOperationScope = (req) => {
 
     return {
       where: `
-        AND LOWER(TRIM(COALESCE(b.region, '')))
+        AND LOWER(TRIM(COALESCE(s.department, '')))
+            LIKE '%operation%'
+        AND LOWER(TRIM(COALESCE(s.region, '')))
             = LOWER(TRIM($1))
       `,
       params: [region],
@@ -157,7 +160,7 @@ const getOperationScope = (req) => {
 
   // =====================================================
   // AREA MANAGER
-  // All branches under the same area
+  // Own area
   // =====================================================
   if (isAreaManager(req)) {
     const area = userArea(req);
@@ -171,7 +174,9 @@ const getOperationScope = (req) => {
 
     return {
       where: `
-        AND LOWER(TRIM(COALESCE(b.area, '')))
+        AND LOWER(TRIM(COALESCE(s.department, '')))
+            LIKE '%operation%'
+        AND LOWER(TRIM(COALESCE(s.area, '')))
             = LOWER(TRIM($1))
       `,
       params: [area],
@@ -181,12 +186,11 @@ const getOperationScope = (req) => {
   // =====================================================
   // BRANCH MANAGER
   // Own branch only
-  // req.user.branch_id contains the BRANCH CODE
   // =====================================================
   if (isBranchManager(req)) {
-    const branchCode = userBranchCode(req);
+    const branchValue = userBranchCode(req);
 
-    if (!branchCode) {
+    if (!branchValue) {
       return {
         where: "AND 1 = 0",
         params: [],
@@ -195,10 +199,17 @@ const getOperationScope = (req) => {
 
     return {
       where: `
-        AND LOWER(TRIM(COALESCE(b.code, '')))
-            = LOWER(TRIM($1))
+        AND LOWER(TRIM(COALESCE(s.department, '')))
+            LIKE '%operation%'
+        AND (
+          CAST(s.branch_id AS TEXT) = TRIM($1)
+          OR LOWER(TRIM(COALESCE(b.code, '')))
+             = LOWER(TRIM($1))
+          OR LOWER(TRIM(COALESCE(b.name, '')))
+             = LOWER(TRIM($1))
+        )
       `,
-      params: [branchCode],
+      params: [branchValue],
     };
   }
 
@@ -208,50 +219,6 @@ const getOperationScope = (req) => {
     params: [],
   };
 };
-
-// =====================================================
-// FILE UPLOAD
-// =====================================================
-
-const uploadDir = path.join(
-  __dirname,
-  "..",
-  "uploads",
-  "sbf-orders"
-);
-
-if (!fs.existsSync(uploadDir)) {
-  fs.mkdirSync(uploadDir, {
-    recursive: true,
-  });
-}
-
-const storage = multer.diskStorage({
-  destination: (_req, _file, cb) => {
-    cb(null, uploadDir);
-  },
-
-  filename: (_req, file, cb) => {
-    const safeName = String(
-      file.originalname || "file"
-    )
-      .replace(/[^\w.\-() ]+/g, "_")
-      .replace(/\s+/g, "_");
-
-    cb(
-      null,
-      `${Date.now()}-${safeName}`
-    );
-  },
-});
-
-const upload = multer({
-  storage,
-
-  limits: {
-    fileSize: 50 * 1024 * 1024,
-  },
-});
 
 // =====================================================
 // GENERATE ORDER NUMBER
@@ -357,9 +324,12 @@ router.get(
 
           FROM public.sbf_orders so
 
+          LEFT JOIN public.staff s
+            ON LOWER(TRIM(COALESCE(s.employee_no, '')))
+            = LOWER(TRIM(COALESCE(so.employee_no, '')))
+
           LEFT JOIN public.branches b
-            ON LOWER(TRIM(COALESCE(b.code, '')))
-            = LOWER(TRIM(COALESCE(so.branch_code, '')))
+            ON b.id = s.branch_id
 
           WHERE 1 = 1
 
@@ -445,9 +415,12 @@ router.get(
 
         FROM public.sbf_orders so
 
-       LEFT JOIN public.branches b
-        ON LOWER(TRIM(COALESCE(b.code, '')))
-        = LOWER(TRIM(COALESCE(so.branch_code, '')))
+        LEFT JOIN public.staff s
+          ON LOWER(TRIM(COALESCE(s.employee_no, '')))
+          = LOWER(TRIM(COALESCE(so.employee_no, '')))
+
+        LEFT JOIN public.branches b
+          ON b.id = s.branch_id
 
         WHERE so.id = $1
 
@@ -502,7 +475,7 @@ router.post(
     "sbf_order",
     "create"
   ),
-  upload.single("attachment"),
+  uploadAttachmentToTemp,
   async (req, res) => {
     try {
       // -----------------------------------------------
@@ -535,19 +508,23 @@ router.post(
       const order_no =
         await makeOrderNo();
 
-      const attachmentPath =
-        req.file
-          ? `/uploads/sbf-orders/${req.file.filename}`
-          : null;
+      let attachmentPath = null;
 
       const attachmentName =
-        req.file?.originalname ||
-        null;
+        req.file?.originalname || null;
 
       const attachmentMime =
-        req.file?.mimetype ||
-        null;
+        req.file?.mimetype || null;
 
+      if (req.file?.key) {
+        attachmentPath =
+          await moveFromTempKeepExisting(
+            req.file.key,
+            "sbf-orders",
+            order_no,
+            req.file.originalname || "sbf-file"
+          );
+      }
       const result =
         await pool.query(
           `
@@ -614,8 +591,16 @@ router.post(
         err
       );
 
+      if (req.file?.key) {
+        await deleteKey(
+          req.file.key
+        ).catch(() => {});
+      }
+
       return res.status(500).json({
-        message: err.message,
+        message:
+          err.message ||
+          "Failed to create SBF order",
       });
     }
   }
@@ -640,8 +625,7 @@ router.get(
 
       if (!Number.isFinite(id)) {
         return res.status(400).json({
-          message:
-            "Invalid SBF order id",
+          message: "Invalid SBF order id",
         });
       }
 
@@ -664,9 +648,13 @@ router.get(
 
           FROM public.sbf_orders so
 
+          LEFT JOIN public.staff s
+            ON LOWER(TRIM(COALESCE(s.employee_no, '')))
+            = LOWER(TRIM(COALESCE(so.employee_no, '')))
+
           LEFT JOIN public.branches b
-            ON LOWER(TRIM(COALESCE(b.code, '')))
-            = LOWER(TRIM(COALESCE(so.branch_code, '')))
+            ON b.id = s.branch_id
+
           WHERE so.id = $1
 
           ${shiftedWhere}
@@ -677,7 +665,7 @@ router.get(
       if (!result.rows.length) {
         return res.status(404).json({
           message:
-            "SBF order not found",
+            "SBF order not found or outside your scope",
         });
       }
 
@@ -691,36 +679,19 @@ router.get(
         });
       }
 
-      const filename =
-        path.basename(
-          row.attachment_path
+      const url =
+        await getSignedDownloadUrl(
+          row.attachment_path,
+          3600
         );
 
-      const filePath =
-        path.join(
-          uploadDir,
-          filename
-        );
-
-      if (!fs.existsSync(filePath)) {
-        return res.status(404).json({
-          message:
-            "File not found on server",
-        });
-      }
-
-      if (row.attachment_mime) {
-        res.setHeader(
-          "Content-Type",
-          row.attachment_mime
-        );
-      }
-
-      return res.download(
-        filePath,
-        row.attachment_name ||
-          filename
-      );
+      return res.json({
+        url,
+        file_name:
+          row.attachment_name ||
+          `SBF-${id}-attachment`,
+        expiresIn: 3600,
+      });
     } catch (err) {
       console.error(
         "DOWNLOAD SBF FILE ERROR:",
@@ -728,7 +699,9 @@ router.get(
       );
 
       return res.status(500).json({
-        message: err.message,
+        message:
+          err.message ||
+          "Failed to download SBF attachment",
       });
     }
   }

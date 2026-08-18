@@ -34,7 +34,9 @@ const normalizeRole = (value) =>
 
 const isOperationViewer = (req) => {
   const role = normalizeRole(req.user?.role);
-  const department = normalizeDepartment(req.user?.department);
+  const department = normalizeDepartment(
+    req.user?.department
+  );
 
   if (department !== "operation department") {
     return false;
@@ -46,7 +48,23 @@ const isOperationViewer = (req) => {
     "regional manager",
     "assistant vice president",
     "vice president",
+    "senior vice president",
   ].includes(role);
+};
+
+const isOperationVpOrSvp = (req) => {
+  const role = normalizeRole(req.user?.role);
+  const department = normalizeDepartment(
+    req.user?.department
+  );
+
+  return (
+    department === "operation department" &&
+    [
+      "vice president",
+      "senior vice president",
+    ].includes(role)
+  );
 };
 
 const toInt = (v) => {
@@ -70,6 +88,10 @@ const canManageTermination = (req) =>
   isHrDepartment(req) ||
   isAccountingDepartment(req) ||
   isITDepartment(req);
+
+const canCreateTermination = (req) =>
+  canManageTermination(req) ||
+  isOperationVpOrSvp(req);
 
 const canViewTermination = (req) =>
   canManageTermination(req) ||
@@ -203,10 +225,10 @@ router.post(
     const client = await pool.connect();
 
     try {
-      if (!canManageTermination(req)) {
+      if (!canCreateTermination(req)) {
         return res.status(403).json({
           message:
-            "Only Admin, IT Department, HR Department, and Accounting Department can create Termination of Contract.",
+            "Only Admin, IT Department, HR Department, Accounting Department, and Operation VP/SVP can create Termination of Contract.",
         });
       }
 

@@ -1,34 +1,434 @@
-/* ===============================
-   APPROVAL PAGE
-================================= */
+/* =========================================================
+   APPROVAL MAIN PAGE
+========================================================= */
 
 .approval-page {
+  width: 100%;
+  min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 16px;
-  padding: 6px 0 14px;
+  gap: 18px;
+  padding: 0 0 28px;
+  color: var(--text);
 }
 
-.approval-page-header {
+
+/* =========================================================
+   HERO HEADER
+========================================================= */
+
+.approval-main-header {
+  position: relative;
+  overflow: hidden;
+
+  background:
+    linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--primary) 13%, var(--panel)),
+      var(--panel) 58%
+    );
+
+  border: 1px solid var(--border);
+  border-radius: 20px;
+
+  box-shadow: var(--shadow-soft);
+}
+
+.approval-main-header-content {
+  min-height: 145px;
+
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  flex-wrap: wrap;
+
+  position: relative;
+  padding: 26px 30px;
+}
+
+.approval-header-label {
+  display: inline-flex;
+  align-items: center;
+
+  margin-bottom: 8px;
+
+  font-size: 11px;
+  font-weight: 900;
+
+  letter-spacing: 1.4px;
+
+  color: var(--primary);
 }
 
 .approval-title {
   margin: 0;
-  font-size: 24px;
+
+  font-size: 30px;
+  line-height: 1.15;
+
   font-weight: 900;
+
   color: var(--text);
 }
 
 .approval-subtitle {
-  margin: 6px 0 0;
+  max-width: 650px;
+
+  margin: 8px 0 0;
+
   font-size: 13px;
+  line-height: 1.6;
+
   font-weight: 600;
+
   color: var(--muted);
+}
+
+
+/* decorative circles */
+
+.approval-header-decoration {
+  position: absolute;
+
+  right: 0;
+  top: 0;
+  bottom: 0;
+
+  width: 280px;
+
+  pointer-events: none;
+}
+
+.approval-decoration-circle {
+  position: absolute;
+
+  border-radius: 50%;
+
+  border: 22px solid
+    color-mix(in srgb, var(--primary) 10%, transparent);
+}
+
+.approval-decoration-circle.circle-one {
+  width: 170px;
+  height: 170px;
+
+  right: -30px;
+  top: -35px;
+}
+
+.approval-decoration-circle.circle-two {
+  width: 105px;
+  height: 105px;
+
+  right: 40px;
+  top: 20px;
+
+  opacity: 0.55;
+}
+
+
+/* =========================================================
+   APPROVAL NAVIGATION
+========================================================= */
+
+.approval-navigation {
+  background: var(--panel);
+
+  border: 1px solid var(--border);
+  border-radius: 18px;
+
+  padding: 18px;
+
+  box-shadow: var(--shadow-soft);
+}
+
+.approval-navigation-title {
+  display: flex;
+  flex-direction: column;
+
+  gap: 3px;
+
+  margin-bottom: 14px;
+}
+
+.approval-navigation-title > span {
+  font-size: 14px;
+  font-weight: 900;
+
+  color: var(--text);
+}
+
+.approval-navigation-title > small {
+  font-size: 12px;
+  font-weight: 600;
+
+  color: var(--muted);
+}
+
+
+/* =========================================================
+   APPROVAL TABS
+========================================================= */
+
+.approval-tabs {
+  display: grid;
+
+  grid-template-columns:
+    repeat(3, minmax(0, 1fr));
+
+  gap: 12px;
+
+  margin: 0;
+}
+
+.approval-tabs button {
+  min-width: 0;
+  min-height: 72px;
+
+  display: flex;
+  align-items: center;
+
+  gap: 12px;
+
+  padding: 12px 14px;
+
+  text-align: left;
+
+  border: 1px solid var(--border);
+  border-radius: 14px;
+
+  background: var(--panel-2);
+  color: var(--text);
+
+  cursor: pointer;
+
+  box-shadow: none;
+
+  transition:
+    transform 0.18s ease,
+    border-color 0.18s ease,
+    background 0.18s ease,
+    box-shadow 0.18s ease;
+}
+
+.approval-tabs button:hover {
+  transform: translateY(-2px);
+
+  border-color:
+    color-mix(
+      in srgb,
+      var(--primary) 45%,
+      var(--border)
+    );
+
+  background: var(--row-hover);
+}
+
+.approval-tabs button.active {
+  background:
+    color-mix(
+      in srgb,
+      var(--primary) 13%,
+      var(--panel)
+    );
+
+  border-color: var(--primary);
+
+  color: var(--text);
+
+  box-shadow:
+    0 0 0 1px
+    color-mix(
+      in srgb,
+      var(--primary) 20%,
+      transparent
+    );
+}
+
+
+/* tab icon */
+
+.approval-tab-icon {
+  width: 42px;
+  height: 42px;
+
+  flex: 0 0 42px;
+
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
+  border-radius: 12px;
+
+  background: var(--panel);
+
+  border: 1px solid var(--border);
+
+  color: var(--primary);
+
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.approval-tabs button.active .approval-tab-icon {
+  background: var(--primary);
+  color: #ffffff;
+
+  border-color: var(--primary);
+}
+
+
+/* tab text */
+
+.approval-tab-text {
+  min-width: 0;
+
+  display: flex;
+  flex-direction: column;
+
+  gap: 3px;
+}
+
+.approval-tab-text strong {
+  font-size: 13px;
+  font-weight: 900;
+
+  color: var(--text);
+}
+
+.approval-tab-text small {
+  overflow: hidden;
+
+  font-size: 11px;
+  font-weight: 600;
+
+  color: var(--muted);
+
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+
+/* =========================================================
+   APPROVAL WORKSPACE
+========================================================= */
+
+.approval-workspace {
+  width: 100%;
+  min-width: 0;
+
+  background: var(--panel);
+
+  border: 1px solid var(--border);
+  border-radius: 18px;
+
+  box-shadow: var(--shadow-soft);
+
+  overflow: hidden;
+}
+
+.approval-workspace-header {
+  min-height: 65px;
+
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+
+  padding: 15px 20px;
+
+  border-bottom: 1px solid var(--border);
+}
+
+.approval-workspace-label {
+  display: block;
+
+  margin-bottom: 3px;
+
+  font-size: 10px;
+  font-weight: 900;
+
+  letter-spacing: 1.1px;
+
+  color: var(--primary);
+}
+
+.approval-workspace-header h2 {
+  margin: 0;
+
+  font-size: 17px;
+  font-weight: 900;
+
+  color: var(--text);
+}
+
+
+/* =========================================================
+   CONTENT
+
+   IMPORTANT:
+   OLD CSS USED width: 50%.
+   We want the approval module to use the available space.
+========================================================= */
+
+.approval-content {
+  display: block;
+
+  width: 100%;
+  min-width: 0;
+
+  padding: 18px;
+
+  box-sizing: border-box;
+}
+
+
+/* allow child approval components to fill workspace */
+
+.approval-content > * {
+  width: 100%;
+  min-width: 0;
+}
+
+
+/* =========================================================
+   RESPONSIVE
+========================================================= */
+
+@media (max-width: 1050px) {
+  .approval-tabs {
+    grid-template-columns: 1fr;
+  }
+
+  .approval-tabs button {
+    min-height: 64px;
+  }
+}
+
+@media (max-width: 768px) {
+  .approval-page {
+    gap: 14px;
+  }
+
+  .approval-main-header-content {
+    min-height: auto;
+
+    padding: 22px 20px;
+  }
+
+  .approval-title {
+    font-size: 25px;
+  }
+
+  .approval-header-decoration {
+    opacity: 0.45;
+  }
+
+  .approval-navigation {
+    padding: 14px;
+  }
+
+  .approval-workspace-header {
+    padding: 14px 16px;
+  }
 }
 
 /* ===============================
@@ -61,12 +461,8 @@
 
 .approval-tabs button.active {
   background: var(--primary);
-  color: #fff;
+  color: var(--text);
   border-color: var(--primary);
-}
-
-.approval-content {
-  display: block;
 }
 
 /* ===============================
