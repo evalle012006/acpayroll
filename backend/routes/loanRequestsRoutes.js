@@ -293,6 +293,23 @@ const stageColumn = (stage) => {
   return null;
 };
 
+const stageApprovedAtColumn = (stage) => {
+  const s = norm(stage);
+
+  if (s === "branch manager") return "branch_manager_approved_at";
+  if (s === "area manager") return "area_manager_approved_at";
+  if (s === "regional manager") return "regional_manager_approved_at";
+  if (s === "assistant vice president")
+    return "assistant_vice_president_approved_at";
+  if (s === "vice president") return "vice_president_approved_at";
+  if (s === "senior vice president")
+    return "senior_vice_president_approved_at";
+  if (s === ACCOUNTING_FINAL || s === "admin")
+    return "accounting_approved_at";
+
+  return null;
+};
+
 const canApproveStage = (req, stage) => {
   const role = roleLower(req);
   const s = norm(stage);
@@ -500,7 +517,7 @@ function loanTypeToBalanceColumn(loanType) {
   if (lt === "special loan") return "special_advance";
   if (lt === "special advance") return "special_advance";
   if (lt === "cash advance") return "cash_advance";
-  if (lt === "cash loan") return "cash_advance";
+  if (lt === "cash loan") return "cash_advance";  
   if (lt === "motorcycle loan") return "motorcycle_loan";
   if (lt === "pag-ibig loan") return "pag_ibig_loan";
   if (lt === "pag ibig loan") return "pag_ibig_loan";
@@ -769,6 +786,13 @@ const loanSelectFields = `
   lr.vice_president_status,
   lr.senior_vice_president_status,
   lr.admin_status,
+  lr.branch_manager_approved_at,
+  lr.area_manager_approved_at,
+  lr.regional_manager_approved_at,
+  lr.assistant_vice_president_approved_at,
+  lr.vice_president_approved_at,
+  lr.senior_vice_president_approved_at,
+  lr.accounting_approved_at,
 
   COALESCE(s.fullname,'') AS staff_name,
 
@@ -1472,8 +1496,9 @@ router.put(
       }
 
       const column = stageColumn(currentStage);
+      const approvedAtColumn = stageApprovedAtColumn(currentStage);
 
-      if (!column) {
+      if (!column || !approvedAtColumn) {
         await client.query("ROLLBACK");
 
         console.log("DEBUG COLUMN");
@@ -1523,6 +1548,7 @@ router.put(
           UPDATE public.loan_requests
           SET
             ${column} = 'Approved',
+            ${approvedAtColumn} = NOW(),
             status = $5,
             approval_stage = $6,
             attachment_path = $2,
@@ -1547,6 +1573,7 @@ router.put(
         UPDATE public.loan_requests
         SET
           ${column} = 'Approved',
+          ${approvedAtColumn} = NOW(),
           approval_stage = $1,
           attachment_path = $3,
           attachment_name = $4,
@@ -1667,14 +1694,16 @@ router.post(
         ? toNum(loan.term)
         : toNum(req.body?.approved_term);
 
-      if (approvedAmount <= 0) {
+      if (approvedAmount < 0) {
         await client.query("ROLLBACK");
         return res.status(400).json({ message: "Approved Amount is required." });
       }
 
-      if (approvedTotal <= 0) {
+      if (approvedTotal < 0) {
         await client.query("ROLLBACK");
-        return res.status(400).json({ message: "Total Amount with Interest is required." });
+        return res.status(400).json({
+          message: "Total Amount with Interest cannot be negative."
+        });
       }
 
       if (approvedPerMonth <= 0) {
@@ -1691,6 +1720,11 @@ router.post(
       const finalName = req.file.originalname || null;
       const finalMime = req.file.mimetype || null;
 
+      const finalApprovedAtColumn =
+        finalStage === "vice president"
+          ? "vice_president_approved_at"
+          : "accounting_approved_at";
+
       await client.query(
         `
         UPDATE public.loan_requests
@@ -1698,6 +1732,7 @@ router.post(
           status = 'Approved',
           approval_stage = 'completed',
           admin_status = 'Approved',
+          ${finalApprovedAtColumn} = NOW(),
           approved_at = CURRENT_DATE,
           disbursement_date = CURRENT_DATE,
 
@@ -1729,11 +1764,7 @@ router.post(
 
       const balanceColumn = loanTypeToBalanceColumn(loan.loan_type);
 
-      const total =
-        approvedTotal ||
-        approvedAmount ||
-        toNum(loan.total) ||
-        toNum(loan.amount);
+      const total = approvedTotal;
 
       if (loan.employee_no && balanceColumn) {
         await ensureBalanceRow(client, loan.employee_no);
@@ -1836,11 +1867,7 @@ router.put(
 
       const balanceColumn = loanTypeToBalanceColumn(loan.loan_type);
 
-      const total =
-        toNum(loan.approved_total) ||
-        toNum(loan.approved_amount) ||
-        toNum(loan.total) ||
-        toNum(loan.amount);
+      const total = toNum(loan.approved_total);
 
       if (loan.employee_no && balanceColumn) {
         await ensureBalanceRow(client, loan.employee_no);

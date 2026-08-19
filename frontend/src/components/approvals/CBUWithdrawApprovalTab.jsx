@@ -227,6 +227,92 @@ const chainByDepartmentAndPosition = (department, position) => {
 const chainText = (item) =>
   chainByDepartmentAndPosition(item?.department, getApplicantRole(item)).join(" → ");
 
+const getStageStatus = (item, stage) => {
+  const s = norm(stage);
+
+  if (s === "branch manager") {
+    return item?.branch_manager_status || "Pending";
+  }
+
+  if (s === "area manager") {
+    return item?.area_manager_status || "Pending";
+  }
+
+  if (s === "regional manager") {
+    return item?.regional_manager_status || "Pending";
+  }
+
+  if (s === "assistant vice president") {
+    return item?.avp_status || "Pending";
+  }
+
+  if (s === "vice president") {
+    return item?.vp_status || "Pending";
+  }
+
+  if (s === "senior vice president") {
+    return item?.svp_status || "Pending";
+  }
+
+  if (s === norm(ACCOUNTING_FINAL)) {
+    return item?.final_status || "Pending";
+  }
+
+  return "Pending";
+};
+
+const getStageApprovedAt = (item, stage) => {
+  const s = norm(stage);
+
+  if (s === "branch manager") {
+    return item?.branch_manager_approved_at;
+  }
+
+  if (s === "area manager") {
+    return item?.area_manager_approved_at;
+  }
+
+  if (s === "regional manager") {
+    return item?.regional_manager_approved_at;
+  }
+
+  if (s === "assistant vice president") {
+    return item?.avp_approved_at;
+  }
+
+  if (s === "vice president") {
+    return item?.vp_approved_at;
+  }
+
+  if (s === "senior vice president") {
+    return item?.svp_approved_at;
+  }
+
+  if (s === norm(ACCOUNTING_FINAL)) {
+    return item?.accounting_approved_at;
+  }
+
+  return null;
+};
+
+const formatApprovalDateTime = (value) => {
+  if (!value) return "";
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) return "";
+
+  return date.toLocaleString("en-US", {
+    timeZone: "Asia/Manila",
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  });
+};
+
 const canApproveStage = (user, stage) => {
   const role = norm(user?.role);
   const dept = norm(user?.department || user?.department_name);
@@ -990,26 +1076,22 @@ export default function CBUWithdrawApprovalTab() {
             </div>
 
             <div className="table-card">
-              <div
-                style={{
-                  display: "flex",
-                  gap: 10,
-                  flexWrap: "wrap",
-                  alignItems: "center",
-                  marginBottom: 12,
-                }}
-              >
-                <input
-                  className="order-search-input"
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && setAppliedSearch(search)}
-                  placeholder="Search employee, status, stage, amount..."
-                  style={{ minWidth: 280 }}
-                />
+              <div className="cbu-table-toolbar">
+                <div className="cbu-table-search">
+                  <span className="cbu-search-icon">⌕</span>
+
+                  <input
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    onKeyDown={(e) =>
+                      e.key === "Enter" && setAppliedSearch(search)
+                    }
+                    placeholder="Search employee, status, stage, amount..."
+                  />
+                </div>
 
                 <button
-                  className="btn-primary"
+                  className="cbu-toolbar-search-btn"
                   type="button"
                   onClick={() => setAppliedSearch(search)}
                 >
@@ -1017,7 +1099,7 @@ export default function CBUWithdrawApprovalTab() {
                 </button>
 
                 <button
-                  className="btn-secondary"
+                  className="cbu-toolbar-clear-btn"
                   type="button"
                   onClick={() => {
                     setSearch("");
@@ -1027,17 +1109,21 @@ export default function CBUWithdrawApprovalTab() {
                   Clear
                 </button>
 
-                <select
-                  className="order-search-input"
-                  value={pageSize}
-                  onChange={(e) => setPageSize(Number(e.target.value))}
-                  style={{ width: 120 }}
-                >
-                  <option value={25}>25</option>
-                  <option value={50}>50</option>
-                  <option value={75}>75</option>
-                  <option value={100}>100</option>
-                </select>
+                <div className="cbu-page-size">
+                  <span>Show</span>
+
+                  <select
+                    value={pageSize}
+                    onChange={(e) => setPageSize(Number(e.target.value))}
+                  >
+                    <option value={25}>25</option>
+                    <option value={50}>50</option>
+                    <option value={75}>75</option>
+                    <option value={100}>100</option>
+                  </select>
+
+                  <span>rows</span>
+                </div>
               </div>
 
               <div className="table-wrap">
@@ -1335,14 +1421,97 @@ export default function CBUWithdrawApprovalTab() {
                   <input value={selected.position || "-"} readOnly />
                 </div>
 
-                <div className="form-group">
+                <div className="form-group full">
                   <label>Approval Chain</label>
-                  <input value={chainText(selected)} readOnly />
+
+                  <div className="cbu-approval-timeline">
+                    {chainByDepartmentAndPosition(
+                      selected.department,
+                      getApplicantRole(selected)
+                    ).map((stage, index, chain) => {
+                      const stageStatus = getStageStatus(selected, stage);
+                      const approvedAt = getStageApprovedAt(selected, stage);
+
+                      const approved = norm(stageStatus) === "approved";
+                      const rejected = norm(stageStatus) === "rejected";
+
+                      const isCurrent =
+                        norm(selected.approval_stage) === norm(stage) &&
+                        norm(selected.status) === "pending";
+
+                      let displayStatus = "Waiting";
+
+                      if (approved) {
+                        displayStatus = "Approved";
+                      } else if (rejected) {
+                        displayStatus = "Rejected";
+                      } else if (isCurrent) {
+                        displayStatus = "Pending";
+                      }
+
+                      return (
+                        <div
+                          className={`cbu-approval-step ${
+                            approved
+                              ? "is-approved"
+                              : rejected
+                              ? "is-rejected"
+                              : isCurrent
+                              ? "is-current"
+                              : "is-waiting"
+                          }`}
+                          key={stage}
+                        >
+                          <div className="cbu-approval-marker">
+                            <div className="cbu-approval-circle">
+                              {approved ? "✓" : rejected ? "✕" : isCurrent ? "●" : index + 1}
+                            </div>
+
+                            {index < chain.length - 1 && (
+                              <div className="cbu-approval-line" />
+                            )}
+                          </div>
+
+                          <div className="cbu-approval-content">
+                            <div className="cbu-approval-top">
+                              <strong>{stageLabel(stage)}</strong>
+
+                              <span className="cbu-approval-status">
+                                {displayStatus}
+                              </span>
+                            </div>
+
+                            {approved && approvedAt ? (
+                              <div className="cbu-approval-time">
+                                Approved on {formatApprovalDateTime(approvedAt)}
+                              </div>
+                            ) : isCurrent ? (
+                              <div className="cbu-approval-time">
+                                Waiting for approval
+                              </div>
+                            ) : (
+                              <div className="cbu-approval-time">
+                                Not yet reached
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
 
-                <div className="form-group">
+                <div className="form-group full">
                   <label>Current Stage</label>
-                  <input value={stageLabel(selected.approval_stage)} readOnly />
+
+                  <div className="cbu-current-stage">
+                    <span className="cbu-current-stage-dot" />
+
+                    <div>
+                      <small>Currently waiting for</small>
+                      <strong>{stageLabel(selected.approval_stage)}</strong>
+                    </div>
+                  </div>
                 </div>
 
                 <div className="form-group">

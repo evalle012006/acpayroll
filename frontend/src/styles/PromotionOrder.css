@@ -1372,3 +1372,237 @@ body.dark .po-reject {
 .po-edit-btn:hover {
   background: rgba(59, 130, 246, 0.2);
 }
+
+/* =========================================================
+   APPROVAL HISTORY
+========================================================= */
+
+.po-approval-history {
+  margin: 0 18px 18px;
+  padding: 16px;
+
+  border: 1px solid var(--po-border);
+  border-radius: 14px;
+
+  background: var(--po-card);
+}
+
+.po-approval-history-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+
+  margin-bottom: 14px;
+}
+
+.po-approval-history-head h4 {
+  margin: 0;
+
+  color: var(--po-text);
+  font-size: 15px;
+  font-weight: 950;
+}
+
+.po-approval-history-head p {
+  margin: 4px 0 0;
+
+  color: var(--po-muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.po-approval-history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.po-approval-history-row {
+  display: grid;
+  grid-template-columns:
+    minmax(180px, 1.1fr)
+    minmax(180px, 1fr)
+    minmax(170px, 0.9fr);
+
+  align-items: center;
+  gap: 14px;
+
+  padding: 13px 14px;
+
+  border: 1px solid var(--po-border);
+  border-radius: 12px;
+
+  background: var(--po-panel);
+
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease,
+    transform 0.15s ease;
+}
+
+.po-approval-history-row:hover {
+  border-color: rgba(59, 130, 246, 0.35);
+  background: var(--po-hover);
+  transform: translateY(-1px);
+}
+
+.po-approval-history-stage {
+  min-width: 0;
+
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.po-approval-history-stage > strong {
+  color: var(--po-text);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.po-approval-history-stage .po-badge {
+  min-width: auto;
+
+  padding: 5px 9px;
+
+  font-size: 10px;
+}
+
+.po-approval-history-person,
+.po-approval-history-date {
+  min-width: 0;
+
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.po-approval-history-person small,
+.po-approval-history-date small {
+  color: var(--po-muted);
+
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.po-approval-history-person strong {
+  overflow: hidden;
+
+  color: var(--po-text);
+  font-size: 12px;
+  font-weight: 900;
+
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.po-approval-history-date span {
+  color: var(--po-text);
+  font-size: 11px;
+  font-weight: 750;
+}
+
+.po-approval-history-empty {
+  padding: 22px;
+
+  border: 1px dashed var(--po-border);
+  border-radius: 12px;
+
+  background: var(--po-bg);
+  color: var(--po-muted);
+
+  font-size: 12px;
+  font-weight: 800;
+  text-align: center;
+}
+
+/* Approved history row */
+.po-approval-history-row:has(.po-approved) {
+  border-left: 4px solid var(--po-green);
+}
+
+/* Pending history row */
+.po-approval-history-row:has(.po-pending) {
+  border-left: 4px solid var(--po-blue);
+}
+
+/* Rejected / Voided history row */
+.po-approval-history-row:has(.po-rejected) {
+  border-left: 4px solid var(--po-red);
+}
+
+/* =========================================================
+   VIEW MODAL ACTION BUTTONS
+========================================================= */
+
+.po-record-modal > .po-modal-actions {
+  margin: 0 18px;
+  padding-bottom: 2px;
+}
+
+/* =========================================================
+   APPROVAL HISTORY - DARK MODE
+========================================================= */
+
+[data-theme="dark"] .po-approval-history-row,
+.dark .po-approval-history-row,
+body.dark .po-approval-history-row {
+  background: var(--po-panel);
+}
+
+[data-theme="dark"] .po-approval-history-row:hover,
+.dark .po-approval-history-row:hover,
+body.dark .po-approval-history-row:hover {
+  background: var(--po-hover);
+}
+
+[data-theme="dark"] .po-approval-history-empty,
+.dark .po-approval-history-empty,
+body.dark .po-approval-history-empty {
+  background: var(--po-bg);
+}
+
+/* =========================================================
+   APPROVAL HISTORY - RESPONSIVE
+========================================================= */
+
+@media (max-width: 820px) {
+  .po-approval-history-row {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .po-approval-history-date {
+    grid-column: 1 / -1;
+
+    padding-top: 8px;
+
+    border-top: 1px dashed var(--po-border);
+  }
+}
+
+@media (max-width: 620px) {
+  .po-approval-history {
+    margin: 0 10px 14px;
+    padding: 12px;
+  }
+
+  .po-approval-history-row {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .po-approval-history-date {
+    grid-column: auto;
+  }
+
+  .po-approval-history-person,
+  .po-approval-history-date {
+    padding-top: 8px;
+
+    border-top: 1px dashed var(--po-border);
+  }
+}

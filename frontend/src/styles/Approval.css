@@ -1250,3 +1250,1055 @@ body.dark .sap-back-btn:hover,
   background: #6b7280;
   color: white;
 }
+
+/* =========================================================
+   LOAN APPROVAL CHAIN TIMELINE
+========================================================= */
+
+.loan-approval-chain-box {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 18px 20px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--panel);
+}
+
+.loan-approval-timeline {
+  display: flex;
+  flex-direction: column;
+}
+
+.loan-approval-step {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  gap: 12px;
+  position: relative;
+  min-height: 66px;
+}
+
+.loan-approval-step:last-child {
+  min-height: auto;
+}
+
+/* LEFT TIMELINE */
+
+.loan-approval-track {
+  position: relative;
+  display: flex;
+  justify-content: center;
+}
+
+.loan-approval-icon {
+  position: relative;
+  z-index: 2;
+
+  width: 30px;
+  height: 30px;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  border-radius: 50%;
+
+  font-size: 12px;
+  font-weight: 900;
+
+  border: 2px solid var(--border);
+  background: var(--panel-2);
+  color: var(--muted);
+}
+
+.loan-approval-line {
+  position: absolute;
+  z-index: 1;
+
+  top: 29px;
+  bottom: -1px;
+  left: 50%;
+
+  width: 2px;
+
+  transform: translateX(-50%);
+
+  background: var(--border);
+}
+
+/* CONTENT */
+
+.loan-approval-step-content {
+  min-width: 0;
+  padding: 3px 0 17px;
+}
+
+.loan-approval-step-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.loan-approval-role {
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.loan-approval-status {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
+  padding: 4px 10px;
+
+  border-radius: 999px;
+
+  font-size: 10px;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.loan-approval-date {
+  margin-top: 5px;
+
+  color: var(--muted);
+
+  font-size: 11px;
+  font-weight: 700;
+}
+
+/* APPROVED */
+
+.loan-approval-step.is-approved .loan-approval-icon {
+  background: rgba(16, 185, 129, 0.15);
+  border-color: #10b981;
+  color: #10b981;
+}
+
+.loan-approval-step.is-approved .loan-approval-line {
+  background: rgba(16, 185, 129, 0.4);
+}
+
+.loan-approval-step.is-approved .loan-approval-status {
+  background: rgba(16, 185, 129, 0.15);
+  border: 1px solid rgba(16, 185, 129, 0.35);
+  color: #10b981;
+}
+
+/* PENDING */
+
+.loan-approval-step.is-pending .loan-approval-icon {
+  background: rgba(245, 158, 11, 0.12);
+  border-color: rgba(245, 158, 11, 0.6);
+  color: #f59e0b;
+}
+
+.loan-approval-step.is-pending .loan-approval-status {
+  background: rgba(245, 158, 11, 0.15);
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  color: #f59e0b;
+}
+
+/* REJECTED */
+
+.loan-approval-step.is-rejected .loan-approval-icon {
+  background: rgba(239, 68, 68, 0.15);
+  border-color: #ef4444;
+  color: #ef4444;
+}
+
+.loan-approval-step.is-rejected .loan-approval-status {
+  background: rgba(239, 68, 68, 0.15);
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  color: #ef4444;
+}
+
+/* MOBILE */
+
+@media (max-width: 600px) {
+  .loan-approval-chain-box {
+    padding: 15px;
+  }
+
+  .loan-approval-step-top {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 5px;
+  }
+}
+
+/* =========================================================
+   CBU APPROVAL TIMELINE
+========================================================= */
+
+.cbu-approval-timeline {
+  width: 100%;
+  padding: 18px 20px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--panel);
+}
+
+.cbu-approval-step {
+  display: flex;
+  gap: 14px;
+  min-height: 76px;
+}
+
+.cbu-approval-step:last-child {
+  min-height: auto;
+}
+
+.cbu-approval-marker {
+  width: 34px;
+  flex: 0 0 34px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.cbu-approval-circle {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  border: 2px solid var(--border);
+  background: var(--panel);
+  color: var(--muted);
+
+  font-size: 13px;
+  font-weight: 900;
+  z-index: 2;
+}
+
+.cbu-approval-line {
+  width: 2px;
+  flex: 1;
+  min-height: 42px;
+  background: var(--border);
+}
+
+.cbu-approval-content {
+  flex: 1;
+  min-width: 0;
+  padding: 3px 0 18px;
+}
+
+.cbu-approval-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.cbu-approval-top strong {
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.cbu-approval-status {
+  padding: 5px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 800;
+  border: 1px solid var(--border);
+}
+
+.cbu-approval-time {
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+
+/* APPROVED */
+
+.cbu-approval-step.is-approved .cbu-approval-circle {
+  background: rgba(34, 197, 94, 0.14);
+  border-color: #22c55e;
+  color: #22c55e;
+}
+
+.cbu-approval-step.is-approved .cbu-approval-line {
+  background: #22c55e;
+}
+
+.cbu-approval-step.is-approved .cbu-approval-status {
+  color: #22c55e;
+  border-color: rgba(34, 197, 94, 0.35);
+  background: rgba(34, 197, 94, 0.10);
+}
+
+
+/* CURRENT / PENDING */
+
+.cbu-approval-step.is-current .cbu-approval-circle {
+  background: rgba(59, 130, 246, 0.14);
+  border-color: #3b82f6;
+  color: #3b82f6;
+}
+
+.cbu-approval-step.is-current .cbu-approval-status {
+  color: #3b82f6;
+  border-color: rgba(59, 130, 246, 0.35);
+  background: rgba(59, 130, 246, 0.10);
+}
+
+
+/* REJECTED */
+
+.cbu-approval-step.is-rejected .cbu-approval-circle {
+  background: rgba(239, 68, 68, 0.14);
+  border-color: #ef4444;
+  color: #ef4444;
+}
+
+.cbu-approval-step.is-rejected .cbu-approval-status {
+  color: #ef4444;
+  border-color: rgba(239, 68, 68, 0.35);
+  background: rgba(239, 68, 68, 0.10);
+}
+
+
+/* WAITING */
+
+.cbu-approval-step.is-waiting {
+  opacity: 0.72;
+}
+
+
+/* =========================================================
+   CURRENT STAGE
+========================================================= */
+
+.cbu-current-stage {
+  min-height: 58px;
+  padding: 12px 16px;
+
+  display: flex;
+  align-items: center;
+  gap: 12px;
+
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--panel);
+}
+
+.cbu-current-stage-dot {
+  width: 10px;
+  height: 10px;
+  flex: 0 0 10px;
+
+  border-radius: 50%;
+  background: #3b82f6;
+  box-shadow: 0 0 0 5px rgba(59, 130, 246, 0.12);
+}
+
+.cbu-current-stage div {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.cbu-current-stage small {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.cbu-current-stage strong {
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 800;
+}
+
+/* =========================================================
+   CBU TABLE TOOLBAR
+========================================================= */
+
+.cbu-table-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px;
+  margin-bottom: 12px;
+
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+.cbu-table-search {
+  position: relative;
+  flex: 1;
+  min-width: 260px;
+}
+
+.cbu-table-search input {
+  width: 100%;
+  height: 40px;
+
+  padding: 0 14px 0 40px;
+
+  border: 1px solid var(--border);
+  border-radius: 10px;
+
+  background: var(--bg);
+  color: var(--text);
+
+  font-size: 13px;
+  font-weight: 600;
+
+  outline: none;
+  transition: 0.2s ease;
+}
+
+.cbu-table-search input::placeholder {
+  color: var(--muted);
+}
+
+.cbu-table-search input:focus {
+  border-color: #6366f1;
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.12);
+}
+
+.cbu-search-icon {
+  position: absolute;
+  left: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+
+  color: var(--muted);
+  font-size: 18px;
+  pointer-events: none;
+}
+
+
+/* SEARCH BUTTON */
+
+.cbu-toolbar-search-btn {
+  height: 40px;
+  padding: 0 20px;
+
+  border: 0;
+  border-radius: 10px;
+
+  background: #4f46e5;
+  color: #fff;
+
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+
+  transition: 0.2s ease;
+}
+
+.cbu-toolbar-search-btn:hover {
+  transform: translateY(-1px);
+  filter: brightness(1.08);
+}
+
+
+/* CLEAR BUTTON */
+
+.cbu-toolbar-clear-btn {
+  height: 40px;
+  padding: 0 18px;
+
+  border: 1px solid var(--border);
+  border-radius: 10px;
+
+  background: var(--panel);
+  color: var(--text);
+
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.cbu-toolbar-clear-btn:hover {
+  background: var(--hover);
+}
+
+
+/* PAGE SIZE */
+
+.cbu-page-size {
+  height: 40px;
+
+  display: flex;
+  align-items: center;
+  gap: 8px;
+
+  padding: 0 12px;
+
+  border: 1px solid var(--border);
+  border-radius: 10px;
+
+  background: var(--bg);
+  color: var(--muted);
+
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.cbu-page-size select {
+  border: 0;
+  outline: none;
+
+  background: transparent;
+  color: var(--text);
+
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+
+/* =========================================================
+   CBU PAGINATION
+========================================================= */
+
+.cbu-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+
+  padding: 16px 14px;
+  margin-top: 2px;
+
+  border-top: 1px solid var(--border);
+}
+
+.cbu-pagination-info {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.cbu-pagination-info strong {
+  color: var(--text);
+  font-weight: 800;
+}
+
+.cbu-pagination-divider {
+  margin: 0 5px;
+  opacity: 0.5;
+}
+
+.cbu-pagination-controls {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.cbu-page-btn {
+  height: 36px;
+
+  display: flex;
+  align-items: center;
+  gap: 7px;
+
+  padding: 0 13px;
+
+  border: 1px solid var(--border);
+  border-radius: 9px;
+
+  background: var(--panel);
+  color: var(--text);
+
+  font-size: 11px;
+  font-weight: 800;
+
+  cursor: pointer;
+  transition: 0.2s ease;
+}
+
+.cbu-page-btn:not(:disabled):hover {
+  border-color: #6366f1;
+  background: rgba(99, 102, 241, 0.1);
+  color: #818cf8;
+}
+
+.cbu-page-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.cbu-current-page {
+  width: 36px;
+  height: 36px;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  border-radius: 9px;
+
+  background: #4f46e5;
+  color: #fff;
+
+  font-size: 12px;
+  font-weight: 900;
+}
+
+
+/* MOBILE */
+
+@media (max-width: 800px) {
+  .cbu-table-toolbar {
+    align-items: stretch;
+    flex-wrap: wrap;
+  }
+
+  .cbu-table-search {
+    flex-basis: 100%;
+  }
+
+  .cbu-pagination {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .cbu-pagination-controls {
+    justify-content: flex-end;
+  }
+}
+
+/* =========================================================
+   REIMBURSEMENT APPROVAL CHAIN
+========================================================= */
+
+.approval-chain-box {
+  width: 100%;
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--panel);
+}
+
+.approval-chain-timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.approval-chain-step {
+  position: relative;
+  display: flex;
+  gap: 14px;
+  min-height: 76px;
+  padding-bottom: 16px;
+}
+
+.approval-chain-step:not(:last-child)::after {
+  content: "";
+  position: absolute;
+  left: 17px;
+  top: 38px;
+  bottom: -2px;
+  width: 2px;
+  background: var(--border);
+}
+
+.approval-chain-marker {
+  position: relative;
+  z-index: 2;
+  width: 36px;
+  height: 36px;
+  min-width: 36px;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  border-radius: 50%;
+  border: 2px solid var(--border);
+
+  background: var(--panel);
+  color: var(--muted);
+
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.approval-chain-step-approved .approval-chain-marker {
+  background: rgba(16, 185, 129, 0.15);
+  border-color: #10b981;
+  color: #10b981;
+}
+
+.approval-chain-step-current .approval-chain-marker {
+  background: rgba(59, 130, 246, 0.15);
+  border-color: #3b82f6;
+  color: #60a5fa;
+}
+
+.approval-chain-step-rejected .approval-chain-marker {
+  background: rgba(239, 68, 68, 0.15);
+  border-color: #ef4444;
+  color: #ef4444;
+}
+
+.approval-chain-content {
+  flex: 1;
+  min-width: 0;
+
+  padding: 11px 14px;
+
+  border: 1px solid var(--border);
+  border-radius: 11px;
+
+  background: var(--bg);
+}
+
+.approval-chain-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.approval-chain-role {
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.approval-chain-status {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
+  padding: 4px 10px;
+  border-radius: 999px;
+
+  font-size: 10px;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.approval-chain-status-approved {
+  color: #10b981;
+  background: rgba(16, 185, 129, 0.12);
+  border: 1px solid rgba(16, 185, 129, 0.35);
+}
+
+.approval-chain-status-current {
+  color: #60a5fa;
+  background: rgba(59, 130, 246, 0.12);
+  border: 1px solid rgba(59, 130, 246, 0.35);
+}
+
+.approval-chain-status-pending {
+  color: var(--muted);
+  background: var(--panel);
+  border: 1px solid var(--border);
+}
+
+.approval-chain-status-rejected {
+  color: #ef4444;
+  background: rgba(239, 68, 68, 0.12);
+  border: 1px solid rgba(239, 68, 68, 0.35);
+}
+
+.approval-chain-date {
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.approval-chain-final {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+
+  margin: 4px 0 0 50px;
+  padding: 12px 14px;
+
+  border: 1px solid rgba(16, 185, 129, 0.35);
+  border-radius: 11px;
+
+  background: rgba(16, 185, 129, 0.08);
+  color: #10b981;
+
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.approval-chain-final small {
+  color: var(--muted);  
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.approval-chain-empty {
+  padding: 12px;
+  color: var(--muted);
+  font-size: 12px;
+  text-align: center;
+}
+
+/* =========================================================
+   REIMBURSEMENT TABLE TOOLS
+   Search + Clear + Page Size
+   ========================================================= */
+
+.reimbursement-table-tools {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px;
+  flex-wrap: wrap;
+  border-bottom: 1px solid var(--border);
+}
+
+.reimbursement-table-search {
+  position: relative;
+  flex: 1 1 320px;
+  min-width: 220px;
+}
+
+.reimbursement-search-icon {
+  position: absolute;
+  left: 13px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--muted);
+  font-size: 16px;
+  pointer-events: none;
+}
+
+.reimbursement-table-search input {
+  width: 100%;
+  height: 38px;
+  padding: 0 14px 0 38px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel);
+  color: var(--text);
+  font-size: 13px;
+  outline: none;
+  box-sizing: border-box;
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.reimbursement-table-search input::placeholder {
+  color: var(--muted);
+}
+
+.reimbursement-table-search input:focus {
+  border-color: #4f6ef7;
+  box-shadow: 0 0 0 3px rgba(79, 110, 247, 0.14);
+}
+
+
+/* SEARCH BUTTON */
+
+.reimbursement-search-button {
+  height: 38px;
+  padding: 0 18px;
+  border: 0;
+  border-radius: 10px;
+  background: #4f46e5;
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition:
+    transform 0.15s ease,
+    opacity 0.15s ease;
+}
+
+.reimbursement-search-button:hover {
+  opacity: 0.9;
+}
+
+.reimbursement-search-button:active {
+  transform: translateY(1px);
+}
+
+
+/* CLEAR BUTTON */
+
+.reimbursement-clear-button {
+  height: 38px;
+  padding: 0 16px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease;
+}
+
+.reimbursement-clear-button:hover {
+  background: var(--hover);
+}
+
+
+/* PAGE SIZE */
+
+.reimbursement-page-size {
+  height: 38px;
+  min-width: 105px;
+  padding: 0 34px 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+  outline: none;
+  cursor: pointer;
+}
+
+.reimbursement-page-size:focus {
+  border-color: #4f6ef7;
+}
+
+
+/* =========================================================
+   REIMBURSEMENT PAGINATION
+   ========================================================= */
+
+.reimbursement-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 16px;
+  border-top: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+
+.reimbursement-pagination-info {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.reimbursement-pagination-info strong {
+  color: var(--text);
+  font-weight: 800;
+}
+
+.reimbursement-pagination-dot {
+  display: inline-block;
+  margin: 0 7px;
+  opacity: 0.65;
+}
+
+.reimbursement-pagination-actions {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+
+/* PREV / NEXT */
+
+.reimbursement-page-button {
+  height: 34px;
+  padding: 0 13px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--panel);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease,
+    opacity 0.15s ease;
+}
+
+.reimbursement-page-button:hover:not(:disabled) {
+  background: var(--hover);
+  border-color: #4f6ef7;
+}
+
+.reimbursement-page-button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+
+/* CURRENT PAGE NUMBER */
+
+.reimbursement-current-page {
+  min-width: 34px;
+  height: 34px;
+  padding: 0 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
+  border-radius: 9px;
+  background: #4f46e5;
+  color: #ffffff;
+
+  font-size: 12px;
+  font-weight: 800;
+}
+
+
+/* =========================================================
+   MOBILE
+   ========================================================= */
+
+@media (max-width: 700px) {
+  .reimbursement-table-tools {
+    align-items: stretch;
+  }
+
+  .reimbursement-table-search {
+    flex-basis: 100%;
+    width: 100%;
+  }
+
+  .reimbursement-search-button,
+  .reimbursement-clear-button {
+    flex: 1;
+  }
+
+  .reimbursement-page-size {
+    flex: 1;
+  }
+
+  .reimbursement-pagination {
+    align-items: stretch;
+  }
+
+  .reimbursement-pagination-info {
+    width: 100%;
+  }
+
+  .reimbursement-pagination-actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+}

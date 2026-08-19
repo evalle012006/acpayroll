@@ -170,6 +170,48 @@ const STAGE_COLUMN = {
   final: "final_status",
 };
 
+const STAGE_APPROVAL_HISTORY = {
+  "branch manager": {
+    approvedBy: "branch_manager_approved_by",
+    approvedAt: "branch_manager_approved_at",
+  },
+
+  "area manager": {
+    approvedBy: "area_manager_approved_by",
+    approvedAt: "area_manager_approved_at",
+  },
+
+  "regional manager": {
+    approvedBy: "regional_manager_approved_by",
+    approvedAt: "regional_manager_approved_at",
+  },
+
+  "assistant vice president": {
+    approvedBy: "assistant_vice_president_approved_by",
+    approvedAt: "assistant_vice_president_approved_at",
+  },
+
+  "vice president": {
+    approvedBy: "vice_president_approved_by",
+    approvedAt: "vice_president_approved_at",
+  },
+
+  "senior vice president": {
+    approvedBy: "senior_vice_president_approved_by",
+    approvedAt: "senior_vice_president_approved_at",
+  },
+
+  tread: {
+    approvedBy: "tread_approved_by",
+    approvedAt: "tread_approved_at",
+  },
+
+  final: {
+    approvedBy: "final_approved_by",
+    approvedAt: "final_approved_at",
+  },
+};
+
 const normalizePosition = (position) =>
   norm(position)
     .replace(/^acting\s+/i, "")
@@ -532,6 +574,45 @@ async function generateOrderNo(client, prefix) {
   return `${prefix}-${year}-${String(month).padStart(2, "0")}-${String(nextVal).padStart(4, "0")}`;
 }
 
+const PROMOTION_HISTORY_SELECT = `
+  po.*,
+
+  ubm.username AS branch_manager_approved_by_name,
+  uam.username AS area_manager_approved_by_name,
+  urm.username AS regional_manager_approved_by_name,
+  uavp.username AS assistant_vice_president_approved_by_name,
+  uvp.username AS vice_president_approved_by_name,
+  usvp.username AS senior_vice_president_approved_by_name,
+  utread.username AS tread_approved_by_name,
+  ufinal.username AS final_approved_by_name
+`;
+
+const PROMOTION_HISTORY_JOINS = `
+  LEFT JOIN public.users ubm
+    ON ubm.id = po.branch_manager_approved_by
+
+  LEFT JOIN public.users uam
+    ON uam.id = po.area_manager_approved_by
+
+  LEFT JOIN public.users urm
+    ON urm.id = po.regional_manager_approved_by
+
+  LEFT JOIN public.users uavp
+    ON uavp.id = po.assistant_vice_president_approved_by
+
+  LEFT JOIN public.users uvp
+    ON uvp.id = po.vice_president_approved_by
+
+  LEFT JOIN public.users usvp
+    ON usvp.id = po.senior_vice_president_approved_by
+
+  LEFT JOIN public.users utread
+    ON utread.id = po.tread_approved_by
+
+  LEFT JOIN public.users ufinal
+    ON ufinal.id = po.final_approved_by
+`;
+
 router.get(
   "/promotion-orders",
   requireAuth,
@@ -540,9 +621,13 @@ router.get(
     try {
       if (canViewAllPromotionOrders(req)) {
         const r = await pool.query(`
-          SELECT *
-          FROM public.promotion_orders
-          ORDER BY created_at DESC
+          SELECT
+            ${PROMOTION_HISTORY_SELECT}
+          
+          FROM public.promotion_orders po
+            ${PROMOTION_HISTORY_JOINS}
+          
+          ORDER BY po.created_at DESC
         `);
 
         return res.json(r.rows);
@@ -552,8 +637,13 @@ router.get(
       if (deptLower(req) === "office of the president") {
         const r = await pool.query(
           `
-          SELECT po.*
+          SELECT
+            ${PROMOTION_HISTORY_SELECT}
+
           FROM public.promotion_orders po
+
+          ${PROMOTION_HISTORY_JOINS}
+
           JOIN public.staff s
             ON s.id = po.employee_id
           WHERE LOWER(TRIM(COALESCE(s.department,''))) = 'office of the president'
@@ -573,9 +663,12 @@ router.get(
       ) {
         const r = await pool.query(
           `
-          SELECT po.*
+          SELECT
+            ${PROMOTION_HISTORY_SELECT}
 
           FROM public.promotion_orders po
+
+          ${PROMOTION_HISTORY_JOINS}
 
           INNER JOIN public.staff s
             ON s.id = po.employee_id
@@ -604,8 +697,13 @@ router.get(
 
         const r = await pool.query(
           `
-          SELECT po.*
+          SELECT
+            ${PROMOTION_HISTORY_SELECT}
+
           FROM public.promotion_orders po
+
+          ${PROMOTION_HISTORY_JOINS}
+
           JOIN public.staff s ON s.id = po.employee_id
           WHERE s.branch_id = $1
             AND LOWER(TRIM(COALESCE(s.department,''))) IN
@@ -624,13 +722,20 @@ router.get(
 
         const r = await pool.query(
           `
-          SELECT po.*
-          FROM public.promotion_orders po
-          JOIN public.staff s ON s.id = po.employee_id
-          WHERE LOWER(TRIM(COALESCE(s.department,''))) IN
-            ('operation','operations','operation department','operations department')
-            AND LOWER(TRIM(COALESCE(s.area,''))) = LOWER(TRIM($1))
-          ORDER BY po.created_at DESC
+            SELECT
+              ${PROMOTION_HISTORY_SELECT}
+
+            FROM public.promotion_orders po
+
+            ${PROMOTION_HISTORY_JOINS}
+
+            JOIN public.staff s ON s.id = po.employee_id
+
+            WHERE LOWER(TRIM(COALESCE(s.department,''))) IN
+              ('operation','operations','operation department','operations department')
+              AND LOWER(TRIM(COALESCE(s.area,''))) = LOWER(TRIM($1))
+
+            ORDER BY po.created_at DESC
           `,
           [area]
         );
@@ -644,13 +749,20 @@ router.get(
 
         const r = await pool.query(
           `
-          SELECT po.*
-          FROM public.promotion_orders po
-          JOIN public.staff s ON s.id = po.employee_id
-          WHERE LOWER(TRIM(COALESCE(s.department,''))) IN
-            ('operation','operations','operation department','operations department')
-            AND LOWER(TRIM(COALESCE(s.region,''))) = LOWER(TRIM($1))
-          ORDER BY po.created_at DESC
+            SELECT
+              ${PROMOTION_HISTORY_SELECT}
+
+            FROM public.promotion_orders po
+
+            ${PROMOTION_HISTORY_JOINS}
+
+            JOIN public.staff s ON s.id = po.employee_id
+
+            WHERE LOWER(TRIM(COALESCE(s.department,''))) IN
+              ('operation','operations','operation department','operations department')
+              AND LOWER(TRIM(COALESCE(s.region,''))) = LOWER(TRIM($1))
+
+            ORDER BY po.created_at DESC
           `,
           [region]
         );
@@ -664,13 +776,20 @@ router.get(
 
         const r = await pool.query(
           `
-          SELECT po.*
-          FROM public.promotion_orders po
-          JOIN public.staff s ON s.id = po.employee_id
-          WHERE LOWER(TRIM(COALESCE(s.department,''))) IN
-            ('operation','operations','operation department','operations department')
-            AND LOWER(TRIM(COALESCE(s.division,''))) = LOWER(TRIM($1))
-          ORDER BY po.created_at DESC
+            SELECT
+              ${PROMOTION_HISTORY_SELECT}
+
+            FROM public.promotion_orders po
+
+            ${PROMOTION_HISTORY_JOINS}
+
+            JOIN public.staff s ON s.id = po.employee_id
+
+            WHERE LOWER(TRIM(COALESCE(s.department,''))) IN
+              ('operation','operations','operation department','operations department')
+              AND LOWER(TRIM(COALESCE(s.division,''))) = LOWER(TRIM($1))
+
+            ORDER BY po.created_at DESC
           `,
           [division]
         );
@@ -700,10 +819,16 @@ router.get(
 
       const r = await pool.query(
         `
-        SELECT *
-        FROM public.promotion_orders
-        WHERE employee_id = $1
-        ORDER BY created_at DESC
+          SELECT
+            ${PROMOTION_HISTORY_SELECT}
+
+          FROM public.promotion_orders po
+
+          ${PROMOTION_HISTORY_JOINS}
+
+          WHERE po.employee_id = $1
+
+          ORDER BY po.created_at DESC
         `,
         [staffId]
       );
@@ -1320,8 +1445,13 @@ router.put(
           SET
             status = 'Approved',
             ${column} = 'Approved',
+
+            final_approved_by = $2,
+            final_approved_at = NOW(),
+
             approved_by = $2,
             approved_at = NOW(),
+
             rejected_by = NULL,
             rejected_at = NULL,
             rejection_reason = NULL,
@@ -1367,21 +1497,45 @@ router.put(
 
       const nextStage = await getNextApprovalStage(client, staff, currentStage);
 
+      const historyColumns = STAGE_APPROVAL_HISTORY[currentStage];
+
+      if (!historyColumns) {
+        await client.query("ROLLBACK");
+
+        return res.status(400).json({
+          message: "Invalid approval history stage",
+        });
+      }
+
       await client.query(
         `
         UPDATE public.promotion_orders
         SET
           ${column} = 'Approved',
-          approval_stage = $2,
+
+          ${historyColumns.approvedBy} = $2,
+          ${historyColumns.approvedAt} = NOW(),
+
+          approval_stage = $3,
+
           rejected_by = NULL,
           rejected_at = NULL,
           rejection_reason = NULL,
-          attachment_path = $3,
-          attachment_name = $4,
-          attachment_mime = $5
+
+          attachment_path = $4,
+          attachment_name = $5,
+          attachment_mime = $6
+
         WHERE id = $1
         `,
-        [id, nextStage, latestPath, latestName, latestMime]
+        [
+          id,
+          req.user?.id ?? null,
+          nextStage,
+          latestPath,
+          latestName,
+          latestMime,
+        ]
       );
 
       await client.query("COMMIT");

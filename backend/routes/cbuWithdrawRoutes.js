@@ -249,6 +249,20 @@ const stageColumn = (stage) => {
   return null;
 };
 
+const stageApprovedAtColumn = (stage) => {
+  const s = norm(stage);
+
+  if (s === "branch manager") return "branch_manager_approved_at";
+  if (s === "area manager") return "area_manager_approved_at";
+  if (s === "regional manager") return "regional_manager_approved_at";
+  if (s === "assistant vice president") return "avp_approved_at";
+  if (s === "vice president") return "vp_approved_at";
+  if (s === "senior vice president") return "svp_approved_at";
+  if (s === norm(ACCOUNTING_FINAL)) return "accounting_approved_at";
+
+  return null;
+};
+
 const roleMatchesStage = (req, stage) => {
   const role = getUserRole(req);
   const dept = getUserDepartment(req);
@@ -468,7 +482,9 @@ async function finalizeCbuWithdrawal({ client, row, staff, fileKey, fileName }) 
         approved_attachment_name = $2,
 
         final_status = 'Approved',
-    updated_at = NOW()
+        accounting_approved_at = NOW(),
+
+        updated_at = NOW()
     WHERE id = $3
     RETURNING *
     `,
@@ -887,6 +903,7 @@ router.put(
       }
 
       const col = stageColumn(currentStage);
+      const approvedAtCol = stageApprovedAtColumn(currentStage);
 
       if (!canApproveCurrentStage(req, currentStage)) {
         await client.query("ROLLBACK");
@@ -959,8 +976,10 @@ router.put(
         await client.query(
           `
           UPDATE public.cbu_withdrawals
-          SET ${col} = 'Approved',
-              updated_at = NOW()
+          SET
+            ${col} = 'Approved',
+            ${approvedAtCol} = NOW(),
+            updated_at = NOW()
           WHERE id = $1
           `,
           [id]

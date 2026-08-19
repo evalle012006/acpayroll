@@ -36,6 +36,24 @@ const fmtMoney = (v) =>
 const fmtDate = (v) =>
   v ? String(v).slice(0, 10) : "-";
 
+const fmtApprovalDateTime = (value) => {
+  if (!value) return "";
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) return "";
+
+  return date.toLocaleString("en-PH", {
+    timeZone: "Asia/Manila",
+    month: "short",
+    day: "2-digit",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  });
+};
+
 const STAGE_LABELS = {
   "branch manager": "Branch Manager",
   "area manager": "Area Manager",
@@ -47,6 +65,38 @@ const STAGE_LABELS = {
   rejected: "Rejected",
   void: "Void",
   [WAITING_FINAL_FILE.toLowerCase()]: WAITING_FINAL_FILE,
+};
+
+const STAGE_FIELDS = {
+  "branch manager": {
+    status: "branch_manager_status",
+    approvedAt: "branch_manager_approved_at",
+  },
+
+  "area manager": {
+    status: "area_manager_status",
+    approvedAt: "area_manager_approved_at",
+  },
+
+  "regional manager": {
+    status: "regional_manager_status",
+    approvedAt: "regional_manager_approved_at",
+  },
+
+  "assistant vice president": {
+    status: "assistant_vice_president_status",
+    approvedAt: "assistant_vice_president_approved_at",
+  },
+
+  "vice president": {
+    status: "vice_president_status",
+    approvedAt: "vice_president_approved_at",
+  },
+
+  "senior vice president": {
+    status: "senior_vice_president_status",
+    approvedAt: "senior_vice_president_approved_at",
+  },
 };
 
 const parseChain = (item) => {
@@ -630,14 +680,131 @@ const isITDeptManager =
     [rows]
   );
 
-  const renderChainSummary = (item) => {
+  const renderApprovalChain = (item) => {
     const chain = parseChain(item);
 
-    if (!chain.length) return "-";
+    if (!chain.length) {
+      return <div className="approval-chain-empty">No approval chain.</div>;
+    }
 
-    return chain
-      .map((stage) => `${STAGE_LABELS[stage] || stage}: ${stage === getCurrentStage(item) ? "Current" : "Pending"}`)
-      .join(" | ");
+    const currentStage = norm(getCurrentStage(item));
+
+    return (
+      <div className="approval-chain-timeline">
+        {chain.map((stage, index) => {
+          const normalizedStage = norm(stage);
+          const fields = STAGE_FIELDS[normalizedStage];
+
+          const storedStatus = fields
+            ? norm(item?.[fields.status])
+            : "";
+
+          const approvedAt = fields
+            ? item?.[fields.approvedAt]
+            : null;
+
+          const isApproved = storedStatus === "approved";
+          const isRejected = storedStatus === "rejected";
+
+          const isCurrent =
+            !isApproved &&
+            !isRejected &&
+            currentStage === normalizedStage &&
+            norm(item?.status) !== "approved" &&
+            norm(item?.status) !== "rejected" &&
+            norm(item?.status) !== "void";
+
+          let state = "pending";
+          let stateLabel = "Pending";
+
+          if (isApproved) {
+            state = "approved";
+            stateLabel = "Approved";
+          } else if (isRejected) {
+            state = "rejected";
+            stateLabel = "Rejected";
+          } else if (isCurrent) {
+            state = "current";
+            stateLabel = "Current";
+          }
+
+          return (
+            <div
+              key={`${normalizedStage}-${index}`}
+              className={`approval-chain-step approval-chain-step-${state}`}
+            >
+              <div className="approval-chain-marker">
+                {isApproved ? "✓" : isRejected ? "✕" : index + 1}
+              </div>
+
+              <div className="approval-chain-content">
+                <div className="approval-chain-top">
+                  <span className="approval-chain-role">
+                    {STAGE_LABELS[normalizedStage] || stage}
+                  </span>
+
+                  <span
+                    className={`approval-chain-status approval-chain-status-${state}`}
+                  >
+                    {stateLabel}
+                  </span>
+                </div>
+
+                {isApproved && approvedAt ? (
+                  <div className="approval-chain-date">
+                    Approved on {fmtApprovalDateTime(approvedAt)}
+                  </div>
+                ) : isRejected ? (
+                  <div className="approval-chain-date">
+                    Approval stopped at this stage
+                  </div>
+                ) : isCurrent ? (
+                  <div className="approval-chain-date">
+                    Waiting for approval
+                  </div>
+                ) : (
+                  <div className="approval-chain-date">
+                    Waiting for previous approval
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        })}
+
+        {norm(item?.status) === norm(WAITING_FINAL_FILE) && (
+          <div className="approval-chain-step approval-chain-step-current">
+            <div className="approval-chain-marker">↑</div>
+
+            <div className="approval-chain-content">
+              <div className="approval-chain-top">
+                <span className="approval-chain-role">
+                  Accounting Department
+                </span>
+
+                <span className="approval-chain-status approval-chain-status-current">
+                  Final Upload
+                </span>
+              </div>
+
+              <div className="approval-chain-date">
+                Waiting for final approved file
+              </div>
+            </div>
+          </div>
+        )}
+
+        {norm(item?.status) === "approved" && item?.final_approved_at && (
+          <div className="approval-chain-final">
+            <span>✓ Fully Approved</span>
+
+            <small>
+              {fmtApprovalDateTime(item.final_approved_at)}
+            </small>
+          </div>
+        )}
+      </div>
+    );
   };
 
   const handleCreate = async (e) => {
@@ -1159,35 +1326,34 @@ const isITDeptManager =
             </div>
 
             <div className="table-card">
-              <div
-                style={{
-                  display: "flex",
-                  gap: 10,
-                  flexWrap: "wrap",
-                  alignItems: "center",
-                  marginBottom: 12,
-                }}
-              >
-                <input
-                  className="order-search-input"
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && setAppliedSearch(search)}
-                  placeholder="Search employee, status, stage, amount..."
-                  style={{ minWidth: 280 }}
-                />
+              <div className="reimbursement-table-tools">
+                <div className="reimbursement-table-search">
+                  <span className="reimbursement-search-icon">⌕</span>
+
+                  <input
+                    type="text"
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        setAppliedSearch(search);
+                      }
+                    }}
+                    placeholder="Search employee, status, stage, amount..."
+                  />
+                </div>
 
                 <button
-                  className="btn-primary"
                   type="button"
+                  className="reimbursement-search-button"
                   onClick={() => setAppliedSearch(search)}
                 >
                   Search
                 </button>
 
                 <button
-                  className="btn-secondary"
                   type="button"
+                  className="reimbursement-clear-button"
                   onClick={() => {
                     setSearch("");
                     setAppliedSearch("");
@@ -1197,10 +1363,9 @@ const isITDeptManager =
                 </button>
 
                 <select
-                  className="order-search-input"
+                  className="reimbursement-page-size"
                   value={pageSize}
                   onChange={(e) => setPageSize(Number(e.target.value))}
-                  style={{ width: 110 }}
                 >
                   {[25, 50, 75, 100].map((n) => (
                     <option key={n} value={n}>
@@ -1287,37 +1452,36 @@ const isITDeptManager =
                 </table>
               </div>
 
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  gap: 12,
-                  marginTop: 12,
-                  flexWrap: "wrap",
-                }}
-              >
-                <div className="mini">
-                  Page {page} of {totalPages} • {filteredRows.length} records
+              <div className="reimbursement-pagination">
+                <div className="reimbursement-pagination-info">
+                  Page <strong>{page}</strong> of <strong>{totalPages}</strong>
+                  <span className="reimbursement-pagination-dot">•</span>
+                  {filteredRows.length} record{filteredRows.length !== 1 ? "s" : ""}
                 </div>
 
-                <div style={{ display: "flex", gap: 8 }}>
+                <div className="reimbursement-pagination-actions">
                   <button
-                    className="btn-secondary"
                     type="button"
+                    className="reimbursement-page-button"
                     disabled={page <= 1}
                     onClick={() => setPage((p) => Math.max(1, p - 1))}
                   >
-                    Prev
+                    ‹ Prev
                   </button>
 
+                  <span className="reimbursement-current-page">
+                    {page}
+                  </span>
+
                   <button
-                    className="btn-secondary"
                     type="button"
+                    className="reimbursement-page-button"
                     disabled={page >= totalPages}
-                    onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                    onClick={() =>
+                      setPage((p) => Math.min(totalPages, p + 1))
+                    }
                   >
-                    Next
+                    Next ›
                   </button>
                 </div>
               </div>
@@ -1411,7 +1575,10 @@ const isITDeptManager =
 
                 <div className="form-group full">
                   <label>Approval Chain</label>
-                  <textarea value={renderChainSummary(selected)} readOnly />
+
+                  <div className="approval-chain-box">
+                    {renderApprovalChain(selected)}
+                  </div>
                 </div>
 
                 <div className="form-group full">

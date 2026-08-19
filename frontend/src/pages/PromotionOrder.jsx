@@ -26,6 +26,25 @@ const readUser = () => {
 
 const fmtDate = (d) => (d ? String(d).slice(0, 10) : "-");
 
+const fmtDateTime = (value) => {
+  if (!value) return "-";
+
+  const d = new Date(value);
+
+  if (Number.isNaN(d.getTime())) {
+    return String(value);
+  }
+
+  return d.toLocaleString("en-PH", {
+    timeZone: "Asia/Manila",
+    year: "numeric",
+    month: "short",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+};
+
 const OPERATION_DEPTS = [
   "operation",
   "operations",
@@ -168,6 +187,76 @@ const stageStatus = (o, stage) => {
   };
 
   return toStr(map[stage] || "Pending");
+};
+
+const getApprovalHistory = (o) => {
+  if (!o) return [];
+
+  const rows = [
+    {
+      key: "branch_manager",
+      label: "Branch Manager",
+      status: o.branch_manager_status,
+      approvedBy: o.branch_manager_approved_by_name,
+      approvedAt: o.branch_manager_approved_at,
+    },
+    {
+      key: "area_manager",
+      label: "Area Manager",
+      status: o.area_manager_status,
+      approvedBy: o.area_manager_approved_by_name,
+      approvedAt: o.area_manager_approved_at,
+    },
+    {
+      key: "regional_manager",
+      label: "Regional Manager",
+      status: o.regional_manager_status,
+      approvedBy: o.regional_manager_approved_by_name,
+      approvedAt: o.regional_manager_approved_at,
+    },
+    {
+      key: "assistant_vice_president",
+      label: "Assistant Vice President",
+      status: o.assistant_vice_president_status,
+      approvedBy: o.assistant_vice_president_approved_by_name,
+      approvedAt: o.assistant_vice_president_approved_at,
+    },
+    {
+      key: "vice_president",
+      label: "Vice President",
+      status: o.vice_president_status,
+      approvedBy: o.vice_president_approved_by_name,
+      approvedAt: o.vice_president_approved_at,
+    },
+    {
+      key: "senior_vice_president",
+      label: "Senior Vice President",
+      status: o.senior_vice_president_status,
+      approvedBy: o.senior_vice_president_approved_by_name,
+      approvedAt: o.senior_vice_president_approved_at,
+    },
+    {
+      key: "tread",
+      label: "TREAD Department",
+      status: o.tread_status,
+      approvedBy: o.tread_approved_by_name,
+      approvedAt: o.tread_approved_at,
+    },
+    {
+      key: "final",
+      label: "HR Final Approval",
+      status: o.final_status,
+      approvedBy: o.final_approved_by_name,
+      approvedAt: o.final_approved_at,
+    },
+  ];
+
+  return rows.filter(
+    (row) =>
+      row.status ||
+      row.approvedBy ||
+      row.approvedAt
+  );
 };
 
 const renderRecommendationFlow = (o) =>
@@ -891,7 +980,7 @@ export default function PromotionOrder() {
 
     if (!file) {
       alert(
-        stage === "hr"
+        stage === "final"
           ? "HR must upload the final approved promotion file before approving."
           : "Please upload the signed/approved promotion file before approving."
       );
@@ -1368,16 +1457,6 @@ export default function PromotionOrder() {
                         {canAct && isPending ? (
                           <div className="po-action-stack">
                             <div className="po-file-actions">
-                              {canEditPromotion && norm(o.status) === "pending" && (
-                                <button
-                                  className="po-mini-btn po-edit-btn"
-                                  type="button"
-                                  onClick={() => openEditPromotion(o)}
-                                >
-                                  Edit
-                                </button>
-                              )}
-
                               <button
                                 className="po-mini-btn po-view-btn"
                                 type="button"
@@ -1425,16 +1504,6 @@ export default function PromotionOrder() {
                               >
                                 Reject
                               </button>
-
-                              {canPowerAction && ["rejected", "voided"].includes(norm(o.status)) && (
-                                <button
-                                  className="po-mini-btn po-reject"
-                                  type="button"
-                                  onClick={() => deletePromotion(o.id)}
-                                >
-                                  Delete
-                                </button>
-                              )}
                             </div>
                           </div>
                         ) : (
@@ -1447,36 +1516,6 @@ export default function PromotionOrder() {
                               >
                                 View
                               </button>
-
-                              {canEditPromotion && norm(o.status) === "pending" && (
-                                <button
-                                  className="po-mini-btn po-edit-btn"
-                                  type="button"
-                                  onClick={() => openEditPromotion(o)}
-                                >
-                                  Edit
-                                </button>
-                              )}
-
-                              {canPowerAction && norm(o.status) === "approved" && (
-                                <button
-                                  className="po-mini-btn po-reject"
-                                  type="button"
-                                  onClick={() => voidPromotion(o.id)}
-                                >
-                                  Void
-                                </button>
-                              )}
-
-                              {canPowerAction && norm(o.status) !== "approved" && (
-                                <button
-                                  className="po-mini-btn po-reject"
-                                  type="button"
-                                  onClick={() => deletePromotion(o.id)}
-                                >
-                                  Delete
-                                </button>
-                              )}
                             </div>
                           </div>
                         )}
@@ -1571,14 +1610,115 @@ export default function PromotionOrder() {
                 </span>
               </div>
 
-              <div><strong>Created</strong><span>{fmtDate(viewOrder.created_at)}</span></div>
-            </div>
+              <div>
+                <strong>Created</strong>
+                <span>{fmtDate(viewOrder.created_at)}</span>
+              </div>
+              </div>
 
-            <div className="po-modal-actions">
-              <button className="po-btn po-btn-primary" type="button" onClick={closeViewOrder}>
-                Close
-              </button>
-            </div>
+              <div className="po-approval-history">
+                <div className="po-approval-history-head">
+                  <div>
+                    <h4>Approval History</h4>
+                    <p>
+                      Approvers recorded for this promotion recommendation.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="po-approval-history-list">
+                  {getApprovalHistory(viewOrder).length === 0 ? (
+                    <div className="po-approval-history-empty">
+                      No approval history recorded yet.
+                    </div>
+                  ) : (
+                    getApprovalHistory(viewOrder).map((item) => {
+                      const status = toStr(item.status || "Pending");
+
+                      return (
+                        <div
+                          className="po-approval-history-row"
+                          key={item.key}
+                        >
+                          <div className="po-approval-history-stage">
+                            <strong>{item.label}</strong>
+
+                            <span className={badgeClass(status)}>
+                              {status}
+                            </span>
+                          </div>
+
+                          <div className="po-approval-history-person">
+                            <small>Approved / Recommended By</small>
+
+                            <strong>
+                              {item.approvedBy || "-"}
+                            </strong>
+                          </div>
+
+                          <div className="po-approval-history-date">
+                            <small>Date & Time</small>
+
+                            <span>
+                              {fmtDateTime(item.approvedAt)}
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+
+              <div className="po-modal-actions">
+                {/* EDIT - only while Pending */}
+                {canEditPromotion && norm(viewOrder.status) === "pending" && (
+                  <button
+                    className="po-btn po-edit-btn"
+                    type="button"
+                    onClick={() => openEditPromotion(viewOrder)}
+                  >
+                    Edit
+                  </button>
+                )}
+
+                {/* VOID - only when Approved */}
+                {canPowerAction && norm(viewOrder.status) === "approved" && (
+                  <button
+                    className="po-btn po-reject"
+                    type="button"
+                    onClick={async () => {
+                      await voidPromotion(viewOrder.id);
+                      closeViewOrder();
+                    }}
+                  >
+                    Void
+                  </button>
+                )}
+
+                {/* DELETE - only when Rejected or Voided */}
+                {canPowerAction &&
+                  ["rejected", "voided"].includes(norm(viewOrder.status)) && (
+                    <button
+                      className="po-btn po-reject"
+                      type="button"
+                      onClick={async () => {
+                        await deletePromotion(viewOrder.id);
+                        closeViewOrder();
+                      }}
+                    >
+                      Delete
+                    </button>
+                  )}
+
+                <button
+                  className="po-btn po-btn-primary"
+                  type="button"
+                  onClick={closeViewOrder}
+                >
+                  Close
+                </button>
+              </div>
           </div>
         </div>
       )}

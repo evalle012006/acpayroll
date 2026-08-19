@@ -182,6 +182,8 @@ export default function LeaveTransactions() {
   const [editingLeaveId, setEditingLeaveId] = useState(null);
   const [editingLeaveStatus, setEditingLeaveStatus] = useState("");
 
+  const [approvalHistoryItem, setApprovalHistoryItem] = useState(null);
+
   const [leaveForm, setLeaveForm] = useState({
     employee_id: "",
     staff_name: "",
@@ -754,10 +756,27 @@ export default function LeaveTransactions() {
     }
 
     /*
-      Normal approvers must belong to the same department
-      as the employee requesting leave.
+      Normal approvers may approve requests from either:
+      - their primary department, or
+      - any department included in their approval scope.
     */
-    if (itemDepartment !== department) {
+    const userDepartmentScopes = [
+      user?.department,
+      ...(Array.isArray(user?.department_scopes)
+        ? user.department_scopes
+        : []),
+    ]
+      .map((d) =>
+        String(d || "")
+          .trim()
+          .toLowerCase()
+      )
+      .filter(Boolean);
+
+    const hasDepartmentApprovalScope =
+      userDepartmentScopes.includes(itemDepartment);
+
+    if (!hasDepartmentApprovalScope) {
       return false;
     }
 
@@ -976,6 +995,107 @@ export default function LeaveTransactions() {
         return "Voided";
       default:
         return status || "-";
+    }
+  };
+
+  const fmtApprovalDateTime = (value) => {
+    if (!value) return "-";
+
+    const date = new Date(value);
+
+    if (Number.isNaN(date.getTime())) {
+      return "-";
+    }
+
+    return date.toLocaleString("en-PH", {
+      timeZone: "Asia/Manila",
+      month: "short",
+      day: "2-digit",
+      year: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+    });
+  };
+
+  const getLeaveApprovalHistory = (item) => {
+    if (!item) return [];
+
+    const history = [
+      {
+        key: "bm",
+        label: "Branch Manager",
+        approvedBy: item.branch_approved_by,
+        approvedAt: item.branch_approved_at,
+      },
+      {
+        key: "am",
+        label: "Area Manager",
+        approvedBy: item.area_approved_by,
+        approvedAt: item.area_approved_at,
+      },
+      {
+        key: "rm",
+        label: "Regional Manager",
+        approvedBy: item.regional_approved_by,
+        approvedAt: item.regional_approved_at,
+      },
+      {
+        key: "avp",
+        label: "Assistant Vice President",
+        approvedBy: item.division_approved_by,
+        approvedAt: item.division_approved_at,
+      },
+      {
+        key: "vp",
+        label: "Vice President",
+        approvedBy: item.vice_president_approved_by,
+        approvedAt: item.vice_president_approved_at,
+      },
+      {
+        key: "svp",
+        label: "Senior Vice President",
+        approvedBy: item.senior_vice_president_approved_by,
+        approvedAt: item.senior_vice_president_approved_at,
+      },
+      {
+        key: "hr",
+        label: "HR Department",
+        approvedBy: item.hr_approved_by,
+        approvedAt: item.hr_approved_at,
+      },
+    ].filter((stage) => stage.approvedAt);
+
+    return history;
+  };
+
+  const getCurrentApprovalStageLabel = (item) => {
+    const status = String(item?.status || "").trim();
+
+    switch (status) {
+      case "Pending Branch Manager":
+        return "Branch Manager";
+
+      case "Pending Area Manager":
+        return "Area Manager";
+
+      case "Pending Regional Manager":
+        return "Regional Manager";
+
+      case "Pending Assistant Vice President":
+        return "Assistant Vice President";
+
+      case "Pending Vice President":
+        return "Vice President";
+
+      case "Pending Senior Vice President":
+        return "Senior Vice President";
+
+      case "Pending HR":
+        return "HR Department";
+
+      default:
+        return "";
     }
   };
 
@@ -1430,17 +1550,26 @@ export default function LeaveTransactions() {
                       <td>
                         <div className="row-actions">
                           {renderLatestFileAction(item)}
-                            {canManageLeaveAdministration &&
-                              !voided &&
-                              status !== "Returned to Work" && (
-                                <button
-                                  className="btn-warning"
-                                  type="button"
-                                  onClick={() => openEditLeave(item)}
-                                >
-                                  Edit
-                                </button>
-                            )}
+
+                          <button
+                            className="btn-secondary"
+                            type="button"
+                            onClick={() => setApprovalHistoryItem(item)}
+                          >
+                            Approval History
+                          </button>
+
+                          {canManageLeaveAdministration &&
+                            !voided &&
+                            status !== "Returned to Work" && (
+                              <button
+                                className="btn-warning"
+                                type="button"
+                                onClick={() => openEditLeave(item)}
+                              >
+                                Edit
+                              </button>
+                          )}
 
                           {!canApprove && renderRequestFileAction(item)}
                           {!canApprove && renderApprovedFileAction(item)}
@@ -1590,6 +1719,132 @@ export default function LeaveTransactions() {
           </span>
         </div>
       </div>
+
+            {approvalHistoryItem && (
+              <div
+                className="modal-overlay"
+                onMouseDown={(e) => {
+                  if (e.target.classList.contains("modal-overlay")) {
+                    setApprovalHistoryItem(null);
+                  }
+                }}
+              >
+                <div
+                  className="modal leave-history-modal"
+                  onMouseDown={(e) => e.stopPropagation()}
+                >
+                  <div className="modal-head">
+                    <div>
+                      <h3 className="modal-title">
+                        Approval History
+                      </h3>
+
+                      <p className="modal-subtitle">
+                        {approvalHistoryItem.staff_name || "-"}
+                        {" • "}
+                        {approvalHistoryItem.transaction_code ||
+                          approvalHistoryItem.id}
+                      </p>
+                    </div>
+
+                    <button
+                      className="modal-x"
+                      type="button"
+                      onClick={() => setApprovalHistoryItem(null)}
+                    >
+                      ✕
+                    </button>
+                  </div>
+
+                  <div className="leave-approval-history">
+                    {getLeaveApprovalHistory(approvalHistoryItem).length === 0 ? (
+                      <div className="leave-history-empty">
+                        No completed approval yet.
+                      </div>
+                    ) : (
+                      getLeaveApprovalHistory(approvalHistoryItem).map(
+                        (stage, index) => (
+                          <div
+                            className="leave-history-step approved"
+                            key={stage.key}
+                          >
+                            <div className="leave-history-marker">
+                              ✓
+                            </div>
+
+                            <div className="leave-history-content">
+                              <div className="leave-history-head">
+                                <strong>
+                                  {stage.label}
+                                </strong>
+
+                                <span className="leave-history-status approved">
+                                  Approved
+                                </span>
+                              </div>
+
+                              <div className="leave-history-time">
+                                {fmtApprovalDateTime(stage.approvedAt)}
+                              </div>
+                            </div>
+
+                            {index <
+                              getLeaveApprovalHistory(approvalHistoryItem).length -
+                                1 && (
+                              <div className="leave-history-line" />
+                            )}
+                          </div>
+                        )
+                      )
+                    )}
+
+                    {getCurrentApprovalStageLabel(approvalHistoryItem) && (
+                      <div className="leave-history-step current">
+                        <div className="leave-history-marker">
+                          •
+                        </div>
+
+                        <div className="leave-history-content">
+                          <div className="leave-history-head">
+                            <strong>
+                              {getCurrentApprovalStageLabel(
+                                approvalHistoryItem
+                              )}
+                            </strong>
+
+                            <span className="leave-history-status current">
+                              Current
+                            </span>
+                          </div>
+
+                          <div className="leave-history-time">
+                            Waiting for approval
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {String(
+                      approvalHistoryItem.status || ""
+                    ).trim() === "Approved" && (
+                      <div className="leave-history-complete">
+                        ✓ Approval process completed
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="modal-buttons">
+                    <button
+                      className="btn-secondary"
+                      type="button"
+                      onClick={() => setApprovalHistoryItem(null)}
+                    >
+                      Close
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
 
       {(canCreateLeave || canManageLeaveAdministration) && showCreateLeave && (
         <div

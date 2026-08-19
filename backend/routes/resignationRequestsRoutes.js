@@ -475,11 +475,48 @@ router.get(
       const params = [];
 
       let sql = `
-        SELECT rr.*
+        SELECT
+          rr.*,
+
+          bm_user.username AS branch_manager_approved_by_name,
+          am_user.username AS area_manager_approved_by_name,
+          rm_user.username AS regional_manager_approved_by_name,
+          avp_user.username AS avp_approved_by_name,
+          vp_user.username AS vp_approved_by_name,
+          svp_user.username AS svp_approved_by_name,
+          president_user.username AS president_approved_by_name,
+          final_user.username AS approved_by_name
+
         FROM public.resignation_requests rr
+
         LEFT JOIN public.staff s
           ON s.id = rr.staff_id
           OR s.employee_no = rr.employee_no
+
+        LEFT JOIN public.users bm_user
+          ON bm_user.id = rr.branch_manager_approved_by
+
+        LEFT JOIN public.users am_user
+          ON am_user.id = rr.area_manager_approved_by
+
+        LEFT JOIN public.users rm_user
+          ON rm_user.id = rr.regional_manager_approved_by
+
+        LEFT JOIN public.users avp_user
+          ON avp_user.id = rr.avp_approved_by
+
+        LEFT JOIN public.users vp_user
+          ON vp_user.id = rr.vp_approved_by
+
+        LEFT JOIN public.users svp_user
+          ON svp_user.id = rr.svp_approved_by
+
+        LEFT JOIN public.users president_user
+          ON president_user.id = rr.president_approved_by
+
+        LEFT JOIN public.users final_user
+          ON final_user.id = rr.approved_by
+
         WHERE 1=1
       `;
 
@@ -1135,20 +1172,55 @@ router.put(
       }
 
       if (bypass) {
+        if (!isAdmin(req) && !isIT(req)) {
+          await client.query("ROLLBACK");
+          return res.status(403).json({
+            message: "Only Admin and IT can bypass approval.",
+          });
+        }
 
-      if (!isAdmin(req) && !isIT(req)) {
-        await client.query("ROLLBACK");
-        return res.status(403).json({
-          message: "Only Admin and IT can bypass approval."
-        });
-      }
         let nextStatus = null;
+        let bypassApproverField = null;
+        let bypassApproverAtField = null;
 
         switch (currentStatus) {
           case STATUS_BRANCH:
+            bypassApproverField = "branch_manager_approved_by";
+            bypassApproverAtField = "branch_manager_approved_at";
+
+            nextStatus = await getNextActiveStatus(
+              client,
+              currentStatus,
+              approvalStaff
+            );
+            break;
+
           case STATUS_AREA:
+            bypassApproverField = "area_manager_approved_by";
+            bypassApproverAtField = "area_manager_approved_at";
+
+            nextStatus = await getNextActiveStatus(
+              client,
+              currentStatus,
+              approvalStaff
+            );
+            break;
+
           case STATUS_RM:
+            bypassApproverField = "regional_manager_approved_by";
+            bypassApproverAtField = "regional_manager_approved_at";
+
+            nextStatus = await getNextActiveStatus(
+              client,
+              currentStatus,
+              approvalStaff
+            );
+            break;
+
           case STATUS_AVP:
+            bypassApproverField = "avp_approved_by";
+            bypassApproverAtField = "avp_approved_at";
+
             nextStatus = await getNextActiveStatus(
               client,
               currentStatus,
@@ -1157,7 +1229,14 @@ router.put(
             break;
 
           case STATUS_VP:
+            bypassApproverField = "vp_approved_by";
+            bypassApproverAtField = "vp_approved_at";
+            nextStatus = STATUS_ADMIN;
+            break;
+
           case STATUS_SVP:
+            bypassApproverField = "svp_approved_by";
+            bypassApproverAtField = "svp_approved_at";
             nextStatus = STATUS_ADMIN;
             break;
 
@@ -1176,24 +1255,33 @@ router.put(
             });
         }
 
+        if (!bypassApproverField || !bypassApproverAtField) {
+          await client.query("ROLLBACK");
+
+          return res.status(500).json({
+            message: "Bypass approval fields are not configured.",
+          });
+        }
+
         const updated = await client.query(
           `
-          UPDATE resignation_requests
+          UPDATE public.resignation_requests
           SET
             status = $2,
-            approved_by = $3,
-            approved_at = NOW()
+            ${bypassApproverField} = $3,
+            ${bypassApproverAtField} = NOW()
           WHERE id = $1
           RETURNING *;
           `,
           [
             id,
             nextStatus,
-            req.user?.id ?? null
+            req.user?.id ?? null,
           ]
         );
 
         await client.query("COMMIT");
+
         return res.json(updated.rows[0]);
       }
 

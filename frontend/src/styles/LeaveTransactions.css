@@ -924,3 +924,152 @@ button.leave-summary-card.active {
     width: 100%;
   }
 }
+
+/* =========================================================
+   LEAVE APPROVAL HISTORY
+========================================================= */
+
+.leave-history-modal {
+  width: min(680px, 94vw);
+}
+
+.leave-approval-history {
+  display: flex;
+  flex-direction: column;
+  padding: 4px 2px;
+}
+
+.leave-history-step {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  min-height: 78px;
+}
+
+.leave-history-marker {
+  position: relative;
+  z-index: 2;
+
+  width: 36px;
+  height: 36px;
+  min-width: 36px;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  border-radius: 50%;
+  border: 2px solid var(--border);
+
+  background: var(--panel);
+  color: var(--muted);
+
+  font-size: 14px;
+  font-weight: 900;
+}
+
+.leave-history-step.approved .leave-history-marker {
+  border-color: #10b981;
+  background: rgba(16, 185, 129, 0.13);
+  color: #10b981;
+}
+
+.leave-history-step.current .leave-history-marker {
+  border-color: #3b82f6;
+  background: rgba(59, 130, 246, 0.13);
+  color: #60a5fa;
+}
+
+.leave-history-line {
+  position: absolute;
+
+  left: 17px;
+  top: 37px;
+  bottom: 0;
+
+  width: 2px;
+
+  background: var(--border);
+}
+
+.leave-history-content {
+  flex: 1;
+
+  padding: 10px 14px;
+  margin-bottom: 14px;
+
+  border: 1px solid var(--border);
+  border-radius: 12px;
+
+  background: var(--panel-2);
+}
+
+.leave-history-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.leave-history-head strong {
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.leave-history-status {
+  padding: 4px 9px;
+  border-radius: 999px;
+
+  font-size: 10px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.leave-history-status.approved {
+  color: #10b981;
+  border: 1px solid rgba(16, 185, 129, 0.35);
+  background: rgba(16, 185, 129, 0.12);
+}
+
+.leave-history-status.current {
+  color: #60a5fa;
+  border: 1px solid rgba(59, 130, 246, 0.35);
+  background: rgba(59, 130, 246, 0.12);
+}
+
+.leave-history-time {
+  margin-top: 7px;
+
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.leave-history-complete {
+  margin: 4px 0 4px 50px;
+  padding: 11px 14px;
+
+  border: 1px solid rgba(16, 185, 129, 0.35);
+  border-radius: 11px;
+
+  background: rgba(16, 185, 129, 0.08);
+  color: #10b981;
+
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.leave-history-empty {
+  padding: 20px;
+
+  border: 1px dashed var(--border);
+  border-radius: 12px;
+
+  color: var(--muted);
+  text-align: center;
+
+  font-size: 12px;
+  font-weight: 700;
+}

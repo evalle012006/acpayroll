@@ -185,6 +185,15 @@ const stageColumnMap = {
   "senior vice president": "senior_vice_president_status",
 };
 
+const stageApprovedAtColumnMap = {
+  "branch manager": "branch_manager_approved_at",
+  "area manager": "area_manager_approved_at",
+  "regional manager": "regional_manager_approved_at",
+  "assistant vice president": "assistant_vice_president_approved_at",
+  "vice president": "vice_president_approved_at",
+  "senior vice president": "senior_vice_president_approved_at",
+};
+
 const stageLabel = (stage) => {
   const s = norm(stage);
 
@@ -372,13 +381,26 @@ const reimbursementSelect = `
   rr.approval_stage,
   rr.approval_chain,
 
-  rr.area_manager_status,
-  rr.regional_manager_status,
-  rr.assistant_vice_president_status,
-  rr.vice_president_status,
-  rr.senior_vice_president_status,
   rr.branch_manager_status,
+  rr.branch_manager_approved_at,
+
+  rr.area_manager_status,
+  rr.area_manager_approved_at,
+
+  rr.regional_manager_status,
+  rr.regional_manager_approved_at,
+
+  rr.assistant_vice_president_status,
+  rr.assistant_vice_president_approved_at,
+
+  rr.vice_president_status,
+  rr.vice_president_approved_at,
+
+  rr.senior_vice_president_status,
+  rr.senior_vice_president_approved_at,
+
   rr.admin_status,
+  rr.final_approved_at,
 
   rr.attachment_path,
   rr.attachment_name,
@@ -995,17 +1017,16 @@ message:"Not your approval stage"
 
 }
 
-const col=stageColumnMap[current];
+  const col = stageColumnMap[current];
+    const approvedAtCol = stageApprovedAtColumnMap[current];
 
-if(!col){
+    if (!col || !approvedAtCol) {
+      await client.query("ROLLBACK");
 
-await client.query("ROLLBACK");
-
-return res.status(400).json({
-message:"Invalid stage"
-});
-
-}
+      return res.status(400).json({
+        message: "Invalid stage"
+      });
+    }
 
 if(
 (action==="approve"||
@@ -1099,6 +1120,7 @@ if (vpIsFinalForOperation) {
     UPDATE reimbursement_requests
     SET
       ${col} = 'Approved',
+      ${approvedAtCol} = NOW(),
 
       status = 'Approved',
       approval_stage = 'approved',
@@ -1108,6 +1130,7 @@ if (vpIsFinalForOperation) {
 
       approved_by = $4,
       approved_at = NOW(),
+      final_approved_at = NOW(),
 
       updated_at = NOW()
 
@@ -1145,6 +1168,7 @@ UPDATE reimbursement_requests
 SET
 
 ${col}='Approved',
+${approvedAtCol}=NOW(),
 
 status='Pending',
 
@@ -1185,6 +1209,7 @@ UPDATE reimbursement_requests
 SET
 
 ${col}='Approved',
+${approvedAtCol}=NOW(),
 
 status=$2,
 
@@ -1344,6 +1369,7 @@ router.post(
 
           approved_by = $2,
           approved_at = NOW(),
+          final_approved_at = NOW(),
 
           reimbursement_date = $3,
 

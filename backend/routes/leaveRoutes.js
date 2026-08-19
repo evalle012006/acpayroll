@@ -274,10 +274,22 @@ const baseLeaveSelect = `
 
     lr.regional_approved_by,
     lr.regional_approved_at,
+
     lr.division_approved_by,
     lr.division_approved_at,
+
+    lr.vice_president_approved_by,
+    lr.vice_president_approved_at,
+
+    lr.senior_vice_president_approved_by,
+    lr.senior_vice_president_approved_at,
+
+    lr.hr_approved_by,
+    lr.hr_approved_at,
+
     lr.admin_approved_by,
     lr.admin_approved_at,
+
     lr.rejection_reason,
 
     s.employee_no,
@@ -2047,8 +2059,8 @@ router.put(
                 UPDATE public.leave_requests
                 SET
                   status = 'Approved',
-                  admin_approved_by = $2,
-                  admin_approved_at = NOW()
+                  hr_approved_by = $2,
+                  hr_approved_at = NOW()
                 WHERE id = $1
               `;
               params = [id, req.user?.id ?? null];
@@ -2069,8 +2081,7 @@ router.put(
                   status = $3,
 
                   branch_approved_by = $2,
-                  branch_approved_at =
-                    NOW() AT TIME ZONE 'Asia/Manila'
+                  branch_approved_at = NOW()
 
                 WHERE id = $1
               `;
@@ -2135,21 +2146,31 @@ router.put(
                 UPDATE public.leave_requests
                 SET
                   status = $3,
-                  admin_approved_by = $2,
-                  admin_approved_at = NOW()
+                  vice_president_approved_by = $2,
+                  vice_president_approved_at = NOW()
                 WHERE id = $1
               `;
               params = [id, req.user?.id ?? null, nextStatus];
             } else if (currentStatus === "Pending Senior Vice President") {
+              const nextStatus = await getNextStatusAfterApproval(
+                currentStatus,
+                access.row
+              );
+
               sql = `
                 UPDATE public.leave_requests
                 SET
-                  status = 'Pending HR',
-                  admin_approved_by = $2,
-                  admin_approved_at = NOW()
+                  status = $3,
+                  senior_vice_president_approved_by = $2,
+                  senior_vice_president_approved_at = NOW()
                 WHERE id = $1
               `;
-              params = [id, req.user?.id ?? null];
+
+              params = [
+                id,
+                req.user?.id ?? null,
+                nextStatus,
+              ];
             } else {
               await client.query("ROLLBACK");
               return res.status(400).json({ message: "Invalid current status for approval" });

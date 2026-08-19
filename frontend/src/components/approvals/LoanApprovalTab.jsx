@@ -61,6 +61,24 @@ const fmtMoney = (v) =>
 
 const fmtDate = (d) => (d ? String(d).slice(0, 10) : "-");
 
+const fmtDateTime = (value) => {
+  if (!value) return "";
+
+  const d = new Date(value);
+
+  if (Number.isNaN(d.getTime())) return "";
+
+  return d.toLocaleString("en-PH", {
+    timeZone: "Asia/Manila",
+    year: "numeric",
+    month: "short",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: true,
+  });
+};
+
 const getDepartment = (user) =>
   norm(
     user?.department ||
@@ -281,6 +299,22 @@ const getChainStatus = (item, role) => {
   return toStr(keyMap[role] || "Pending") || "Pending";
 };
 
+const getChainApprovedAt = (item, role) => {
+  if (!item) return null;
+
+  const keyMap = {
+    "branch manager": item.branch_manager_approved_at,
+    "area manager": item.area_manager_approved_at,
+    "regional manager": item.regional_manager_approved_at,
+    "assistant vice president": item.assistant_vice_president_approved_at,
+    "vice president": item.vice_president_approved_at,
+    "senior vice president": item.senior_vice_president_approved_at,
+    accounting: item.accounting_approved_at,
+  };
+
+  return keyMap[role] || null;
+};
+
 const getCurrentStage = (item) => {
   const status = norm(item?.status);
   const explicit = norm(item?.approval_stage);
@@ -326,12 +360,63 @@ const canUserActOnLoan = (item, user) => {
 const renderChainSummary = (item) => {
   const chain = getDynamicApprovalChain(item);
 
-  return chain
-    .map((role) => {
-      const status = getChainStatus(item, role);
-      return `${STAGE_LABELS[role] || role}: ${status || "Pending"}`;
-    })
-    .join(" | ");
+  return (
+    <div className="loan-approval-timeline">
+      {chain.map((role, index) => {
+        const status = getChainStatus(item, role);
+        const approvedAt = getChainApprovedAt(item, role);
+
+        const statusKey = norm(status);
+        const isApproved = statusKey === "approved";
+        const isRejected = statusKey === "rejected";
+
+        return (
+          <div
+            className={`loan-approval-step ${
+              isApproved
+                ? "is-approved"
+                : isRejected
+                ? "is-rejected"
+                : "is-pending"
+            }`}
+            key={role}
+          >
+            <div className="loan-approval-track">
+              <div className="loan-approval-icon">
+                {isApproved ? "✓" : isRejected ? "✕" : index + 1}
+              </div>
+
+              {index < chain.length - 1 && (
+                <div className="loan-approval-line" />
+              )}
+            </div>
+
+            <div className="loan-approval-step-content">
+              <div className="loan-approval-step-top">
+                <span className="loan-approval-role">
+                  {STAGE_LABELS[role] || role}
+                </span>
+
+                <span className="loan-approval-status">
+                  {status || "Pending"}
+                </span>
+              </div>
+
+              {isApproved && approvedAt ? (
+                <div className="loan-approval-date">
+                  Approved on {fmtDateTime(approvedAt)}
+                </div>
+              ) : (
+                <div className="loan-approval-date">
+                  Waiting for approval
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
 };
 
 const buildMonthlySchedule = (totalAmount, monthlyAmount, termMonths = 0) => {
@@ -1204,19 +1289,35 @@ export default function LoanApprovalTab() {
 
     const needInputs = needsFinalLoanInputs(item);
 
-    if (needInputs && toNum(finalApprovalData[id]?.approved_amount) <= 0) {
+    const approvedAmount = toNum(
+      finalApprovalData[id]?.approved_amount
+    );
+
+    const approvedTotal = toNum(
+      finalApprovalData[id]?.approved_total
+    );
+
+    const approvedPerMonth = toNum(
+      finalApprovalData[id]?.approved_per_month
+    );
+
+    const approvedTerm = toNum(
+      finalApprovalData[id]?.approved_term
+    );
+
+    if (needInputs && approvedAmount <= 0) {
       return alert("Please enter the approved amount.");
     }
 
-    if (needInputs && toNum(finalApprovalData[id]?.approved_total) <= 0) {
-      return alert("Please enter the total amount with interest.");
+    if (needInputs && approvedTotal < 0) {
+      return alert("Total amount with interest cannot be negative.");
     }
 
-    if (needInputs && toNum(finalApprovalData[id]?.approved_per_month) <= 0) {
+    if (needInputs && approvedPerMonth <= 0) {
       return alert("Please enter the monthly deduction.");
     }
 
-    if (needInputs && toNum(finalApprovalData[id]?.approved_term) <= 0) {
+    if (needInputs && approvedTerm <= 0) {
       return alert("Please enter the terms.");
     }
 
@@ -1231,26 +1332,25 @@ export default function LoanApprovalTab() {
 
       formData.append("attachment", approvalFiles[id]);
 
-      // Only send these values for Motorcycle Loan
       if (needInputs) {
         formData.append(
           "approved_amount",
-          finalApprovalData[id]?.approved_amount || ""
+          finalApprovalData[id]?.approved_amount ?? ""
         );
 
         formData.append(
           "approved_total",
-          finalApprovalData[id]?.approved_total || ""
+          finalApprovalData[id]?.approved_total ?? ""
         );
 
         formData.append(
           "approved_per_month",
-          finalApprovalData[id]?.approved_per_month || ""
+          finalApprovalData[id]?.approved_per_month ?? ""
         );
 
         formData.append(
           "approved_term",
-          finalApprovalData[id]?.approved_term || ""
+          finalApprovalData[id]?.approved_term ?? ""
         );
       }
 
@@ -2080,7 +2180,10 @@ export default function LoanApprovalTab() {
 
                 <div className="form-group full">
                   <label>Approval Chain</label>
-                  <textarea value={renderChainSummary(selectedLoan)} readOnly />
+
+                  <div className="loan-approval-chain-box">
+                    {renderChainSummary(selectedLoan)}
+                  </div>
                 </div>
 
                 <div className="form-group full">

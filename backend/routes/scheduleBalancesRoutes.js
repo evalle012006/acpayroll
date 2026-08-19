@@ -107,8 +107,28 @@ const buildLiveSql = (whereSql = "") => `
   WITH cutoff AS (
     SELECT
       $1::date AS month_start,
+
       ${monthEndExpr("$1")} AS month_end,
-      ($1::date + INTERVAL '24 days')::date AS posting_date
+
+      CASE
+        /* CURRENT MONTH:
+          use today's actual date.
+          This allows approved loans to appear immediately.
+        */
+        WHEN DATE_TRUNC(
+          'month',
+          NOW() AT TIME ZONE 'Asia/Manila'
+        )::date = $1::date
+
+        THEN
+          (NOW() AT TIME ZONE 'Asia/Manila')::date
+
+        /* HISTORICAL MONTH:
+          use the regular 25th posting cutoff.
+        */
+        ELSE
+          ($1::date + INTERVAL '24 days')::date
+      END AS posting_date
   ),
 
   eligible_loans AS (

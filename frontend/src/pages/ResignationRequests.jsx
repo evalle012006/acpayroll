@@ -8,6 +8,24 @@ const norm = (v) => toStr(v).toLowerCase();
 const toDate10 = (v) => (v ? String(v).slice(0, 10) : "");
 const fmtDate = (v) => (v ? String(v).slice(0, 10) : "-");
 
+const fmtDateTime = (v) => {
+  if (!v) return "-";
+
+  try {
+    return new Intl.DateTimeFormat("en-PH", {
+      timeZone: "Asia/Manila",
+      year: "numeric",
+      month: "short",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: true,
+    }).format(new Date(v));
+  } catch {
+    return "-";
+  }
+};
+
 const readUser = () => {
   try {
     return JSON.parse(localStorage.getItem("user") || "null");
@@ -770,6 +788,52 @@ const submitReapplyRequest = async (e) => {
     );
   };  
 
+  const getApprovalHistory = (row) => {
+    if (!row) return [];
+
+    const history = [
+      {
+        role: "Branch Manager",
+        approvedBy: row.branch_manager_approved_by_username,
+        approvedAt: row.branch_manager_approved_at,
+      },
+      {
+        role: "Area Manager",
+        approvedBy: row.area_manager_approved_by_username,
+        approvedAt: row.area_manager_approved_at,
+      },
+      {
+        role: "Regional Manager",
+        approvedBy: row.regional_manager_approved_by_username,
+        approvedAt: row.regional_manager_approved_at,
+      },
+      {
+        role: "Assistant Vice President",
+        approvedBy: row.avp_approved_by_username,
+        approvedAt: row.avp_approved_at,
+      },
+      {
+        role: "Vice President",
+        approvedBy: row.vp_approved_by_username,
+        approvedAt: row.vp_approved_at,
+      },
+      {
+        role: "Senior Vice President",
+        approvedBy: row.svp_approved_by_username,
+        approvedAt: row.svp_approved_at,
+      },
+      {
+        role: "Final Approval",
+        approvedBy: row.approved_by_username,
+        approvedAt: row.approved_at,
+      },
+    ];
+
+    return history.filter(
+      (item) => item.approvedBy || item.approvedAt
+    );
+  };
+
   const totalRequests=filteredRows.length;
   const pendingRequests = filteredRows.filter((r) => {
     const s = norm(r.status);
@@ -1437,6 +1501,46 @@ const submitReapplyRequest = async (e) => {
                     </a>
                   </div>
                 ) : null}
+
+                <div className="form-group full">
+                  <label>Approval History</label>
+
+                  {getApprovalHistory(viewRow).length === 0 ? (
+                    <div className="reg-approval-empty">
+                      No approval history yet.
+                    </div>
+                  ) : (
+                    <div className="reg-approval-history">
+                      {getApprovalHistory(viewRow).map((item, index) => (
+                        <div
+                          className="reg-approval-history-item"
+                          key={`${item.role}-${index}`}
+                        >
+                          <div className="reg-approval-history-step">
+                            {index + 1}
+                          </div>
+
+                          <div className="reg-approval-history-info">
+                            <strong>{item.role}</strong>
+
+                            <span>
+                              Approved by:{" "}
+                              <b>{item.approvedBy || "-"}</b>
+                            </span>
+
+                            <small>
+                              {fmtDateTime(item.approvedAt)}
+                            </small>
+                          </div>
+
+                          <div className="reg-approval-history-status">
+                            Approved
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
 
               <div className="modal-buttons">
