@@ -1082,3 +1082,205 @@
   background: rgba(148, 163, 184, 0.35);
   border-radius: 999px;
 }
+
+/* =========================================================
+   TERMINATION VIEW MODAL - CLEAN ACTION DESIGN
+========================================================= */
+
+.termination-view-modal {
+  width: min(960px, 94vw);
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+/* ---------- FILE TABLE ---------- */
+
+.termination-file-table {
+  margin-top: 16px;
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.termination-file-table .table {
+  width: 100%;
+  table-layout: fixed;
+}
+
+.termination-file-table {
+  width: 100%;
+  overflow: hidden;
+}
+
+.termination-file-table .table {
+  width: 100%;
+  min-width: 0 !important;
+  table-layout: fixed;
+}
+
+.termination-file-table .table th:nth-child(1),
+.termination-file-table .table td:nth-child(1) {
+  width: 30%;
+}
+
+.termination-file-table .table th:nth-child(2),
+.termination-file-table .table td:nth-child(2) {
+  width: 55%;
+}
+
+.termination-file-table .table th:nth-child(3),
+.termination-file-table .table td:nth-child(3) {
+  width: 15%;
+  text-align: center;
+}
+
+.termination-file-table .table td {
+  vertical-align: middle;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.termination-file-table .table td:nth-child(2) {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.termination-file-table .table td:last-child .btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
+  width: auto;
+  min-width: 68px;
+  height: 28px;
+
+  margin: 0;
+  padding: 0 8px;
+
+  border-radius: 7px;
+
+  white-space: nowrap;
+
+  font-size: 9px;
+  font-weight: 800;
+}
+
+
+/* =========================================================
+   FINAL FILE UPLOAD
+========================================================= */
+
+.termination-upload-box {
+  display: flex;
+  flex-direction: column;
+
+  gap: 10px;
+
+  margin-top: 16px;
+  padding: 16px;
+
+  border: 1px solid var(--border);
+  border-radius: 12px;
+
+  background: var(--panel-2);
+}
+
+.termination-upload-box .form-group {
+  width: 100%;
+  margin: 0;
+}
+
+.termination-upload-box .form-group label {
+  display: block;
+
+  margin-bottom: 7px;
+
+  color: var(--muted);
+
+  font-size: 11px;
+  font-weight: 850;
+}
+
+.termination-upload-box input[type="file"] {
+  width: 100%;
+  min-height: 40px;
+
+  padding: 6px 8px;
+
+  box-sizing: border-box;
+
+  border: 1px solid var(--border);
+  border-radius: 9px;
+
+  background: var(--panel);
+  color: var(--text);
+}
+
+
+/* hide upload button from old position */
+.termination-upload-box > .btn-primary {
+  display: none;
+}
+
+
+/* =========================================================
+   BOTTOM ACTION BUTTONS
+========================================================= */
+
+.termination-view-actions {
+  display: flex;
+
+  align-items: center;
+  justify-content: flex-end;
+
+  gap: 10px;
+
+  margin-top: 16px;
+  padding-top: 16px;
+
+  border-top: 1px solid var(--border);
+}
+
+.termination-view-actions button {
+  display: inline-flex;
+
+  align-items: center;
+  justify-content: center;
+
+  min-width: 100px;
+  height: 38px;
+
+  margin: 0;
+  padding: 0 16px;
+
+  border-radius: 9px;
+
+  font-size: 12px;
+  font-weight: 850;
+
+  white-space: nowrap;
+}
+
+.termination-view-actions .btn-danger {
+  min-width: 100px;
+}
+
+
+/* =========================================================
+   MOBILE
+========================================================= */
+
+@media (max-width: 680px) {
+  .termination-view-actions {
+    flex-direction: column-reverse;
+    align-items: stretch;
+  }
+
+  .termination-view-actions button {
+    width: 100%;
+  }
+
+  .termination-file-table .table {
+    table-layout: auto;
+  }
+}

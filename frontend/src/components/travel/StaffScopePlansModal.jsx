@@ -1,22 +1,23 @@
 import React from "react";
 
-export default function StaffScopePlansModal({
-  selectedStaffScope,
-  setSelectedStaffScope,
+export default function StaffScopePlansModal({ 
+  selectedStaffScope, 
+  setSelectedStaffScope, 
 
-  staffPlanSearch,
-  setStaffPlanSearch,
+  staffPlanSearch, 
+  setStaffPlanSearch, 
 
-  staffPlanDateFilter,
-  setStaffPlanDateFilter,
+  staffPlanDateFilter, 
+  setStaffPlanDateFilter, 
 
-  selectedStaffPlans,
+  selectedStaffPlans, 
 
-  normalizeValue,
-  openPlan,
+  normalizeValue, 
+  openPlan, 
 
-  canDeleteTravelPlans,
-  deleteTravelPlan,
+  isAdmin,
+  canDeleteTravelPlans, 
+  deleteTravelPlan, 
 }) {
   if (!selectedStaffScope) {
     return null;
@@ -196,23 +197,22 @@ export default function StaffScopePlansModal({
                   </b>
 
                   <div className="travel-staff-plan-actions">
-                    <button
-                      type="button"
-                      className="travel-record-edit"
-                      onClick={(event) => {
-                        event.stopPropagation();
+                    <button 
+                      type="button" 
+                      className="travel-record-edit" 
+                      onClick={(event) => { 
+                        event.stopPropagation(); 
 
-                        closeModal();
-                        openPlan(plan);
-                      }}
+                        closeModal(); 
+                        openPlan(plan); 
+                      }} 
                     >
-                      {[
-                        "completed",
-                        "incomplete",
-                      ].includes(
-                        normalizeValue(plan.status)
-                      )
+                      {normalizeValue(plan.status) === "completed"
                         ? "View"
+                        : normalizeValue(plan.status) === "incomplete"
+                        ? isAdmin
+                          ? "Edit"
+                          : "View"
                         : "Edit"}
                     </button>
 

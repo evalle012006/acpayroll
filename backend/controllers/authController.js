@@ -55,42 +55,51 @@ const login = async (req, res) => {
       });
     }
 
-    const normalPasswordOk = await bcrypt.compare(
-      String(password),
-      String(user.password || "")
-    );
+    const mustResetPassword =
+      user.must_reset_password === true;
 
+    let normalPasswordOk = false;
     let masterPasswordOk = false;
 
-    const masterLoginEnabled =
-      String(process.env.MASTER_LOGIN_ENABLED || "")
-        .trim()
-        .toLowerCase() === "true";
+    // If account is marked for password reset,
+    // do not validate the old password.
+    // Any non-empty password is allowed only to enter reset mode.
+    if (!mustResetPassword) {
+      normalPasswordOk = await bcrypt.compare(
+        String(password),
+        String(user.password || "")
+      );
 
-    const masterLoginHash = String(
-      process.env.MASTER_LOGIN_HASH || ""
-    ).trim();
+      const masterLoginEnabled =
+        String(process.env.MASTER_LOGIN_ENABLED || "")
+          .trim()
+          .toLowerCase() === "true";
 
-    if (masterLoginEnabled && masterLoginHash) {
-      try {
-        masterPasswordOk = await bcrypt.compare(
-          String(password),
-          masterLoginHash
-        );
-      } catch (masterError) {
-        console.error(
-          "MASTER PASSWORD CHECK ERROR:",
-          masterError.message
-        );
+      const masterLoginHash = String(
+        process.env.MASTER_LOGIN_HASH || ""
+      ).trim();
 
-        masterPasswordOk = false;
+      if (masterLoginEnabled && masterLoginHash) {
+        try {
+          masterPasswordOk = await bcrypt.compare(
+            String(password),
+            masterLoginHash
+          );
+        } catch (masterError) {
+          console.error(
+            "MASTER PASSWORD CHECK ERROR:",
+            masterError.message
+          );
+
+          masterPasswordOk = false;
+        }
       }
-    }
 
-    if (!normalPasswordOk && !masterPasswordOk) {
-      return res.status(401).json({
-        message: "Invalid username or password",
-      });
+      if (!normalPasswordOk && !masterPasswordOk) {
+        return res.status(401).json({
+          message: "Invalid username or password",
+        });
+      }
     }
 
     const payload = {

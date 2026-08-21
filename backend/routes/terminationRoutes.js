@@ -52,21 +52,6 @@ const isOperationViewer = (req) => {
   ].includes(role);
 };
 
-const isOperationVpOrSvp = (req) => {
-  const role = normalizeRole(req.user?.role);
-  const department = normalizeDepartment(
-    req.user?.department
-  );
-
-  return (
-    department === "operation department" &&
-    [
-      "vice president",
-      "senior vice president",
-    ].includes(role)
-  );
-};
-
 const toInt = (v) => {
   const n = Number(v);
   return Number.isFinite(n) ? Math.trunc(n) : null;
@@ -90,8 +75,7 @@ const canManageTermination = (req) =>
   isITDepartment(req);
 
 const canCreateTermination = (req) =>
-  canManageTermination(req) ||
-  isOperationVpOrSvp(req);
+  canManageTermination(req);
 
 const canViewTermination = (req) =>
   canManageTermination(req) ||
@@ -99,6 +83,52 @@ const canViewTermination = (req) =>
 
 const canDeleteTermination = (req) =>
   isAdmin(req) || isIT(req);
+
+const buildTerminationScope = (req) => {
+  const role = normalizeRole(req.user?.role);
+  const department = normalizeDepartment(req.user?.department);
+
+  const params = [];
+  const where = [];
+
+  // HR / Accounting / IT / Admin can access all
+  if (canManageTermination(req)) {
+    return { where, params };
+  }
+
+  // OPERATION DEPARTMENT SCOPING
+  if (department === "operation department") {
+    if (role === "branch manager") {
+      params.push(req.user?.branch_id ?? null);
+      where.push(`branch_id = $${params.length}`);
+    } else if (role === "area manager") {
+      params.push(toStr(req.user?.area));
+      where.push(
+        `LOWER(TRIM(COALESCE(area, ''))) = LOWER(TRIM($${params.length}))`
+      );
+    } else if (role === "regional manager") {
+      params.push(toStr(req.user?.region));
+      where.push(
+        `LOWER(TRIM(COALESCE(region, ''))) = LOWER(TRIM($${params.length}))`
+      );
+    } else if (role === "assistant vice president") {
+      params.push(toStr(req.user?.division));
+      where.push(
+        `LOWER(TRIM(COALESCE(division, ''))) = LOWER(TRIM($${params.length}))`
+      );
+    } else if (
+      role === "vice president" ||
+      role === "senior vice president"
+    ) {
+      params.push("OPERATION DEPARTMENT");
+      where.push(
+        `LOWER(TRIM(COALESCE(department, ''))) = LOWER(TRIM($${params.length}))`
+      );
+    }
+  }
+
+  return { where, params };
+};
 
 const displayName = (s) => {
   const ln = toStr(s?.last_name);
@@ -197,11 +227,58 @@ router.get(
         });
       }
 
-      const r = await pool.query(`
+      const role = normalizeRole(req.user?.role);
+      const department = normalizeDepartment(req.user?.department);
+
+      let query = `
         SELECT *
         FROM public.termination_requests
+      `;
+
+      const params = [];
+      const where = [];
+
+      if (department === "operation department") {
+        if (role === "branch manager") {
+          params.push(req.user?.branch_id ?? null);
+          where.push(`branch_id = $${params.length}`);
+        }
+
+        else if (role === "area manager") {
+          params.push(toStr(req.user?.area));
+          where.push(`LOWER(TRIM(COALESCE(area, ''))) = LOWER(TRIM($${params.length}))`);
+        }
+
+        else if (role === "regional manager") {
+          params.push(toStr(req.user?.region));
+          where.push(`LOWER(TRIM(COALESCE(region, ''))) = LOWER(TRIM($${params.length}))`);
+        }
+
+        else if (role === "assistant vice president") {
+          params.push(toStr(req.user?.division));
+          where.push(`LOWER(TRIM(COALESCE(division, ''))) = LOWER(TRIM($${params.length}))`);
+        }
+
+        else if (
+          role === "vice president" ||
+          role === "senior vice president"
+        ) {
+          params.push("OPERATION DEPARTMENT");
+          where.push(
+            `LOWER(TRIM(COALESCE(department, ''))) = LOWER(TRIM($${params.length}))`
+          );
+        }
+      }
+
+      if (where.length > 0) {
+        query += ` WHERE ${where.join(" AND ")}`;
+      }
+
+      query += `
         ORDER BY created_at DESC, id DESC
-      `);
+      `;
+
+      const r = await pool.query(query, params);
 
       return res.json(r.rows);
     } catch (e) {
@@ -227,8 +304,7 @@ router.post(
     try {
       if (!canCreateTermination(req)) {
         return res.status(403).json({
-          message:
-            "Only Admin, IT Department, HR Department, Accounting Department, and Operation VP/SVP can create Termination of Contract.",
+          message: "Only Admin, IT Department, HR Department, and Accounting Department can create Termination of Contract.",
         });
       }
 
@@ -668,16 +744,32 @@ router.get(
         });
       }
 
-      const r = await pool.query(
-        `
+      const scope = buildTerminationScope(req);
+
+      const params = [id];
+
+      const scopeWhere = scope.where.map((condition) => {
+        return condition.replace(
+          /\$(\d+)/g,
+          (_, num) => `$${Number(num) + 1}`
+        );
+      });
+
+      params.push(...scope.params);
+
+      let query = `
         SELECT
           request_attachment_path,
           request_attachment_name
         FROM public.termination_requests
         WHERE id = $1
-        `,
-        [id]
-      );
+      `;
+
+      if (scopeWhere.length > 0) {
+        query += ` AND ${scopeWhere.join(" AND ")}`;
+      }
+
+      const r = await pool.query(query, params);
 
       if (r.rowCount === 0) {
         return res.status(404).json({
@@ -736,16 +828,32 @@ router.get(
         });
       }
 
-      const r = await pool.query(
-        `
+      const scope = buildTerminationScope(req);
+
+      const params = [id];
+
+      const scopeWhere = scope.where.map((condition) => {
+        return condition.replace(
+          /\$(\d+)/g,
+          (_, num) => `$${Number(num) + 1}`
+        );
+      });
+
+      params.push(...scope.params);
+
+      let query = `
         SELECT
           approved_attachment_path,
           approved_attachment_name
         FROM public.termination_requests
         WHERE id = $1
-        `,
-        [id]
-      );
+      `;
+
+      if (scopeWhere.length > 0) {
+        query += ` AND ${scopeWhere.join(" AND ")}`;
+      }
+
+      const r = await pool.query(query, params);
 
       if (r.rowCount === 0) {
         return res.status(404).json({

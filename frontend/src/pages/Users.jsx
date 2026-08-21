@@ -444,7 +444,7 @@ const Users = () => {
 
   const requirePasswordReset = async (user) => {
     const confirmed = window.confirm(
-      `Require ${user.username} to create a new password on their next login?`
+      `Are you sure you want to reset the password of ${user.username}?\n\n`
     );
 
     if (!confirmed) {
@@ -452,14 +452,14 @@ const Users = () => {
     }
 
     try {
-      await api.put(
-        `/users/${user.id}/require-password-reset`
-      );
+      await api.put(`/users/${user.id}/require-password-reset`);
 
       await fetchUsers();
 
       alert(
-        `${user.username} must create a new password on their next login.`
+        `Password reset enabled for ${user.username}.\n\n` +
+        `The user can now enter their username and any value in the password field. ` +
+        `They will be redirected to create a new password.`
       );
     } catch (err) {
       const status = err?.response?.status;

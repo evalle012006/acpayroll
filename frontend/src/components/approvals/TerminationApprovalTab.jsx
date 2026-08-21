@@ -67,13 +67,6 @@ export default function TerminationApprovalTab({ embedded = false }) {
       "senior vice president",
     ].includes(role);
 
-  const isOperationVpOrSvp =
-    dept === "operation department" &&
-    [
-      "vice president",
-      "senior vice president",
-    ].includes(role);
-
   const canManage =
     isAdmin ||
     isIT ||
@@ -87,9 +80,7 @@ export default function TerminationApprovalTab({ embedded = false }) {
     canManage ||
     isOperationViewer;
 
-  const canCreate =
-    canManage ||
-    isOperationVpOrSvp;
+  const canCreate = canManage;
 
   const canFinalUpload = canManage;
   const canReject = canManage;
@@ -1134,16 +1125,6 @@ export default function TerminationApprovalTab({ embedded = false }) {
               </button>
             </div>
 
-            <div className="termination-view-status">
-              <span className={badgeClass(selectedRequest.status)}>
-                {selectedRequest.status}
-              </span>
-
-              <strong>
-                {selectedRequest.employee_name || "-"}
-              </strong>
-            </div>
-
             <div className="modal-grid termination-view-grid">
               <div className="form-group">
                 <label>Employee</label>
@@ -1327,17 +1308,6 @@ export default function TerminationApprovalTab({ embedded = false }) {
                       }
                     />
                   </div>
-
-                  <button
-                    className="btn-primary"
-                    type="button"
-                    onClick={uploadFinalFile}
-                    disabled={actionLoading}
-                  >
-                    {actionLoading
-                      ? "Uploading..."
-                      : "Upload Final File & Approve"}
-                  </button>
                 </div>
               )}
 
@@ -1394,6 +1364,20 @@ export default function TerminationApprovalTab({ embedded = false }) {
                     }
                   >
                     Delete
+                  </button>
+                )}
+              
+              {selectedRequest.status === STATUS_WAITING_FINAL &&
+                canFinalUpload && (
+                  <button
+                    className="btn-primary"
+                    type="button"
+                    onClick={uploadFinalFile}
+                    disabled={actionLoading || !finalFile}
+                  >
+                    {actionLoading
+                      ? "Uploading..."
+                      : "Upload Final File & Approve"}
                   </button>
                 )}
             </div>

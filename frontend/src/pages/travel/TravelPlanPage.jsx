@@ -90,6 +90,8 @@ export default function TravelPlanPage() {
     loggedInRole === "it" ||
     loggedInDepartment === "tread department";
 
+  const isAdmin = loggedInRole === "admin";
+
   const [month, setMonth] = useState(today.getMonth());
   const [year, setYear] = useState(today.getFullYear());
   const [visitRange, setVisitRange] = useState("month");
@@ -111,10 +113,12 @@ export default function TravelPlanPage() {
     selectedPlan?.status
   );
 
-  const isSelectedPlanReadOnly = [
-    "completed",
-    "incomplete",
-  ].includes(selectedPlanStatus);
+  const isSelectedPlanReadOnly =
+    selectedPlanStatus === "completed" ||
+    (
+      selectedPlanStatus === "incomplete" &&
+      !isAdmin
+    );
 
   const [detailTab, setDetailTab] = useState("checkin");
   const [previewPhoto, setPreviewPhoto] = useState(null);
@@ -1258,6 +1262,18 @@ const selectedBranchPlans = useMemo(() => {
       review_cashbook_vs_voucher:
         note.review_cashbook_vs_voucher || "",
 
+      review_lor:
+        note.review_lor || "",
+
+      review_los:
+        note.review_los || "",
+
+      review_ldf:
+        note.review_ldf || "",
+
+      review_dcs:
+        note.review_dcs || "",
+
       review_bms:
         note.review_bms || "",
 
@@ -1505,6 +1521,74 @@ const selectedBranchPlans = useMemo(() => {
     }
   };
 
+  const adminCompleteIncompletePlan = async (plan) => {
+    if (!plan?.id) {
+      return;
+    }
+
+    if (!isAdmin) {
+      return;
+    }
+
+    if (
+      normalizeValue(plan.status) !== "incomplete"
+    ) {
+      return;
+    }
+
+    const confirmed = window.confirm(
+      "Mark this incomplete travel plan as Completed?\n\nUse this only when the employee forgot to submit the completed travel plan."
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      const res = await api.put(
+        `/travel-plans/${plan.id}/admin-complete`
+      );
+
+      const updatedPlan = res.data?.plan;
+
+      if (updatedPlan) {
+        setPlans((currentPlans) =>
+          currentPlans.map((item) =>
+            Number(item.id) === Number(updatedPlan.id)
+              ? updatedPlan
+              : item
+          )
+        );
+
+        if (
+          Number(selectedPlan?.id) ===
+          Number(updatedPlan.id)
+        ) {
+          setSelectedPlan(updatedPlan);
+        }
+      }
+
+      await Promise.all([
+        fetchPlans(),
+        fetchScopedStaff(),
+      ]);
+
+      alert(
+        "Travel plan marked as Completed successfully."
+      );
+    } catch (err) {
+      console.error(
+        "Admin complete travel plan error:",
+        err
+      );
+
+      alert(
+        err.response?.data?.message ||
+          "Failed to complete travel plan."
+      );
+    }
+  };
+
   return (
     <div className="travel-modern-page">
       <div className="travel-modern-layout">
@@ -1645,6 +1729,11 @@ const selectedBranchPlans = useMemo(() => {
               updateTravelPlan={updateTravelPlan}
               submitPlan={submitPlan}
 
+              isAdmin={isAdmin}
+              adminCompleteIncompletePlan={
+                adminCompleteIncompletePlan
+              }
+
               canDeleteTravelPlans={canDeleteTravelPlans}
               deleteTravelPlan={deleteTravelPlan}
             />
@@ -1659,6 +1748,8 @@ const selectedBranchPlans = useMemo(() => {
               selectedStaffPlans={selectedStaffPlans}
               normalizeValue={normalizeValue}
               openPlan={openPlan}
+
+              isAdmin={isAdmin}
               canDeleteTravelPlans={canDeleteTravelPlans}
               deleteTravelPlan={deleteTravelPlan}
             />

@@ -811,6 +811,7 @@ const canDeleteTravelRecord = (req) => {
   return (
     role === "admin" ||
     role === "it" ||
+    
     department === "tread department"
   );
 };
@@ -1692,13 +1693,23 @@ router.put("/travel-plans/:id", requireAuth, async (req, res) => {
       });
     }
 
+    const currentRole = normalizeRole(req.user?.role);
+    const isAdminUser = currentRole === "admin";
+
     if (
-      existingStatus === "incomplete" ||
-      (
-        existingStatus === "pending" &&
-        existingPlanDate &&
-        existingPlanDate < today
-      )
+      existingStatus === "incomplete" &&
+      !isAdminUser
+    ) {
+      return res.status(400).json({
+        message:
+          "This travel plan is incomplete and can only be edited by Admin.",
+      });
+    }
+
+    if (
+      existingStatus === "pending" &&
+      existingPlanDate &&
+      existingPlanDate < today
     ) {
       await client.query(
         `
@@ -1712,10 +1723,12 @@ router.put("/travel-plans/:id", requireAuth, async (req, res) => {
         [id]
       );
 
-      return res.status(400).json({
-        message:
-          "This travel plan was not completed on its scheduled date and can no longer be edited.",
-      });
+      if (!isAdminUser) {
+        return res.status(400).json({
+          message:
+            "This travel plan was not completed on its scheduled date and can only be edited by Admin.",
+        });
+      }
     }
 
     const title = toStr(req.body.title);
@@ -4668,6 +4681,97 @@ router.get(
       return sendServerError(
         res,
         "GET /travel-plans/history/completed",
+        error
+      );
+    }
+  }
+);
+
+// =====================================================
+// ADMIN COMPLETE INCOMPLETE TRAVEL PLAN
+// =====================================================
+
+router.put(
+  "/travel-plans/:id/admin-complete",
+  requireAuth,
+  async (req, res) => {
+    try {
+      const role = normalizeRole(req.user?.role);
+
+      if (role !== "admin") {
+        return res.status(403).json({
+          message:
+            "Only Admin can complete an incomplete travel plan.",
+        });
+      }
+
+      const travelPlanId = Number(req.params.id);
+
+      if (!isValidId(travelPlanId)) {
+        return res.status(400).json({
+          message: "Invalid travel plan ID.",
+        });
+      }
+
+      const existingResult = await pool.query(
+        `
+        SELECT
+          id,
+          status
+        FROM public.travel_plans
+        WHERE id = $1
+        LIMIT 1
+        `,
+        [travelPlanId]
+      );
+
+      if (!existingResult.rowCount) {
+        return res.status(404).json({
+          message: "Travel plan not found.",
+        });
+      }
+
+      const currentStatus = norm(
+        existingResult.rows[0].status
+      );
+
+      if (currentStatus !== "incomplete") {
+        return res.status(400).json({
+          message:
+            "Only incomplete travel plans can be completed using Admin override.",
+        });
+      }
+
+      const result = await pool.query(
+        `
+        UPDATE public.travel_plans
+        SET
+          status = 'Completed',
+          submitted_at =
+            NOW() AT TIME ZONE 'Asia/Manila',
+          submitted_by = $2,
+          updated_at =
+            NOW() AT TIME ZONE 'Asia/Manila'
+        WHERE id = $1
+
+        RETURNING
+          ${travelPlanSelect}
+        `,
+        [
+          travelPlanId,
+          req.user?.id || null,
+        ]
+      );
+
+      return res.json({
+        message:
+          "Incomplete travel plan marked as completed by Admin.",
+        plan: result.rows[0],
+      });
+    } catch (error) {
+      return sendServerError(
+        res,
+        "PUT /travel-plans/:id/admin-complete",
         error
       );
     }

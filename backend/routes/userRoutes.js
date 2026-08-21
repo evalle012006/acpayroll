@@ -571,8 +571,7 @@ router.put(
       }
 
       return res.json({
-        message:
-          "The user must create a new password on their next login.",
+        message: "User is now required to reset their password.",
         user: result.rows[0],
       });
     } catch (error) {

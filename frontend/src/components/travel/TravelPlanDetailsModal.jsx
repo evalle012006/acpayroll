@@ -25,9 +25,13 @@ export default function TravelPlanDetailsModal({
       updateTravelPlan,
       submitPlan,
 
+      isAdmin,
+      adminCompleteIncompletePlan,
+
       canDeleteTravelPlans,
       deleteTravelPlan,
-    }) {
+}) {
+
         return (
           <>
             {selectedPlan && (
@@ -524,27 +528,42 @@ export default function TravelPlanDetailsModal({
                     </button>
 
                     {![
-                      "completed",
-                      "incomplete",
-                    ].includes(
-                      normalizeValue(selectedPlan.status)
-                    ) && (
-                      <>
-                        <button
-                          type="button"
-                          onClick={updateTravelPlan}
-                        >
-                          Save Changes
-                        </button>
+                        "completed",
+                        "incomplete",
+                      ].includes(
+                        normalizeValue(selectedPlan.status)
+                      ) && (
+                        <>
+                          <button
+                            type="button"
+                            onClick={updateTravelPlan}
+                          >
+                            Save Changes
+                          </button>
 
+                          <button
+                            type="button"
+                            onClick={submitPlan}
+                          >
+                            Submit as Completed
+                          </button>
+                        </>
+                      )
+                    }
+
+                    {normalizeValue(selectedPlan.status) === "incomplete" &&
+                      isAdmin && (
                         <button
                           type="button"
-                          onClick={submitPlan}
+                          className="travel-admin-complete-btn"
+                          onClick={() =>
+                            adminCompleteIncompletePlan(selectedPlan)
+                          }
                         >
-                          Submit as Completed
+                          Submit as Complete
                         </button>
-                      </>
-                    )}
+                      )
+                    }
 
                     {canDeleteTravelPlans && (
                       <button
