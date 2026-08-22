@@ -57,6 +57,34 @@ const userRegion = (req) =>
 const userDivision = (req) =>
   toStr(req.user?.division);
 
+const userFullName = (req) => {
+  const firstName = toStr(
+    req.user?.first_name
+  );
+
+  const middleName = toStr(
+    req.user?.middle_name
+  );
+
+  const lastName = toStr(
+    req.user?.last_name
+  );
+
+  const fullName = [
+    firstName,
+    middleName,
+    lastName,
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+  return (
+    fullName ||
+    toStr(req.user?.username) ||
+    null
+  );
+};
+
 // =====================================================
 // OPERATION DEPARTMENT SCOPE
 // =====================================================
@@ -525,44 +553,48 @@ router.post(
             req.file.originalname || "sbf-file"
           );
       }
-      const result =
-        await pool.query(
-          `
-          INSERT INTO public.sbf_orders (
-            order_no,
-            employee_no,
-            employee_name,
-            branch_code,
-            branch_name,
-            assistance_type,
-            amount,
-            reason,
-            date_created,
-            effective_date,
-            status,
-            attachment_path,
-            attachment_name,
-            attachment_mime
-          )
-          VALUES (
-            $1,
-            $2,
-            $3,
-            $4,
-            $5,
-            $6,
-            $7,
-            $8,
-            $9,
-            $10,
-            $11,
-            $12,
-            $13,
-            $14
-          )
+      const client = await pool.connect();
 
-          RETURNING
-            ${returningSbfFields}
+      try {
+        await client.query("BEGIN");
+
+        const result = await client.query(
+          `
+            INSERT INTO public.sbf_orders (
+              order_no,
+              employee_no,
+              employee_name,
+              branch_code,
+              branch_name,
+              assistance_type,
+              amount,
+              reason,
+              date_created,
+              effective_date,
+              status,
+              attachment_path,
+              attachment_name,
+              attachment_mime
+            )
+            VALUES (
+              $1,
+              $2,
+              $3,
+              $4,
+              $5,
+              $6,
+              $7,
+              $8,
+              $9,
+              $10,
+              $11,
+              $12,
+              $13,
+              $14
+            )
+
+            RETURNING
+              ${returningSbfFields}
           `,
           [
             order_no,
@@ -582,9 +614,43 @@ router.post(
           ]
         );
 
-      return res
-        .status(201)
-        .json(result.rows[0]);
+        const createdOrder = result.rows[0];
+
+        await client.query(
+          `
+            INSERT INTO public.sbf_order_approval_history (
+              sbf_order_id,
+              action,
+              acted_by_user_id,
+              acted_by_name,
+              acted_by_role,
+              acted_by_department,
+              remarks
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7)
+          `,
+          [
+            createdOrder.id,
+            "Created",
+            req.user?.id ?? null,
+            userFullName(req),
+            req.user?.role ?? null,
+            req.user?.department ?? null,
+            "SBF Order created",
+          ]
+        );
+
+        await client.query("COMMIT");
+
+        return res
+          .status(201)
+          .json(createdOrder);
+      } catch (error) {
+        await client.query("ROLLBACK");
+        throw error;
+      } finally {
+        client.release();
+      }
     } catch (err) {
       console.error(
         "CREATE SBF ORDER ERROR:",
@@ -723,14 +789,14 @@ router.put(
     "approve"
   ),
   async (req, res) => {
+    const client = await pool.connect();
+
     try {
-      const id =
-        Number(req.params.id);
+      const id = Number(req.params.id);
 
       if (!Number.isFinite(id)) {
         return res.status(400).json({
-          message:
-            "Invalid SBF order id",
+          message: "Invalid SBF order id",
         });
       }
 
@@ -740,20 +806,17 @@ router.put(
           req.user?.employee_id
       );
 
-      if (
-        !Number.isFinite(
-          approvedBy
-        )
-      ) {
+      if (!Number.isFinite(approvedBy)) {
         return res.status(400).json({
           message:
             "Invalid approver id. Check req.user.id / user_id / employee_id",
         });
       }
 
-      const result =
-        await pool.query(
-          `
+      await client.query("BEGIN");
+
+      const result = await client.query(
+        `
           UPDATE public.sbf_orders
           SET
             status = 'Approved',
@@ -763,24 +826,50 @@ router.put(
 
           RETURNING
             ${returningSbfFields}
-          `,
-          [
-            id,
-            approvedBy,
-          ]
-        );
+        `,
+        [id, approvedBy]
+      );
 
       if (!result.rows.length) {
+        await client.query("ROLLBACK");
+
         return res.status(404).json({
-          message:
-            "SBF order not found",
+          message: "SBF order not found",
         });
       }
 
-      return res.json(
-        result.rows[0]
+      const approvedOrder = result.rows[0];
+
+      await client.query(
+        `
+          INSERT INTO public.sbf_order_approval_history (
+            sbf_order_id,
+            action,
+            acted_by_user_id,
+            acted_by_name,
+            acted_by_role,
+            acted_by_department,
+            remarks
+          )
+          VALUES ($1, $2, $3, $4, $5, $6, $7)
+        `,
+        [
+          id,
+          "Approved",
+          approvedBy,
+          userFullName(req),
+          req.user?.role ?? null,
+          req.user?.department ?? null,
+          req.body?.remarks ?? "SBF Order approved",
+        ]
       );
+
+      await client.query("COMMIT");
+
+      return res.json(approvedOrder);
     } catch (err) {
+      await client.query("ROLLBACK");
+
       console.error(
         "APPROVE SBF ORDER ERROR:",
         err
@@ -789,6 +878,8 @@ router.put(
       return res.status(500).json({
         message: err.message,
       });
+    } finally {
+      client.release();
     }
   }
 );
@@ -809,20 +900,34 @@ router.put(
     "reject"
   ),
   async (req, res) => {
+    const client = await pool.connect();
+
     try {
-      const id =
-        Number(req.params.id);
+      const id = Number(req.params.id);
 
       if (!Number.isFinite(id)) {
         return res.status(400).json({
-          message:
-            "Invalid SBF order id",
+          message: "Invalid SBF order id",
         });
       }
 
-      const result =
-        await pool.query(
-          `
+      const rejectedBy = Number(
+        req.user?.id ??
+          req.user?.user_id ??
+          req.user?.employee_id
+      );
+
+      if (!Number.isFinite(rejectedBy)) {
+        return res.status(400).json({
+          message:
+            "Invalid rejector id. Check req.user.id / user_id / employee_id",
+        });
+      }
+
+      await client.query("BEGIN");
+
+      const result = await client.query(
+        `
           UPDATE public.sbf_orders
           SET
             status = 'Rejected'
@@ -830,21 +935,50 @@ router.put(
 
           RETURNING
             ${returningSbfFields}
-          `,
-          [id]
-        );
+        `,
+        [id]
+      );
 
       if (!result.rows.length) {
+        await client.query("ROLLBACK");
+
         return res.status(404).json({
-          message:
-            "SBF order not found",
+          message: "SBF order not found",
         });
       }
 
-      return res.json(
-        result.rows[0]
+      const rejectedOrder = result.rows[0];
+
+      await client.query(
+        `
+          INSERT INTO public.sbf_order_approval_history (
+            sbf_order_id,
+            action,
+            acted_by_user_id,
+            acted_by_name,
+            acted_by_role,
+            acted_by_department,
+            remarks
+          )
+          VALUES ($1, $2, $3, $4, $5, $6, $7)
+        `,
+        [
+          id,
+          "Rejected",
+          rejectedBy,
+          userFullName(req),
+          req.user?.role ?? null,
+          req.user?.department ?? null,
+          req.body?.remarks ?? "SBF Order rejected",
+        ]
       );
+
+      await client.query("COMMIT");
+
+      return res.json(rejectedOrder);
     } catch (err) {
+      await client.query("ROLLBACK");
+
       console.error(
         "REJECT SBF ORDER ERROR:",
         err
@@ -852,6 +986,64 @@ router.put(
 
       return res.status(500).json({
         message: err.message,
+      });
+    } finally {
+      client.release();
+    }
+  }
+);
+
+// =====================================================
+// GET SBF APPROVAL HISTORY
+// =====================================================
+
+router.get(
+  "/sbf-orders/:id/history",
+  requireAuth,
+  requirePermission(
+    "sbf_order",
+    "view"
+  ),
+  async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+
+      if (!Number.isFinite(id)) {
+        return res.status(400).json({
+          message: "Invalid SBF order id",
+        });
+      }
+
+      const result = await pool.query(
+        `
+          SELECT
+            id,
+            sbf_order_id,
+            action,
+            acted_by_user_id,
+            acted_by_name,
+            acted_by_role,
+            acted_by_department,
+            remarks,
+            created_at
+          FROM public.sbf_order_approval_history
+          WHERE sbf_order_id = $1
+          ORDER BY created_at ASC, id ASC
+        `,
+        [id]
+      );
+
+      return res.json(result.rows);
+    } catch (err) {
+      console.error(
+        "GET SBF APPROVAL HISTORY ERROR:",
+        err
+      );
+
+      return res.status(500).json({
+        message:
+          err.message ||
+          "Failed to load SBF approval history",
       });
     }
   }

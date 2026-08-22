@@ -47,6 +47,38 @@ const login = async (req, res) => {
 
     const user = result.rows[0];
 
+    const scopeResult = await pool.query(
+      `
+      SELECT department
+      FROM public.user_department_scopes
+      WHERE user_id = $1
+      ORDER BY department
+      `,
+      [user.id]
+    );
+
+    const departmentScopes = scopeResult.rows
+      .map((row) => String(row.department || "").trim())
+      .filter(Boolean);
+
+    const primaryDepartment = String(
+      user.department || ""
+    ).trim();
+
+    const hasPrimaryDepartment =
+      departmentScopes.some(
+        (department) =>
+          department.toLowerCase() ===
+          primaryDepartment.toLowerCase()
+      );
+
+    if (
+      primaryDepartment &&
+      !hasPrimaryDepartment
+    ) {
+      departmentScopes.push(primaryDepartment);
+    }
+
     if (
       String(user.status || "Active").trim().toLowerCase() === "inactive"
     ) {
@@ -123,6 +155,9 @@ const login = async (req, res) => {
       middle_name: user.middle_name ?? null,
       last_name: user.last_name ?? null,
       department: user.department ?? null,
+
+      department_scopes: departmentScopes,
+
       status: user.status || "Active",
     };
 

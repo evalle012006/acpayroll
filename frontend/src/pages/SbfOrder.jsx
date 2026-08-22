@@ -161,6 +161,9 @@ export default function SbfOrder() {
 
   const [selectedOrder, setSelectedOrder] = useState(null);
 
+  const [approvalHistory, setApprovalHistory] = useState([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+
   const [attachment, setAttachment] = useState(null);
 
   const [page, setPage] = useState(1);
@@ -317,13 +320,37 @@ export default function SbfOrder() {
     setShowCreate(false);
   };
 
-  const openViewModal = (order) => {
+  const openViewModal = async (order) => {
     setSelectedOrder(order);
     setShowView(true);
+
+    setApprovalHistory([]);
+    setHistoryLoading(true);
+
+    try {
+      const res = await api.get(
+        `/sbf-orders/${order.id}/history`
+      );
+
+      setApprovalHistory(
+        Array.isArray(res.data) ? res.data : []
+      );
+    } catch (err) {
+      console.error(
+        "Failed to load SBF approval history:",
+        err
+      );
+
+      setApprovalHistory([]);
+    } finally {
+      setHistoryLoading(false);
+    }
   };
 
   const closeViewModal = () => {
     setSelectedOrder(null);
+    setApprovalHistory([]);
+    setHistoryLoading(false);
     setShowView(false);
   };
 
@@ -1199,7 +1226,7 @@ export default function SbfOrder() {
                 </div>
 
                 <div className="sbf-field full">
-                  <label>Reason</label>
+                  <label>Description</label>
 
                   <textarea
                     name="reason"
@@ -1210,9 +1237,7 @@ export default function SbfOrder() {
                     required
                   />
                 </div>
-
               </div>
-
               <div className="sbf-modal-actions">
 
                 <button
@@ -1379,7 +1404,7 @@ export default function SbfOrder() {
               </div>
 
               <div className="sbf-view-item full">
-                <span>Reason</span>
+                <span>Description</span>
 
                 <div className="sbf-view-box">
                   {selectedOrder.reason || "—"}
@@ -1418,7 +1443,80 @@ export default function SbfOrder() {
 
                 </div>
               </div>
+
+              <div className="sbf-view-item full sbf-history-section">
+                <span>Approval History</span>
+
+                <div className="sbf-history-box">
+                  {historyLoading ? (
+                    <div className="sbf-history-empty">
+                      Loading approval history...
+                    </div>
+                  ) : approvalHistory.length === 0 ? (
+                    <div className="sbf-history-empty">
+                      No approval history available.
+                    </div>
+                  ) : (
+                    <div className="sbf-history-list">
+                      {approvalHistory.map((history) => (
+                        <div
+                          key={history.id}
+                          className={`sbf-history-item ${norm(
+                            history.action
+                          )}`}
+                        >
+                          <div className="sbf-history-marker">
+                            <span />
+                          </div>
+
+                          <div className="sbf-history-content">
+                            <div className="sbf-history-top">
+                              <strong>
+                                {history.action || "Activity"}
+                              </strong>
+
+                              <span className="sbf-history-date">
+                                {history.created_at
+                                  ? new Date(
+                                      history.created_at
+                                    ).toLocaleString("en-PH", {
+                                      year: "numeric",
+                                      month: "short",
+                                      day: "2-digit",
+                                      hour: "numeric",
+                                      minute: "2-digit",
+                                    })
+                                  : "—"}
+                              </span>
+                            </div>
+
+                            <div className="sbf-history-person">
+                              {history.acted_by_name ||
+                                "Unknown User"}
+                            </div>
+
+                            <div className="sbf-history-role">
+                              {history.acted_by_role || "—"}
+                              {history.acted_by_department
+                                ? ` • ${history.acted_by_department}`
+                                : ""}
+                            </div>
+
+                            {history.remarks && (
+                              <div className="sbf-history-remarks">
+                                {history.remarks}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+
             </div>
+
             <div className="sbf-modal-actions">
 
               <button

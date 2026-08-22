@@ -1042,3 +1042,193 @@
     width: 100%;
   }
 }
+
+/* =========================================================
+   SBF APPROVAL HISTORY
+========================================================= */
+
+.sbf-history-section {
+  margin-top: 4px;
+}
+
+.sbf-history-box {
+  width: 100%;
+  padding: 14px 16px;
+
+  border: 1px solid var(--border);
+  border-radius: 12px;
+
+  background: var(--panel-2);
+
+  box-sizing: border-box;
+}
+
+.sbf-history-empty {
+  padding: 14px;
+
+  color: var(--muted);
+
+  font-size: 12px;
+  font-weight: 700;
+
+  text-align: center;
+}
+
+.sbf-history-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.sbf-history-item {
+  position: relative;
+
+  display: grid;
+  grid-template-columns: 26px 1fr;
+
+  gap: 10px;
+
+  padding: 0 0 18px;
+}
+
+.sbf-history-item:last-child {
+  padding-bottom: 0;
+}
+
+.sbf-history-marker {
+  position: relative;
+
+  display: flex;
+  justify-content: center;
+}
+
+.sbf-history-marker::after {
+  content: "";
+
+  position: absolute;
+
+  top: 14px;
+  bottom: -18px;
+
+  width: 2px;
+
+  background: var(--border);
+}
+
+.sbf-history-item:last-child
+  .sbf-history-marker::after {
+  display: none;
+}
+
+.sbf-history-marker span {
+  position: relative;
+  z-index: 2;
+
+  width: 11px;
+  height: 11px;
+
+  margin-top: 4px;
+
+  border-radius: 50%;
+
+  background: #3b82f6;
+
+  box-shadow:
+    0 0 0 4px rgba(59, 130, 246, 0.14);
+}
+
+.sbf-history-item.approved
+  .sbf-history-marker span {
+  background: #10b981;
+
+  box-shadow:
+    0 0 0 4px rgba(16, 185, 129, 0.14);
+}
+
+.sbf-history-item.rejected
+  .sbf-history-marker span {
+  background: #ef4444;
+
+  box-shadow:
+    0 0 0 4px rgba(239, 68, 68, 0.14);
+}
+
+.sbf-history-item.created
+  .sbf-history-marker span {
+  background: #3b82f6;
+}
+
+.sbf-history-content {
+  min-width: 0;
+}
+
+.sbf-history-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+
+  gap: 12px;
+}
+
+.sbf-history-top strong {
+  color: var(--text);
+
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.sbf-history-date {
+  color: var(--muted);
+
+  font-size: 10px;
+  font-weight: 700;
+
+  white-space: nowrap;
+}
+
+.sbf-history-person {
+  margin-top: 4px;
+
+  color: var(--text);
+
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.sbf-history-role {
+  margin-top: 2px;
+
+  color: var(--muted);
+
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.sbf-history-remarks {
+  margin-top: 7px;
+
+  padding: 7px 9px;
+
+  border-radius: 8px;
+
+  background:
+    rgba(59, 130, 246, 0.07);
+
+  color: var(--muted);
+
+  font-size: 10px;
+  line-height: 1.5;
+  font-weight: 650;
+}
+
+@media (max-width: 680px) {
+  .sbf-history-top {
+    align-items: flex-start;
+    flex-direction: column;
+
+    gap: 3px;
+  }
+
+  .sbf-history-date {
+    white-space: normal;
+  }
+}
