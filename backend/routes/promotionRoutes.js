@@ -1410,10 +1410,10 @@ router.put(
         await client.query(
           `
           UPDATE public.promotion_orders
-          SET approval_stage = $2
-          WHERE id = $1
+          SET approval_stage = $2::text
+          WHERE id = $1::integer
           `,
-          [id, currentStage]
+          [id, String(currentStage)]
         );
       }
 
@@ -1446,10 +1446,10 @@ router.put(
             status = 'Approved',
             ${column} = 'Approved',
 
-            final_approved_by = $2,
+            final_approved_by = $2::integer,
             final_approved_at = NOW(),
 
-            approved_by = $2,
+            approved_by = $2::integer,
             approved_at = NOW(),
 
             rejected_by = NULL,
@@ -1462,9 +1462,15 @@ router.put(
             approved_attachment_path = $3,
             approved_attachment_name = $4,
             approved_attachment_mime = $5
-          WHERE id = $1
+          WHERE id = $1::integer
           `,
-          [id, req.user?.id ?? null, latestPath, latestName, latestMime]
+          [
+            id,
+            req.user?.id ? Number(req.user.id) : null,
+            latestPath,
+            latestName,
+            latestMime,
+          ]
         );
 
         await client.query(
@@ -1513,25 +1519,25 @@ router.put(
         SET
           ${column} = 'Approved',
 
-          ${historyColumns.approvedBy} = $2,
+          ${historyColumns.approvedBy} = $2::integer,
           ${historyColumns.approvedAt} = NOW(),
 
-          approval_stage = $3,
+          approval_stage = $3::text,
 
           rejected_by = NULL,
           rejected_at = NULL,
           rejection_reason = NULL,
 
-          attachment_path = $4,
-          attachment_name = $5,
-          attachment_mime = $6
+          attachment_path = $4::text,
+          attachment_name = $5::text,
+          attachment_mime = $6::text
 
-        WHERE id = $1
+        WHERE id = $1::integer
         `,
         [
           id,
-          req.user?.id ?? null,
-          nextStage,
+          req.user?.id ? Number(req.user.id) : null,
+          String(nextStage),
           latestPath,
           latestName,
           latestMime,

@@ -166,6 +166,11 @@ export default function SbfOrder() {
 
   const [attachment, setAttachment] = useState(null);
 
+  const [employees, setEmployees] = useState([]);
+  const [employeeSearch, setEmployeeSearch] = useState("");
+  const [showEmployeeDropdown, setShowEmployeeDropdown] = useState(false);
+  const [employeesLoading, setEmployeesLoading] = useState(false);
+
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
 
@@ -372,6 +377,8 @@ export default function SbfOrder() {
     });
 
     setAttachment(null);
+    setEmployeeSearch("");
+    setShowEmployeeDropdown(false);
 
     const fileInput = document.getElementById(
       "sbf-attachment-input"
@@ -390,6 +397,86 @@ export default function SbfOrder() {
       [name]: value,
     }));
   };
+
+  const fetchEmployees = async () => {
+    try {
+      setEmployeesLoading(true);
+
+      const res = await api.get("/staff");
+
+      const rows = Array.isArray(res.data)
+        ? res.data
+        : Array.isArray(res.data?.staff)
+        ? res.data.staff
+        : Array.isArray(res.data?.data)
+        ? res.data.data
+        : [];
+
+      setEmployees(rows);
+    } catch (err) {
+      console.error("Failed to load employees:", err);
+      setEmployees([]);
+    } finally {
+      setEmployeesLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (showCreate && canCreate && employees.length === 0) {
+      fetchEmployees();
+    }
+  }, [showCreate, canCreate]);
+
+  const filteredEmployees = useMemo(() => {
+  const q = norm(employeeSearch);
+
+  if (!q) {
+    return employees.slice(0, 30);
+  }
+
+  return employees
+    .filter((employee) => {
+      const searchable = [
+        employee.employee_no,
+        employee.id,
+        employee.fullname,
+        employee.first_name,
+        employee.middle_name,
+        employee.last_name,
+        employee.branch_code,
+        employee.branch_name,
+      ]
+        .map((value) => String(value || ""))
+        .join(" ")
+        .toLowerCase();
+
+      return searchable.includes(q);
+    })
+    .slice(0, 30);
+}, [employees, employeeSearch]);
+
+const handleSelectEmployee = (employee) => {
+  const employeeName =
+    employee.fullname ||
+    [
+      employee.last_name,
+      employee.first_name,
+      employee.middle_name,
+    ]
+      .filter(Boolean)
+      .join(", ");
+
+  setForm((prev) => ({
+    ...prev,
+    employee_no: employee.employee_no || "",
+    employee_name: employeeName,
+    branch_code: employee.branch_code || "",
+    branch_name: employee.branch_name || "",
+  }));
+
+  setEmployeeSearch(employeeName);
+  setShowEmployeeDropdown(false);
+};
 
   /* =========================================================
      CREATE
@@ -515,36 +602,40 @@ export default function SbfOrder() {
 
     try {
       const res = await api.get(
-        `/sbf-orders/${order.id}/download`,
-        {
-          responseType: "blob",
-        }
+        `/sbf-orders/${order.id}/download`
       );
 
-      const blobUrl = window.URL.createObjectURL(
-        new Blob([res.data])
-      );
-
-      const link = document.createElement("a");
-
-      link.href = blobUrl;
-
-      link.download =
+      const url = res.data?.url;
+      const fileName =
+        res.data?.file_name ||
         order.attachment_name ||
         `SBF-${order.id}-attachment`;
 
+      if (!url) {
+        throw new Error(
+          "Download URL was not returned by the server."
+        );
+      }
+
+      const link = document.createElement("a");
+
+      link.href = url;
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+      link.download = fileName;
+
       document.body.appendChild(link);
-
       link.click();
-
       link.remove();
-
-      window.URL.revokeObjectURL(blobUrl);
     } catch (err) {
-      console.error("Download SBF file error:", err);
+      console.error(
+        "Download SBF file error:",
+        err
+      );
 
       alert(
         err?.response?.data?.message ||
+          err?.message ||
           "Failed to download file"
       );
     }
@@ -1082,23 +1173,81 @@ export default function SbfOrder() {
                     type="text"
                     name="employee_no"
                     value={form.employee_no}
-                    onChange={handleChange}
-                    placeholder="Enter employee no"
+                    placeholder="Auto-filled"
+                    readOnly
                     required
                   />
                 </div>
 
-                <div className="sbf-field">
+                <div className="sbf-field sbf-employee-picker">
                   <label>Employee Name</label>
 
                   <input
                     type="text"
-                    name="employee_name"
-                    value={form.employee_name}
-                    onChange={handleChange}
-                    placeholder="Enter employee name"
+                    value={employeeSearch}
+                    placeholder="Search employee name or employee no..."
+                    autoComplete="off"
+                    onFocus={() => setShowEmployeeDropdown(true)}
+                    onChange={(e) => {
+                      setEmployeeSearch(e.target.value);
+                      setShowEmployeeDropdown(true);
+
+                      setForm((prev) => ({
+                        ...prev,
+                        employee_no: "",
+                        employee_name: "",
+                        branch_code: "",
+                        branch_name: "",
+                      }));
+                    }}
                     required
                   />
+
+                  {showEmployeeDropdown && (
+                    <div className="sbf-employee-dropdown">
+                      {employeesLoading ? (
+                        <div className="sbf-employee-empty">
+                          Loading employees...
+                        </div>
+                      ) : filteredEmployees.length === 0 ? (
+                        <div className="sbf-employee-empty">
+                          No employee found.
+                        </div>
+                      ) : (
+                        filteredEmployees.map((employee) => {
+                          const name =
+                            employee.fullname ||
+                            [
+                              employee.last_name,
+                              employee.first_name,
+                              employee.middle_name,
+                            ]
+                              .filter(Boolean)
+                              .join(", ");
+
+                          return (
+                            <button
+                              key={employee.id || employee.employee_no}
+                              type="button"
+                              className="sbf-employee-option"
+                              onMouseDown={(e) => {
+                                e.preventDefault();
+                                handleSelectEmployee(employee);
+                              }}
+                            >
+                              <strong>{name}</strong>
+
+                              <span>
+                                {employee.employee_no || "No employee no."}
+                                {" • "}
+                                {employee.branch_name || "No branch"}
+                              </span>
+                            </button>
+                          );
+                        })
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 <div className="sbf-field">
@@ -1108,8 +1257,8 @@ export default function SbfOrder() {
                     type="text"
                     name="branch_code"
                     value={form.branch_code}
-                    onChange={handleChange}
-                    placeholder="Enter branch code"
+                    placeholder="Auto-filled"
+                    readOnly
                     required
                   />
                 </div>
@@ -1121,8 +1270,8 @@ export default function SbfOrder() {
                     type="text"
                     name="branch_name"
                     value={form.branch_name}
-                    onChange={handleChange}
-                    placeholder="Enter branch name"
+                    placeholder="Auto-filled"
+                    readOnly
                     required
                   />
                 </div>

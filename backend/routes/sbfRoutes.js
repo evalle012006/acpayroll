@@ -353,11 +353,12 @@ router.get(
           FROM public.sbf_orders so
 
           LEFT JOIN public.staff s
-            ON LOWER(TRIM(COALESCE(s.employee_no, '')))
-            = LOWER(TRIM(COALESCE(so.employee_no, '')))
+            ON TRIM(COALESCE(s.employee_no::TEXT, ''))
+              = TRIM(COALESCE(so.employee_no::TEXT, ''))
 
           LEFT JOIN public.branches b
-            ON b.id = s.branch_id
+            ON TRIM(COALESCE(b.id::TEXT, ''))
+              = TRIM(COALESCE(s.branch_id::TEXT, ''))
 
           WHERE 1 = 1
 
@@ -444,11 +445,12 @@ router.get(
         FROM public.sbf_orders so
 
         LEFT JOIN public.staff s
-          ON LOWER(TRIM(COALESCE(s.employee_no, '')))
-          = LOWER(TRIM(COALESCE(so.employee_no, '')))
+        ON TRIM(COALESCE(s.employee_no::TEXT, ''))
+          = TRIM(COALESCE(so.employee_no::TEXT, ''))
 
         LEFT JOIN public.branches b
-          ON b.id = s.branch_id
+        ON TRIM(COALESCE(b.id::TEXT, ''))
+          = TRIM(COALESCE(s.branch_id::TEXT, ''))
 
         WHERE so.id = $1
 
@@ -715,11 +717,12 @@ router.get(
           FROM public.sbf_orders so
 
           LEFT JOIN public.staff s
-            ON LOWER(TRIM(COALESCE(s.employee_no, '')))
-            = LOWER(TRIM(COALESCE(so.employee_no, '')))
+          ON TRIM(COALESCE(s.employee_no::TEXT, ''))
+            = TRIM(COALESCE(so.employee_no::TEXT, ''))
 
           LEFT JOIN public.branches b
-            ON b.id = s.branch_id
+          ON TRIM(COALESCE(b.id::TEXT, ''))
+            = TRIM(COALESCE(s.branch_id::TEXT, ''))
 
           WHERE so.id = $1
 
@@ -792,6 +795,13 @@ router.put(
     const client = await pool.connect();
 
     try {
+      if (isOperationDepartment(req)) {
+        return res.status(403).json({
+          message:
+            "Operation Department users are not allowed to approve SBF orders.",
+        });
+      }
+
       const id = Number(req.params.id);
 
       if (!Number.isFinite(id)) {
@@ -903,6 +913,13 @@ router.put(
     const client = await pool.connect();
 
     try {
+      if (isOperationDepartment(req)) {
+        return res.status(403).json({
+          message:
+            "Operation Department users are not allowed to reject SBF orders.",
+        });
+      }
+
       const id = Number(req.params.id);
 
       if (!Number.isFinite(id)) {
@@ -1014,23 +1031,46 @@ router.get(
         });
       }
 
+      const scope = getOperationScope(req);
+
+      const shiftedWhere = scope.where.replace(
+        /\$1/g,
+        "$2"
+      );
+
       const result = await pool.query(
         `
           SELECT
-            id,
-            sbf_order_id,
-            action,
-            acted_by_user_id,
-            acted_by_name,
-            acted_by_role,
-            acted_by_department,
-            remarks,
-            created_at
-          FROM public.sbf_order_approval_history
-          WHERE sbf_order_id = $1
-          ORDER BY created_at ASC, id ASC
+            h.id,
+            h.sbf_order_id,
+            h.action,
+            h.acted_by_user_id,
+            h.acted_by_name,
+            h.acted_by_role,
+            h.acted_by_department,
+            h.remarks,
+            h.created_at
+
+          FROM public.sbf_order_approval_history h
+
+          INNER JOIN public.sbf_orders so
+            ON so.id = h.sbf_order_id
+
+          LEFT JOIN public.staff s
+            ON TRIM(COALESCE(s.employee_no::TEXT, ''))
+            = TRIM(COALESCE(so.employee_no::TEXT, ''))
+
+          LEFT JOIN public.branches b
+            ON TRIM(COALESCE(b.id::TEXT, ''))
+            = TRIM(COALESCE(s.branch_id::TEXT, ''))
+
+          WHERE h.sbf_order_id = $1
+
+          ${shiftedWhere}
+
+          ORDER BY h.created_at ASC, h.id ASC
         `,
-        [id]
+        [id, ...scope.params]
       );
 
       return res.json(result.rows);
