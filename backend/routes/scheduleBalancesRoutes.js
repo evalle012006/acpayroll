@@ -136,30 +136,24 @@ const buildLiveSql = (whereSql = "") => `
       lr.*,
 
       CASE
-        WHEN COALESCE(
-          lr.disbursement_date,
-          lr.approved_at
-        )::date
-        <=
-        (
-          DATE_TRUNC(
-            'month',
-            COALESCE(
-              lr.disbursement_date,
-              lr.approved_at
-            )::date
-          )
-          + INTERVAL '24 days'
-        )::date
+        /*
+          APPROVAL CUT-OFF RULE
+
+          Approved 1st - 9th
+          = first deduction on 25th of SAME month
+
+          Approved 10th - end of month
+          = first deduction on 25th of NEXT month
+        */
+        WHEN EXTRACT(
+          DAY FROM lr.approved_at::date
+        ) BETWEEN 1 AND 9
 
         THEN
         (
           DATE_TRUNC(
             'month',
-            COALESCE(
-              lr.disbursement_date,
-              lr.approved_at
-            )::date
+            lr.approved_at::date
           )
           + INTERVAL '24 days'
         )::date
@@ -168,10 +162,7 @@ const buildLiveSql = (whereSql = "") => `
         (
           DATE_TRUNC(
             'month',
-            COALESCE(
-              lr.disbursement_date,
-              lr.approved_at
-            )::date
+            lr.approved_at::date
           )
           + INTERVAL '1 month'
           + INTERVAL '24 days'
@@ -183,11 +174,8 @@ const buildLiveSql = (whereSql = "") => `
     WHERE
       lr.staff_id IS NOT NULL
       AND LOWER(TRIM(COALESCE(lr.status, ''))) = 'approved'
-      AND COALESCE(
-        lr.disbursement_date,
-        lr.approved_at
-      ) IS NOT NULL
-  ),
+      AND lr.approved_at IS NOT NULL
+),
 
     loan_remaining AS (
       SELECT
@@ -468,10 +456,7 @@ const buildLiveSql = (whereSql = "") => `
       CROSS JOIN cutoff c
 
       WHERE
-        COALESCE(
-          lr.disbursement_date,
-          lr.approved_at
-        )::date <= c.posting_date
+        lr.approved_at::date <= c.posting_date
 
       GROUP BY lr.staff_id
     ),

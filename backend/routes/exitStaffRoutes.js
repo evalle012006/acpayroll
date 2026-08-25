@@ -116,20 +116,38 @@ const buildEmployeeName = (row) => {
 const applyDueExitStaff = async () => {
   await pool.query(`
     UPDATE public.staff s
-    SET status = 'Inactive'
+    SET
+      status = 'Inactive',
+      exit_type = eso.exit_type,
+      exit_date = eso.effective_date,
+      exit_remarks = eso.remarks
     FROM public.exit_staff_orders eso
-    WHERE s.employee_no = eso.employee_no
+
+    WHERE
+      s.employee_no = eso.employee_no
+
       AND LOWER(TRIM(COALESCE(eso.status, ''))) = 'approved'
+
       AND eso.effective_date IS NOT NULL
       AND eso.effective_date <= CURRENT_DATE
+
       AND LOWER(TRIM(COALESCE(s.status, ''))) <> 'inactive'
+
+      /*
+        If the employee was re-applied on or after this
+        exit order's effective date, never inactivate them
+        again from this old exit order.
+      */
       AND NOT EXISTS (
         SELECT 1
         FROM public.status_history sh
-        WHERE sh.employee_no = eso.employee_no
+        WHERE LOWER(TRIM(COALESCE(sh.employee_no, ''))) =
+              LOWER(TRIM(COALESCE(eso.employee_no, '')))
+
           AND LOWER(TRIM(COALESCE(sh.status, ''))) = 'active'
-          AND LOWER(TRIM(COALESCE(sh.reason, ''))) IN ('re-apply', 'reapply')
+
           AND sh.effective_date IS NOT NULL
+
           AND sh.effective_date >= eso.effective_date
       )
   `);
@@ -771,8 +789,8 @@ router.put("/exit-staff/:id/reapply",
       const employeeNo = clean(staff.employee_no);
 
       await client.query(
-        `
-        UPDATE public.exit_staff_orders
+      `
+      UPDATE public.exit_staff_orders
         SET
           status = 'Re-Applied',
           remarks = TRIM(
@@ -780,7 +798,8 @@ router.put("/exit-staff/:id/reapply",
             E'\nRe-applied on ' ||
             $2::text
           )
-        WHERE employee_no = $1
+        WHERE LOWER(TRIM(COALESCE(employee_no, ''))) =
+              LOWER(TRIM($1))
           AND LOWER(TRIM(COALESCE(status, ''))) = 'approved'
         `,
         [employeeNo, start_date]

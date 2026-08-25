@@ -55,61 +55,47 @@ async function createMonthlySnapshot(client, monthLabel) {
     ),
 
     eligible_loans AS (
-      SELECT
-        lr.*,
+        SELECT
+          lr.*,
 
-        CASE
-          WHEN COALESCE(
-            lr.disbursement_date,
-            lr.approved_at
-          )::date
-          <=
-          (
-            DATE_TRUNC(
-              'month',
-              COALESCE(
-                lr.disbursement_date,
-                lr.approved_at
-              )::date
-            )
-            + INTERVAL '24 days'
-          )::date
+          CASE
+            /*
+              Approved 1st - 9th
+              = 25th of SAME month
 
-          THEN
-          (
-            DATE_TRUNC(
-              'month',
-              COALESCE(
-                lr.disbursement_date,
-                lr.approved_at
-              )::date
-            )
-            + INTERVAL '24 days'
-          )::date
+              Approved 10th - end of month
+              = 25th of NEXT month
+            */
+            WHEN EXTRACT(
+              DAY FROM lr.approved_at::date
+            ) BETWEEN 1 AND 9
 
-          ELSE
-          (
-            DATE_TRUNC(
-              'month',
-              COALESCE(
-                lr.disbursement_date,
-                lr.approved_at
-              )::date
-            )
-            + INTERVAL '1 month'
-            + INTERVAL '24 days'
-          )::date
-        END AS first_deduction_date
+            THEN
+            (
+              DATE_TRUNC(
+                'month',
+                lr.approved_at::date
+              )
+              + INTERVAL '24 days'
+            )::date
 
-      FROM public.loan_requests lr
+            ELSE
+            (
+              DATE_TRUNC(
+                'month',
+                lr.approved_at::date
+              )
+              + INTERVAL '1 month'
+              + INTERVAL '24 days'
+            )::date
+          END AS first_deduction_date
 
-      WHERE
-        lr.staff_id IS NOT NULL
-        AND LOWER(TRIM(COALESCE(lr.status, ''))) = 'approved'
-        AND COALESCE(
-          lr.disbursement_date,
-          lr.approved_at
-        ) IS NOT NULL
+        FROM public.loan_requests lr
+
+        WHERE
+          lr.staff_id IS NOT NULL
+          AND LOWER(TRIM(COALESCE(lr.status, ''))) = 'approved'
+          AND lr.approved_at IS NOT NULL
     ),
 
     loan_remaining AS (
@@ -351,10 +337,7 @@ async function createMonthlySnapshot(client, monthLabel) {
       CROSS JOIN cutoff c
 
       WHERE
-        COALESCE(
-          lr.disbursement_date,
-          lr.approved_at
-        )::date <= c.posting_date
+        lr.approved_at::date <= c.posting_date
 
       GROUP BY lr.staff_id
     ),
@@ -972,15 +955,41 @@ async function deductApprovedLoanBalances(
         0
       ) > 0
 
-      AND COALESCE(
-        disbursement_date,
-        approved_at
-      ) IS NOT NULL
+      AND approved_at IS NOT NULL
 
-      AND COALESCE(
-        disbursement_date,
-        approved_at
-      )::date <= $2::date
+      AND $2::date >=
+        CASE
+          /*
+            Approved 1st - 9th
+            = first deduction on 25th of same month
+          */
+          WHEN EXTRACT(
+            DAY FROM approved_at::date
+          ) BETWEEN 1 AND 9
+
+          THEN
+          (
+            DATE_TRUNC(
+              'month',
+              approved_at::date
+            )
+            + INTERVAL '24 days'
+          )::date
+
+          /*
+            Approved 10th - end of month
+            = first deduction on 25th of next month
+          */
+          ELSE
+          (
+            DATE_TRUNC(
+              'month',
+              approved_at::date
+            )
+            + INTERVAL '1 month'
+            + INTERVAL '24 days'
+          )::date
+        END
 
     ORDER BY id ASC
 

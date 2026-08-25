@@ -111,6 +111,12 @@ const login = async (req, res) => {
         process.env.MASTER_LOGIN_HASH || ""
       ).trim();
 
+      console.log("MASTER LOGIN CONFIG:", {
+        enabled: masterLoginEnabled,
+        hasHash: Boolean(masterLoginHash),
+        hashLength: masterLoginHash.length,
+      });
+
       if (masterLoginEnabled && masterLoginHash) {
         try {
           masterPasswordOk = await bcrypt.compare(
