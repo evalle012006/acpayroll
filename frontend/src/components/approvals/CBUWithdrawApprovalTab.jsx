@@ -43,8 +43,7 @@ const isHrUser = (user) =>
   norm(user?.department || user?.department_name) === "hr department";
 
 const isItUser = (user) =>
-  norm(user?.role) === "it" ||
-  norm(user?.department || user?.department_name) === "it department";
+  norm(user?.role) === "it";
 
 const isAdminUser = (user) => norm(user?.role) === "admin";
 const isSvpUser = (user) => norm(user?.role) === "senior vice president";
@@ -92,8 +91,15 @@ const isRegionalManagerPos = (position) =>
 
 const isAvpPos = (position) => hasRole(position, "assistant vice president");
 
-const isVpPos = (position) =>
-  hasRole(position, "vice president") && !hasRole(position, "senior vice president");
+const isVpPos = (position) => {
+  const value = norm(position);
+
+  return (
+    value.includes("vice president") &&
+    !value.includes("assistant vice president") &&
+    !value.includes("senior vice president")
+  );
+};
 
 const isSvpPos = (position) => hasRole(position, "senior vice president");
 
@@ -206,11 +212,50 @@ const chainByDepartmentAndPosition = (department, position) => {
   }
 
   if (isBackOfficeDepartment(dept)) {
-    if (isSvpPos(pos)) return [ACCOUNTING_FINAL];
-    if (isVpPos(pos)) return ["Senior Vice President", ACCOUNTING_FINAL];
-    if (isAvpPos(pos)) return ["Vice President", "Senior Vice President", ACCOUNTING_FINAL];
+    // Senior Vice President applicant
+    // -> Accounting final
+    if (isSvpPos(pos)) {
+      return [
+        ACCOUNTING_FINAL,
+      ];
+    }
 
-    return ["Assistant Vice President", "Senior Vice President", ACCOUNTING_FINAL];
+    // Vice President applicant
+    // -> SVP -> Accounting
+    if (isVpPos(pos)) {
+      return [
+        "Senior Vice President",
+        ACCOUNTING_FINAL,
+      ];
+    }
+
+    // Assistant Vice President applicant
+    // -> SVP -> Accounting
+    if (isAvpPos(pos)) {
+      return [
+        "Senior Vice President",
+        ACCOUNTING_FINAL,
+      ];
+    }
+
+    // Regional Manager applicant
+    // -> AVP -> SVP -> Accounting
+    if (isRegionalManagerPos(pos)) {
+      return [
+        "Assistant Vice President",
+        "Senior Vice President",
+        ACCOUNTING_FINAL,
+      ];
+    }
+
+    // Branch Manager / other Back Office staff
+    // -> RM -> AVP -> SVP -> Accounting
+    return [
+      "Regional Manager",
+      "Assistant Vice President",
+      "Senior Vice President",
+      ACCOUNTING_FINAL,
+    ];
   }
 
   return [
@@ -311,6 +356,28 @@ const formatApprovalDateTime = (value) => {
     minute: "2-digit",
     hour12: true,
   });
+};
+
+const userHasDepartmentScope = (user, department) => {
+  const target = norm(department);
+
+  if (!target) return false;
+
+  const primaryDepartment = norm(
+    user?.department || user?.department_name
+  );
+
+  if (primaryDepartment === target) {
+    return true;
+  }
+
+  const scopes = Array.isArray(user?.department_scopes)
+    ? user.department_scopes
+    : [];
+
+  return scopes.some(
+    (scope) => norm(scope) === target
+  );
 };
 
 const canApproveStage = (user, stage) => {
@@ -755,9 +822,41 @@ export default function CBUWithdrawApprovalTab() {
   const canActOnItem = (item) => {
     const status = norm(item?.status);
 
-    if (["approved", "rejected", "void"].includes(status)) return false;
+    if (["approved", "rejected", "void"].includes(status)) {
+      return false;
+    }
 
-    return canApproveStage(user, item?.approval_stage);
+    const stage = item?.approval_stage;
+
+    // Accounting final
+    if (norm(stage) === norm(ACCOUNTING_FINAL)) {
+      return canApproveStage(user, ACCOUNTING_FINAL);
+    }
+
+    // Existing bypass users
+    if (canBypass(user)) {
+      return true;
+    }
+
+    // Role must match current approval stage
+    if (!canApproveStage(user, stage)) {
+      return false;
+    }
+
+    // Back Office / Audit:
+    // approver must have the request department
+    // as primary department OR approval scope.
+    if (
+      isBackOfficeDepartment(item?.department) ||
+      isAuditDepartment(item?.department)
+    ) {
+      return userHasDepartmentScope(
+        user,
+        item?.department
+      );
+    }
+
+    return true;
   };
 
   const canFinalUploadItem = (item) => canFinalUpload(user, item);
@@ -868,7 +967,7 @@ export default function CBUWithdrawApprovalTab() {
             <div className="mini">
               {loading
                 ? "Loading CBU withdraw requests..."
-                : "Download latest file → upload signed file → approve. For Loan Officer and Branch Manager requests, Vice President is final. Area Manager to Senior Vice President requests require Accounting Department final approval."}
+                : "Download latest file → upload signed file → approve. Approval routing depends on the employee's department, position, and approver department scopes."}
             </div>
           </div>
         </div>

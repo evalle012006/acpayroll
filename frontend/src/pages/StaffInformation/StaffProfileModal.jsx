@@ -794,45 +794,23 @@ export default function StaffProfileModal({
 
   const bal = balances || {};
 
-  const openingLoanTotals = useMemo(() => {
-    const totals = {
-      salary_advance: 0,
-      special_advance: 0,
-      cash_advance: 0,
-      motorcycle_loan: 0,
-      pag_ibig_loan: 0,
-    };
+  const combinedBalances = useMemo(
+    () => ({
+      cbu: toNum(bal.cbu),
+      cashbond: toNum(bal.cashbond),
+      utility: toNum(bal.utility ?? bal.utility_charge),
 
-    (openingLoanRows || []).forEach((row) => {
-      if (String(row.status || "").toLowerCase() !== "active") return;
+      salary_advance: toNum(bal.salary_advance),
+      special_advance: toNum(bal.special_advance),
+      cash_advance: toNum(bal.cash_advance),
+      motorcycle_loan: toNum(bal.motorcycle_loan),
+      pag_ibig_loan: toNum(bal.pag_ibig_loan),
 
-      const type = String(row.loan_type || "").toLowerCase();
-      const amount = toNum(row.remaining_balance);
-
-      if (type.includes("salary")) totals.salary_advance += amount;
-      else if (type.includes("special")) totals.special_advance += amount;
-      else if (type.includes("cash")) totals.cash_advance += amount;
-      else if (type.includes("motorcycle")) totals.motorcycle_loan += amount;
-      else if (type.includes("pag")) totals.pag_ibig_loan += amount;
-    });
-
-    return totals;
-  }, [openingLoanRows]);
-
-  const combinedBalances = useMemo(() => ({
-    cbu: toNum(bal.cbu),
-    cashbond: toNum(bal.cashbond),
-    utility: toNum(bal.utility),
-
-    salary_advance: toNum(bal.salary_advance) + openingLoanTotals.salary_advance,
-    special_advance: toNum(bal.special_advance) + openingLoanTotals.special_advance,
-    cash_advance: toNum(bal.cash_advance) + openingLoanTotals.cash_advance,
-    motorcycle_loan: toNum(bal.motorcycle_loan) + openingLoanTotals.motorcycle_loan,
-    pag_ibig_loan: toNum(bal.pag_ibig_loan) + openingLoanTotals.pag_ibig_loan,
-
-    other_receivable: toNum(bal.other_receivable),
-    staff_accounts_payable: toNum(bal.staff_accounts_payable),
-  }), [bal, openingLoanTotals]);
+      other_receivable: toNum(bal.other_receivable),
+      staff_accounts_payable: toNum(bal.staff_accounts_payable),
+    }),
+    [bal]
+  );
 
   const headerName = displayName(staff);
   const headerPosition = toStr(staff?.position) || "-";

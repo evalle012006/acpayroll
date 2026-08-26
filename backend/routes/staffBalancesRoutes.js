@@ -548,10 +548,25 @@ router.get(
           COALESCE(sb.cashbond, 0) AS cashbond,
           COALESCE(sb.utility, 0) AS utility,
 
-          COALESCE(loanx.salary_advance, COALESCE(sb.salary_advance, 0)) AS salary_advance,
-          COALESCE(loanx.special_advance, COALESCE(sb.special_advance, 0)) AS special_advance,
-          COALESCE(loanx.cash_advance, COALESCE(sb.cash_advance, 0)) AS cash_advance,
-          COALESCE(loanx.motorcycle_loan, COALESCE(sb.motorcycle_loan, 0)) AS motorcycle_loan,
+          (
+            COALESCE(loanx.salary_advance, 0) +
+            COALESCE(openingx.salary_advance, 0)
+          )::numeric(12,2) AS salary_advance,
+
+          (
+            COALESCE(loanx.special_advance, 0) +
+            COALESCE(openingx.special_advance, 0)
+          )::numeric(12,2) AS special_advance,
+
+          (
+            COALESCE(loanx.cash_advance, 0) +
+            COALESCE(openingx.cash_advance, 0)
+          )::numeric(12,2) AS cash_advance,
+
+          (
+            COALESCE(loanx.motorcycle_loan, 0) +
+            COALESCE(openingx.motorcycle_loan, 0)
+          )::numeric(12,2) AS motorcycle_loan,
 
           COALESCE(orx.other_receivable, 0) AS other_receivable,
           COALESCE(sapx.staff_accounts_payable, 0) AS staff_accounts_payable,
@@ -563,135 +578,676 @@ router.get(
         LEFT JOIN public.staff s ON s.employee_no = sb.employee_no
 
         LEFT JOIN (
-        SELECT
-          lr.employee_no,
+          SELECT
+            lr.staff_id,
 
-          SUM(
-            CASE
-              WHEN LOWER(TRIM(lr.loan_type)) = 'salary advance'
-              THEN GREATEST(
-                COALESCE(lr.approved_total, lr.total, lr.amount, 0) -
-                (
-                  GREATEST(
-                    DATE_PART('year', AGE(CURRENT_DATE, COALESCE(lr.approved_at::date, CURRENT_DATE)))::int * 12 +
-                    DATE_PART('month', AGE(CURRENT_DATE, COALESCE(lr.approved_at::date, CURRENT_DATE)))::int,
+            /* =========================================
+              SALARY ADVANCE
+              SAME LOGIC AS SCHEDULE OF BALANCES
+            ========================================= */
+            SUM(
+              CASE
+                WHEN LOWER(TRIM(COALESCE(lr.loan_type, ''))) = 'salary advance'
+                THEN GREATEST(
+                  COALESCE(
+                    lr.approved_total,
+                    lr.total,
+                    lr.approved_amount,
+                    lr.amount,
                     0
-                  ) * COALESCE(lr.approved_per_month, lr.per_month, 0)
-                ),
-                0
-              )
-              ELSE 0
-            END
-          )::numeric(12,2) AS salary_advance,
+                  )
+                  -
+                  (
+                    CASE
+                      WHEN (NOW() AT TIME ZONE 'Asia/Manila')::date <
+                        CASE
+                          WHEN EXTRACT(DAY FROM lr.approved_at::date) BETWEEN 1 AND 9
+                          THEN (
+                            DATE_TRUNC('month', lr.approved_at::date)
+                            + INTERVAL '24 days'
+                          )::date
+                          ELSE (
+                            DATE_TRUNC('month', lr.approved_at::date)
+                            + INTERVAL '1 month'
+                            + INTERVAL '24 days'
+                          )::date
+                        END
+                      THEN 0
 
-          SUM(
-            CASE
-              WHEN LOWER(TRIM(lr.loan_type)) IN ('special advance','special loan')
-              THEN GREATEST(
-                COALESCE(lr.approved_total, lr.total, lr.amount, 0) -
-                (
-                  GREATEST(
-                    DATE_PART('year', AGE(CURRENT_DATE, COALESCE(lr.approved_at::date, CURRENT_DATE)))::int * 12 +
-                    DATE_PART('month', AGE(CURRENT_DATE, COALESCE(lr.approved_at::date, CURRENT_DATE)))::int,
+                      ELSE
+                        (
+                          (
+                            EXTRACT(
+                              YEAR FROM (NOW() AT TIME ZONE 'Asia/Manila')::date
+                            )::int
+                            -
+                            EXTRACT(
+                              YEAR FROM
+                              CASE
+                                WHEN EXTRACT(DAY FROM lr.approved_at::date) BETWEEN 1 AND 9
+                                THEN (
+                                  DATE_TRUNC('month', lr.approved_at::date)
+                                  + INTERVAL '24 days'
+                                )::date
+                                ELSE (
+                                  DATE_TRUNC('month', lr.approved_at::date)
+                                  + INTERVAL '1 month'
+                                  + INTERVAL '24 days'
+                                )::date
+                              END
+                            )::int
+                          ) * 12
+                          +
+                          (
+                            EXTRACT(
+                              MONTH FROM (NOW() AT TIME ZONE 'Asia/Manila')::date
+                            )::int
+                            -
+                            EXTRACT(
+                              MONTH FROM
+                              CASE
+                                WHEN EXTRACT(DAY FROM lr.approved_at::date) BETWEEN 1 AND 9
+                                THEN (
+                                  DATE_TRUNC('month', lr.approved_at::date)
+                                  + INTERVAL '24 days'
+                                )::date
+                                ELSE (
+                                  DATE_TRUNC('month', lr.approved_at::date)
+                                  + INTERVAL '1 month'
+                                  + INTERVAL '24 days'
+                                )::date
+                              END
+                            )::int
+                          )
+                          + 1
+                        )
+                    END
+                    *
+                    COALESCE(
+                      lr.approved_per_month,
+                      lr.per_month,
+                      0
+                    )
+                  ),
+                  0
+                )
+                ELSE 0
+              END
+            )::numeric(12,2) AS salary_advance,
+
+
+            /* =========================================
+              SPECIAL ADVANCE
+              SAME LOGIC AS SCHEDULE OF BALANCES
+            ========================================= */
+            SUM(
+              CASE
+                WHEN LOWER(TRIM(COALESCE(lr.loan_type, ''))) IN (
+                  'special advance',
+                  'special loan'
+                )
+                THEN GREATEST(
+                  COALESCE(
+                    lr.approved_total,
+                    lr.total,
+                    lr.approved_amount,
+                    lr.amount,
                     0
-                  ) * COALESCE(lr.approved_per_month, lr.per_month, 0)
-                ),
-                0
-              )
-              ELSE 0
-            END
-          )::numeric(12,2) AS special_advance,
+                  )
+                  -
+                  (
+                    CASE
+                      WHEN (NOW() AT TIME ZONE 'Asia/Manila')::date <
+                        CASE
+                          WHEN EXTRACT(DAY FROM lr.approved_at::date) BETWEEN 1 AND 9
+                          THEN (
+                            DATE_TRUNC('month', lr.approved_at::date)
+                            + INTERVAL '24 days'
+                          )::date
+                          ELSE (
+                            DATE_TRUNC('month', lr.approved_at::date)
+                            + INTERVAL '1 month'
+                            + INTERVAL '24 days'
+                          )::date
+                        END
+                      THEN 0
 
-          SUM(
-            CASE
-              WHEN LOWER(TRIM(lr.loan_type)) IN ('cash advance','cash loan')
-              THEN GREATEST(
-                COALESCE(lr.approved_total, lr.total, lr.amount, 0) -
-                (
-                  GREATEST(
-                    DATE_PART('year', AGE(CURRENT_DATE, COALESCE(lr.approved_at::date, CURRENT_DATE)))::int * 12 +
-                    DATE_PART('month', AGE(CURRENT_DATE, COALESCE(lr.approved_at::date, CURRENT_DATE)))::int,
+                      ELSE
+                        (
+                          (
+                            EXTRACT(
+                              YEAR FROM (NOW() AT TIME ZONE 'Asia/Manila')::date
+                            )::int
+                            -
+                            EXTRACT(
+                              YEAR FROM
+                              CASE
+                                WHEN EXTRACT(DAY FROM lr.approved_at::date) BETWEEN 1 AND 9
+                                THEN (
+                                  DATE_TRUNC('month', lr.approved_at::date)
+                                  + INTERVAL '24 days'
+                                )::date
+                                ELSE (
+                                  DATE_TRUNC('month', lr.approved_at::date)
+                                  + INTERVAL '1 month'
+                                  + INTERVAL '24 days'
+                                )::date
+                              END
+                            )::int
+                          ) * 12
+                          +
+                          (
+                            EXTRACT(
+                              MONTH FROM (NOW() AT TIME ZONE 'Asia/Manila')::date
+                            )::int
+                            -
+                            EXTRACT(
+                              MONTH FROM
+                              CASE
+                                WHEN EXTRACT(DAY FROM lr.approved_at::date) BETWEEN 1 AND 9
+                                THEN (
+                                  DATE_TRUNC('month', lr.approved_at::date)
+                                  + INTERVAL '24 days'
+                                )::date
+                                ELSE (
+                                  DATE_TRUNC('month', lr.approved_at::date)
+                                  + INTERVAL '1 month'
+                                  + INTERVAL '24 days'
+                                )::date
+                              END
+                            )::int
+                          )
+                          + 1
+                        )
+                    END
+                    *
+                    COALESCE(
+                      lr.approved_per_month,
+                      lr.per_month,
+                      0
+                    )
+                  ),
+                  0
+                )
+                ELSE 0
+              END
+            )::numeric(12,2) AS special_advance,
+
+
+            /* =========================================
+              CASH ADVANCE
+              SAME LOGIC AS SCHEDULE OF BALANCES
+            ========================================= */
+            SUM(
+              CASE
+                WHEN LOWER(TRIM(COALESCE(lr.loan_type, ''))) IN (
+                  'cash advance',
+                  'cash loan'
+                )
+                THEN GREATEST(
+                  COALESCE(
+                    lr.approved_total,
+                    lr.total,
+                    lr.approved_amount,
+                    lr.amount,
                     0
-                  ) * COALESCE(lr.approved_per_month, lr.per_month, 0)
-                ),
-                0
-              )
-              ELSE 0
-            END
-          )::numeric(12,2) AS cash_advance,
+                  )
+                  -
+                  (
+                    CASE
+                      WHEN (NOW() AT TIME ZONE 'Asia/Manila')::date <
+                        CASE
+                          WHEN EXTRACT(DAY FROM lr.approved_at::date) BETWEEN 1 AND 9
+                          THEN (
+                            DATE_TRUNC('month', lr.approved_at::date)
+                            + INTERVAL '24 days'
+                          )::date
+                          ELSE (
+                            DATE_TRUNC('month', lr.approved_at::date)
+                            + INTERVAL '1 month'
+                            + INTERVAL '24 days'
+                          )::date
+                        END
+                      THEN 0
 
-          SUM(
-            CASE
-              WHEN LOWER(TRIM(lr.loan_type)) = 'motorcycle loan'
-              THEN GREATEST(
-                COALESCE(lr.approved_total, lr.total, lr.amount, 0) -
-                (
-                  GREATEST(
-                    DATE_PART('year', AGE(CURRENT_DATE, COALESCE(lr.approved_at::date, CURRENT_DATE)))::int * 12 +
-                    DATE_PART('month', AGE(CURRENT_DATE, COALESCE(lr.approved_at::date, CURRENT_DATE)))::int,
+                      ELSE
+                        (
+                          (
+                            EXTRACT(
+                              YEAR FROM (NOW() AT TIME ZONE 'Asia/Manila')::date
+                            )::int
+                            -
+                            EXTRACT(
+                              YEAR FROM
+                              CASE
+                                WHEN EXTRACT(DAY FROM lr.approved_at::date) BETWEEN 1 AND 9
+                                THEN (
+                                  DATE_TRUNC('month', lr.approved_at::date)
+                                  + INTERVAL '24 days'
+                                )::date
+                                ELSE (
+                                  DATE_TRUNC('month', lr.approved_at::date)
+                                  + INTERVAL '1 month'
+                                  + INTERVAL '24 days'
+                                )::date
+                              END
+                            )::int
+                          ) * 12
+                          +
+                          (
+                            EXTRACT(
+                              MONTH FROM (NOW() AT TIME ZONE 'Asia/Manila')::date
+                            )::int
+                            -
+                            EXTRACT(
+                              MONTH FROM
+                              CASE
+                                WHEN EXTRACT(DAY FROM lr.approved_at::date) BETWEEN 1 AND 9
+                                THEN (
+                                  DATE_TRUNC('month', lr.approved_at::date)
+                                  + INTERVAL '24 days'
+                                )::date
+                                ELSE (
+                                  DATE_TRUNC('month', lr.approved_at::date)
+                                  + INTERVAL '1 month'
+                                  + INTERVAL '24 days'
+                                )::date
+                              END
+                            )::int
+                          )
+                          + 1
+                        )
+                    END
+                    *
+                    COALESCE(
+                      lr.approved_per_month,
+                      lr.per_month,
+                      0
+                    )
+                  ),
+                  0
+                )
+                ELSE 0
+              END
+            )::numeric(12,2) AS cash_advance,
+
+
+            /* =========================================
+              MOTORCYCLE LOAN
+              SAME LOGIC AS SCHEDULE OF BALANCES
+            ========================================= */
+            SUM(
+              CASE
+                WHEN LOWER(TRIM(COALESCE(lr.loan_type, ''))) = 'motorcycle loan'
+                THEN GREATEST(
+                  COALESCE(
+                    lr.approved_total,
+                    lr.total,
+                    lr.approved_amount,
+                    lr.amount,
                     0
-                  ) * COALESCE(lr.approved_per_month, lr.per_month, 0)
-                ),
-                0
-              )
-              ELSE 0
-            END
-          )::numeric(12,2) AS motorcycle_loan
+                  )
+                  -
+                  (
+                    CASE
+                      WHEN (NOW() AT TIME ZONE 'Asia/Manila')::date <
+                        CASE
+                          WHEN EXTRACT(DAY FROM lr.approved_at::date) BETWEEN 1 AND 9
+                          THEN (
+                            DATE_TRUNC('month', lr.approved_at::date)
+                            + INTERVAL '24 days'
+                          )::date
+                          ELSE (
+                            DATE_TRUNC('month', lr.approved_at::date)
+                            + INTERVAL '1 month'
+                            + INTERVAL '24 days'
+                          )::date
+                        END
+                      THEN 0
 
-        FROM public.loan_requests lr
-        WHERE LOWER(COALESCE(lr.status, '')) = 'approved'
-        GROUP BY lr.employee_no
-      ) loanx ON loanx.employee_no = sb.employee_no
+                      ELSE
+                        (
+                          (
+                            EXTRACT(
+                              YEAR FROM (NOW() AT TIME ZONE 'Asia/Manila')::date
+                            )::int
+                            -
+                            EXTRACT(
+                              YEAR FROM
+                              CASE
+                                WHEN EXTRACT(DAY FROM lr.approved_at::date) BETWEEN 1 AND 9
+                                THEN (
+                                  DATE_TRUNC('month', lr.approved_at::date)
+                                  + INTERVAL '24 days'
+                                )::date
+                                ELSE (
+                                  DATE_TRUNC('month', lr.approved_at::date)
+                                  + INTERVAL '1 month'
+                                  + INTERVAL '24 days'
+                                )::date
+                              END
+                            )::int
+                          ) * 12
+                          +
+                          (
+                            EXTRACT(
+                              MONTH FROM (NOW() AT TIME ZONE 'Asia/Manila')::date
+                            )::int
+                            -
+                            EXTRACT(
+                              MONTH FROM
+                              CASE
+                                WHEN EXTRACT(DAY FROM lr.approved_at::date) BETWEEN 1 AND 9
+                                THEN (
+                                  DATE_TRUNC('month', lr.approved_at::date)
+                                  + INTERVAL '24 days'
+                                )::date
+                                ELSE (
+                                  DATE_TRUNC('month', lr.approved_at::date)
+                                  + INTERVAL '1 month'
+                                  + INTERVAL '24 days'
+                                )::date
+                              END
+                            )::int
+                          )
+                          + 1
+                        )
+                    END
+                    *
+                    COALESCE(
+                      lr.approved_per_month,
+                      lr.per_month,
+                      0
+                    )
+                  ),
+                  0
+                )
+                ELSE 0
+              END
+            )::numeric(12,2) AS motorcycle_loan
+
+          FROM public.loan_requests lr
+
+          WHERE
+            lr.staff_id IS NOT NULL
+            AND LOWER(TRIM(COALESCE(lr.status, ''))) = 'approved'
+            AND lr.approved_at IS NOT NULL
+            AND lr.approved_at::date <=
+                (NOW() AT TIME ZONE 'Asia/Manila')::date
+
+          GROUP BY lr.staff_id
+
+        ) loanx ON loanx.staff_id = s.id
 
         LEFT JOIN (
           SELECT
-            employee_no,
+            ob.staff_id,
+
             SUM(
-              GREATEST(
-                COALESCE(amount, 0) -
-                (
-                  GREATEST(
-                    (
+              CASE
+                WHEN LOWER(TRIM(COALESCE(ob.loan_type, ''))) = 'salary advance'
+                THEN GREATEST(
+                  COALESCE(
+                    ob.remaining_balance,
+                    ob.total_amount,
+                    ob.original_amount,
+                    0
+                  )
+                  -
+                  (
+                    CASE
+                      WHEN (NOW() AT TIME ZONE 'Asia/Manila')::date <
+                          COALESCE(ob.effective_date, ob.start_date)
+                      THEN 0
+
+                      ELSE
+                        (
+                          (
+                            EXTRACT(
+                              YEAR FROM (NOW() AT TIME ZONE 'Asia/Manila')::date
+                            )::int
+                            -
+                            EXTRACT(
+                              YEAR FROM COALESCE(ob.effective_date, ob.start_date)
+                            )::int
+                          ) * 12
+                          +
+                          (
+                            EXTRACT(
+                              MONTH FROM (NOW() AT TIME ZONE 'Asia/Manila')::date
+                            )::int
+                            -
+                            EXTRACT(
+                              MONTH FROM COALESCE(ob.effective_date, ob.start_date)
+                            )::int
+                          )
+                        )
+                    END
+                    *
+                    COALESCE(ob.per_month, 0)
+                  ),
+                  0
+                )
+                ELSE 0
+              END
+            )::numeric(12,2) AS salary_advance,
+
+
+            SUM(
+              CASE
+                WHEN LOWER(TRIM(COALESCE(ob.loan_type, ''))) IN (
+                  'special advance',
+                  'special loan'
+                )
+                THEN GREATEST(
+                  COALESCE(
+                    ob.remaining_balance,
+                    ob.total_amount,
+                    ob.original_amount,
+                    0
+                  )
+                  -
+                  (
+                    CASE
+                      WHEN (NOW() AT TIME ZONE 'Asia/Manila')::date <
+                          COALESCE(ob.effective_date, ob.start_date)
+                      THEN 0
+
+                      ELSE
+                        (
+                          (
+                            EXTRACT(
+                              YEAR FROM (NOW() AT TIME ZONE 'Asia/Manila')::date
+                            )::int
+                            -
+                            EXTRACT(
+                              YEAR FROM COALESCE(ob.effective_date, ob.start_date)
+                            )::int
+                          ) * 12
+                          +
+                          (
+                            EXTRACT(
+                              MONTH FROM (NOW() AT TIME ZONE 'Asia/Manila')::date
+                            )::int
+                            -
+                            EXTRACT(
+                              MONTH FROM COALESCE(ob.effective_date, ob.start_date)
+                            )::int
+                          )
+                        )
+                    END
+                    *
+                    COALESCE(ob.per_month, 0)
+                  ),
+                  0
+                )
+                ELSE 0
+              END
+            )::numeric(12,2) AS special_advance,
+
+
+            SUM(
+              CASE
+                WHEN LOWER(TRIM(COALESCE(ob.loan_type, ''))) IN (
+                  'cash advance',
+                  'cash loan'
+                )
+                THEN GREATEST(
+                  COALESCE(
+                    ob.remaining_balance,
+                    ob.total_amount,
+                    ob.original_amount,
+                    0
+                  )
+                  -
+                  (
+                    CASE
+                      WHEN (NOW() AT TIME ZONE 'Asia/Manila')::date <
+                          COALESCE(ob.effective_date, ob.start_date)
+                      THEN 0
+
+                      ELSE
+                        (
+                          (
+                            EXTRACT(
+                              YEAR FROM (NOW() AT TIME ZONE 'Asia/Manila')::date
+                            )::int
+                            -
+                            EXTRACT(
+                              YEAR FROM COALESCE(ob.effective_date, ob.start_date)
+                            )::int
+                          ) * 12
+                          +
+                          (
+                            EXTRACT(
+                              MONTH FROM (NOW() AT TIME ZONE 'Asia/Manila')::date
+                            )::int
+                            -
+                            EXTRACT(
+                              MONTH FROM COALESCE(ob.effective_date, ob.start_date)
+                            )::int
+                          )
+                        )
+                    END
+                    *
+                    COALESCE(ob.per_month, 0)
+                  ),
+                  0
+                )
+                ELSE 0
+              END
+            )::numeric(12,2) AS cash_advance,
+
+
+            SUM(
+              CASE
+                WHEN LOWER(TRIM(COALESCE(ob.loan_type, ''))) = 'motorcycle loan'
+                THEN GREATEST(
+                  COALESCE(
+                    ob.remaining_balance,
+                    ob.total_amount,
+                    ob.original_amount,
+                    0
+                  )
+                  -
+                  (
+                    CASE
+                      WHEN (NOW() AT TIME ZONE 'Asia/Manila')::date <
+                          COALESCE(ob.effective_date, ob.start_date)
+                      THEN 0
+
+                      ELSE
+                        (
+                          (
+                            EXTRACT(
+                              YEAR FROM (NOW() AT TIME ZONE 'Asia/Manila')::date
+                            )::int
+                            -
+                            EXTRACT(
+                              YEAR FROM COALESCE(ob.effective_date, ob.start_date)
+                            )::int
+                          ) * 12
+                          +
+                          (
+                            EXTRACT(
+                              MONTH FROM (NOW() AT TIME ZONE 'Asia/Manila')::date
+                            )::int
+                            -
+                            EXTRACT(
+                              MONTH FROM COALESCE(ob.effective_date, ob.start_date)
+                            )::int
+                          )
+                        )
+                    END
+                    *
+                    COALESCE(ob.per_month, 0)
+                  ),
+                  0
+                )
+                ELSE 0
+              END
+            )::numeric(12,2) AS motorcycle_loan
+
+          FROM public.staff_loan_opening_balances ob
+
+          WHERE
+            ob.staff_id IS NOT NULL
+            AND LOWER(TRIM(COALESCE(ob.status, ''))) = 'active'
+            AND COALESCE(ob.effective_date, ob.start_date) IS NOT NULL
+
+          GROUP BY ob.staff_id
+
+        ) openingx ON openingx.staff_id = s.id
+
+          LEFT JOIN (
+            SELECT
+              employee_no,
+              SUM(
+                GREATEST(
+                  COALESCE(amount, 0) -
+                  (
+                    GREATEST(
+                      (
+                        DATE_PART(
+                          'year',
+                          AGE(
+                            CURRENT_DATE,
+                            COALESCE(deduction_start_date, release_date, approved_at, created_at)
+                          )
+                        )::int * 12
+                      ) +
                       DATE_PART(
-                        'year',
+                        'month',
                         AGE(
                           CURRENT_DATE,
                           COALESCE(deduction_start_date, release_date, approved_at, created_at)
                         )
-                      )::int * 12
-                    ) +
-                    DATE_PART(
-                      'month',
-                      AGE(
-                        CURRENT_DATE,
-                        COALESCE(deduction_start_date, release_date, approved_at, created_at)
-                      )
-                    )::int,
-                    0
-                  ) * COALESCE(per_month, 0)
-                ),
-                0
-              )
-            )::numeric(12,2) AS other_receivable
-          FROM public.other_receivables
-          WHERE LOWER(COALESCE(status, '')) = 'approved'
-          GROUP BY employee_no
-        ) orx ON orx.employee_no = sb.employee_no
+                      )::int,
+                      0
+                    ) * COALESCE(per_month, 0)
+                  ),
+                  0
+                )
+              )::numeric(12,2) AS other_receivable
+            FROM public.other_receivables
+            WHERE LOWER(COALESCE(status, '')) = 'approved'
+            GROUP BY employee_no
+          ) orx ON orx.employee_no = sb.employee_no
 
-        LEFT JOIN (
-          SELECT
-            employee_no,
-            SUM(COALESCE(amount, 0))::numeric(12,2) AS staff_accounts_payable
-          FROM public.staff_accounts_payable
-          WHERE LOWER(COALESCE(status, '')) = 'approved'
-          GROUP BY employee_no
-        ) sapx ON sapx.employee_no = sb.employee_no
+          LEFT JOIN (
+            SELECT
+              employee_no,
+              SUM(COALESCE(amount, 0))::numeric(12,2) AS staff_accounts_payable
+            FROM public.staff_accounts_payable
+            WHERE LOWER(COALESCE(status, '')) = 'approved'
+            GROUP BY employee_no
+          ) sapx ON sapx.employee_no = sb.employee_no
 
-        WHERE sb.employee_no = $1
-        LIMIT 1
-        `,
-        [employeeNo]
-      );
+          WHERE sb.employee_no = $1
+          LIMIT 1
+          `,
+          [employeeNo]
+        );
 
       await client.query("COMMIT");
 

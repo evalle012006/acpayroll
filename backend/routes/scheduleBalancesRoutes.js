@@ -450,7 +450,97 @@ const buildLiveSql = (whereSql = "") => `
             )
             ELSE 0
           END
-        )::numeric(12,2) AS cash_advance
+        )::numeric(12,2) AS cash_advance,
+
+        SUM(
+          CASE
+            WHEN LOWER(TRIM(COALESCE(lr.loan_type, ''))) = 'salary advance'
+              AND c.posting_date >= lr.first_deduction_date
+            THEN LEAST(
+              COALESCE(lr.approved_per_month, lr.per_month, 0),
+              GREATEST(
+                COALESCE(
+                  lr.approved_total,
+                  lr.total,
+                  lr.approved_amount,
+                  lr.amount,
+                  0
+                ),
+                0
+              )
+            )
+            ELSE 0
+          END
+        )::numeric(12,2) AS salary_advance_per_month,
+
+        SUM(
+          CASE
+            WHEN LOWER(TRIM(COALESCE(lr.loan_type, ''))) = 'motorcycle loan'
+              AND c.posting_date >= lr.first_deduction_date
+            THEN LEAST(
+              COALESCE(lr.approved_per_month, lr.per_month, 0),
+              GREATEST(
+                COALESCE(
+                  lr.approved_total,
+                  lr.total,
+                  lr.approved_amount,
+                  lr.amount,
+                  0
+                ),
+                0
+              )
+            )
+            ELSE 0
+          END
+        )::numeric(12,2) AS motorcycle_loan_per_month,
+
+        SUM(
+          CASE
+            WHEN LOWER(TRIM(COALESCE(lr.loan_type, ''))) IN (
+              'special loan',
+              'special advance'
+            )
+              AND c.posting_date >= lr.first_deduction_date
+            THEN LEAST(
+              COALESCE(lr.approved_per_month, lr.per_month, 0),
+              GREATEST(
+                COALESCE(
+                  lr.approved_total,
+                  lr.total,
+                  lr.approved_amount,
+                  lr.amount,
+                  0
+                ),
+                0
+              )
+            )
+            ELSE 0
+          END
+        )::numeric(12,2) AS special_advance_per_month,
+
+        SUM(
+          CASE
+            WHEN LOWER(TRIM(COALESCE(lr.loan_type, ''))) IN (
+              'cash loan',
+              'cash advance'
+            )
+              AND c.posting_date >= lr.first_deduction_date
+            THEN LEAST(
+              COALESCE(lr.approved_per_month, lr.per_month, 0),
+              GREATEST(
+                COALESCE(
+                  lr.approved_total,
+                  lr.total,
+                  lr.approved_amount,
+                  lr.amount,
+                  0
+                ),
+                0
+              )
+            )
+            ELSE 0
+          END
+        )::numeric(12,2) AS cash_advance_per_month
 
       FROM eligible_loans lr
       CROSS JOIN cutoff c
@@ -468,18 +558,90 @@ const buildLiveSql = (whereSql = "") => `
       SUM(
         CASE
           WHEN LOWER(TRIM(COALESCE(ob.loan_type, ''))) = 'salary advance'
+          THEN COALESCE(ob.per_month, 0)
+          ELSE 0
+        END
+      )::numeric(12,2) AS opening_salary_advance_per_month,
+
+      SUM(
+        CASE
+          WHEN LOWER(TRIM(COALESCE(ob.loan_type, ''))) = 'motorcycle loan'
+          THEN COALESCE(ob.per_month, 0)
+          ELSE 0
+        END
+      )::numeric(12,2) AS opening_motorcycle_loan_per_month,
+
+      SUM(
+        CASE
+          WHEN LOWER(TRIM(COALESCE(ob.loan_type, ''))) IN (
+            'special advance',
+            'special loan'
+          )
+          THEN COALESCE(ob.per_month, 0)
+          ELSE 0
+        END
+      )::numeric(12,2) AS opening_special_advance_per_month,
+
+      SUM(
+        CASE
+          WHEN LOWER(TRIM(COALESCE(ob.loan_type, ''))) IN (
+            'cash advance',
+            'cash loan'
+          )
+          THEN COALESCE(ob.per_month, 0)
+          ELSE 0
+        END
+      )::numeric(12,2) AS opening_cash_advance_per_month,
+
+      SUM(
+        CASE
+          WHEN LOWER(TRIM(COALESCE(ob.loan_type, ''))) = 'salary advance'
           THEN GREATEST(
             COALESCE(
               ob.remaining_balance,
               ob.total_amount,
               ob.original_amount,
               0
+            )
+            -
+            (
+              CASE
+                WHEN c.posting_date <
+                    COALESCE(ob.effective_date, ob.start_date)
+                THEN 0
+
+                ELSE
+                  (
+                    (
+                      EXTRACT(
+                        YEAR FROM c.posting_date
+                      )::int
+                      -
+                      EXTRACT(
+                        YEAR FROM COALESCE(ob.effective_date, ob.start_date)
+                      )::int
+                    ) * 12
+                    +
+                    (
+                      EXTRACT(
+                        MONTH FROM c.posting_date
+                      )::int
+                      -
+                      EXTRACT(
+                        MONTH FROM COALESCE(ob.effective_date, ob.start_date)
+                      )::int
+                    )
+                  )
+              END
+              *
+              COALESCE(ob.per_month, 0)
             ),
             0
           )
           ELSE 0
         END
       )::numeric(12,2) AS opening_salary_advance,
+
 
       SUM(
         CASE
@@ -490,12 +652,46 @@ const buildLiveSql = (whereSql = "") => `
               ob.total_amount,
               ob.original_amount,
               0
+            )
+            -
+            (
+              CASE
+                WHEN c.posting_date <
+                    COALESCE(ob.effective_date, ob.start_date)
+                THEN 0
+
+                ELSE
+                  (
+                    (
+                      EXTRACT(
+                        YEAR FROM c.posting_date
+                      )::int
+                      -
+                      EXTRACT(
+                        YEAR FROM COALESCE(ob.effective_date, ob.start_date)
+                      )::int
+                    ) * 12
+                    +
+                    (
+                      EXTRACT(
+                        MONTH FROM c.posting_date
+                      )::int
+                      -
+                      EXTRACT(
+                        MONTH FROM COALESCE(ob.effective_date, ob.start_date)
+                      )::int
+                    )
+                  )
+              END
+              *
+              COALESCE(ob.per_month, 0)
             ),
             0
           )
           ELSE 0
         END
       )::numeric(12,2) AS opening_motorcycle_loan,
+
 
       SUM(
         CASE
@@ -509,12 +705,46 @@ const buildLiveSql = (whereSql = "") => `
               ob.total_amount,
               ob.original_amount,
               0
+            )
+            -
+            (
+              CASE
+                WHEN c.posting_date <
+                    COALESCE(ob.effective_date, ob.start_date)
+                THEN 0
+
+                ELSE
+                  (
+                    (
+                      EXTRACT(
+                        YEAR FROM c.posting_date
+                      )::int
+                      -
+                      EXTRACT(
+                        YEAR FROM COALESCE(ob.effective_date, ob.start_date)
+                      )::int
+                    ) * 12
+                    +
+                    (
+                      EXTRACT(
+                        MONTH FROM c.posting_date
+                      )::int
+                      -
+                      EXTRACT(
+                        MONTH FROM COALESCE(ob.effective_date, ob.start_date)
+                      )::int
+                    )
+                  )
+              END
+              *
+              COALESCE(ob.per_month, 0)
             ),
             0
           )
           ELSE 0
         END
       )::numeric(12,2) AS opening_special_advance,
+
 
       SUM(
         CASE
@@ -528,6 +758,39 @@ const buildLiveSql = (whereSql = "") => `
               ob.total_amount,
               ob.original_amount,
               0
+            )
+            -
+            (
+              CASE
+                WHEN c.posting_date <
+                    COALESCE(ob.effective_date, ob.start_date)
+                THEN 0
+
+                ELSE
+                  (
+                    (
+                      EXTRACT(
+                        YEAR FROM c.posting_date
+                      )::int
+                      -
+                      EXTRACT(
+                        YEAR FROM COALESCE(ob.effective_date, ob.start_date)
+                      )::int
+                    ) * 12
+                    +
+                    (
+                      EXTRACT(
+                        MONTH FROM c.posting_date
+                      )::int
+                      -
+                      EXTRACT(
+                        MONTH FROM COALESCE(ob.effective_date, ob.start_date)
+                      )::int
+                    )
+                  )
+              END
+              *
+              COALESCE(ob.per_month, 0)
             ),
             0
           )
@@ -541,7 +804,7 @@ const buildLiveSql = (whereSql = "") => `
     WHERE
       ob.staff_id IS NOT NULL
       AND LOWER(TRIM(COALESCE(ob.status, ''))) = 'active'
-      AND COALESCE(ob.effective_date, ob.start_date) <= c.posting_date
+      AND COALESCE(ob.effective_date, ob.start_date) IS NOT NULL
 
     GROUP BY ob.staff_id
   ),
@@ -667,10 +930,38 @@ const buildLiveSql = (whereSql = "") => `
     COALESCE(sb.utility, mbp.utility, 0) AS utility,
 
     COALESCE(lr.salary_loan, 0) AS salary_loan,
-    COALESCE(lr.salary_advance, 0) + COALESCE(olr.opening_salary_advance, 0) AS salary_advance,
-    COALESCE(lr.motorcycle_loan, 0) + COALESCE(olr.opening_motorcycle_loan, 0) AS motorcycle_loan,
-    COALESCE(lr.special_advance, 0) + COALESCE(olr.opening_special_advance, 0) AS special_advance,
-    COALESCE(lr.cash_advance, 0) + COALESCE(olr.opening_cash_advance, 0) AS cash_advance,
+
+    COALESCE(lr.salary_advance, 0)
+      + COALESCE(olr.opening_salary_advance, 0)
+      AS salary_advance,
+
+    COALESCE(lr.motorcycle_loan, 0)
+      + COALESCE(olr.opening_motorcycle_loan, 0)
+      AS motorcycle_loan,
+
+    COALESCE(lr.special_advance, 0)
+      + COALESCE(olr.opening_special_advance, 0)
+      AS special_advance,
+
+    COALESCE(lr.cash_advance, 0)
+      + COALESCE(olr.opening_cash_advance, 0)
+      AS cash_advance,
+
+    COALESCE(lr.salary_advance_per_month, 0)
+      + COALESCE(olr.opening_salary_advance_per_month, 0)
+      AS salary_advance_per_month,
+
+    COALESCE(lr.motorcycle_loan_per_month, 0)
+      + COALESCE(olr.opening_motorcycle_loan_per_month, 0)
+      AS motorcycle_loan_per_month,
+
+    COALESCE(lr.special_advance_per_month, 0)
+      + COALESCE(olr.opening_special_advance_per_month, 0)
+      AS special_advance_per_month,
+
+    COALESCE(lr.cash_advance_per_month, 0)
+      + COALESCE(olr.opening_cash_advance_per_month, 0)
+      AS cash_advance_per_month,
 
     COALESCE(ore.other_receivable, 0) AS other_receivable,
     COALESCE(sap.staff_accounts_payable, 0) AS staff_accounts_payable,
@@ -807,6 +1098,7 @@ router.get(
       }
 
       const sql = buildLiveSql(whereSql);
+
       const result = await pool.query(sql, params);
 
       return res.json(result.rows);

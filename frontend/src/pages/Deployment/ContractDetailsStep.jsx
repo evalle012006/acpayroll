@@ -89,7 +89,7 @@ export default function ContractDetailsStep({ form, branches, compRates = [], se
   const eeTotal = toNum(form.sss_ee) + toNum(form.ph_ee) + toNum(form.hdmf_ee);
 
   return (
-    <div className="modal-body staff-add-grid">
+    <div className="staff-add-grid">
       <div className="staff-add-left" style={{ width: "100%" }}>
         <table className="editable-table">
           <tbody>

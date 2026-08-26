@@ -445,8 +445,14 @@
   color:#fff;
 }
 
-/* EXISTING MODALS */
-.modal-overlay{
+/* =========================================================
+   PO MODALS ONLY
+   IMPORTANT:
+   Keep these styles scoped inside .po-page so they do not
+   destroy Staff Information / Add Staff modal styles.
+========================================================= */
+
+.po-page .modal-overlay{
   position:fixed;
   inset:0;
   z-index:9999;
@@ -457,7 +463,7 @@
   background:rgba(0,0,0,.58);
 }
 
-.modal{
+.po-page .modal{
   width:min(1200px,96vw);
   max-height:92vh;
   overflow:auto;
@@ -468,7 +474,7 @@
   box-shadow:var(--shadow);
 }
 
-.modal-head{
+.po-page .modal-head{
   display:flex;
   justify-content:space-between;
   align-items:center;
@@ -477,18 +483,18 @@
   border-bottom:1px solid var(--border);
 }
 
-.modal-head h3{
+.po-page .modal-head h3{
   margin:0;
   color:var(--text);
   font-size:18px;
   font-weight:900;
 }
 
-.modal-body{
+.po-page .modal-body{
   padding:16px;
 }
 
-.modal-foot{
+.po-page .modal-foot{
   display:flex;
   justify-content:flex-end;
   gap:10px;
@@ -496,7 +502,7 @@
   border-top:1px solid var(--border);
 }
 
-.icon-btn{
+.po-page .icon-btn{
   width:36px;
   height:36px;
   border-radius:10px;
@@ -512,13 +518,13 @@
   border-color:rgba(255,255,255,.09);
 }
 
-[data-theme="dark"] .modal{
+[data-theme="dark"] .po-page .modal{
   background:#0b152b;
   border-color:rgba(255,255,255,.1);
 }
 
-[data-theme="light"] .po-list-card,
-[data-theme="light"] .modal{
+[data-theme="light"] .po-page .po-list-card,
+[data-theme="light"] .po-page .modal{
   background:#fff;
 }
 

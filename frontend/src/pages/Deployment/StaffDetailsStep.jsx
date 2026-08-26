@@ -129,7 +129,7 @@ export default function StaffDetailsStep({ form, setForm }) {
   };
 
   return (
-    <div className="modal-body staff-add-grid">
+    <div className="staff-add-grid">
       <div className="staff-add-left" style={{ width: "100%" }}>
         <table className="editable-table">
           <tbody>

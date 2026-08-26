@@ -31,8 +31,10 @@ const isAccounting = (req) =>
   getUserDepartment(req) === "accounting department";
 const isHR = (req) =>
   getUserRole(req) === "hr" || getUserDepartment(req) === "hr department";
+
 const isIT = (req) =>
-  getUserRole(req) === "it" || getUserDepartment(req) === "it department";
+  getUserRole(req) === "it";
+
 const isSVP = (req) => getUserRole(req) === "senior vice president";
 
 const canBypassApproval = (req) =>
@@ -215,13 +217,50 @@ const getRawApprovalChain = (department, position) => {
   }
 
   if (isBackOfficeDepartment(dept)) {
-    if (isSVPPos(pos)) return [ACCOUNTING_FINAL];
-    if (isVPPos(pos)) return ["Senior Vice President", ACCOUNTING_FINAL];
-    if (isAVPPos(pos)) {
-      return ["Vice President", "Senior Vice President", ACCOUNTING_FINAL];
+    // Senior Vice President applicant
+    // -> Accounting final
+    if (isSVPPos(pos)) {
+      return [
+        ACCOUNTING_FINAL,
+      ];
     }
 
-    return ["Assistant Vice President", "Senior Vice President", ACCOUNTING_FINAL];
+    // Vice President applicant
+    // -> SVP -> Accounting
+    if (isVPPos(pos)) {
+      return [
+        "Senior Vice President",
+        ACCOUNTING_FINAL,
+      ];
+    }
+
+    // Assistant Vice President applicant
+    // -> SVP -> Accounting
+    if (isAVPPos(pos)) {
+      return [
+        "Senior Vice President",
+        ACCOUNTING_FINAL,
+      ];
+    }
+
+    // Regional Manager applicant
+    // -> AVP -> SVP -> Accounting
+    if (isRegionalManagerPos(pos)) {
+      return [
+        "Assistant Vice President",
+        "Senior Vice President",
+        ACCOUNTING_FINAL,
+      ];
+    }
+
+    // Branch Manager / other Back Office staff
+    // -> RM -> AVP -> SVP -> Accounting
+    return [
+      "Regional Manager",
+      "Assistant Vice President",
+      "Senior Vice President",
+      ACCOUNTING_FINAL,
+    ];
   }
 
   return [
@@ -263,6 +302,31 @@ const stageApprovedAtColumn = (stage) => {
   return null;
 };
 
+const userHasDepartmentScope = (req, department) => {
+  const target = norm(department);
+
+  if (!target) {
+    return false;
+  }
+
+  const primaryDepartment = norm(
+    req.user?.department ||
+    req.user?.department_name
+  );
+
+  if (primaryDepartment === target) {
+    return true;
+  }
+
+  const scopes = Array.isArray(req.user?.department_scopes)
+    ? req.user.department_scopes
+    : [];
+
+  return scopes.some(
+    (scope) => norm(scope) === target
+  );
+};
+
 const roleMatchesStage = (req, stage) => {
   const role = getUserRole(req);
   const dept = getUserDepartment(req);
@@ -281,12 +345,39 @@ const roleMatchesStage = (req, stage) => {
   return false;
 };
 
-const canApproveCurrentStage = (req, stage) => {
+const canApproveCurrentStage = (req, stage, staff = null) => {
+  // Accounting final remains Accounting only
   if (norm(stage) === norm(ACCOUNTING_FINAL)) {
     return roleMatchesStage(req, stage);
   }
 
-  return roleMatchesStage(req, stage) || canBypassApproval(req);
+  // Existing bypass users keep their bypass capability
+  if (canBypassApproval(req)) {
+    return true;
+  }
+
+  // Role must match the current stage first
+  if (!roleMatchesStage(req, stage)) {
+    return false;
+  }
+
+  // For Back Office / Audit requests,
+  // approver must also belong to the request department
+  // either as primary department or approval scope.
+  if (
+    staff &&
+    (
+      isBackOfficeDepartment(staff.department) ||
+      isAuditDepartment(staff.department)
+    )
+  ) {
+    return userHasDepartmentScope(
+      req,
+      staff.department
+    );
+  }
+
+  return true;
 };
 
 async function getUserColumns(client) {
@@ -307,68 +398,135 @@ async function getUserColumns(client) {
 }
 
 async function hasApproverAccount(client, stage, staff) {
-  if (norm(stage) === norm(ACCOUNTING_FINAL)) return true;
-
-  const cols = await getUserColumns(client);
-  if (!cols.includes("role")) return true;
-
-  const where = [`LOWER(TRIM(COALESCE(role, ''))) = $1`];
-  const params = [norm(stage)];
-
-  if (cols.includes("status")) {
-    where.push(`LOWER(TRIM(COALESCE(status, 'active'))) <> 'inactive'`);
+  if (norm(stage) === norm(ACCOUNTING_FINAL)) {
+    return true;
   }
 
-  if (isOperationDepartment(staff.department)) {
-    if (norm(stage) === "branch manager" && cols.includes("branch_id")) {
-      params.push(staff.branch_id || null);
-      where.push(`branch_id = $${params.length}`);
-    }
-
-    if (norm(stage) === "area manager" && cols.includes("area")) {
-      params.push(norm(staff.area));
-      where.push(`LOWER(TRIM(COALESCE(area, ''))) = $${params.length}`);
-    }
-
-    if (norm(stage) === "regional manager" && cols.includes("region")) {
-      params.push(norm(staff.region));
-      where.push(`LOWER(TRIM(COALESCE(region, ''))) = $${params.length}`);
-    }
-
-    if (norm(stage) === "assistant vice president" && cols.includes("division")) {
-      params.push(norm(staff.division));
-      where.push(`LOWER(TRIM(COALESCE(division, ''))) = $${params.length}`);
-    }
-
-    if (norm(stage) === "vice president" && cols.includes("department")) {
-      params.push("operation department");
-      where.push(`LOWER(TRIM(COALESCE(department, ''))) IN ($${params.length}, 'operations department')`);
-    }
-  } else if (cols.includes("department")) {
-    if (
-      ["assistant vice president", "vice president", "senior vice president"].includes(
-        norm(stage)
-      )
-    ) {
-      params.push(norm(staff.department));
-      where.push(`LOWER(TRIM(COALESCE(department, ''))) = $${params.length}`);
-    }
-  }
+  const stageRole = norm(stage);
+  const staffDepartment = norm(staff.department);
 
   try {
+    // =====================================================
+    // OPERATION DEPARTMENT
+    // Keep geographic approval scoping:
+    // Branch -> Area -> Region -> Division -> Department
+    // =====================================================
+    if (isOperationDepartment(staff.department)) {
+      const params = [stageRole];
+
+      const where = [
+        `LOWER(TRIM(COALESCE(u.role, ''))) = $1`,
+        `LOWER(TRIM(COALESCE(u.status, 'active'))) <> 'inactive'`,
+      ];
+
+      if (stageRole === "branch manager") {
+        params.push(staff.branch_id || null);
+        where.push(`u.branch_id = $${params.length}`);
+      }
+
+      if (stageRole === "area manager") {
+        params.push(norm(staff.area));
+        where.push(
+          `LOWER(TRIM(COALESCE(u.area, ''))) = $${params.length}`
+        );
+      }
+
+      if (stageRole === "regional manager") {
+        params.push(norm(staff.region));
+        where.push(
+          `LOWER(TRIM(COALESCE(u.region, ''))) = $${params.length}`
+        );
+      }
+
+      if (stageRole === "assistant vice president") {
+        params.push(norm(staff.division));
+        where.push(
+          `LOWER(TRIM(COALESCE(u.division, ''))) = $${params.length}`
+        );
+      }
+
+      if (stageRole === "vice president") {
+        where.push(`
+          LOWER(TRIM(COALESCE(u.department, ''))) IN (
+            'operation department',
+            'operations department',
+            'operation',
+            'operations'
+          )
+        `);
+      }
+
+      const r = await client.query(
+        `
+        SELECT u.id
+        FROM public.users u
+        WHERE ${where.join(" AND ")}
+        LIMIT 1
+        `,
+        params
+      );
+
+      return r.rowCount > 0;
+    }
+
+    // =====================================================
+    // BACK OFFICE / AUDIT
+    //
+    // An approver is valid when:
+    //
+    // 1. Their PRIMARY department matches
+    // OR
+    // 2. user_department_scopes contains the department
+    //
+    // Example:
+    // Helen = TREAD Department AVP
+    // Scope = IT Department
+    // Therefore Helen can approve IT requests.
+    // =====================================================
+
     const r = await client.query(
       `
-      SELECT id
-      FROM public.users
-      WHERE ${where.join(" AND ")}
+      SELECT DISTINCT u.id
+      FROM public.users u
+
+      LEFT JOIN public.user_department_scopes uds
+        ON uds.user_id = u.id
+
+      WHERE
+        LOWER(TRIM(COALESCE(u.role, ''))) = $1
+
+        AND LOWER(
+          TRIM(COALESCE(u.status, 'active'))
+        ) <> 'inactive'
+
+        AND (
+          LOWER(TRIM(COALESCE(u.department, ''))) = $2
+
+          OR
+
+          LOWER(TRIM(COALESCE(uds.department, ''))) = $2
+        )
+
       LIMIT 1
       `,
-      params
+      [
+        stageRole,
+        staffDepartment,
+      ]
     );
 
     return r.rowCount > 0;
-  } catch {
-    return true;
+  } catch (err) {
+    console.error(
+      "hasApproverAccount ERROR:",
+      {
+        stage,
+        staffDepartment,
+        message: err.message,
+      }
+    );
+
+    return false;
   }
 }
 
@@ -905,7 +1063,7 @@ router.put(
       const col = stageColumn(currentStage);
       const approvedAtCol = stageApprovedAtColumn(currentStage);
 
-      if (!canApproveCurrentStage(req, currentStage)) {
+      if (!canApproveCurrentStage(req, currentStage, staff)) {
         await client.query("ROLLBACK");
         return res.status(403).json({ message: "Not your approval stage" });
       }

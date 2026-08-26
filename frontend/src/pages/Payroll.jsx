@@ -58,7 +58,7 @@ const sortByPosition = (rows) => {
 const monthlyFromWhole = (v) => {
   const n = toNum(v);
   if (n <= 0) return 0;
-  return n / 12;
+  return n;
 };
 
 const isActiveStaff = (s) => norm(s.status || "Active") !== "inactive";
@@ -523,19 +523,29 @@ function Payroll() {
       const total_ee = toNum(s.hdmf_ee) + toNum(s.sss_ee) + toNum(s.ph_ee);
 
       const salary_advance =
-        toNum(s.salary_advance) > 0 ? toNum(s.salary_advance) : monthlyFromWhole(balance.salary_advance);
+        toNum(s.salary_advance) > 0
+          ? toNum(s.salary_advance)
+          : toNum(balance.salary_advance_per_month);
 
       const motorcycle_loan =
-        toNum(s.motorcycle_loan) > 0 ? toNum(s.motorcycle_loan) : monthlyFromWhole(balance.motorcycle_loan);
+        toNum(s.motorcycle_loan) > 0
+          ? toNum(s.motorcycle_loan)
+          : toNum(balance.motorcycle_loan_per_month);
 
       const special_advance =
-        toNum(s.special_advance) > 0 ? toNum(s.special_advance) : monthlyFromWhole(balance.special_advance);
+        toNum(s.special_advance) > 0
+          ? toNum(s.special_advance)
+          : toNum(balance.special_advance_per_month);
 
       const cash_advance =
-        toNum(s.cash_advance) > 0 ? toNum(s.cash_advance) : monthlyFromWhole(balance.cash_advance);
+        toNum(s.cash_advance) > 0
+          ? toNum(s.cash_advance)
+          : toNum(balance.cash_advance_per_month);
 
       const other_receivable =
-        toNum(s.other_receivable) > 0 ? toNum(s.other_receivable) : toNum(balance.other_receivable);
+        toNum(s.other_receivable) > 0 
+        ? toNum(s.other_receivable) 
+        : toNum(balance.other_receivable);
 
       const staff_accounts_payable =
         toNum(s.staff_accounts_payable) > 0
