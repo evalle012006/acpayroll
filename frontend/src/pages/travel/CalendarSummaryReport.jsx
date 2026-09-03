@@ -308,7 +308,6 @@ const formatDate = (value) => {
 export default function CalendarSummaryReport() {
   const [selectedStaff, setSelectedStaff] = useState(null);
   const [selectedTravelPlan, setSelectedTravelPlan] = useState(null);
-  const [activeTab, setActiveTab] = useState("travel");
   const [dateFrom, setDateFrom] = useState("2026-08-01");
   const [dateTo, setDateTo] = useState("2026-08-31");
   const [department, setDepartment] = useState("all");
@@ -321,6 +320,8 @@ export default function CalendarSummaryReport() {
   const [employee, setEmployee] = useState("");
   const [status, setStatus] = useState("");
   const [search, setSearch] = useState("");
+
+  const [showFilters, setShowFilters] = useState(false);
 
   const [reportData, setReportData] = useState({
     summary: {
@@ -499,6 +500,28 @@ export default function CalendarSummaryReport() {
     };
   }, [reportData.summary]);
 
+  const selectedStaffTravels = useMemo(() => {
+    if (!selectedStaff) return [];
+
+    return reportData.travel_details.filter((row) => {
+      const sameEmployeeNo =
+        selectedStaff.employee_no &&
+        row.employee_no &&
+        String(selectedStaff.employee_no).trim() ===
+          String(row.employee_no).trim();
+
+      const sameName =
+        String(selectedStaff.employee_name || "")
+          .trim()
+          .toLowerCase() ===
+        String(row.employee_name || "")
+          .trim()
+          .toLowerCase();
+
+      return sameEmployeeNo || sameName;
+    });
+  }, [selectedStaff, reportData.travel_details]);
+
   return (
     <div className="calendar-summary-page">
       <div className="calendar-summary-header">
@@ -523,139 +546,6 @@ export default function CalendarSummaryReport() {
       </div>
 
       <div className="calendar-summary-filter-card">
-        <div className="calendar-summary-filter-grid">
-          <label>
-            <span>Date From</span>
-            <input
-              type="date"
-              value={dateFrom}
-              onChange={(e) => setDateFrom(e.target.value)}
-            />
-          </label>
-
-          <label>
-            <span>Date To</span>
-            <input
-              type="date"
-              value={dateTo}
-              onChange={(e) => setDateTo(e.target.value)}
-            />
-          </label>
-
-          <label>
-            <span>Division</span>
-            <select
-              value={division}
-              onChange={(e) => setDivision(e.target.value)}
-            >
-              <option value="all">All Divisions</option>
-              <option value="DIVISION IV">DIVISION IV</option>
-            </select>
-          </label>
-
-          <label>
-            <span>Region</span>
-            <select
-              value={region}
-              onChange={(e) => setRegion(e.target.value)}
-            >
-              <option value="all">All Regions</option>
-              <option value="ZAMBOANGA PENINSULA">
-                ZAMBOANGA PENINSULA
-              </option>
-              <option value="REGION IX">REGION IX</option>
-            </select>
-          </label>
-
-          <label>
-            <span>Area</span>
-            <select
-              value={area}
-              onChange={(e) => setArea(e.target.value)}
-            >
-              <option value="all">All Areas</option>
-              <option value="ZAMBOANGA CITY I">
-                ZAMBOANGA CITY I
-              </option>
-              <option value="PAGADIAN AREA">
-                PAGADIAN AREA
-              </option>
-            </select>
-          </label>
-
-          <label>
-            <span>Branch</span>
-            <select
-              value={branch}
-              onChange={(e) => setBranch(e.target.value)}
-            >
-              <option value="all">All Branches</option>
-              <option value="GUIWAN">GUIWAN</option>
-              <option value="TETUAN">TETUAN</option>
-              <option value="PAGADIAN">PAGADIAN</option>
-            </select>
-          </label>
-
-          {/* NEW - DEPARTMENT */}
-          <label>
-            <span>Department</span>
-            <select
-              value={department}
-              onChange={(e) => setDepartment(e.target.value)}
-            >
-              <option value="all">All Departments</option>
-
-              {DEPARTMENT_OPTIONS.map((item) => (
-                <option key={item} value={item}>
-                  {item}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          {/* NEW - POSITION */}
-          <label>
-            <span>Position</span>
-            <select
-              value={position}
-              onChange={(e) => setPosition(e.target.value)}
-            >
-              <option value="all">All Positions</option>
-
-              {POSITION_OPTIONS.map((item) => (
-                <option key={item} value={item}>
-                  {item}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label>
-            <span>Employee</span>
-            <select
-              value={employee}
-              onChange={(e) => setEmployee(e.target.value)}
-            >
-              <option value="all">All Employees</option>
-              <option value="000123">DELA CRUZ, JUAN</option>
-              <option value="000456">SANTOS, MARIA</option>
-              <option value="000789">RAMOS, CARLO</option>
-            </select>
-          </label>
-
-          <label>
-            <span>Status</span>
-            <select
-              value={status}
-              onChange={(e) => setStatus(e.target.value)}
-            >
-              <option value="all">All Status</option>
-              <option value="Completed">Completed</option>
-              <option value="Incomplete">Incomplete</option>
-            </select>
-          </label>
-        </div>
-
         <div className="calendar-summary-search-row">
           <input
             type="text"
@@ -667,21 +557,184 @@ export default function CalendarSummaryReport() {
           <button
             type="button"
             className="calendar-summary-clear-btn"
-            onClick={() => {
-              setDivision("");
-              setRegion("");
-              setArea("");
-              setBranch("");
-              setDepartment("all");
-              setPosition("all");
-              setEmployee("");
-              setStatus("");
-              setSearch("");
-            }}
+            onClick={() => setShowFilters((prev) => !prev)}
           >
-            Clear Filters
+            {showFilters ? "Hide Filters" : "Show Filters"}
           </button>
         </div>
+
+        {showFilters && (
+          <>
+            <div className="calendar-summary-filter-grid">
+              <label>
+                <span>Date From</span>
+                <input
+                  type="date"
+                  value={dateFrom}
+                  onChange={(e) => setDateFrom(e.target.value)}
+                />
+              </label>
+
+              <label>
+                <span>Date To</span>
+                <input
+                  type="date"
+                  value={dateTo}
+                  onChange={(e) => setDateTo(e.target.value)}
+                />
+              </label>
+
+              <label>
+                <span>Division</span>
+                <select
+                  value={division}
+                  onChange={(e) => setDivision(e.target.value)}
+                >
+                  <option value="all">All Divisions</option>
+                  <option value="DIVISION IV">DIVISION IV</option>
+                </select>
+              </label>
+
+              <label>
+                <span>Region</span>
+                <select
+                  value={region}
+                  onChange={(e) => setRegion(e.target.value)}
+                >
+                  <option value="all">All Regions</option>
+                  <option value="ZAMBOANGA PENINSULA">
+                    ZAMBOANGA PENINSULA
+                  </option>
+                  <option value="REGION IX">
+                    REGION IX
+                  </option>
+                </select>
+              </label>
+
+              <label>
+                <span>Area</span>
+                <select
+                  value={area}
+                  onChange={(e) => setArea(e.target.value)}
+                >
+                  <option value="all">All Areas</option>
+                  <option value="ZAMBOANGA CITY I">
+                    ZAMBOANGA CITY I
+                  </option>
+                  <option value="PAGADIAN AREA">
+                    PAGADIAN AREA
+                  </option>
+                </select>
+              </label>
+
+              <label>
+                <span>Branch</span>
+                <select
+                  value={branch}
+                  onChange={(e) => setBranch(e.target.value)}
+                >
+                  <option value="all">All Branches</option>
+                  <option value="GUIWAN">GUIWAN</option>
+                  <option value="TETUAN">TETUAN</option>
+                  <option value="PAGADIAN">PAGADIAN</option>
+                </select>
+              </label>
+
+              <label>
+                <span>Department</span>
+                <select
+                  value={department}
+                  onChange={(e) => setDepartment(e.target.value)}
+                >
+                  <option value="all">
+                    All Departments
+                  </option>
+
+                  {DEPARTMENT_OPTIONS.map((item) => (
+                    <option key={item} value={item}>
+                      {item}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label>
+                <span>Position</span>
+                <select
+                  value={position}
+                  onChange={(e) => setPosition(e.target.value)}
+                >
+                  <option value="all">
+                    All Positions
+                  </option>
+
+                  {POSITION_OPTIONS.map((item) => (
+                    <option key={item} value={item}>
+                      {item}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label>
+                <span>Employee</span>
+                <select
+                  value={employee}
+                  onChange={(e) => setEmployee(e.target.value)}
+                >
+                  <option value="all">
+                    All Employees
+                  </option>
+                  <option value="000123">
+                    DELA CRUZ, JUAN
+                  </option>
+                  <option value="000456">
+                    SANTOS, MARIA
+                  </option>
+                  <option value="000789">
+                    RAMOS, CARLO
+                  </option>
+                </select>
+              </label>
+
+              <label>
+                <span>Status</span>
+                <select
+                  value={status}
+                  onChange={(e) => setStatus(e.target.value)}
+                >
+                  <option value="all">All Status</option>
+                  <option value="Completed">
+                    Completed
+                  </option>
+                  <option value="Incomplete">
+                    Incomplete
+                  </option>
+                </select>
+              </label>
+            </div>
+
+            <div className="calendar-summary-filter-actions">
+              <button
+                type="button"
+                className="calendar-summary-clear-btn"
+                onClick={() => {
+                  setDivision("");
+                  setRegion("");
+                  setArea("");
+                  setBranch("");
+                  setDepartment("all");
+                  setPosition("all");
+                  setEmployee("");
+                  setStatus("");
+                  setSearch("");
+                }}
+              >
+                Clear Filters
+              </button>
+            </div>
+          </>
+        )}
       </div>
 
       <div className="calendar-summary-cards">
@@ -717,41 +770,9 @@ export default function CalendarSummaryReport() {
       </div>
 
       <div className="calendar-summary-main-card">
-        <div className="calendar-summary-tabs">
-          <button
-            type="button"
-            className={activeTab === "travel" ? "active" : ""}
-            onClick={() => setActiveTab("travel")}
-          >
-            Travel Details
-          </button>
-
-          <button
-            type="button"
-            className={activeTab === "staff" ? "active" : ""}
-            onClick={() => setActiveTab("staff")}
-          >
-            Staff Summary
-          </button>
-
-          <button
-            type="button"
-            className={activeTab === "branch" ? "active" : ""}
-            onClick={() => setActiveTab("branch")}
-          >
-            Branch Summary
-          </button>
-        </div>
-
         <div className="calendar-summary-card-head">
           <div>
-            <h3>
-              {activeTab === "travel"
-                ? "Travel Details"
-                : activeTab === "staff"
-                ? "Staff Summary"
-                : "Branch Summary"}
-            </h3>
+            <h3>Travel Details</h3>
 
             <p>
               {formatDate(dateFrom)} - {formatDate(dateTo)}
@@ -760,130 +781,95 @@ export default function CalendarSummaryReport() {
         </div>
 
         <div className="calendar-summary-table-wrap">
-          {activeTab === "travel" && (
-            <table className="calendar-summary-table">
-              <thead>
+          <table className="calendar-summary-table">
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Employee No.</th>
+                <th>Employee Name</th>
+                <th>Position</th>
+                <th>Branch Visited</th>
+                <th>Area</th>
+                <th>Region</th>
+                <th>Division</th>
+                <th>Time In</th>
+                <th>Time Out</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+
+            <tbody>
+              {reportData.travel_details.length === 0 ? (
                 <tr>
-                  <th>Date</th>
-                  <th>Employee No.</th>
-                  <th>Employee Name</th>
-                  <th>Position</th>
-                  <th>Branch Visited</th>
-                  <th>Area</th>
-                  <th>Region</th>
-                  <th>Division</th>
-                  <th>Time In</th>
-                  <th>Time Out</th>
-                  <th>Status</th>
+                  <td
+                    colSpan="11"
+                    style={{
+                      textAlign: "center",
+                      padding: "30px",
+                    }}
+                  >
+                    No travel records found.
+                  </td>
                 </tr>
-              </thead>
+              ) : (
+                reportData.travel_details.map((row) => (
+                  <tr
+                    key={row.id}
+                    className="calendar-summary-clickable-row"
+                    onClick={() => {
+                      const staff =
+                        reportData.staff_summary.find(
+                          (item) =>
+                            String(item.employee_no || "") ===
+                              String(row.employee_no || "") ||
+                            String(item.employee_name || "")
+                              .trim()
+                              .toLowerCase() ===
+                              String(row.employee_name || "")
+                                .trim()
+                                .toLowerCase()
+                        );
 
-              <tbody>
-                {reportData.travel_details.map((row) => (
-                  <tr key={row.id}>
+                      setSelectedTravelPlan(null);
+
+                      setSelectedStaff(
+                        staff || {
+                          ...row,
+                          travel_days: 0,
+                          branch_visits: 0,
+                          completed: 0,
+                          incomplete: 0,
+                          most_visited_branch: "-",
+                        }
+                      );
+                    }}
+                  >
                     <td>{formatDate(row.date)}</td>
-                    <td>{row.employee_no}</td>
-                    <td className="calendar-summary-name">
-                      {row.employee_name}
-                    </td>
-                    <td>{row.position}</td>
-                    <td>{row.branch}</td>
-                    <td>{row.area}</td>
-                    <td>{row.region}</td>
-                    <td>{row.division}</td>
-                    <td>{row.time_in}</td>
-                    <td>{row.time_out}</td>
-
+                    <td>{row.employee_no || "-"}</td>
+                    <td className="calendar-summary-name">{row.employee_name || "-"}</td>
+                    <td>{row.position || "-"}</td>
+                    <td>{row.branch || "-"}</td>
+                    <td>{row.area || "-"}</td>
+                    <td>{row.region || "-"}</td>
+                    <td>{row.division || "-"}</td>
+                    <td>{row.time_in || "-"}</td>
+                    <td>{row.time_out || "-"}</td>
                     <td>
                       <span
-                        className={`calendar-summary-status ${row.status
+                        className={`calendar-summary-status ${String(
+                          row.status || ""
+                        )
                           .toLowerCase()
                           .replace(/\s+/g, "-")}`}
                       >
-                        {row.status}
+                        {row.status || "-"}
                       </span>
                     </td>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-
-          {activeTab === "staff" && (
-            <table className="calendar-summary-table">
-              <thead>
-                <tr>
-                  <th>Employee Name</th>
-                  <th>Position</th>
-                  <th>Travel Days</th>
-                  <th>Total Branch Visits</th>
-                  <th>Completed</th>
-                  <th>Incomplete</th>
-                  <th>Most Visited Branch</th>
-                  <th>Action</th>
-                </tr>
-              </thead>
-
-              <tbody>
-                {reportData.staff_summary.map((row) => (
-                  <tr
-                    key={
-                      row.staff_id ||
-                      row.employee_no ||
-                      row.employee_name
-                    }
-                  >
-                    <td className="calendar-summary-name">
-                      {row.employee_name}
-                    </td>
-                    <td>{row.position}</td>
-                    <td>{row.travel_days}</td>
-                    <td>{row.branch_visits}</td>
-                    <td>{row.completed}</td>
-                    <td>{row.incomplete}</td>
-                    <td>{row.most_visited_branch}</td>
-                    <td>
-                      <button
-                        type="button"
-                        className="calendar-summary-view-btn"
-                        onClick={() => setSelectedStaff(row)}
-                      >
-                        View
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-
-          {activeTab === "branch" && (
-            <table className="calendar-summary-table">
-              <thead>
-                <tr>
-                  <th>Branch</th>
-                  <th>Area</th>
-                  <th>Region</th>
-                  <th>Total Visits</th>
-                  <th>Unique Staff Visitors</th>
-                  <th>Last Visit</th>
-                </tr>
-              </thead>
-
-              <tbody>
-                {reportData.branch_summary.map((row) => (
-                  <tr key={row.branch}>
-                    <td className="calendar-summary-name">{row.branch}</td>
-                    <td>{row.area}</td>
-                    <td>{row.region}</td>
-                    <td>{row.visits}</td>
-                    <td>{row.unique_staff}</td>
-                    <td>{formatDate(row.last_visit)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
+                ))
+              )}
+            </tbody>
+          </table>
         </div>
       </div>
       
@@ -953,87 +939,100 @@ export default function CalendarSummaryReport() {
 
               <span>
                 {
-                  (
-                    SAMPLE_STAFF_TRAVEL_PLANS[
-                      selectedStaff.id
-                    ] || []
-                  ).length
+                  <span>
+                    {selectedStaffTravels.length}{" "}
+                    {selectedStaffTravels.length === 1 ? "record" : "records"}
+                  </span>
                 }{" "}
                 records
               </span>
             </div>
 
             <div className="calendar-summary-travel-list">
-              {(
-                SAMPLE_STAFF_TRAVEL_PLANS[
-                  selectedStaff.id
-                ] || []
-              ).map((plan) => (
-                <button
-                  key={plan.id}
-                  type="button"
-                  className="calendar-summary-travel-item"
-                  onClick={() =>
-                    setSelectedTravelPlan(plan)
-                  }
+              {selectedStaffTravels.length === 0 ? (
+                <div
+                  style={{
+                    padding: "30px",
+                    textAlign: "center",
+                  }}
                 >
-                  <div className="calendar-summary-travel-date">
-                    <span>
-                      {new Date(
-                        `${plan.date}T00:00:00`
-                      ).toLocaleDateString("en-PH", {
-                        month: "short",
-                      })}
-                    </span>
-
-                    <strong>
-                      {new Date(
-                        `${plan.date}T00:00:00`
-                      ).getDate()}
-                    </strong>
-
-                    <small>
-                      {new Date(
-                        `${plan.date}T00:00:00`
-                      ).getFullYear()}
-                    </small>
-                  </div>
-
-                  <div className="calendar-summary-travel-main">
-                    <div className="calendar-summary-travel-title">
-                      <strong>{plan.title}</strong>
-
-                      <span
-                        className={`calendar-summary-status ${plan.status
-                          .toLowerCase()
-                          .replace(/\s+/g, "-")}`}
-                      >
-                        {plan.status}
+                  No travel records found for this employee.
+                </div>
+              ) : (
+                selectedStaffTravels.map((plan) => (
+                  <button
+                    key={plan.id}
+                    type="button"
+                    className="calendar-summary-travel-item"
+                    onClick={() => {
+                      console.log("SELECTED TRAVEL:", plan);
+                    }}
+                  >
+                    <div className="calendar-summary-travel-date">
+                      <span>
+                        {new Date(
+                          `${plan.date}T00:00:00`
+                        ).toLocaleDateString("en-PH", {
+                          month: "short",
+                        })}
                       </span>
+
+                      <strong>
+                        {new Date(
+                          `${plan.date}T00:00:00`
+                        ).getDate()}
+                      </strong>
+
+                      <small>
+                        {new Date(
+                          `${plan.date}T00:00:00`
+                        ).getFullYear()}
+                      </small>
                     </div>
 
-                    <p>{plan.description}</p>
+                    <div className="calendar-summary-travel-main">
+                      <div className="calendar-summary-travel-title">
+                        <strong>
+                          {plan.title || "Travel Plan"}
+                        </strong>
 
-                    <div className="calendar-summary-travel-meta">
-                      <span>
-                        Branch: <b>{plan.branch}</b>
-                      </span>
+                        <span
+                          className={`calendar-summary-status ${String(
+                            plan.status || ""
+                          )
+                            .toLowerCase()
+                            .replace(/\s+/g, "-")}`}
+                        >
+                          {plan.status || "-"}
+                        </span>
+                      </div>
 
-                      <span>
-                        Time In: <b>{plan.time_in}</b>
-                      </span>
+                      <p>
+                        {plan.description ||
+                          `Travel visit to ${plan.branch || "-"}`}
+                      </p>
 
-                      <span>
-                        Time Out: <b>{plan.time_out}</b>
-                      </span>
+                      <div className="calendar-summary-travel-meta">
+                        <span>
+                          Branch: <b>{plan.branch || "-"}</b>
+                        </span>
+
+                        <span>
+                          Time In: <b>{plan.time_in || "-"}</b>
+                        </span>
+
+                        <span>
+                          Time Out: <b>{plan.time_out || "-"}</b>
+                        </span>
+                      </div>
                     </div>
-                  </div>
 
-                  <div className="calendar-summary-travel-arrow">
-                    View →
-                  </div>
-                </button>
-              ))}
+                    <div className="calendar-summary-travel-arrow">
+                      View →
+                    </div>
+                  </button>
+                ))
+              )}
             </div>
 
             <div className="calendar-summary-modal-footer">

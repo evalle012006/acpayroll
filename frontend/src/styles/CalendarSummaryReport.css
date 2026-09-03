@@ -208,59 +208,6 @@
 }
 
 /* =====================================================
-   TABS
-===================================================== */
-
-.calendar-summary-tabs {
-  display: flex;
-  gap: 4px;
-
-  padding: 12px 14px 0;
-  border-bottom: 1px solid var(--border);
-}
-
-.calendar-summary-tabs button {
-  position: relative;
-
-  padding: 10px 15px;
-
-  border: 0;
-  border-radius: 8px 8px 0 0;
-
-  background: transparent;
-  color: var(--muted);
-
-  font-family: inherit;
-  font-size: 12px;
-  font-weight: 800;
-
-  cursor: pointer;
-}
-
-.calendar-summary-tabs button:hover {
-  color: var(--text);
-  background: var(--hover);
-}
-
-.calendar-summary-tabs button.active {
-  color: #6366f1;
-}
-
-.calendar-summary-tabs button.active::after {
-  content: "";
-  position: absolute;
-
-  left: 12px;
-  right: 12px;
-  bottom: -1px;
-
-  height: 3px;
-  border-radius: 3px 3px 0 0;
-
-  background: #6366f1;
-}
-
-/* =====================================================
    TABLE HEADER
 ===================================================== */
 
@@ -416,27 +363,6 @@
   .calendar-summary-header-actions button {
     flex: 1;
   }
-}
-
-/* =====================================================
-   VIEW BUTTON
-===================================================== */
-
-.calendar-summary-view-btn {
-  padding: 7px 14px;
-  border: 1px solid #4f46e5;
-  border-radius: 8px;
-  background: rgba(79, 70, 229, 0.12);
-  color: #818cf8;
-  font-family: inherit;
-  font-size: 11px;
-  font-weight: 900;
-  cursor: pointer;
-}
-
-.calendar-summary-view-btn:hover {
-  background: #4f46e5;
-  color: #fff;
 }
 
 /* =====================================================
@@ -1017,4 +943,23 @@
   .calendar-summary-photo-grid {
     grid-template-columns: repeat(2, 1fr);
   }
+}
+
+.calendar-summary-filter-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 12px;
+}
+
+.calendar-summary-clickable-row {
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.calendar-summary-clickable-row:hover td {
+  background: rgba(83, 92, 255, 0.12);
+}
+
+.calendar-summary-clickable-row:active td {
+  background: rgba(83, 92, 255, 0.2);
 }

@@ -41,6 +41,7 @@ const travelPlanRoutes = require("./routes/travelPlanRoutes");
 const travelPlanPhotoRoutes = require("./routes/travelPlanPhotoRoutes");
 const travelPlanComplianceRoutes = require("./routes/travelPlanComplianceRoutes");
 const travelPlanScopeRoutes = require("./routes/travelPlanScopeRoutes");
+const travelPlanNoteRoutes = require("./routes/travelPlanNoteRoutes");
 
 const transportationHistoryRoutes = require("./routes/transportationHistoryRoutes");
 const salaryHistoryRoutes = require("./routes/salaryHistoryRoutes");
@@ -122,10 +123,20 @@ app.use("/api", otherReceivableRoutes);
 app.use("/api", calendarSummaryReportRoutes);
 app.use("/api", calendarActivityRoutes);
 
-app.use("/api", travelPlanRoutes);
+// =====================================================
+// TRAVEL PLAN ROUTES
+// IMPORTANT:
+// Specific routes must be mounted BEFORE travelPlanRoutes
+// because travelPlanRoutes contains /travel-plans/:id
+// =====================================================
+
+app.use("/api", travelPlanScopeRoutes);
 app.use("/api", travelPlanPhotoRoutes);
 app.use("/api", travelPlanComplianceRoutes);
-app.use("/api", travelPlanScopeRoutes);
+app.use("/api", travelPlanNoteRoutes);
+
+// Keep the generic Travel Plan routes LAST
+app.use("/api", travelPlanRoutes);
 
 app.use("/api", calendarRoutes);
 
