@@ -26,7 +26,7 @@ const norm = (v) => clean(v).toLowerCase();
 const roleLower = (req) => norm(req.user?.role);
 const departmentLower = (req) => norm(req.user?.department);
 
-const isAdmin = (req) => ["admin", "it"].includes(roleLower(req));
+const isAdmin = (req) => roleLower(req) === "admin";
 const isIT = (req) => roleLower(req) === "it";
 const isHr = (req) => roleLower(req) === "hr";
 const isAccounting = (req) => roleLower(req) === "accounting";
@@ -34,7 +34,7 @@ const isTread = (req) => roleLower(req) === "tread";
 const isBranchManager = (req) =>
   roleLower(req) === "branch manager";
 
-const isAreaManager = (req) =>
+const isAreaManager = (req) =>  
   roleLower(req) === "area manager";
 
 const isRegionalManager = (req) =>
@@ -67,15 +67,25 @@ const isHRorAccountingManager = (req) =>
   );
 const isPresident = (req) => roleLower(req) === "president";
 
+// =====================================================
+// RESIGNATION FINAL APPROVER
+// HR DEPARTMENT - ANY ROLE
+// =====================================================
 const isFinalApprover = (req) =>
+  isHRDepartment(req);
+
+// =====================================================
+// DELETE RESIGNATION ACCESS
+// =====================================================
+const canDeleteResignation = (req) =>
   isAdmin(req) ||
   isIT(req) ||
-  isHr(req) ||
-  isAccounting(req) ||
-  isSeniorVicePresident(req) ||
-  isHRorAccountingManager(req);
+  isHRDepartment(req) ||
+  isAccountingDepartment(req);
 
-const getUserBranchId = (req) => req.user?.branch_id ?? null;
+const getUserBranchId = (req) =>
+  req.user?.branch_id ?? null;
+
 const getUserArea = (req) => clean(req.user?.area);
 const getUserRegion = (req) => clean(req.user?.region);
 
@@ -94,7 +104,7 @@ const STATUS_RM = "Pending Regional Manager";
 const STATUS_AVP = "Pending Assistant Vice President";
 const STATUS_VP = "Pending Vice President";
 const STATUS_SVP = "Pending Senior Vice President";
-const STATUS_ADMIN = "Pending Admin";
+const STATUS_HR = "Pending HR Department";
 const STATUS_APPROVED = "Approved";
 const STATUS_REJECTED = "Rejected";
 const STATUS_REVOKED = "Revoked";
@@ -150,7 +160,7 @@ const STATUS_ROLE_MAP = {
 };
 
 const approverExists = async (client, status, staff) => {
-  if (status === STATUS_ADMIN) {
+  if (status === STATUS_HR) {
     return true;
   }
 
@@ -237,8 +247,8 @@ const getFirstActiveStatus = async (
   possibleStatuses
 ) => {
   for (const status of possibleStatuses) {
-    if (status === STATUS_ADMIN) {
-      return STATUS_ADMIN;
+    if (status === STATUS_HR) {
+      return STATUS_HR;
     }
 
     const exists = await approverExists(
@@ -252,7 +262,7 @@ const getFirstActiveStatus = async (
     }
   }
 
-  return STATUS_ADMIN;
+  return STATUS_HR;
 };
 
 const determineInitialStatus = async (
@@ -269,7 +279,7 @@ const determineInitialStatus = async (
     return await getFirstActiveStatus(
       client,
       staff,
-      [STATUS_SVP, STATUS_ADMIN]
+      [STATUS_SVP, STATUS_HR]
     );
   }
 
@@ -287,7 +297,7 @@ const determineInitialStatus = async (
         STATUS_RM,
         STATUS_AVP,
         STATUS_VP,
-        STATUS_ADMIN,
+        STATUS_HR,
       ]
     );
   }
@@ -296,7 +306,7 @@ const determineInitialStatus = async (
     return await getFirstActiveStatus(
       client,
       staff,
-      [STATUS_RM, STATUS_AVP, STATUS_VP, STATUS_ADMIN]
+      [STATUS_RM, STATUS_AVP, STATUS_VP, STATUS_HR]
     );
   }
 
@@ -304,7 +314,7 @@ const determineInitialStatus = async (
     return await getFirstActiveStatus(
       client,
       staff,
-      [STATUS_AVP, STATUS_VP, STATUS_ADMIN]
+      [STATUS_AVP, STATUS_VP, STATUS_HR]
     );
   }
 
@@ -312,12 +322,12 @@ const determineInitialStatus = async (
     return await getFirstActiveStatus(
       client,
       staff,
-      [STATUS_VP, STATUS_ADMIN]
+      [STATUS_VP, STATUS_HR]
     );
   }
 
   if (staffPosition.includes("vice president")) {
-    return STATUS_ADMIN;
+    return STATUS_HR;
   }
 
   if (isBranchManager(req) || isAreaManager(req)) {
@@ -329,7 +339,7 @@ const determineInitialStatus = async (
         STATUS_RM,
         STATUS_AVP,
         STATUS_VP,
-        STATUS_ADMIN,
+        STATUS_HR,
       ]
     );
   }
@@ -338,7 +348,7 @@ const determineInitialStatus = async (
     return await getFirstActiveStatus(
       client,
       staff,
-      [STATUS_AVP, STATUS_VP, STATUS_ADMIN]
+      [STATUS_AVP, STATUS_VP, STATUS_HR]
     );
   }
 
@@ -346,7 +356,7 @@ const determineInitialStatus = async (
     return await getFirstActiveStatus(
       client,
       staff,
-      [STATUS_VP, STATUS_ADMIN]
+      [STATUS_VP, STATUS_HR]
     );
   }
 
@@ -355,7 +365,7 @@ const determineInitialStatus = async (
     isFinalApprover(req) ||
     isTread(req)
   ) {
-    return STATUS_ADMIN;
+    return STATUS_HR;
   }
 
   return await getFirstActiveStatus(
@@ -366,7 +376,7 @@ const determineInitialStatus = async (
       STATUS_RM,
       STATUS_AVP,
       STATUS_VP,
-      STATUS_ADMIN,
+      STATUS_HR,
     ]
   );
 };
@@ -385,7 +395,7 @@ const getNextActiveStatus = async (
         STATUS_RM,
         STATUS_AVP,
         STATUS_VP,
-        STATUS_ADMIN,
+        STATUS_HR,
       ]
     );
   }
@@ -398,7 +408,7 @@ const getNextActiveStatus = async (
         STATUS_RM,
         STATUS_AVP,
         STATUS_VP,
-        STATUS_ADMIN,
+        STATUS_HR,
       ]
     );
   }
@@ -407,7 +417,7 @@ const getNextActiveStatus = async (
     return await getFirstActiveStatus(
       client,
       staff,
-      [STATUS_AVP, STATUS_VP, STATUS_ADMIN]
+      [STATUS_AVP, STATUS_VP, STATUS_HR]
     );
   }
 
@@ -415,7 +425,7 @@ const getNextActiveStatus = async (
     return await getFirstActiveStatus(
       client,
       staff,
-      [STATUS_VP, STATUS_ADMIN]
+      [STATUS_VP, STATUS_HR]
     );
   }
 
@@ -423,21 +433,17 @@ const getNextActiveStatus = async (
     currentStatus === STATUS_VP ||
     currentStatus === STATUS_SVP
   ) {
-    return STATUS_ADMIN;
+    return STATUS_HR;
   }
 
-  return STATUS_ADMIN;
+  return STATUS_HR;
 };
 
 const canActOnCurrentStage = (req, row) => {
   const status = clean(row.status);
 
   if (isFinalApprover(req)) {
-    return (
-      status !== STATUS_APPROVED &&
-      status !== STATUS_REJECTED &&
-      status !== STATUS_REVOKED
-    );
+    return status === STATUS_HR;
   }
 
   if (isBranchManager(req)) {
@@ -580,7 +586,7 @@ router.get(
             AND status IN (
               '${STATUS_AVP}',
               '${STATUS_VP}',
-              '${STATUS_ADMIN}',
+              '${STATUS_HR}',
               '${STATUS_APPROVED}',
               '${STATUS_REJECTED}'
             )
@@ -719,7 +725,7 @@ router.post(
           STATUS_AVP,
           STATUS_VP,
           STATUS_SVP,
-          STATUS_ADMIN,
+          STATUS_HR,
         ]
       );
 
@@ -975,6 +981,15 @@ router.put(
         req.body?.bypass === "true";
 
       if (isFinalApprover(req) && !bypass) {
+        if (currentStatus !== STATUS_HR) {
+          await client.query("ROLLBACK");
+
+          return res.status(400).json({
+            message:
+              "This resignation is not yet pending HR Department final approval.",
+          });
+        }
+
         const finalAttachmentPath =
           uploadedAttachmentPath || existing.attachment_path || null;
 
@@ -1166,10 +1181,11 @@ router.put(
       }
 
       if (bypass) {
-        if (!isAdmin(req) && !isIT(req)) {
+        if (!isAdmin(req)) {
           await client.query("ROLLBACK");
+
           return res.status(403).json({
-            message: "Only Admin and IT can bypass approval.",
+            message: "Only Admin can bypass approval.",
           });
         }
 
@@ -1225,20 +1241,21 @@ router.put(
           case STATUS_VP:
             bypassApproverField = "vp_approved_by";
             bypassApproverAtField = "vp_approved_at";
-            nextStatus = STATUS_ADMIN;
+            nextStatus = STATUS_HR;
             break;
 
           case STATUS_SVP:
             bypassApproverField = "svp_approved_by";
             bypassApproverAtField = "svp_approved_at";
-            nextStatus = STATUS_ADMIN;
+            nextStatus = STATUS_HR;
             break;
 
-          case STATUS_ADMIN:
+          case STATUS_HR:
             await client.query("ROLLBACK");
 
             return res.status(400).json({
-              message: "Admin is already the last approval stage.",
+              message:
+                "The request is already pending final approval by HR Department.",
             });
 
           default:
@@ -1448,7 +1465,7 @@ router.put(
           });
         }
 
-        nextStatus = STATUS_ADMIN;
+        nextStatus = STATUS_HR;
         approverField = "vp_approved_by";
         approverAtField = "vp_approved_at";
       } else if (isSeniorVicePresident(req)) {
@@ -1460,7 +1477,7 @@ router.put(
           });
         }
 
-        nextStatus = STATUS_ADMIN;
+        nextStatus = STATUS_HR;
         approverField = "svp_approved_by";
         approverAtField = "svp_approved_at";
       } else {
@@ -1598,8 +1615,7 @@ router.put(
         await client.query("ROLLBACK");
 
         return res.status(403).json({
-          message:
-            "Only Admin, IT, HR, or Accounting can revoke an approved resignation.",
+          message: "Only HR Department can revoke an approved resignation.",
         });
       }
 
@@ -1825,7 +1841,7 @@ router.put(
 
         return res.status(403).json({
           message:
-            "Only Admin, IT, HR, or Accounting can submit a Re-Apply request.",
+            "Only HR Department can submit a Re-Apply request.",
         });
       }
 
@@ -2010,9 +2026,10 @@ router.put(
         `/uploads/resignation-requests/${req.file.filename}`;
 
       // =====================================================
-      // SEND RE-APPLY TO ADMIN FOR FINAL APPROVAL
+      // SEND RE-APPLY TO HR DEPARTMENT FOR FINAL APPROVAL
       // Staff remains INACTIVE until approved.
       // =====================================================
+
       const updated = await client.query(
         `
         UPDATE public.resignation_requests
@@ -2059,7 +2076,7 @@ router.put(
         `,
         [
           id,
-          STATUS_ADMIN,
+          STATUS_HR,
 
           effective_date,
 
@@ -2117,10 +2134,10 @@ router.delete(
 
       if (!id) return res.status(400).json({ message: "Invalid id" });
 
-      if (!isFinalApprover(req)) {
+      if (!canDeleteResignation(req)) {
         return res.status(403).json({
           message:
-            "Only Admin, IT, HR, or Accounting can delete resignation requests",
+            "Only Admin, IT, HR Department, or Accounting Department can delete resignation requests",
         });
       }
 

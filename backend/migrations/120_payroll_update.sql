@@ -49,4 +49,7 @@ ALTER TABLE public.demotion_orders
   ADD COLUMN IF NOT EXISTS to_area TEXT,
   ADD COLUMN IF NOT EXISTS to_department TEXT;
 
+  ALTER TABLE public.resignation_requests
+ALTER COLUMN effective_date DROP NOT NULL;
+
 COMMIT;
