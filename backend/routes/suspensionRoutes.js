@@ -336,12 +336,124 @@ const canDownloadApprovedFile = (req, row) => {
 const canUploadApprovedFile = (req) =>
   hasSuspensionFullAccess(req);
 
+
+  // =====================================================
+  // SUSPENSION STAFF STATUS LIFECYCLE
+  // =====================================================
+  async function applyDueSuspensions() {
+    const client = await pool.connect();
+
+    try {
+      await client.query("BEGIN");
+
+      // =====================================================
+      // 1. ACTIVE SUSPENSION
+      // If today is between start_date and end_date,
+      // change the employee from Active -> Inactive.
+      // =====================================================
+      await client.query(`
+        UPDATE public.staff s
+        SET status = 'Inactive'
+        WHERE LOWER(TRIM(COALESCE(s.status, ''))) = 'active'
+          AND EXISTS (
+            SELECT 1
+            FROM public.suspension_orders so
+            WHERE so.employee_id = s.id
+              AND LOWER(TRIM(COALESCE(so.status, ''))) = 'approved'
+              AND CURRENT_DATE >= so.start_date
+              AND CURRENT_DATE <= so.end_date
+          )
+      `);
+
+      // =====================================================
+      // 2. FINISHED SUSPENSION
+      // If the suspension already ended,
+      // change Inactive -> Active,
+      // but only when there is no other current suspension.
+      // =====================================================
+      await client.query(`
+        UPDATE public.staff s
+        SET
+          status = 'Active'
+        WHERE LOWER(TRIM(COALESCE(s.status, ''))) = 'inactive'
+
+          -- Employee has an approved suspension that has finished
+          AND EXISTS (
+            SELECT 1
+            FROM public.suspension_orders finished_so
+            WHERE finished_so.employee_id = s.id
+              AND LOWER(
+                TRIM(
+                  COALESCE(
+                    finished_so.status,
+                    ''
+                  )
+                )
+              ) = 'approved'
+              AND CURRENT_DATE > finished_so.end_date
+          )
+
+          -- Employee must NOT have another suspension
+          -- that is currently active
+          AND NOT EXISTS (
+            SELECT 1
+            FROM public.suspension_orders active_so
+            WHERE active_so.employee_id = s.id
+              AND LOWER(
+                TRIM(
+                  COALESCE(
+                    active_so.status,
+                    ''
+                  )
+                )
+              ) = 'approved'
+              AND CURRENT_DATE >= active_so.start_date
+              AND CURRENT_DATE <= active_so.end_date
+          )
+
+          -- Do NOT reactivate employees whose inactive
+          -- status is caused by another exit transaction
+          AND LOWER(
+            TRIM(
+              COALESCE(
+                s.exit_type,
+                ''
+              )
+            )
+          ) NOT IN (
+            'resigned',
+            'resignation',
+            'terminated',
+            'termination',
+            'awol',
+            'deceased',
+            'death'
+          )
+      `);
+
+      await client.query("COMMIT");
+    } catch (e) {
+      await client.query("ROLLBACK");
+
+      console.error(
+        "applyDueSuspensions ERROR:",
+        e.message
+      );
+
+      throw e;
+    } finally {
+      client.release();
+    }
+  }
+
 router.get(
   "/suspension-orders",
   requireAuth,
   requirePermission("suspension_order", "view"),
   async (req, res) => {
     try {
+      await applyDueSuspensions();
+
       if (
         hasSuspensionFullAccess(req) ||
         isOfficeOfThePresidentUser(req) ||
@@ -1215,6 +1327,13 @@ router.post(
         removeStoredFile(oldApprovedPath);
       }
 
+
+      // =====================================================
+      // APPLY SUSPENSION STATUS AFTER APPROVED FILE UPLOAD
+      // =====================================================
+      await applyDueSuspensions();
+
+
       return res.json(result.rows[0]);
     } catch (e) {
       console.error(
@@ -1408,6 +1527,19 @@ router.put(
           message: "Not found or invalid approval stage",
         });
       }
+
+
+      // =====================================================
+      // APPLY STAFF STATUS AFTER FINAL SUSPENSION APPROVAL
+      // =====================================================
+      if (
+        String(result.rows[0]?.status || "")
+          .trim()
+          .toLowerCase() === "approved"
+      ) {
+        await applyDueSuspensions();
+      }
+
 
       return res.json(result.rows[0]);
     } catch (e) {

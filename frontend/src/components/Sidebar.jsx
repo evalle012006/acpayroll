@@ -347,6 +347,10 @@ const Sidebar = ({ collapsed }) => {
             to: "/transactions/travel-plan/comply",
             label: "Comply",
           },
+          {
+            to: "/transactions/travel-plan/summary-report",
+            label: "Calendar Summary Report",
+          },
         ],
       },
       {

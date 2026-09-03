@@ -120,18 +120,16 @@ const getOperationScope = (req) => {
   }
 
   // =====================================================
-  // VP / SVP
-  // See ALL staff under OPERATION DEPARTMENT
+  // VP / SVP - OPERATION
+  // Can view all SBF orders for Operation scope
   // =====================================================
+  
   if (
     isVicePresident(req) ||
     isSeniorVicePresident(req)
   ) {
     return {
-      where: `
-        AND LOWER(TRIM(COALESCE(s.department, '')))
-            LIKE '%operation%'
-      `,
+      where: "",
       params: [],
     };
   }

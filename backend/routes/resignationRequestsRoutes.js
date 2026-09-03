@@ -622,7 +622,6 @@ router.post(
       const branch_code = clean(req.body?.branch_code);
       const branch_name = clean(req.body?.branch_name);
       const resignation_date = toDate(req.body?.resignation_date);
-      const effective_date = toDate(req.body?.effective_date);
       const remarks = clean(req.body?.remarks);
 
       const attachment_path = req.file
@@ -632,11 +631,6 @@ router.post(
       if (!staff_id) {
         await client.query("ROLLBACK");
         return res.status(400).json({ message: "Staff is required" });
-      }
-
-      if (!effective_date) {
-        await client.query("ROLLBACK");
-        return res.status(400).json({ message: "Effective date is required" });
       }
 
       const staffRes = await client.query(
@@ -813,8 +807,8 @@ router.post(
           finalBranchName || null,
           clean(staff.area) || null,
           clean(staff.region) || null,
-          resignation_date || effective_date,
-          effective_date,
+          resignation_date,
+          null,
           remarks || null,
           attachment_path,
           initialStatus,
@@ -992,11 +986,9 @@ router.put(
         }
 
         const employeeNo = clean(existing.employee_no);
-        const effectiveDate = toDate(existing.effective_date);
+        const effectiveDate = toDate( req.body?.effective_date);
         const remarks = clean(existing.remarks) || null;
-
         const isReapplyRequest = Boolean(existing.revoke_effective_date);
-
         const finalEffectiveDate = isReapplyRequest
           ? toDate(existing.revoke_effective_date)
           : effectiveDate;
@@ -1010,10 +1002,10 @@ router.put(
           return res.status(400).json({ message: "Request has no employee number" });
         }
 
-        if (!effectiveDate) {
+        if (!finalEffectiveDate) {
           await client.query("ROLLBACK");
           return res.status(400).json({
-            message: "Request has invalid effective date",
+            message: "Effective date is required for final approval",
           });
         }
 
@@ -1036,9 +1028,10 @@ router.put(
 
         const updateRequest = await client.query(
           `
-          UPDATE public.resignation_requests
+         UPDATE public.resignation_requests
           SET
             status = $2,
+            effective_date = $7::date,
             approved_by = $3,
             approved_at = NOW(),
             rejected_by = NULL,
@@ -1058,6 +1051,7 @@ router.put(
             finalAttachmentPath,
             req.file?.originalname || existing.approved_attachment_name || null,
             req.file?.mimetype || existing.approved_attachment_mime || null,
+            finalEffectiveDate,
           ]
         );
 

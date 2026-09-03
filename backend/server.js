@@ -33,6 +33,15 @@ const notificationRoutes = require("./routes/notificationRoutes");
 const chatRoutes = require("./routes/chatRoutes");
 const apiRoutes = require("./routes/apiRoutes");
 
+const calendarRoutes = require("./routes/calendarRoutes");
+const calendarActivityRoutes = require("./routes/calendarActivityRoutes");
+const calendarSummaryReportRoutes = require("./routes/calendarSummaryReportRoutes");
+
+const travelPlanRoutes = require("./routes/travelPlanRoutes");
+const travelPlanPhotoRoutes = require("./routes/travelPlanPhotoRoutes");
+const travelPlanComplianceRoutes = require("./routes/travelPlanComplianceRoutes");
+const travelPlanScopeRoutes = require("./routes/travelPlanScopeRoutes");
+
 const transportationHistoryRoutes = require("./routes/transportationHistoryRoutes");
 const salaryHistoryRoutes = require("./routes/salaryHistoryRoutes");
 const statusHistoryRoutes = require("./routes/statusHistoryRoutes");
@@ -46,7 +55,7 @@ const boardResolutionRoutes = require("./routes/boardResolutionRoutes");
 const rolePermissionsRoutes = require("./routes/rolePermissionsRoutes");
 const awolReportsRoutes = require("./routes/awolReportsRoutes");
 const otherReceivableRoutes = require("./routes/otherReceivableRoutes");
-const calendarRoutes = require("./routes/calendarRoutes");
+
 const terminationRoutes = require("./routes/terminationRoutes");
 const { startMonthlyBalancePoster } = require("./jobs/monthlyBalancePoster");
 const { startResignationCron } = require("./jobs/resignationCron");
@@ -109,7 +118,17 @@ app.use("/api", boardResolutionRoutes);
 app.use("/api", rolePermissionsRoutes);
 app.use("/api", awolReportsRoutes);
 app.use("/api", otherReceivableRoutes);
+
+app.use("/api", calendarSummaryReportRoutes);
+app.use("/api", calendarActivityRoutes);
+
+app.use("/api", travelPlanRoutes);
+app.use("/api", travelPlanPhotoRoutes);
+app.use("/api", travelPlanComplianceRoutes);
+app.use("/api", travelPlanScopeRoutes);
+
 app.use("/api", calendarRoutes);
+
 app.use("/api", apiRoutes);
 app.use("/api", terminationRoutes);
 

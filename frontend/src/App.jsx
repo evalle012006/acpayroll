@@ -40,6 +40,7 @@ import TaxCalculator from "./pages/TaxCalculator";
 import { CompRatesProvider } from "./context/CompRatesContext";
 import Logistic from "./pages/Logistic";
 import DetailsCompensation from "./pages/DetailsCompensation";
+import PagIbigRemittances from "./pages/PagIbigRemittances";
 import RegularizationOrders from "./pages/RegularizationOrders";
 import ResignationRequests from "./pages/ResignationRequests";
 import StaffAccountsPayable from "./pages/StaffAccountsPayable";
@@ -57,6 +58,7 @@ import TravelPlanPage from "./pages/travel/TravelPlanPage";
 import ForecastPage from "./pages/travel/ForecastPage";
 import ComplyPage from "./pages/travel/ComplyPage";
 import CalendarPage from "./pages/travel/CalendarPage";
+import CalendarSummaryReport from "./pages/travel/CalendarSummaryReport";
 
 import api from "./api/axiosClient";
 
@@ -498,6 +500,15 @@ function AppShell() {
       />
 
       <Route
+        path="/system-update/pag-ibig-remittances"
+        element={
+          <Page module="system_update">
+            <PagIbigRemittances />
+          </Page>
+        }
+      />
+
+      <Route
         path="/system-update/details-compensation"
         element={
           <Page module="comp_rate">
@@ -560,6 +571,15 @@ function AppShell() {
         element={
           <Page module="travel_plan">
             <ComplyPage />
+          </Page>
+        }
+      />
+
+      <Route
+        path="/transactions/travel-plan/summary-report"
+        element={
+          <Page module="travel_plan">
+            <CalendarSummaryReport />
           </Page>
         }
       />

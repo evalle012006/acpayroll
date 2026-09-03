@@ -245,7 +245,13 @@ export default function DemotionOrder() {
       prev_position: "",
       new_position: "",
       prev_branch_id: "",
+
       to_branch_id: "",
+      to_division: "",
+      to_region: "",
+      to_area: "",
+      to_department: "",
+
       effective_date: "",
       details: "",
       attachment: null,
@@ -457,6 +463,7 @@ export default function DemotionOrder() {
     if (!clean(form.new_position)) return setErr("New position is required.");
     if (!toDate10(form.effective_date)) return setErr("Effective date is required.");
     if (!form.to_branch_id) return setErr("Destination branch is required.");
+    if (!form.to_department) { return setErr("Destination department is required.");}
     if (!form.attachment) return setErr("Demotion request file is required.");
 
     const formData = new FormData();
@@ -475,6 +482,10 @@ export default function DemotionOrder() {
     formData.append("effective_date", toDate10(form.effective_date));
     formData.append("details", clean(form.details) || "");
     formData.append("to_branch_id", Number(form.to_branch_id));
+    formData.append("to_division", clean(form.to_division));
+    formData.append("to_region", clean(form.to_region));
+    formData.append("to_area", clean(form.to_area));
+    formData.append("to_department", clean(form.to_department));
     formData.append("attachment", form.attachment);
 
     setSaving(true);
@@ -1263,6 +1274,12 @@ export default function DemotionOrder() {
                         prev_position: "",
                         new_position: "",
                         prev_branch_id: "",
+
+                        to_branch_id: "",
+                        to_division: "",
+                        to_region: "",
+                        to_area: "",
+                        to_department: "",
                       }));
                     }}
                     onFocus={() => setShowEmployeeDropdown(true)}
@@ -1347,27 +1364,119 @@ export default function DemotionOrder() {
                   <label>Destination Branch</label>
                   <select
                     value={form.to_branch_id}
-                    onChange={(event) =>
+                    onChange={(event) => {
+                      const branchId = event.target.value;
+
+                      const selectedBranch = branches.find(
+                        (branch) =>
+                          String(branch.id) === String(branchId)
+                      );
+
                       setForm((previous) => ({
                         ...previous,
-                        to_branch_id: event.target.value,
-                      }))
-                    }
+
+                        to_branch_id: branchId,
+
+                        to_division: clean(
+                          selectedBranch?.division
+                        ),
+
+                        to_region: clean(
+                          selectedBranch?.region
+                        ),
+
+                        to_area: clean(
+                          selectedBranch?.area
+                        ),
+                      }));
+                    }}
                     required
                   >
                     <option value="">Select branch</option>
 
-                    {branches
-                      .filter(
-                        (branch) =>
-                          String(branch.id) !==
-                          String(form.prev_branch_id)
-                      )
-                      .map((branch) => (
-                        <option key={branch.id} value={branch.id}>
-                          {branch.code} - {branch.name}
-                        </option>
-                      ))}
+                    {branches.map((branch) => (
+                      <option key={branch.id} value={branch.id}>
+                        {branch.code} - {branch.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="demotion-field">
+                  <label>Destination Division</label>
+                  <input
+                    value={form.to_division}
+                    readOnly
+                    placeholder="Auto-filled from branch"
+                  />
+                </div>
+
+                <div className="demotion-field">
+                  <label>Destination Region</label>
+                  <input
+                    value={form.to_region}
+                    readOnly
+                    placeholder="Auto-filled from branch"
+                  />
+                </div>
+
+                <div className="demotion-field">
+                  <label>Destination Area</label>
+                  <input
+                    value={form.to_area}
+                    readOnly
+                    placeholder="Auto-filled from branch"
+                  />
+                </div>
+
+                <div className="demotion-field">
+                  <label>Destination Department</label>
+
+                  <select
+                    value={form.to_department}
+                    onChange={(event) =>
+                      setForm((previous) => ({
+                        ...previous,
+                        to_department: event.target.value,
+                      }))
+                    }
+                    required
+                  >
+                    <option value="">
+                      Select destination department
+                    </option>
+
+                    <option value="OPERATION DEPARTMENT">
+                      OPERATION DEPARTMENT
+                    </option>
+
+                    <option value="IT DEPARTMENT">
+                      IT DEPARTMENT
+                    </option>
+
+                    <option value="HR DEPARTMENT">
+                      HR DEPARTMENT
+                    </option>
+
+                    <option value="ACCOUNTING DEPARTMENT">
+                      ACCOUNTING DEPARTMENT
+                    </option>
+
+                    <option value="AUDIT DEPARTMENT">
+                      AUDIT DEPARTMENT
+                    </option>
+
+                    <option value="TREAD DEPARTMENT">
+                      TREAD DEPARTMENT
+                    </option>
+
+                    <option value="PRODUCTION & LOGISTIC DEPARTMENT">
+                      PRODUCTION & LOGISTIC DEPARTMENT
+                    </option>
+
+                    <option value="OFFICE OF THE PRESIDENT">
+                      OFFICE OF THE PRESIDENT
+                    </option>
                   </select>
                 </div>
 
@@ -1521,6 +1630,38 @@ export default function DemotionOrder() {
                         ? branchLabel(viewOrder.to_branch_id)
                         : "-"
                     }
+                    readOnly
+                  />
+                </div>
+
+                <div className="demotion-field">
+                  <label>Destination Division</label>
+                  <input
+                    value={viewOrder.to_division || "-"}
+                    readOnly
+                  />
+                </div>
+
+                <div className="demotion-field">
+                  <label>Destination Region</label>
+                  <input
+                    value={viewOrder.to_region || "-"}
+                    readOnly
+                  />
+                </div>
+
+                <div className="demotion-field">
+                  <label>Destination Area</label>
+                  <input
+                    value={viewOrder.to_area || "-"}
+                    readOnly
+                  />
+                </div>
+
+                <div className="demotion-field">
+                  <label>Destination Department</label>
+                  <input
+                    value={viewOrder.to_department || "-"}
                     readOnly
                   />
                 </div>

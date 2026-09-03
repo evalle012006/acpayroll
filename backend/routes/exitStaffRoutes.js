@@ -32,7 +32,14 @@ const toDate = (v) => {
   return d.toISOString().slice(0, 10);
 };
 
-const todayDate = () => new Date().toISOString().slice(0, 10);
+const todayDate = () => {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Manila",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+};
 const clean = (v) => String(v ?? "").trim();
 const norm = (v) => clean(v).toLowerCase();
 
@@ -124,20 +131,19 @@ const applyDueExitStaff = async () => {
     FROM public.exit_staff_orders eso
 
     WHERE
-      s.employee_no = eso.employee_no
+      LOWER(TRIM(COALESCE(s.employee_no, ''))) =
+      LOWER(TRIM(COALESCE(eso.employee_no, '')))
 
       AND LOWER(TRIM(COALESCE(eso.status, ''))) = 'approved'
 
       AND eso.effective_date IS NOT NULL
-      AND eso.effective_date <= CURRENT_DATE
+      AND eso.effective_date <=
+        (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Manila')::date
 
       AND LOWER(TRIM(COALESCE(s.status, ''))) <> 'inactive'
 
-      /*
-        If the employee was re-applied on or after this
-        exit order's effective date, never inactivate them
-        again from this old exit order.
-      */
+      -- Never apply an old exit order if the staff
+      -- was re-applied on or after that exit date.
       AND NOT EXISTS (
         SELECT 1
         FROM public.status_history sh
@@ -145,6 +151,11 @@ const applyDueExitStaff = async () => {
               LOWER(TRIM(COALESCE(eso.employee_no, '')))
 
           AND LOWER(TRIM(COALESCE(sh.status, ''))) = 'active'
+
+          AND LOWER(TRIM(COALESCE(sh.reason, ''))) IN (
+            're-apply',
+            'reapply'
+          )
 
           AND sh.effective_date IS NOT NULL
 
@@ -804,6 +815,25 @@ router.put("/exit-staff/:id/reapply",
         `,
         [employeeNo, start_date]
       );
+
+      const remainingApproved = await client.query(
+        `
+        SELECT id, order_no, effective_date
+        FROM public.exit_staff_orders
+        WHERE LOWER(TRIM(COALESCE(employee_no, ''))) =
+              LOWER(TRIM($1))
+          AND LOWER(TRIM(COALESCE(status, ''))) = 'approved'
+        `,
+        [employeeNo]
+      );
+
+      if (remainingApproved.rowCount > 0) {
+        console.warn(
+          "Re-Apply warning: employee still has approved exit orders:",
+          employeeNo,
+          remainingApproved.rows
+        );
+      }
 
       const updated = await client.query(
         `

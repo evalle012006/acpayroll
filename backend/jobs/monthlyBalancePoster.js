@@ -32,7 +32,7 @@ const isValidMonthLabel = (value) => {
 //
 // This runs after:
 // 1. Contract CBU/Cashbond/Utility were added.
-// 2. Staff Accounts Payable was reduced.
+// 2. Approved loan balances were reduced.
 // 3. Opening loan balances were reduced.
 //
 // Existing snapshots are not overwritten.
@@ -240,6 +240,54 @@ async function createMonthlySnapshot(client, monthLabel) {
         SUM(
           CASE
             WHEN LOWER(TRIM(COALESCE(lr.loan_type, ''))) IN (
+              'sss loan',
+              'sss'
+            )
+            THEN GREATEST(
+              COALESCE(
+                lr.approved_total,
+                lr.total,
+                lr.approved_amount,
+                lr.amount,
+                0
+              )
+              -
+              (
+                CASE
+                  WHEN c.posting_date < lr.first_deduction_date
+                  THEN 0
+                  ELSE
+                    (
+                      (
+                        EXTRACT(YEAR FROM c.posting_date)::int
+                        -
+                        EXTRACT(YEAR FROM lr.first_deduction_date)::int
+                      ) * 12
+                      +
+                      (
+                        EXTRACT(MONTH FROM c.posting_date)::int
+                        -
+                        EXTRACT(MONTH FROM lr.first_deduction_date)::int
+                      )
+                      + 1
+                    )
+                END
+                *
+                COALESCE(
+                  lr.approved_per_month,
+                  lr.per_month,
+                  0
+                )
+              ),
+              0
+            )
+            ELSE 0
+          END
+        )::numeric(12,2) AS sss_loan,
+
+        SUM(
+          CASE
+            WHEN LOWER(TRIM(COALESCE(lr.loan_type, ''))) IN (
               'special loan',
               'special advance'
             )
@@ -377,6 +425,25 @@ async function createMonthlySnapshot(client, monthLabel) {
             ELSE 0
           END
         )::numeric(12,2) AS motorcycle_loan,
+
+        SUM(
+          CASE
+            WHEN LOWER(TRIM(COALESCE(ob.loan_type, ''))) IN (
+              'sss loan',
+              'sss'
+            )
+            THEN GREATEST(
+              COALESCE(
+                ob.remaining_balance,
+                ob.total_amount,
+                ob.original_amount,
+                0
+              ),
+              0
+            )
+            ELSE 0
+          END
+        )::numeric(12,2) AS sss_loan,
 
         SUM(
           CASE
@@ -543,6 +610,7 @@ async function createMonthlySnapshot(client, monthLabel) {
       salary_loan,
       salary_advance,
       motorcycle_loan,
+      sss_loan,
       special_advance,
       cash_advance,
       other_receivable,
@@ -590,6 +658,9 @@ async function createMonthlySnapshot(client, monthLabel) {
 
       COALESCE(lr.motorcycle_loan, 0)
       + COALESCE(olr.motorcycle_loan, 0),
+
+      COALESCE(lr.sss_loan, 0)
+      + COALESCE(olr.sss_loan, 0),
 
       COALESCE(lr.special_advance, 0)
       + COALESCE(olr.special_advance, 0),
@@ -774,149 +845,6 @@ async function addMonthlyContractBalances(
 }
 
 // =====================================================
-// DEDUCT STAFF ACCOUNTS PAYABLE
-// =====================================================
-
-async function deductStaffAccountsPayable(
-  client,
-  employeeNo,
-  monthLabel
-) {
-  const postingDate = `${monthLabel}-25`;
-
-  const result = await client.query(
-    `
-    SELECT
-      id,
-      COALESCE(payable_id, id) AS payable_id,
-      employee_no,
-      balance,
-      per_month
-
-    FROM public.staff_accounts_payable
-
-    WHERE
-      LOWER(
-        TRIM(
-          COALESCE(status, '')
-        )
-      ) = 'approved'
-
-      AND COALESCE(balance, 0) > 0
-      AND employee_no = $1
-
-      AND COALESCE(
-        release_date,
-        approved_at,
-        created_at
-      ) <= $2::date
-
-      FOR UPDATE
-      `,
-      [employeeNo, postingDate]
-  );
-
-  for (const payable of result.rows) {
-    const previousBalance = toNum(payable.balance);
-    const monthlyDeduction = toNum(payable.per_month);
-
-    if (monthlyDeduction <= 0) {
-      continue;
-    }
-
-    const actualDeduction = Math.min(
-      previousBalance,
-      monthlyDeduction
-    );
-
-    const newBalance = Math.max(
-      previousBalance - actualDeduction,
-      0
-    );
-
-    await client.query(
-      `
-      UPDATE public.staff_accounts_payable
-      SET
-        balance = $1,
-        payable_id = COALESCE(payable_id, id),
-        updated_at = NOW()
-      WHERE id = $2
-      `,
-      [newBalance, payable.id]
-    );
-
-    await client.query(
-      `
-      UPDATE public.staff_balances
-      SET
-        staff_accounts_payable = GREATEST(
-          COALESCE(staff_accounts_payable, 0)
-          - $1::numeric,
-          0
-        ),
-        updated_at = NOW()
-      WHERE employee_no = $2
-      `,
-      [actualDeduction, payable.employee_no]
-    );
-
-    // Prevent duplicate history in case this function is
-    // manually triggered more than once.
-    const existingHistory = await client.query(
-      `
-      SELECT id
-      FROM public.staff_accounts_payable_history
-      WHERE payable_id = $1
-        AND employee_no = $2
-        AND month_label = $3
-      LIMIT 1
-      `,
-      [
-        payable.payable_id,
-        payable.employee_no,
-        monthLabel,
-      ]
-    );
-
-    if (!existingHistory.rowCount) {
-      await client.query(
-        `
-        INSERT INTO public.staff_accounts_payable_history
-        (
-          payable_id,
-          employee_no,
-          month_label,
-          deducted_amount,
-          previous_balance,
-          new_balance,
-          created_at
-        )
-        VALUES
-        (
-          $1,
-          $2,
-          $3,
-          $4,
-          $5,
-          $6,
-          NOW()
-        )
-        `,
-        [
-          payable.payable_id,
-          payable.employee_no,
-          monthLabel,
-          actualDeduction,
-          previousBalance,
-          newBalance,
-        ]
-      );
-    }
-  }
-}
-
-// =====================================================
 // DEDUCT NORMAL APPROVED LOAN BALANCES
 // =====================================================
 
@@ -1011,6 +939,11 @@ async function deductApprovedLoanBalances(
       balanceColumn = "salary_advance";
     } else if (loanType === "motorcycle loan") {
       balanceColumn = "motorcycle_loan";
+    } else if (
+      loanType === "sss loan" ||
+      loanType === "sss"
+    ) {
+      balanceColumn = "sss_loan";
     } else if (
       loanType === "special advance" ||
       loanType === "special loan"
@@ -1108,6 +1041,7 @@ async function deductOpeningLoanBalances(
       id,
       staff_id,
       employee_no,
+      loan_type,
       remaining_balance,
       per_month,
       months_paid,
@@ -1135,6 +1069,8 @@ async function deductOpeningLoanBalances(
         start_date IS NULL
         OR start_date <= $2::date
       )
+
+    ORDER BY id ASC
 
     FOR UPDATE
     `,
@@ -1182,6 +1118,44 @@ async function deductOpeningLoanBalances(
     const newStatus =
       newBalance <= 0 ? "Paid" : "Active";
 
+    // ---------------------------------------------
+    // Determine which Personal Balance field
+    // belongs to this opening loan.
+    // ---------------------------------------------
+
+    const loanType = toStr(
+      loan.loan_type
+    ).toLowerCase();
+
+    let balanceColumn = null;
+
+    if (loanType === "salary loan") {
+      balanceColumn = "salary_loan";
+    } else if (loanType === "salary advance") {
+      balanceColumn = "salary_advance";
+    } else if (loanType === "motorcycle loan") {
+      balanceColumn = "motorcycle_loan";
+    } else if (
+      loanType === "sss loan" ||
+      loanType === "sss"
+    ) {
+      balanceColumn = "sss_loan";
+    } else if (
+      loanType === "special advance" ||
+      loanType === "special loan"
+    ) {
+      balanceColumn = "special_advance";
+    } else if (
+      loanType === "cash advance" ||
+      loanType === "cash loan"
+    ) {
+      balanceColumn = "cash_advance";
+    }
+
+    // ---------------------------------------------
+    // Update the actual opening loan record.
+    // ---------------------------------------------
+
     await client.query(
       `
       UPDATE public.staff_loan_opening_balances
@@ -1199,6 +1173,31 @@ async function deductOpeningLoanBalances(
         loan.id,
       ]
     );
+
+    // ---------------------------------------------
+    // Keep Staff Information > Personal Balances
+    // synchronized with the opening loan balance.
+    // ---------------------------------------------
+
+    if (balanceColumn) {
+      await client.query(
+        `
+        UPDATE public.staff_balances
+        SET
+          ${balanceColumn} = GREATEST(
+            COALESCE(${balanceColumn}, 0)
+            - $1::numeric,
+            0
+          ),
+          updated_at = NOW()
+        WHERE employee_no = $2
+        `,
+        [
+          actualDeduction,
+          employeeNo,
+        ]
+      );
+    }
   }
 }
 
@@ -1299,11 +1298,6 @@ async function postMonthlyBalances(
       // monthly posting row was created.
       //
       // Therefore, they cannot run twice for the same month.
-      await deductStaffAccountsPayable(
-        client,
-        staff.employee_no,
-        monthLabel
-      );
 
       await deductApprovedLoanBalances(
         client,

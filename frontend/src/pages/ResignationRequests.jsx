@@ -128,6 +128,12 @@ const isHRDeptManager =
   const [processingId, setProcessingId] = useState("");
 
   const [uploadFiles, setUploadFiles] = useState({});
+  const [finalApproveRow, setFinalApproveRow] = useState(null);
+
+  const [finalApproveForm, setFinalApproveForm] = useState({
+    effective_date: "",
+    attachment: null,
+  });
 
   const [revokeRow, setRevokeRow] = useState(null);
   const [revokeRemarks, setRevokeRemarks] = useState("");
@@ -153,7 +159,6 @@ const isHRDeptManager =
     branch_code: "",
     branch_name: "",
     resignation_date: toDate10(new Date().toISOString()),
-    effective_date: "",
     remarks: "",
     attachment: null,
   });
@@ -379,7 +384,6 @@ const isHRDeptManager =
       branch_code: "",
       branch_name: "",
       resignation_date: toDate10(new Date().toISOString()),
-      effective_date: "",
       remarks: "",
       attachment: null,
     });
@@ -401,13 +405,19 @@ const isHRDeptManager =
   const submitCreate = async (e) => {
     e.preventDefault();
 
-    if (!form.staff_id) return alert("Please select employee.");
-    if (!form.effective_date) return alert("Please select effective date.");
+    if (!form.staff_id) {
+      return alert("Please select employee.");
+    }
+
+    if (!form.resignation_date) {
+      return alert("Please select resignation date.");
+    }
 
     try {
       setSaving(true);
 
       const fd = new FormData();
+
       fd.append("staff_id", form.staff_id);
       fd.append("employee_no", form.employee_no);
       fd.append("employee_name", form.employee_name);
@@ -418,10 +428,11 @@ const isHRDeptManager =
       fd.append("branch_code", form.branch_code || "");
       fd.append("branch_name", form.branch_name || "");
       fd.append("resignation_date", form.resignation_date || "");
-      fd.append("effective_date", form.effective_date || "");
       fd.append("remarks", form.remarks || "");
 
-      if (form.attachment) fd.append("attachment", form.attachment);
+      if (form.attachment) {
+        fd.append("attachment", form.attachment);
+      }
 
       await api.post("/resignation-requests", fd, {
         headers: { "Content-Type": "multipart/form-data" },
@@ -431,7 +442,10 @@ const isHRDeptManager =
       closeCreate();
       await fetchAll();
     } catch (err) {
-      alert(err?.response?.data?.message || "Failed to create resignation request.");
+      alert(
+        err?.response?.data?.message ||
+          "Failed to create resignation request."
+      );
     } finally {
       setSaving(false);
     }
@@ -504,6 +518,93 @@ const isHRDeptManager =
       await fetchAll();
     } catch (err) {
       alert(err?.response?.data?.message || "Failed to approve request.");
+    } finally {
+      setProcessingId("");
+    }
+  };
+
+  const isFinalApprovalRow = (row) => {
+    if (!row) return false;
+
+    return (
+      canFinalAction &&
+      toStr(row.status) === STATUS_ADMIN
+    );
+  };
+
+  const closeFinalApproveModal = () => {
+    setFinalApproveRow(null);
+
+    setFinalApproveForm({
+      effective_date: "",
+      attachment: null,
+    });
+  };
+
+  const submitFinalApproval = async (e) => {
+    e.preventDefault();
+
+    if (!finalApproveRow?.id) return;
+
+    if (!finalApproveForm.effective_date) {
+      return alert(
+        "Effective date is required for final approval."
+      );
+    }
+
+    if (!finalApproveForm.attachment) {
+      return alert(
+        "Final approved file is required."
+      );
+    }
+
+    if (
+      !window.confirm(
+        "Final approve this resignation request?"
+      )
+    ) {
+      return;
+    }
+
+    try {
+      setProcessingId(
+        `approve-${finalApproveRow.id}`
+      );
+
+      const fd = new FormData();
+
+      fd.append(
+        "effective_date",
+        finalApproveForm.effective_date
+      );
+
+      fd.append(
+        "attachment",
+        finalApproveForm.attachment
+      );
+
+      await api.put(
+        `/resignation-requests/${finalApproveRow.id}/approve`,
+        fd,
+        {
+          headers: {
+            "Content-Type": "multipart/form-data",
+          },
+        }
+      );
+
+      alert(
+        "Resignation approved successfully."
+      );
+
+      closeFinalApproveModal();
+
+      await fetchAll();
+    } catch (err) {
+      alert(
+        err?.response?.data?.message ||
+          "Failed to final approve resignation request."
+      );
     } finally {
       setProcessingId("");
     }
@@ -1114,7 +1215,19 @@ const submitReapplyRequest = async (e) => {
                               <button
                                 className="reg-action-btn reg-action-approve"
                                 type="button"
-                                onClick={()=>approveRequest(row)}
+                                onClick={() => {
+                                  if (isFinalApprovalRow(row)) {
+                                    setFinalApproveRow(row);
+
+                                    setFinalApproveForm({
+                                      effective_date: "",
+                                      attachment: null,
+                                    });
+
+                                    return;
+                                  }
+                                  approveRequest(row);
+                                }}
                                 disabled={processingId===`approve-${row.id}`}
                               >
                                 {processingId===`approve-${row.id}`
@@ -1364,21 +1477,6 @@ const submitReapplyRequest = async (e) => {
                   />
                 </div>
 
-                <div className="form-group">
-                  <label>Effective Date</label>
-                  <input
-                    type="date"
-                    value={form.effective_date}
-                    onChange={(e) =>
-                      setForm((prev) => ({
-                        ...prev,
-                        effective_date: e.target.value,
-                      }))
-                    }
-                    required
-                  />
-                </div>
-
                 <div className="form-group full">
                   <label>Attachment</label>
                   <input
@@ -1553,6 +1651,140 @@ const submitReapplyRequest = async (e) => {
                 </button>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {finalApproveRow && (
+        <div
+          className="modal-overlay"
+          onMouseDown={(e) =>
+            e.target.classList.contains("modal-overlay") &&
+            closeFinalApproveModal()
+          }
+        >
+          <div
+            className="modal saas-modal"
+            onMouseDown={(e) => e.stopPropagation()}
+            style={{ maxWidth: 620 }}
+          >
+            <div className="modal-head">
+              <div>
+                <h3 className="modal-title">
+                  Final Approve Resignation
+                </h3>
+
+                <p className="modal-subtitle">
+                  {finalApproveRow.employee_name || "-"}
+                </p>
+              </div>
+
+              <button
+                className="modal-x"
+                type="button"
+                onClick={closeFinalApproveModal}
+              >
+                ✕
+              </button>
+            </div>
+
+            <form
+              className="modal-form"
+              onSubmit={submitFinalApproval}
+            >
+              <div className="modal-grid">
+                <div className="form-group">
+                  <label>Employee No</label>
+
+                  <input
+                    value={
+                      finalApproveRow.employee_no || "-"
+                    }
+                    readOnly
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label>Employee Name</label>
+
+                  <input
+                    value={
+                      finalApproveRow.employee_name || "-"
+                    }
+                    readOnly
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label>Resignation Date</label>
+
+                  <input
+                    value={fmtDate(
+                      finalApproveRow.resignation_date
+                    )}
+                    readOnly
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label>Effective Date</label>
+
+                  <input
+                    type="date"
+                    value={
+                      finalApproveForm.effective_date
+                    }
+                    onChange={(e) =>
+                      setFinalApproveForm((prev) => ({
+                        ...prev,
+                        effective_date: e.target.value,
+                      }))
+                    }
+                    required
+                  />
+                </div>
+
+                <div className="form-group full">
+                  <label>Final Approved File</label>
+
+                  <input
+                    type="file"
+                    onChange={(e) =>
+                      setFinalApproveForm((prev) => ({
+                        ...prev,
+                        attachment:
+                          e.target.files?.[0] || null,
+                      }))
+                    }
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="modal-buttons">
+                <button
+                  className="btn-secondary"
+                  type="button"
+                  onClick={closeFinalApproveModal}
+                >
+                  Cancel
+                </button>
+
+                <button
+                  className="btn-primary"
+                  type="submit"
+                  disabled={
+                    processingId ===
+                    `approve-${finalApproveRow.id}`
+                  }
+                >
+                  {processingId ===
+                  `approve-${finalApproveRow.id}`
+                    ? "Approving..."
+                    : "Final Approve"}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

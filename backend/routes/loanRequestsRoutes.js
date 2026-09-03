@@ -254,29 +254,46 @@ const getRawApprovalChain = (staff) => {
     ];
   }
 
-  if (isSvpPos(pos)) return [ACCOUNTING_FINAL];
+  // BACK OFFICE APPROVAL CHAIN
+  //
+  // Regular staff / below BM:
+  // BM → VP → SVP → Accounting
+  //
+  // BM applicant:
+  // VP → SVP → Accounting
+  //
+  // VP applicant:
+  // SVP → Accounting
+  //
+  // SVP applicant:
+  // Accounting only
+
+  if (isSvpPos(pos)) {
+    return [ACCOUNTING_FINAL];
+  }
 
   if (isVpPos(pos)) {
-    return ["senior vice president", ACCOUNTING_FINAL];
-  }
-
-  if (isAvpPos(pos)) {
-    return ["vice president", "senior vice president", ACCOUNTING_FINAL];
-  }
-
-  if (isRegionalManagerPos(pos)) {
-    return ["assistant vice president", "vice president", "senior vice president", ACCOUNTING_FINAL];
-  }
-
-  if (isAreaManagerPos(pos)) {
-    return ["regional manager", "assistant vice president", "vice president", "senior vice president", ACCOUNTING_FINAL];
+    return [
+      "senior vice president",
+      ACCOUNTING_FINAL,
+    ];
   }
 
   if (isBranchManagerPos(pos)) {
-    return ["area manager", "regional manager", "assistant vice president", "vice president", "senior vice president", ACCOUNTING_FINAL];
+    return [
+      "vice president",
+      "senior vice president",
+      ACCOUNTING_FINAL,
+    ];
   }
 
-  return ["branch manager", "area manager", "regional manager", "assistant vice president", "vice president", "senior vice president", ACCOUNTING_FINAL];
+  // Any other Back Office applicant
+  return [
+    "branch manager",
+    "vice president",
+    "senior vice president",
+    ACCOUNTING_FINAL,
+  ];
 };
 
 const stageColumn = (stage) => {
@@ -404,14 +421,34 @@ async function hasApproverAccount(client, stage, staff) {
   };
 
   try {
-    return await checkUsers();
-  } catch (error) {
+    // First check if an active USER account exists
+    const userExists = await checkUsers();
+
+    if (userExists) {
+      return true;
+    }
+
+    // If no matching user account was found,
+    // fall back to the staff table.
+    return await checkStaff();
+  } catch (userError) {
     console.error(
-      "CHECK ACTIVE LOAN APPROVER ERROR:",
-      error.message
+      "CHECK LOAN APPROVER USER ERROR:",
+      userError.message
     );
 
-    return false;
+    // If users lookup fails for any reason,
+    // still try the staff table.
+    try {
+      return await checkStaff();
+    } catch (staffError) {
+      console.error(
+        "CHECK LOAN APPROVER STAFF ERROR:",
+        staffError.message
+      );
+
+      return false;
+    }
   }
 }
 
@@ -525,24 +562,205 @@ function loanTypeToBalanceColumn(loanType) {
   return null;
 }
 
-async function hasExistingLoanBalance(client, employeeNo, loanType) {
-  const balanceColumn = loanTypeToBalanceColumn(loanType);
-
-  if (!balanceColumn) return false;
-
-  const r = await client.query(
+async function hasExistingLoanBalance(
+  client,
+  employeeNo,
+  loanType
+) {
+  const result = await client.query(
     `
-    SELECT COALESCE(${balanceColumn},0) AS balance
-    FROM public.staff_balances
-    WHERE employee_no = $1
+    WITH eligible_loans AS (
+      SELECT
+        lr.id,
+        lr.employee_no,
+        lr.loan_type,
+
+        COALESCE(
+          lr.approved_total,
+          lr.total,
+          lr.approved_amount,
+          lr.amount,
+          0
+        ) AS loan_total,
+
+        COALESCE(
+          lr.approved_per_month,
+          lr.per_month,
+          0
+        ) AS monthly_deduction,
+
+        CASE
+          /*
+            SAME RULE AS SCHEDULE OF BALANCES
+
+            Approved 1st - 9th
+            = first deduction on 25th SAME month
+
+            Approved 10th - end
+            = first deduction on 25th NEXT month
+          */
+          WHEN EXTRACT(
+            DAY FROM lr.approved_at::date
+          ) BETWEEN 1 AND 9
+
+          THEN (
+            DATE_TRUNC(
+              'month',
+              lr.approved_at::date
+            )
+            + INTERVAL '24 days'
+          )::date
+
+          ELSE (
+            DATE_TRUNC(
+              'month',
+              lr.approved_at::date
+            )
+            + INTERVAL '1 month'
+            + INTERVAL '24 days'
+          )::date
+        END AS first_deduction_date
+
+      FROM public.loan_requests lr
+
+      WHERE
+        LOWER(
+          TRIM(
+            COALESCE(
+              lr.employee_no,
+              ''
+            )
+          )
+        ) = LOWER(TRIM($1))
+
+        AND LOWER(
+          TRIM(
+            COALESCE(
+              lr.loan_type,
+              ''
+            )
+          )
+        ) = LOWER(TRIM($2))
+
+        AND LOWER(
+          TRIM(
+            COALESCE(
+              lr.status,
+              ''
+            )
+          )
+        ) = 'approved'
+
+        AND lr.approved_at IS NOT NULL
+    ),
+
+    calculated AS (
+      SELECT
+        id,
+
+        GREATEST(
+          loan_total
+          -
+          (
+            CASE
+              -- First deduction has not happened yet.
+              WHEN
+                (
+                  NOW()
+                  AT TIME ZONE 'Asia/Manila'
+                )::date
+                <
+                first_deduction_date
+              THEN 0
+
+              ELSE
+                (
+                  /*
+                    Count completed 25th deductions.
+
+                    Example:
+                    First deduction = Sep 25
+
+                    Sep 24 → 0
+                    Sep 25 → 1
+                    Oct 10 → 1
+                    Oct 25 → 2
+                    Nov 24 → 2
+                    Nov 25 → 3
+                  */
+
+                  (
+                    EXTRACT(
+                      YEAR FROM
+                      (
+                        NOW()
+                        AT TIME ZONE 'Asia/Manila'
+                      )::date
+                    )::int
+                    -
+                    EXTRACT(
+                      YEAR FROM
+                      first_deduction_date
+                    )::int
+                  ) * 12
+
+                  +
+
+                  (
+                    EXTRACT(
+                      MONTH FROM
+                      (
+                        NOW()
+                        AT TIME ZONE 'Asia/Manila'
+                      )::date
+                    )::int
+                    -
+                    EXTRACT(
+                      MONTH FROM
+                      first_deduction_date
+                    )::int
+                  )
+
+                  +
+
+                  CASE
+                    WHEN EXTRACT(
+                      DAY FROM
+                      (
+                        NOW()
+                        AT TIME ZONE 'Asia/Manila'
+                      )::date
+                    )::int >= 25
+                    THEN 1
+                    ELSE 0
+                  END
+                )
+            END
+
+            *
+
+            monthly_deduction
+          ),
+          0
+        ) AS remaining_balance
+
+      FROM eligible_loans
+    )
+
+    SELECT
+      id,
+      remaining_balance
+    FROM calculated
+    WHERE remaining_balance > 0
     LIMIT 1
     `,
-    [employeeNo]
+    [
+      employeeNo,
+      loanType,
+    ]
   );
 
-  if (r.rowCount === 0) return false;
-
-  return toNum(r.rows[0].balance) > 0;
+  return result.rowCount > 0;
 }
 
 async function validateSalaryAdvance(client, employeeNo, amount) {
@@ -595,7 +813,14 @@ function buildLoanSchedule(
   const approvedDate = new Date(startDate);
   const current = new Date(approvedDate);
 
-  if (approvedDate.getDate() <= 25) {
+  // Loan deduction cutoff rule:
+  //
+  // Approved on the 1st–9th
+  // → first deduction is the 25th of SAME month
+  //
+  // Approved on the 10th–end of month
+  // → first deduction is the 25th of NEXT month
+  if (approvedDate.getDate() <= 9) {
     current.setDate(25);
   } else {
     current.setMonth(current.getMonth() + 1);
@@ -1694,15 +1919,16 @@ router.post(
         ? toNum(loan.term)
         : toNum(req.body?.approved_term);
 
-      if (approvedAmount < 0) {
+      if (approvedAmount <= 0) {
         await client.query("ROLLBACK");
         return res.status(400).json({ message: "Approved Amount is required." });
       }
 
-      if (approvedTotal < 0) {
+      if (approvedTotal <= 0) {
         await client.query("ROLLBACK");
+
         return res.status(400).json({
-          message: "Total Amount with Interest cannot be negative."
+          message: "Total Amount with Interest is required.",
         });
       }
 

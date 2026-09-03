@@ -796,6 +796,14 @@ router.post(
       const effective_date = toDateOrNull(b.effective_date);
       const details = toStr(b.details);
       const to_branch_id = toInt(b.to_branch_id);
+      const to_department = toStr(b.to_department);
+
+      if (!to_department) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({
+          message: "Destination department required",
+        });
+      }
 
       if (!employee_id) {
         await client.query("ROLLBACK");
@@ -841,7 +849,13 @@ router.post(
       const prevBr = prevBranchId
         ? await client.query(
             `
-            SELECT id, code, name
+            SELECT
+              id,
+              code,
+              name,
+              area,
+              region,
+              division
             FROM public.branches
             WHERE id = $1
             `,
@@ -851,7 +865,13 @@ router.post(
 
       const toBr = await client.query(
         `
-        SELECT id, code, name
+        SELECT
+          id,
+          code,
+          name,
+          area,
+          region,
+          division
         FROM public.branches
         WHERE id = $1
         `,
@@ -862,6 +882,15 @@ router.post(
         await client.query("ROLLBACK");
         return res.status(400).json({ message: "Destination branch not found" });
       }
+
+      const destinationDivision =
+        toStr(toBr.rows[0].division);
+
+      const destinationRegion =
+        toStr(toBr.rows[0].region);
+
+      const destinationArea =
+        toStr(toBr.rows[0].area);
 
       const employee_name = buildEmployeeName(staffRow);
       const orderNo = await generateOrderNo(client, "DMO");
@@ -888,72 +917,126 @@ router.post(
       const ins = await client.query(
         `
         INSERT INTO public.demotion_orders
-          (
-            order_no,
-            employee_id,
-            employee_name,
-            old_position,
-            new_position,
-            prev_branch_id,
-            prev_branch_code,
-            prev_branch_name,
-            to_branch_id,
-            to_branch_code,
-            to_branch_name,
-            effective_date,
-            details,
-            status,
-            approval_stage,
-            area_manager_status,
-            regional_manager_status,
-            assistant_vice_president_status,
-            vice_president_status,
-            admin_status,
-            attachment_path,
-            attachment_name,
-            attachment_mime,
-            approved_attachment_path,
-            approved_attachment_name,
-            approved_attachment_mime,
-            created_by
-          )
+        (
+          order_no,
+          employee_id,
+          employee_name,
+
+          old_position,
+          new_position,
+
+          prev_branch_id,
+          prev_branch_code,
+          prev_branch_name,
+
+          prev_division,
+          prev_region,
+          prev_area,
+          prev_department,
+
+          to_branch_id,
+          to_branch_code,
+          to_branch_name,
+
+          to_division,
+          to_region,
+          to_area,
+          to_department,
+
+          effective_date,
+          details,
+
+          status,
+          approval_stage,
+
+          area_manager_status,
+          regional_manager_status,
+          assistant_vice_president_status,
+          vice_president_status,
+          admin_status,
+
+          attachment_path,
+          attachment_name,
+          attachment_mime,
+
+          approved_attachment_path,
+          approved_attachment_name,
+          approved_attachment_mime,
+
+          created_by
+        )
         VALUES
-          (
-            $1,$2,$3,$4,$5,
-            $6,$7,$8,
-            $9,$10,$11,
-            $12::date,$13,
-            'Pending',
-            $14,
-            'Pending',
-            'Pending',
-            'Pending',
-            'Pending',
-            'Pending',
-            $15,$16,$17,
-            NULL,NULL,NULL,
-            $18
-          )
+        (
+          $1,$2,$3,
+
+          $4,$5,
+
+          $6,$7,$8,
+
+          $9,$10,$11,$12,
+
+          $13,$14,$15,
+
+          $16,$17,$18,$19,
+
+          $20::date,$21,
+
+          'Pending',
+          $22,
+
+          'Pending',
+          'Pending',
+          'Pending',
+          'Pending',
+          'Pending',
+
+          $23,$24,$25,
+
+          NULL,NULL,NULL,
+
+          $26
+        )
         RETURNING *
         `,
         [
           orderNo,
           employee_id,
           employee_name,
+
           toStr(staffRow.position) || null,
           new_position,
+
           prevBranchId,
-          prevBr.rowCount ? toStr(prevBr.rows[0].code) : "",
-          prevBr.rowCount ? toStr(prevBr.rows[0].name) : "",
+          prevBr.rowCount
+            ? toStr(prevBr.rows[0].code)
+            : "",
+          prevBr.rowCount
+            ? toStr(prevBr.rows[0].name)
+            : "",
+
+          toStr(staffRow.division) || null,
+          toStr(staffRow.region) || null,
+          toStr(staffRow.area) || null,
+          toStr(staffRow.department) || null,
+
           Number(to_branch_id),
           toStr(toBr.rows[0].code),
           toStr(toBr.rows[0].name),
+
+          destinationDivision || null,
+          destinationRegion || null,
+          destinationArea || null,
+          to_department || null,
+
           effective_date,
           details || null,
+
           initialStage,
+
           attachment_path,
           attachment_name,
           attachment_mime,
+
           req.user?.id ?? null,
         ]
       );
@@ -1235,10 +1318,22 @@ router.put(
           UPDATE public.staff
           SET
             "position" = $1,
-            branch_id = $2
-          WHERE id = $3
+            branch_id = $2,
+            division = $3,
+            region = $4,
+            area = $5,
+            department = $6
+          WHERE id = $7
           `,
-          [toStr(order.new_position), toBranchId, Number(order.employee_id)]
+          [
+            toStr(order.new_position),
+            toBranchId,
+            toStr(order.to_division),
+            toStr(order.to_region),
+            toStr(order.to_area),
+            toStr(order.to_department),
+            Number(order.employee_id),
+          ]
         );
 
         await client.query(
@@ -1403,10 +1498,22 @@ router.post(
         UPDATE public.staff
         SET
           "position" = $1,
-          branch_id = $2
-        WHERE id = $3
+          branch_id = $2,
+          division = $3,
+          region = $4,
+          area = $5,
+          department = $6
+        WHERE id = $7
         `,
-        [toStr(order.new_position), toBranchId, Number(order.employee_id)]
+        [
+          toStr(order.new_position),
+          toBranchId,
+          toStr(order.to_division),
+          toStr(order.to_region),
+          toStr(order.to_area),
+          toStr(order.to_department),
+          Number(order.employee_id),
+        ]
       );
 
       await client.query(
@@ -1536,12 +1643,20 @@ router.put(
         UPDATE public.staff
         SET
           "position" = $1,
-          branch_id = $2
-        WHERE id = $3
+          branch_id = $2,
+          division = $3,
+          region = $4,
+          area = $5,
+          department = $6
+        WHERE id = $7
         `,
         [
           toStr(order.old_position),
           previousBranchId,
+          toStr(order.prev_division),
+          toStr(order.prev_region),
+          toStr(order.prev_area),
+          toStr(order.prev_department),
           Number(order.employee_id),
         ]
       );

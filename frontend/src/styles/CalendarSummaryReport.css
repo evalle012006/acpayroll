@@ -1,0 +1,1020 @@
+.calendar-summary-page {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  color: var(--text);
+}
+
+/* =====================================================
+   HEADER
+===================================================== */
+
+.calendar-summary-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 18px;
+  flex-wrap: wrap;
+}
+
+.calendar-summary-header h1 {
+  margin: 0;
+  font-size: 24px;
+  line-height: 1.2;
+  font-weight: 900;
+  color: var(--text);
+}
+
+.calendar-summary-header p {
+  margin: 7px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.calendar-summary-header-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.calendar-summary-btn {
+  min-height: 40px;
+  padding: 0 16px;
+  border-radius: 9px;
+  border: 1px solid var(--border);
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.calendar-summary-btn.secondary {
+  background: var(--panel);
+  color: var(--text);
+}
+
+.calendar-summary-btn.primary {
+  border-color: #4f46e5;
+  background: #4f46e5;
+  color: #fff;
+}
+
+/* =====================================================
+   FILTERS
+===================================================== */
+
+.calendar-summary-filter-card {
+  padding: 16px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+}
+
+.calendar-summary-filter-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(160px, 1fr));
+  gap: 14px;
+}
+
+.calendar-summary-filter-grid label {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.calendar-summary-filter-grid label span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.calendar-summary-filter-grid input,
+.calendar-summary-filter-grid select,
+.calendar-summary-search-row input {
+  width: 100%;
+  height: 40px;
+  box-sizing: border-box;
+  padding: 0 11px;
+
+  border: 1px solid var(--border);
+  border-radius: 9px;
+
+  background: var(--bg);
+  color: var(--text);
+
+  font-family: inherit;
+  font-size: 12px;
+  outline: none;
+}
+
+.calendar-summary-filter-grid input:focus,
+.calendar-summary-filter-grid select:focus,
+.calendar-summary-search-row input:focus {
+  border-color: #4f46e5;
+}
+
+.calendar-summary-search-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.calendar-summary-search-row input {
+  flex: 1;
+}
+
+.calendar-summary-clear-btn {
+  height: 40px;
+  padding: 0 16px;
+
+  border: 1px solid var(--border);
+  border-radius: 9px;
+
+  background: var(--panel);
+  color: var(--text);
+
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+/* =====================================================
+   SUMMARY CARDS
+===================================================== */
+
+.calendar-summary-cards {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(150px, 1fr));
+  gap: 12px;
+}
+
+.calendar-summary-stat {
+  position: relative;
+  min-height: 105px;
+  padding: 16px;
+
+  display: flex;
+  flex-direction: column;
+
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 13px;
+}
+
+.calendar-summary-stat > span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.calendar-summary-stat strong {
+  margin-top: 7px;
+
+  color: var(--text);
+  font-size: 27px;
+  line-height: 1;
+  font-weight: 900;
+}
+
+.calendar-summary-stat small {
+  margin-top: auto;
+  padding-top: 10px;
+
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.calendar-summary-stat.completed {
+  border-left: 4px solid #10b981;
+}
+
+.calendar-summary-stat.incomplete {
+  border-left: 4px solid #ef4444;
+}
+
+/* =====================================================
+   MAIN REPORT CARD
+===================================================== */
+
+.calendar-summary-main-card {
+  overflow: hidden;
+
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+}
+
+/* =====================================================
+   TABS
+===================================================== */
+
+.calendar-summary-tabs {
+  display: flex;
+  gap: 4px;
+
+  padding: 12px 14px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.calendar-summary-tabs button {
+  position: relative;
+
+  padding: 10px 15px;
+
+  border: 0;
+  border-radius: 8px 8px 0 0;
+
+  background: transparent;
+  color: var(--muted);
+
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 800;
+
+  cursor: pointer;
+}
+
+.calendar-summary-tabs button:hover {
+  color: var(--text);
+  background: var(--hover);
+}
+
+.calendar-summary-tabs button.active {
+  color: #6366f1;
+}
+
+.calendar-summary-tabs button.active::after {
+  content: "";
+  position: absolute;
+
+  left: 12px;
+  right: 12px;
+  bottom: -1px;
+
+  height: 3px;
+  border-radius: 3px 3px 0 0;
+
+  background: #6366f1;
+}
+
+/* =====================================================
+   TABLE HEADER
+===================================================== */
+
+.calendar-summary-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+
+  padding: 15px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.calendar-summary-card-head h3 {
+  margin: 0;
+
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 900;
+}
+
+.calendar-summary-card-head p {
+  margin: 5px 0 0;
+
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+/* =====================================================
+   TABLE
+===================================================== */
+
+.calendar-summary-table-wrap {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.calendar-summary-table {
+  width: 100%;
+  min-width: 1200px;
+
+  border-collapse: collapse;
+  table-layout: auto;
+}
+
+.calendar-summary-table thead th {
+  padding: 11px 12px;
+
+  background: #3168f5;
+  color: #fff;
+
+  text-align: left;
+  white-space: nowrap;
+
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.calendar-summary-table tbody td {
+  padding: 12px;
+
+  border-bottom: 1px solid var(--border);
+
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 600;
+
+  white-space: nowrap;
+}
+
+.calendar-summary-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.calendar-summary-table tbody tr:hover {
+  background: var(--hover);
+}
+
+.calendar-summary-name {
+  font-weight: 900 !important;
+}
+
+/* =====================================================
+   STATUS
+===================================================== */
+
+.calendar-summary-status {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
+  min-width: 76px;
+  padding: 5px 9px;
+
+  border-radius: 999px;
+
+  font-size: 10px;
+  font-weight: 900;
+}
+
+.calendar-summary-status.completed {
+  background: rgba(16, 185, 129, 0.14);
+  color: #10b981;
+}
+
+.calendar-summary-status.incomplete {
+  background: rgba(239, 68, 68, 0.14);
+  color: #ef4444;
+}
+
+/* =====================================================
+   RESPONSIVE
+===================================================== */
+
+@media (max-width: 1200px) {
+  .calendar-summary-filter-grid {
+    grid-template-columns: repeat(3, minmax(160px, 1fr));
+  }
+
+  .calendar-summary-cards {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+@media (max-width: 800px) {
+  .calendar-summary-filter-grid {
+    grid-template-columns: repeat(2, minmax(140px, 1fr));
+  }
+
+  .calendar-summary-cards {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .calendar-summary-search-row {
+    flex-direction: column;
+  }
+
+  .calendar-summary-clear-btn {
+    width: 100%;
+  }
+}
+
+@media (max-width: 520px) {
+  .calendar-summary-filter-grid,
+  .calendar-summary-cards {
+    grid-template-columns: 1fr;
+  }
+
+  .calendar-summary-header-actions {
+    width: 100%;
+  }
+
+  .calendar-summary-header-actions button {
+    flex: 1;
+  }
+}
+
+/* =====================================================
+   VIEW BUTTON
+===================================================== */
+
+.calendar-summary-view-btn {
+  padding: 7px 14px;
+  border: 1px solid #4f46e5;
+  border-radius: 8px;
+  background: rgba(79, 70, 229, 0.12);
+  color: #818cf8;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.calendar-summary-view-btn:hover {
+  background: #4f46e5;
+  color: #fff;
+}
+
+/* =====================================================
+   MODAL
+===================================================== */
+
+.calendar-summary-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  padding: 28px;
+
+  background: rgba(2, 6, 23, 0.78);
+  backdrop-filter: blur(4px);
+}
+
+.calendar-summary-modal {
+  width: min(1050px, 96vw);
+  max-height: 90vh;
+  overflow-y: auto;
+
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+
+  box-shadow:
+    0 25px 60px rgba(0, 0, 0, 0.35);
+}
+
+.calendar-summary-modal-head {
+  position: sticky;
+  top: 0;
+  z-index: 4;
+
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+
+  padding: 20px 22px;
+
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+}
+
+.calendar-summary-modal-head h2 {
+  margin: 4px 0 0;
+
+  font-size: 20px;
+  font-weight: 900;
+  color: var(--text);
+}
+
+.calendar-summary-modal-head p {
+  margin: 6px 0 0;
+
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.calendar-summary-modal-eyebrow {
+  color: #818cf8;
+  font-size: 10px;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.calendar-summary-modal-close {
+  width: 36px;
+  height: 36px;
+
+  border: 1px solid var(--border);
+  border-radius: 9px;
+
+  background: var(--bg);
+  color: var(--text);
+
+  font-size: 20px;
+  cursor: pointer;
+}
+
+/* =====================================================
+   STAFF OVERVIEW
+===================================================== */
+
+.calendar-summary-staff-overview {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 10px;
+
+  padding: 18px 22px;
+}
+
+.calendar-summary-staff-overview > div {
+  min-height: 78px;
+  padding: 12px;
+
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+
+  border: 1px solid var(--border);
+  border-radius: 11px;
+
+  background: var(--bg);
+}
+
+.calendar-summary-staff-overview span {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.calendar-summary-staff-overview strong {
+  color: var(--text);
+  font-size: 17px;
+  font-weight: 900;
+}
+
+/* =====================================================
+   STAFF TRAVEL LIST
+===================================================== */
+
+.calendar-summary-modal-section-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+
+  padding: 4px 22px 12px;
+}
+
+.calendar-summary-modal-section-head h3 {
+  margin: 0;
+
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 900;
+}
+
+.calendar-summary-modal-section-head p {
+  margin: 4px 0 0;
+
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.calendar-summary-modal-section-head > span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.calendar-summary-travel-list {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+
+  padding: 0 22px 22px;
+}
+
+.calendar-summary-travel-item {
+  width: 100%;
+
+  display: grid;
+  grid-template-columns: 65px 1fr auto;
+  align-items: center;
+  gap: 15px;
+
+  padding: 13px;
+
+  border: 1px solid var(--border);
+  border-radius: 12px;
+
+  background: var(--bg);
+  color: var(--text);
+
+  text-align: left;
+  font-family: inherit;
+
+  cursor: pointer;
+}
+
+.calendar-summary-travel-item:hover {
+  border-color: #6366f1;
+  transform: translateY(-1px);
+}
+
+.calendar-summary-travel-date {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+
+  padding: 8px;
+
+  border-radius: 9px;
+
+  background: rgba(99, 102, 241, 0.1);
+}
+
+.calendar-summary-travel-date span,
+.calendar-summary-travel-date small {
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 800;
+}
+
+.calendar-summary-travel-date strong {
+  font-size: 22px;
+  line-height: 1.1;
+}
+
+.calendar-summary-travel-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.calendar-summary-travel-main p {
+  margin: 6px 0;
+
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.calendar-summary-travel-meta {
+  display: flex;
+  gap: 15px;
+  flex-wrap: wrap;
+
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.calendar-summary-travel-meta b {
+  color: var(--text);
+}
+
+.calendar-summary-travel-arrow {
+  color: #818cf8;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+/* =====================================================
+   DETAIL HERO
+===================================================== */
+
+.calendar-summary-detail-hero {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 10px;
+
+  padding: 18px 22px;
+}
+
+.calendar-summary-detail-hero > div {
+  min-height: 70px;
+  padding: 11px;
+
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+
+  border: 1px solid var(--border);
+  border-radius: 10px;
+
+  background: var(--bg);
+}
+
+.calendar-summary-detail-hero > div > span:first-child {
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 800;
+}
+
+.calendar-summary-detail-hero strong {
+  font-size: 12px;
+  color: var(--text);
+}
+
+/* =====================================================
+   DESCRIPTION
+===================================================== */
+
+.calendar-summary-detail-description {
+  margin: 0 22px 18px;
+  padding: 15px;
+
+  border: 1px solid var(--border);
+  border-radius: 11px;
+
+  background: var(--bg);
+}
+
+.calendar-summary-detail-description span {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 900;
+}
+
+.calendar-summary-detail-description p {
+  margin: 8px 0 0;
+
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+/* =====================================================
+   FINDINGS
+===================================================== */
+
+.calendar-summary-findings-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+
+  padding: 0 22px 18px;
+}
+
+.calendar-summary-finding-card {
+  overflow: hidden;
+
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+.calendar-summary-finding-title {
+  display: flex;
+  gap: 11px;
+
+  padding: 14px;
+
+  border-bottom: 1px solid var(--border);
+}
+
+.calendar-summary-finding-title > span {
+  width: 32px;
+  height: 32px;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  flex-shrink: 0;
+
+  border-radius: 50%;
+
+  background: rgba(99, 102, 241, 0.14);
+  color: #818cf8;
+
+  font-size: 10px;
+  font-weight: 900;
+}
+
+.calendar-summary-finding-title h3 {
+  margin: 0;
+
+  color: var(--text);
+  font-size: 13px;
+}
+
+.calendar-summary-finding-title p {
+  margin: 4px 0 0;
+
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.calendar-summary-finding-list > div {
+  padding: 12px 14px;
+
+  border-bottom: 1px solid var(--border);
+}
+
+.calendar-summary-finding-list > div:last-child {
+  border-bottom: 0;
+}
+
+.calendar-summary-finding-list span {
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.calendar-summary-finding-list p {
+  margin: 5px 0 0;
+
+  color: var(--text);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+/* =====================================================
+   INVOLVED / DUE DATE
+===================================================== */
+
+.calendar-summary-detail-bottom {
+  display: grid;
+  grid-template-columns: 1fr 260px;
+  gap: 12px;
+
+  padding: 0 22px 18px;
+}
+
+.calendar-summary-involved-card,
+.calendar-summary-due-card {
+  padding: 14px;
+
+  border: 1px solid var(--border);
+  border-radius: 11px;
+
+  background: var(--bg);
+}
+
+.calendar-summary-involved-card > span,
+.calendar-summary-due-card > span {
+  display: block;
+
+  margin-bottom: 9px;
+
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.calendar-summary-involved-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.calendar-summary-involved-tags > span {
+  padding: 6px 9px;
+
+  border-radius: 999px;
+
+  background: rgba(99, 102, 241, 0.12);
+  color: #818cf8;
+
+  font-size: 9px;
+  font-weight: 800;
+}
+
+/* =====================================================
+   PHOTOS
+===================================================== */
+
+.calendar-summary-photo-section {
+  padding: 0 22px 22px;
+}
+
+.calendar-summary-photo-section h3 {
+  margin: 0;
+
+  color: var(--text);
+  font-size: 14px;
+}
+
+.calendar-summary-photo-section > div > p {
+  margin: 4px 0 12px;
+
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.calendar-summary-photo-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+}
+
+.calendar-summary-photo-card {
+  overflow: hidden;
+
+  border: 1px solid var(--border);
+  border-radius: 10px;
+
+  background: var(--bg);
+}
+
+.calendar-summary-photo-card img {
+  width: 100%;
+  height: 120px;
+  object-fit: cover;
+  display: block;
+}
+
+.calendar-summary-photo-card span {
+  display: block;
+
+  padding: 8px;
+
+  color: var(--text);
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.calendar-summary-no-photos {
+  padding: 24px;
+
+  border: 1px dashed var(--border);
+  border-radius: 10px;
+
+  color: var(--muted);
+  text-align: center;
+  font-size: 11px;
+}
+
+/* =====================================================
+   FOOTER
+===================================================== */
+
+.calendar-summary-modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 9px;
+
+  padding: 14px 22px;
+
+  border-top: 1px solid var(--border);
+}
+
+.calendar-summary-modal-footer button {
+  padding: 9px 14px;
+
+  border: 1px solid var(--border);
+  border-radius: 8px;
+
+  background: var(--bg);
+  color: var(--text);
+
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 800;
+
+  cursor: pointer;
+}
+
+.calendar-summary-modal-footer button.primary {
+  border-color: #4f46e5;
+  background: #4f46e5;
+  color: white;
+}
+
+/* =====================================================
+   RESPONSIVE
+===================================================== */
+
+@media (max-width: 900px) {
+  .calendar-summary-staff-overview {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .calendar-summary-detail-hero {
+    grid-template-columns: repeat(3, 1fr);
+  }
+
+  .calendar-summary-findings-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .calendar-summary-detail-bottom {
+    grid-template-columns: 1fr;
+  }
+
+  .calendar-summary-photo-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}

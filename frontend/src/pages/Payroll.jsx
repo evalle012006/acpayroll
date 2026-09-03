@@ -89,11 +89,11 @@ const OVERRIDE_FIELDS = [
   "cbu",
   "cashbond",
   "salary_advance",
-  "motorcycle_loan",
   "special_advance",
   "cash_advance",
   "other_receivable",
   "pagibig_mpl",
+  "sss_loan",
   "staff_accounts_payable",
 ];
 
@@ -111,11 +111,11 @@ const LABELS = {
   cbu: "CBU",
   cashbond: "Cash Bond",
   salary_advance: "Salary Advance",
-  motorcycle_loan: "Motorcycle Loan",
   special_advance: "Special Advance",
   cash_advance: "Cash Advance",
   other_receivable: "Other Receivable",
   pagibig_mpl: "Pag-IBIG MPL",
+  sss_loan: "SSS Loan",
   staff_accounts_payable: "Staff A/P",
 };
 
@@ -527,10 +527,10 @@ function Payroll() {
           ? toNum(s.salary_advance)
           : toNum(balance.salary_advance_per_month);
 
-      const motorcycle_loan =
-        toNum(s.motorcycle_loan) > 0
-          ? toNum(s.motorcycle_loan)
-          : toNum(balance.motorcycle_loan_per_month);
+      const sss_loan =
+        toNum(s.sss_loan) > 0
+          ? toNum(s.sss_loan)
+          : toNum(balance.sss_loan_per_month);
 
       const special_advance =
         toNum(s.special_advance) > 0
@@ -542,15 +542,16 @@ function Payroll() {
           ? toNum(s.cash_advance)
           : toNum(balance.cash_advance_per_month);
 
-      const other_receivable =
-        toNum(s.other_receivable) > 0 
-        ? toNum(s.other_receivable) 
-        : toNum(balance.other_receivable);
+      const other_receivable = toNum(
+        balance.other_receivable_per_month
+      );
 
-      const staff_accounts_payable =
-        toNum(s.staff_accounts_payable) > 0
-          ? toNum(s.staff_accounts_payable)
-          : monthlyFromWhole(balance.staff_accounts_payable);
+      const staff_accounts_payable = toNum(
+        balance.staff_accounts_payable_per_month
+      );
+
+      const totalCompWithStaffAP =
+        totalComp + staff_accounts_payable;
 
       const total_deduction =
         total_ee +
@@ -559,14 +560,14 @@ function Payroll() {
         toNum(s.cbu) +
         toNum(s.cashbond) +
         salary_advance +
-        motorcycle_loan +
         special_advance +
         cash_advance +
         other_receivable +
         toNum(s.pagibig_mpl) +
-        staff_accounts_payable;
+        sss_loan;
 
-      const netPay = totalComp - total_deduction;
+      const netPay =
+        totalCompWithStaffAP - total_deduction;
       const { pay10, pay25 } = splitPayroll(netPay);
 
       return {
@@ -579,17 +580,17 @@ function Payroll() {
         suspension_ecola: suspensionEcola,
         salary,
         ecola,
-        totalComp,
+        totalComp: totalCompWithStaffAP,
         total_er,
         total_ee,
         salary_advance,
-        motorcycle_loan,
         special_advance,
         cash_advance,
         other_receivable,
+        sss_loan,
         staff_accounts_payable,
         whole_salary_advance: toNum(balance.salary_advance),
-        whole_motorcycle_loan: toNum(balance.motorcycle_loan),
+        whole_sss_loan: toNum(balance.sss_loan),
         whole_special_advance: toNum(balance.special_advance),
         whole_cash_advance: toNum(balance.cash_advance),
         whole_other_receivable: toNum(balance.other_receivable),
@@ -845,10 +846,10 @@ function Payroll() {
                 <th rowSpan={2}>Full Name</th>
                 <th rowSpan={2}>Position</th>
                 <th rowSpan={2}>Date Regularized</th>
-                <th colSpan={3}>EARNINGS</th>
+                <th colSpan={4}>EARNINGS</th>
                 <th colSpan={4}>EMPLOYER (ER)</th>
                 <th colSpan={4}>EMPLOYEE (EE)</th>
-                <th colSpan={11}>DEDUCTIONS</th>
+                <th colSpan={10}>DEDUCTIONS</th>
                 <th rowSpan={2}>Total Deduction</th>
                 <th rowSpan={2}>Net Pay</th>
                 <th rowSpan={2}>10th</th>
@@ -860,6 +861,7 @@ function Payroll() {
               <tr>
                 <th>Salary</th>
                 <th>Ecola</th>
+                <th>Staff A/P</th>
                 <th>Total Comp</th>
 
                 <th>HDMF</th>
@@ -877,12 +879,11 @@ function Payroll() {
                 <th>CBU</th>
                 <th>Cash Bond</th>
                 <th>Salary Adv</th>
-                <th>Motorcycle</th>
                 <th>Special Adv</th>
                 <th>Cash Adv</th>
                 <th>Other Rec</th>
-                <th>Pag-IBIG</th>
-                <th>Staff A/P</th>
+                <th>Pag - ibig mpl</th>
+                <th>SSS Loan</th>
               </tr>
             </thead>
 
@@ -907,6 +908,7 @@ function Payroll() {
 
                     <td className="num">{fmt(s.salary)}</td>
                     <td className="num">{fmt(s.ecola)}</td>
+                    <td className="num">{fmt(s.staff_accounts_payable)}</td>
                     <td className="num td-strong">{fmt(s.totalComp)}</td>
 
                     <td className="num">{fmt(s.hdmf_er)}</td>
@@ -924,12 +926,11 @@ function Payroll() {
                     <td className="num">{fmt(s.cbu)}</td>
                     <td className="num">{fmt(s.cashbond)}</td>
                     <td className="num">{fmt(s.salary_advance)}</td>
-                    <td className="num">{fmt(s.motorcycle_loan)}</td>
                     <td className="num">{fmt(s.special_advance)}</td>
                     <td className="num">{fmt(s.cash_advance)}</td>
                     <td className="num">{fmt(s.other_receivable)}</td>
                     <td className="num">{fmt(s.pagibig_mpl)}</td>
-                    <td className="num">{fmt(s.staff_accounts_payable)}</td>
+                    <td className="num">{fmt(s.sss_loan)}</td>
 
                     <td className="num td-strong">{fmt(s.total_deduction)}</td>
                     <td className={`num td-strong ${s.netPay < 0 ? "neg" : "pos"}`}>
@@ -966,6 +967,7 @@ function Payroll() {
 
                 <td className="num">{sumColumn("salary").toLocaleString()}</td>
                 <td className="num">{sumColumn("ecola").toLocaleString()}</td>
+                <td className="num">{sumColumn("staff_accounts_payable").toLocaleString()}</td>
                 <td className="num td-strong">{sumColumn("totalComp").toLocaleString()}</td>
 
                 <td className="num">{sumColumn("hdmf_er").toLocaleString()}</td>
@@ -983,12 +985,11 @@ function Payroll() {
                 <td className="num">{sumColumn("cbu").toLocaleString()}</td>
                 <td className="num">{sumColumn("cashbond").toLocaleString()}</td>
                 <td className="num">{sumColumn("salary_advance").toLocaleString()}</td>
-                <td className="num">{sumColumn("motorcycle_loan").toLocaleString()}</td>
                 <td className="num">{sumColumn("special_advance").toLocaleString()}</td>
                 <td className="num">{sumColumn("cash_advance").toLocaleString()}</td>
                 <td className="num">{sumColumn("other_receivable").toLocaleString()}</td>
                 <td className="num">{sumColumn("pagibig_mpl").toLocaleString()}</td>
-                <td className="num">{sumColumn("staff_accounts_payable").toLocaleString()}</td>
+                <td className="num">{sumColumn("sss_loan").toLocaleString()}</td>
 
                 <td className="num td-strong">{sumColumn("total_deduction").toLocaleString()}</td>
                 <td className="num td-strong">{sumColumn("netPay").toLocaleString()}</td>
@@ -1166,10 +1167,10 @@ function Payroll() {
                 <th rowSpan={2}>Position</th>
                 <th rowSpan={2}>Date Regularized</th>
 
-                <th colSpan={3}>SALARIES AND WAGES</th>
+                <th colSpan={4}>SALARIES AND WAGES</th>
                 <th colSpan={4}>EMPLOYER'S CONTRIBUTION</th>
                 <th colSpan={4}>EMPLOYEE'S CONTRIBUTION</th>
-                <th colSpan={11}>OTHER STAFF'S ADVANCES AND DEDUCTION</th>
+                <th colSpan={10}>OTHER STAFF'S ADVANCES AND DEDUCTION</th>
 
                 <th rowSpan={2}>Total Deductions</th>
                 <th rowSpan={2}>Total Net Pay</th>
@@ -1180,6 +1181,7 @@ function Payroll() {
               <tr>
                 <th>Salary</th>
                 <th>Ecola</th>
+                <th>Staff A/P</th>
                 <th>Total</th>
 
                 <th>HDMF</th>
@@ -1197,12 +1199,11 @@ function Payroll() {
                 <th>CBU</th>
                 <th>Cash Bond</th>
                 <th>Salary Adv</th>
-                <th>Motorcycle</th>
                 <th>Special Adv</th>
                 <th>Cash Adv</th>
                 <th>Other Rec</th>
                 <th>Pag-IBIG</th>
-                <th>Staff A/P</th>
+                <th>SSS Loan</th>
               </tr>
             </thead>
 
@@ -1224,6 +1225,7 @@ function Payroll() {
 
                     <td>{fmt(s.salary)}</td>
                     <td>{fmt(s.ecola)}</td>
+                    <td>{fmt(s.staff_accounts_payable)}</td>
                     <td>{fmt(s.totalComp)}</td>
 
                     <td>{fmt(s.hdmf_er)}</td>
@@ -1241,12 +1243,11 @@ function Payroll() {
                     <td>{fmt(s.cbu)}</td>
                     <td>{fmt(s.cashbond)}</td>
                     <td>{fmt(s.salary_advance)}</td>
-                    <td>{fmt(s.motorcycle_loan)}</td>
                     <td>{fmt(s.special_advance)}</td>
                     <td>{fmt(s.cash_advance)}</td>
                     <td>{fmt(s.other_receivable)}</td>
                     <td>{fmt(s.pagibig_mpl)}</td>
-                    <td>{fmt(s.staff_accounts_payable)}</td>
+                    <td>{fmt(s.sss_loan)}</td>
 
                     <td>{fmt(s.total_deduction)}</td>
                     <td>{fmt(s.netPay)}</td>
@@ -1261,6 +1262,7 @@ function Payroll() {
                 <td colSpan={7}>TOTAL</td>
                 <td>{fmt(sumColumn("salary"))}</td>
                 <td>{fmt(sumColumn("ecola"))}</td>
+                <td>{fmt(sumColumn("staff_accounts_payable"))}</td>
                 <td>{fmt(sumColumn("totalComp"))}</td>
 
                 <td>{fmt(sumColumn("hdmf_er"))}</td>
@@ -1278,12 +1280,11 @@ function Payroll() {
                 <td>{fmt(sumColumn("cbu"))}</td>
                 <td>{fmt(sumColumn("cashbond"))}</td>
                 <td>{fmt(sumColumn("salary_advance"))}</td>
-                <td>{fmt(sumColumn("motorcycle_loan"))}</td>
                 <td>{fmt(sumColumn("special_advance"))}</td>
                 <td>{fmt(sumColumn("cash_advance"))}</td>
                 <td>{fmt(sumColumn("other_receivable"))}</td>
                 <td>{fmt(sumColumn("pagibig_mpl"))}</td>
-                <td>{fmt(sumColumn("staff_accounts_payable"))}</td>
+                <td>{fmt(sumColumn("sss_loan"))}</td>
 
                 <td>{fmt(sumColumn("total_deduction"))}</td>
                 <td>{fmt(sumColumn("netPay"))}</td>
