@@ -3,8 +3,9 @@ const router = express.Router();
 
 const pool = require("../db");
 const { requireAuth } = require("../middlewares/authMiddleware");
+const { getSignedDownloadUrl, } = require("../services/spacesUpload");
 
-const { toStr, norm, normalizeDepartment, normalizeRole,
+const { toStr, norm, isValidId, normalizeDepartment, normalizeRole,
   TREAD_TRAVEL_PLAN_ROLES,
 
   isAdminOrIT,
@@ -18,6 +19,745 @@ const { toStr, norm, normalizeDepartment, normalizeRole,
   manilaTimestampSql,
   sendServerError,
 } = require("../utils/travelPlanHelpers");
+
+const canViewCalendarSummaryRow = (req, row) => {
+  const role = normalizeRole(req.user?.role);
+
+  const department = normalizeDepartment(
+    req.user?.department
+  );
+
+  const userArea = toStr(req.user?.area);
+  const userRegion = toStr(req.user?.region);
+  const userDivision = toStr(req.user?.division);
+  const userBranchId = Number(req.user?.branch_id);
+
+  const rowDepartment = normalizeDepartment(
+    row?.department
+  );
+
+  const rowPosition = normalizeRole(
+    row?.position
+  );
+
+  const rowArea = toStr(row?.area);
+  const rowRegion = toStr(row?.region);
+  const rowDivision = toStr(row?.division);
+
+  const rowStaffBranchId = Number(
+    row?.staff_branch_id
+  );
+
+  // ADMIN / IT
+  if (isAdminOrIT(req)) {
+    return true;
+  }
+
+  // OFFICE OF THE PRESIDENT
+  if (
+    isOfficeOfPresidentDepartment(
+      department
+    )
+  ) {
+    return true;
+  }
+
+  // TREAD
+  if (
+    department === "tread department" &&
+    TREAD_TRAVEL_PLAN_ROLES.includes(role)
+  ) {
+    return true;
+  }
+
+  // AUDIT BRANCH MANAGER
+  if (
+    isAuditDepartment(department) &&
+    [
+      "branch manager",
+      "acting branch manager",
+    ].includes(role)
+  ) {
+    return (
+      Number.isInteger(userBranchId) &&
+      userBranchId > 0 &&
+      rowStaffBranchId === userBranchId &&
+      rowDepartment === department
+    );
+  }
+
+  // AREA MANAGER
+  if (
+    isOperationStyleTravelDepartment(
+      department
+    ) &&
+    [
+      "area manager",
+      "acting area manager",
+    ].includes(role)
+  ) {
+    const blockedPositions = [
+      "regional manager",
+      "acting regional manager",
+      "assistant vice president",
+      "vice president",
+      "senior vice president",
+      "president",
+    ];
+
+    return (
+      Boolean(userArea) &&
+      norm(rowArea) === norm(userArea) &&
+      rowDepartment === department &&
+      !blockedPositions.includes(
+        rowPosition
+      )
+    );
+  }
+
+  // REGIONAL MANAGER
+  if (
+    isOperationStyleTravelDepartment(
+      department
+    ) &&
+    [
+      "regional manager",
+      "acting regional manager",
+    ].includes(role)
+  ) {
+    const blockedPositions = [
+      "assistant vice president",
+      "vice president",
+      "senior vice president",
+      "president",
+    ];
+
+    return (
+      Boolean(userRegion) &&
+      norm(rowRegion) === norm(userRegion) &&
+      rowDepartment === department &&
+      !blockedPositions.includes(
+        rowPosition
+      )
+    );
+  }
+
+  // ASSISTANT VICE PRESIDENT
+  if (
+    isOperationStyleTravelDepartment(
+      department
+    ) &&
+    role === "assistant vice president"
+  ) {
+    const blockedPositions = [
+      "vice president",
+      "senior vice president",
+      "president",
+    ];
+
+    return (
+      Boolean(userDivision) &&
+      norm(rowDivision) ===
+        norm(userDivision) &&
+      rowDepartment === department &&
+      !blockedPositions.includes(
+        rowPosition
+      )
+    );
+  }
+
+  // VICE PRESIDENT
+  if (
+    isOperationStyleTravelDepartment(
+      department
+    ) &&
+    role === "vice president"
+  ) {
+    return (
+      rowDepartment === department &&
+      ![
+        "senior vice president",
+        "president",
+      ].includes(rowPosition)
+    );
+  }
+
+  // SENIOR VICE PRESIDENT
+  if (
+    isOperationStyleTravelDepartment(
+      department
+    ) &&
+    role === "senior vice president"
+  ) {
+    return rowDepartment === department;
+  }
+
+  return false;
+};
+
+// =====================================================
+// CALENDAR SUMMARY REPORT - TRAVEL PLAN DETAILS
+// =====================================================
+
+router.get(
+  "/travel-plans/summary-report/:id/details",
+  requireAuth,
+  async (req, res) => {
+    try {
+      if (!canViewTravelModule(req)) {
+        return res.status(403).json({
+          message:
+            "You are not allowed to view the Calendar Summary Report.",
+        });
+      }
+
+      const travelPlanId = Number(
+        req.params.id
+      );
+
+      if (!isValidId(travelPlanId)) {
+        return res.status(400).json({
+          message:
+            "Invalid travel plan ID.",
+        });
+      }
+
+      await markExpiredTravelPlansIncomplete(
+        pool
+      );
+
+      const planResult = await pool.query(
+        `
+        SELECT
+          tp.id,
+
+          TO_CHAR(
+            tp.plan_date,
+            'YYYY-MM-DD'
+          ) AS plan_date,
+
+          tp.title,
+          tp.employee_name,
+
+          matched_staff.employee_no,
+
+          COALESCE(
+            NULLIF(
+              TRIM(
+                matched_staff.position
+              ),
+              ''
+            ),
+            tp.position
+          ) AS position,
+
+          matched_staff.department,
+
+          matched_staff.id
+            AS staff_id,
+
+          matched_staff.branch_id
+            AS staff_branch_id,
+
+          tp.branch_name,
+
+          COALESCE(
+            NULLIF(
+              TRIM(
+                matched_branch.area
+              ),
+              ''
+            ),
+            NULLIF(
+              TRIM(
+                matched_staff.area
+              ),
+              ''
+            )
+          ) AS area,
+
+          COALESCE(
+            NULLIF(
+              TRIM(
+                matched_branch.region
+              ),
+              ''
+            ),
+            NULLIF(
+              TRIM(
+                matched_staff.region
+              ),
+              ''
+            )
+          ) AS region,
+
+          COALESCE(
+            NULLIF(
+              TRIM(
+                matched_branch.division
+              ),
+              ''
+            ),
+            NULLIF(
+              TRIM(
+                matched_staff.division
+              ),
+              ''
+            )
+          ) AS division,
+
+          tp.description,
+          tp.status,
+
+          ${manilaTimestampSql(
+            "tp.check_in_at"
+          )} AS check_in_at,
+
+          ${manilaTimestampSql(
+            "tp.check_out_at"
+          )} AS check_out_at,
+
+          CASE
+            WHEN
+              tp.check_in_at IS NOT NULL
+              AND tp.check_out_at IS NOT NULL
+              AND tp.check_out_at >=
+                  tp.check_in_at
+
+            THEN EXTRACT(
+              EPOCH FROM (
+                tp.check_out_at
+                -
+                tp.check_in_at
+              )
+            )::BIGINT
+
+            ELSE NULL
+          END AS duration_seconds,
+
+          CASE
+            WHEN
+              tp.check_in_at IS NOT NULL
+              AND tp.check_out_at IS NOT NULL
+              AND tp.check_out_at >=
+                  tp.check_in_at
+
+            THEN CONCAT(
+              FLOOR(
+                EXTRACT(
+                  EPOCH FROM (
+                    tp.check_out_at
+                    -
+                    tp.check_in_at
+                  )
+                ) / 3600
+              ),
+              ' hr ',
+              FLOOR(
+                MOD(
+                  EXTRACT(
+                    EPOCH FROM (
+                      tp.check_out_at
+                      -
+                      tp.check_in_at
+                    )
+                  ),
+                  3600
+                ) / 60
+              ),
+              ' min'
+            )
+
+            ELSE 'Not complete'
+          END AS duration_label
+
+        FROM public.travel_plans tp
+
+        LEFT JOIN LATERAL (
+          SELECT
+            s.id,
+            s.employee_no,
+
+            COALESCE(
+              NULLIF(
+                TRIM(s.fullname),
+                ''
+              ),
+
+              NULLIF(
+                TRIM(
+                  CONCAT_WS(
+                    ' ',
+                    s.last_name,
+                    s.first_name,
+                    s.middle_name
+                  )
+                ),
+                ''
+              ),
+
+              s.employee_no
+            ) AS employee_name,
+
+            s.position,
+            s.department,
+            s.branch_id,
+
+            COALESCE(
+              NULLIF(
+                TRIM(s.area),
+                ''
+              ),
+              NULLIF(
+                TRIM(sb.area),
+                ''
+              )
+            ) AS area,
+
+            COALESCE(
+              NULLIF(
+                TRIM(s.region),
+                ''
+              ),
+              NULLIF(
+                TRIM(sb.region),
+                ''
+              )
+            ) AS region,
+
+            COALESCE(
+              NULLIF(
+                TRIM(s.division),
+                ''
+              ),
+              NULLIF(
+                TRIM(sb.division),
+                ''
+              )
+            ) AS division
+
+          FROM public.staff s
+
+          LEFT JOIN public.branches sb
+            ON sb.id = s.branch_id
+
+          WHERE LOWER(
+            TRIM(
+              COALESCE(
+                NULLIF(
+                  TRIM(s.fullname),
+                  ''
+                ),
+
+                NULLIF(
+                  TRIM(
+                    CONCAT_WS(
+                      ' ',
+                      s.last_name,
+                      s.first_name,
+                      s.middle_name
+                    )
+                  ),
+                  ''
+                ),
+
+                ''
+              )
+            )
+          ) = LOWER(
+            TRIM(
+              COALESCE(
+                tp.employee_name,
+                ''
+              )
+            )
+          )
+
+          ORDER BY
+            CASE
+              WHEN LOWER(
+                TRIM(
+                  COALESCE(
+                    sb.name,
+                    ''
+                  )
+                )
+              ) = LOWER(
+                TRIM(
+                  COALESCE(
+                    tp.branch_name,
+                    ''
+                  )
+                )
+              )
+              THEN 0
+              ELSE 1
+            END,
+
+            s.id ASC
+
+          LIMIT 1
+        ) matched_staff
+          ON TRUE
+
+        LEFT JOIN LATERAL (
+          SELECT
+            b.id,
+            b.name,
+            b.area,
+            b.region,
+            b.division
+
+          FROM public.branches b
+
+          WHERE LOWER(
+            TRIM(
+              COALESCE(
+                b.name,
+                ''
+              )
+            )
+          ) = LOWER(
+            TRIM(
+              COALESCE(
+                tp.branch_name,
+                ''
+              )
+            )
+          )
+
+          ORDER BY b.id ASC
+
+          LIMIT 1
+        ) matched_branch
+          ON TRUE
+
+        WHERE tp.id = $1
+
+        LIMIT 1
+        `,
+        [travelPlanId]
+      );
+
+      if (!planResult.rowCount) {
+        return res.status(404).json({
+          message:
+            "Travel Plan not found.",
+        });
+      }
+
+      const plan =
+        planResult.rows[0];
+
+      if (
+        !canViewCalendarSummaryRow(
+          req,
+          plan
+        )
+      ) {
+        return res.status(403).json({
+          message:
+            "You are not allowed to view this Travel Plan.",
+        });
+      }
+
+      const notesResult = await pool.query(
+        `
+        SELECT
+          id,
+          travel_plan_id,
+          note_type,
+          title,
+          finding_type,
+          content,
+
+          review_coh,
+          review_cashbook_vs_voucher,
+          review_lor,
+          review_los,
+          review_ldf,
+          review_dcs,
+          review_bms,
+          review_other_findings,
+          review_photo_url,
+
+          passbook_reconciliation,
+          past_due_delinquent_report,
+          group_collection_record,
+          other_findings,
+          finding_photo_url,
+
+          involved_staff,
+
+          TO_CHAR(
+            due_date,
+            'YYYY-MM-DD'
+          ) AS due_date,
+
+          created_by,
+
+          CASE
+            WHEN created_at IS NULL THEN NULL
+            ELSE
+              TO_CHAR(
+                created_at,
+                'YYYY-MM-DD"T"HH24:MI:SS.MS'
+              ) || '+08:00'
+          END AS created_at
+
+        FROM public.travel_plan_notes
+
+        WHERE travel_plan_id = $1
+
+        ORDER BY
+          created_at DESC,
+          id DESC
+        `,
+        [travelPlanId]
+      );
+
+      const notes = notesResult.rows || [];
+
+      const reviewNote =
+        notes.find(
+          (note) =>
+            norm(note.note_type) === "review"
+        ) || null;
+
+      const findingNote =
+        notes.find(
+          (note) =>
+            norm(note.note_type) === "findings"
+        ) || null;
+
+      let reviewPhotoSignedUrl = null;
+      let findingPhotoSignedUrl = null;
+
+      if (reviewNote?.review_photo_url) {
+        try {
+          reviewPhotoSignedUrl =
+            await getSignedDownloadUrl(
+              reviewNote.review_photo_url,
+              3600
+            );
+        } catch (signError) {
+          console.error(
+            "Calendar Summary review photo signing error:",
+            signError
+          );
+        }
+      }
+
+      if (findingNote?.finding_photo_url) {
+        try {
+          findingPhotoSignedUrl =
+            await getSignedDownloadUrl(
+              findingNote.finding_photo_url,
+              3600
+            );
+        } catch (signError) {
+          console.error(
+            "Calendar Summary finding photo signing error:",
+            signError
+          );
+        }
+      }
+
+      const review = reviewNote
+        ? {
+            id: reviewNote.id,
+            title: reviewNote.title,
+
+            review_coh:
+              reviewNote.review_coh,
+
+            review_cashbook_vs_voucher:
+              reviewNote.review_cashbook_vs_voucher,
+
+            review_lor:
+              reviewNote.review_lor,
+
+            review_los:
+              reviewNote.review_los,
+
+            review_ldf:
+              reviewNote.review_ldf,
+
+            review_dcs:
+              reviewNote.review_dcs,
+
+            review_bms:
+              reviewNote.review_bms,
+
+            review_other_findings:
+              reviewNote.review_other_findings,
+
+            content:
+              reviewNote.content,
+
+            involved_staff:
+              reviewNote.involved_staff,
+
+            due_date:
+              reviewNote.due_date,
+
+            photo_url:
+              reviewPhotoSignedUrl,
+
+            created_at:
+              reviewNote.created_at,
+          }
+        : null;
+
+      const findings = findingNote
+        ? {
+            id: findingNote.id,
+            title: findingNote.title,
+
+            passbook_reconciliation:
+              findingNote.passbook_reconciliation,
+
+            past_due_delinquent_report:
+              findingNote.past_due_delinquent_report,
+
+            group_collection_record:
+              findingNote.group_collection_record,
+
+            other_findings:
+              findingNote.other_findings,
+
+            content:
+              findingNote.content,
+
+            involved_staff:
+              findingNote.involved_staff,
+
+            due_date:
+              findingNote.due_date,
+
+            photo_url:
+              findingPhotoSignedUrl,
+
+            created_at:
+              findingNote.created_at,
+          }
+        : null;
+
+      return res.json({
+        plan,
+        review,
+        findings,
+        photos: [],
+      });
+    } catch (error) {
+      return sendServerError(
+        res,
+        "GET /travel-plans/summary-report/:id/details",
+        error
+      );
+    }
+  }
+);
 
 // =====================================================
 // CALENDAR SUMMARY REPORT

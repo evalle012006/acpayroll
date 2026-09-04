@@ -1,299 +1,6 @@
 import React, { useEffect, useMemo, useState, } from "react";
 import "../../styles/CalendarSummaryReport.css";
-import axios from "axios";
-
-const SAMPLE_TRAVEL_ROWS = [
-  {
-    id: 1,
-    date: "2026-08-27",
-    employee_no: "000123",
-    employee_name: "DELA CRUZ, JUAN",
-    position: "AREA MANAGER",
-    branch: "GUIWAN",
-    area: "ZAMBOANGA CITY I",
-    region: "ZAMBOANGA PENINSULA",
-    division: "DIVISION IV",
-    time_in: "8:15 AM",
-    time_out: "4:32 PM",
-    status: "Completed",
-  },
-  {
-    id: 2,
-    date: "2026-08-27",
-    employee_no: "000456",
-    employee_name: "SANTOS, MARIA",
-    position: "REGIONAL MANAGER",
-    branch: "TETUAN",
-    area: "ZAMBOANGA CITY I",
-    region: "ZAMBOANGA PENINSULA",
-    division: "DIVISION IV",
-    time_in: "9:02 AM",
-    time_out: "-",
-    status: "Incomplete",
-  },
-  {
-    id: 3,
-    date: "2026-08-26",
-    employee_no: "000789",
-    employee_name: "RAMOS, CARLO",
-    position: "ASSISTANT VICE PRESIDENT",
-    branch: "PAGADIAN",
-    area: "PAGADIAN AREA",
-    region: "REGION IX",
-    division: "DIVISION IV",
-    time_in: "8:40 AM",
-    time_out: "5:10 PM",
-    status: "Completed",
-  },
-];
-
-const DEPARTMENT_OPTIONS = [
-  "OPERATION DEPARTMENT",
-  "ACCOUNTING DEPARTMENT",
-  "HR DEPARTMENT",
-  "IT DEPARTMENT",
-  "AUDIT DEPARTMENT",
-  "TREAD DEPARTMENT",
-  "PRODUCTION & LOGISTIC DEPARTMENT",
-  "OFFICE OF THE PRESIDENT",
-];
-
-const POSITION_OPTIONS = [
-  "LOAN OFFICER",
-  "BRANCH MANAGER",
-  "AREA MANAGER",
-  "REGIONAL MANAGER",
-  "ASSISTANT VICE PRESIDENT",
-  "VICE PRESIDENT",
-  "SENIOR VICE PRESIDENT",
-];
-
-const SAMPLE_STAFF_SUMMARY = [
-  {
-    id: 1,
-    employee_name: "DELA CRUZ, JUAN",
-    position: "AREA MANAGER",
-    travel_days: 12,
-    branch_visits: 18,
-    completed: 17,
-    incomplete: 1,
-    most_visited_branch: "GUIWAN",
-  },
-  {
-    id: 2,
-    employee_name: "SANTOS, MARIA",
-    position: "REGIONAL MANAGER",
-    travel_days: 8,
-    branch_visits: 14,
-    completed: 13,
-    incomplete: 1,
-    most_visited_branch: "TETUAN",
-  },
-  {
-    id: 3,
-    employee_name: "RAMOS, CARLO",
-    position: "ASSISTANT VICE PRESIDENT",
-    travel_days: 6,
-    branch_visits: 10,
-    completed: 10,
-    incomplete: 0,
-    most_visited_branch: "PAGADIAN",
-  },
-];
-
-const SAMPLE_BRANCH_SUMMARY = [
-  {
-    id: 1,
-    branch: "GUIWAN",
-    area: "ZAMBOANGA CITY I",
-    region: "ZAMBOANGA PENINSULA",
-    visits: 28,
-    unique_staff: 9,
-    last_visit: "2026-08-27",
-  },
-  {
-    id: 2,
-    branch: "TETUAN",
-    area: "ZAMBOANGA CITY I",
-    region: "ZAMBOANGA PENINSULA",
-    visits: 19,
-    unique_staff: 7,
-    last_visit: "2026-08-27",
-  },
-  {
-    id: 3,
-    branch: "PAGADIAN",
-    area: "PAGADIAN AREA",
-    region: "REGION IX",
-    visits: 15,
-    unique_staff: 6,
-    last_visit: "2026-08-26",
-  },
-];
-
-const SAMPLE_STAFF_TRAVEL_PLANS = {
-  1: [
-    {
-      id: 101,
-      date: "2026-08-27",
-      title: "Branch Monitoring",
-      branch: "GUIWAN",
-      description:
-        "Conducted regular branch monitoring, cash verification, document review, and client validation.",
-      status: "Completed",
-      time_in: "8:15 AM",
-      time_out: "4:32 PM",
-      duration: "8 hr 17 min",
-
-      branch_findings: {
-        coh: "Cash on hand was verified and properly accounted for.",
-        cashbook:
-          "Cashbook entries were compared against supporting vouchers.",
-        bms: "BMS records were reviewed and found updated.",
-        others:
-          "Recommended improvement in filing and document organization.",
-      },
-
-      group_findings: {
-        passbook:
-          "Selected client passbooks were reconciled against branch records.",
-        past_due:
-          "Past due and delinquent accounts were reviewed with branch staff.",
-        collection:
-          "Group collection records were checked and properly documented.",
-        others:
-          "Follow-up monitoring is recommended for selected accounts.",
-      },
-
-      involved_staff: [
-        "SANTOS, MARIA",
-        "REYES, JOHN",
-      ],
-
-      due_date: "2026-09-05",
-
-      photos: [
-        {
-          id: 1,
-          label: "Time In",
-          url: "https://placehold.co/600x400?text=Time+In",
-        },
-        {
-          id: 2,
-          label: "Branch Visit",
-          url: "https://placehold.co/600x400?text=Branch+Visit",
-        },
-        {
-          id: 3,
-          label: "Group Visit",
-          url: "https://placehold.co/600x400?text=Group+Visit",
-        },
-        {
-          id: 4,
-          label: "Time Out",
-          url: "https://placehold.co/600x400?text=Time+Out",
-        },
-      ],
-    },
-
-    {
-      id: 102,
-      date: "2026-08-25",
-      title: "Client Account Validation",
-      branch: "TETUAN",
-      description:
-        "Visited branch and selected client groups for account validation.",
-      status: "Completed",
-      time_in: "8:40 AM",
-      time_out: "3:55 PM",
-      duration: "7 hr 15 min",
-
-      branch_findings: {
-        coh: "Verified.",
-        cashbook: "Reviewed.",
-        bms: "Updated.",
-        others: "",
-      },
-
-      group_findings: {
-        passbook: "Passbooks checked.",
-        past_due: "Delinquent accounts discussed.",
-        collection: "Collection records verified.",
-        others: "",
-      },
-
-      involved_staff: ["CRUZ, MARK"],
-      due_date: "2026-09-02",
-      photos: [],
-    },
-  ],
-
-  2: [
-    {
-      id: 201,
-      date: "2026-08-27",
-      title: "Regional Branch Inspection",
-      branch: "TETUAN",
-      description:
-        "Performed branch inspection and reviewed branch operations.",
-      status: "Incomplete",
-      time_in: "9:02 AM",
-      time_out: "-",
-      duration: "Not complete",
-
-      branch_findings: {
-        coh: "Initial verification completed.",
-        cashbook: "",
-        bms: "",
-        others: "Inspection is still ongoing.",
-      },
-
-      group_findings: {
-        passbook: "",
-        past_due: "",
-        collection: "",
-        others: "",
-      },
-
-      involved_staff: ["DELA CRUZ, JUAN"],
-      due_date: "",
-      photos: [],
-    },
-  ],
-
-  3: [
-    {
-      id: 301,
-      date: "2026-08-26",
-      title: "Division Monitoring Visit",
-      branch: "PAGADIAN",
-      description:
-        "Conducted division-level monitoring of branch operations.",
-      status: "Completed",
-      time_in: "8:40 AM",
-      time_out: "5:10 PM",
-      duration: "8 hr 30 min",
-
-      branch_findings: {
-        coh: "Verified.",
-        cashbook: "No discrepancies noted.",
-        bms: "Records updated.",
-        others: "",
-      },
-
-      group_findings: {
-        passbook: "Reconciled.",
-        past_due: "Reviewed.",
-        collection: "Reviewed.",
-        others: "",
-      },
-
-      involved_staff: ["SANTOS, MARIA"],
-      due_date: "2026-09-10",
-      photos: [],
-    },
-  ],
-};
+import api from "../../api/axiosClient";
 
 const formatDate = (value) => {
   if (!value) return "-";
@@ -305,22 +12,40 @@ const formatDate = (value) => {
   });
 };
 
+const formatTime = (value) => {
+  if (!value || value === "-") return "-";
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return date.toLocaleTimeString("en-PH", {
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+    timeZone: "Asia/Manila",
+  });
+};
+
 export default function CalendarSummaryReport() {
   const [selectedStaff, setSelectedStaff] = useState(null);
   const [selectedTravelPlan, setSelectedTravelPlan] = useState(null);
+  const [travelDetailLoading, setTravelDetailLoading] = useState(false);
   const [dateFrom, setDateFrom] = useState("2026-08-01");
   const [dateTo, setDateTo] = useState("2026-08-31");
   const [department, setDepartment] = useState("all");
   const [position, setPosition] = useState("all");
 
-  const [division, setDivision] = useState("");
-  const [region, setRegion] = useState("");
-  const [area, setArea] = useState("");
-  const [branch, setBranch] = useState("");
-  const [employee, setEmployee] = useState("");
-  const [status, setStatus] = useState("");
-  const [search, setSearch] = useState("");
+  const [division, setDivision] = useState("all");
+  const [region, setRegion] = useState("all");
+  const [area, setArea] = useState("all");
+  const [branch, setBranch] = useState("all");
+  const [employee, setEmployee] = useState("all");
+  const [status, setStatus] = useState("all");
 
+  const [search, setSearch] = useState("");
   const [showFilters, setShowFilters] = useState(false);
 
   const [reportData, setReportData] = useState({
@@ -408,15 +133,10 @@ export default function CalendarSummaryReport() {
           params.search = search.trim();
         }
 
-        const token = localStorage.getItem("token");
-
-        const response = await axios.get(
-          "http://localhost:5000/api/travel-plans/summary-report",
+        const response = await api.get(
+          "/travel-plans/summary-report",
           {
             params,
-            headers: {
-              Authorization: `Bearer ${token}`,
-            },
           }
         );
 
@@ -522,6 +242,283 @@ export default function CalendarSummaryReport() {
     });
   }, [selectedStaff, reportData.travel_details]);
 
+  const openTravelPlanDetails = async (plan) => {
+    try {
+      setTravelDetailLoading(true);
+
+      const [planResponse, notesResponse, photosResponse] =
+        await Promise.all([
+          api.get(`/travel-plans/${plan.id}`),
+          api.get(`/travel-plans/${plan.id}/notes`),
+          api.get(`/travel-plans/${plan.id}/photos`),
+        ]);
+
+      const fullPlan = planResponse.data || {};
+      const notes = Array.isArray(notesResponse.data)
+        ? notesResponse.data
+        : [];
+
+      const planPhotos = Array.isArray(photosResponse.data)
+        ? photosResponse.data
+        : [];
+
+      const reviewNote =
+        notes.find(
+          (note) =>
+            String(note.note_type || "").toUpperCase() === "REVIEW"
+        ) || {};
+
+      const findingNote =
+        notes.find(
+          (note) =>
+            String(note.note_type || "").toUpperCase() === "FINDINGS"
+        ) || {};
+
+      const involvedStaff = Array.isArray(
+        findingNote.involved_staff
+      )
+        ? findingNote.involved_staff
+        : Array.isArray(reviewNote.involved_staff)
+        ? reviewNote.involved_staff
+        : [];
+
+      const photos = planPhotos
+        .filter((photo) => photo.signed_url)
+        .map((photo) => {
+          const photoType = String(
+            photo.photo_type || "GENERAL"
+          ).toUpperCase();
+
+          let label = "Travel Photo";
+
+          if (photoType === "CHECK_IN") {
+            label = "Check In";
+          } else if (photoType === "CHECK_OUT") {
+            label = "Check Out";
+          } else if (photoType === "GENERAL") {
+            label = "General";
+          }
+
+          return {
+            id: `travel-${photo.id}`,
+            label,
+            url: photo.signed_url,
+            photo_type: photoType,
+            captured_at:
+              photo.captured_at ||
+              photo.created_at ||
+              null,
+            latitude: photo.latitude,
+            longitude: photo.longitude,
+          };
+        });
+
+      if (reviewNote.review_photo_signed_url) {
+        photos.push({
+          id: `review-${reviewNote.id}`,
+          label: "Branch Visit Finding",
+          url: reviewNote.review_photo_signed_url,
+          photo_type: "REVIEW",
+        });
+      }
+
+      if (findingNote.finding_photo_signed_url) {
+        photos.push({
+          id: `finding-${findingNote.id}`,
+          label: "Group Visit Finding",
+          url: findingNote.finding_photo_signed_url,
+          photo_type: "FINDINGS",
+        });
+      }
+
+      setSelectedTravelPlan({
+        id: fullPlan.id ?? plan.id,
+
+        date:
+          fullPlan.plan_date ||
+          plan.date,
+
+        title:
+          fullPlan.title ||
+          plan.title ||
+          "Travel Plan",
+
+        branch:
+          fullPlan.branch_name ||
+          plan.branch ||
+          "-",
+
+        description:
+          fullPlan.description ||
+          plan.description ||
+          "",
+
+        status:
+          fullPlan.status ||
+          plan.status ||
+          "Incomplete",
+
+        time_in:
+          fullPlan.check_in_at ||
+          plan.time_in ||
+          null,
+
+        time_out:
+          fullPlan.check_out_at ||
+          plan.time_out ||
+          null,
+
+        duration:
+          fullPlan.duration_label ||
+          plan.duration ||
+          "Not complete",
+
+        branch_findings: {
+          coh:
+            reviewNote.review_coh || "",
+
+          cashbook:
+            reviewNote.review_cashbook_vs_voucher || "",
+
+          lor:
+            reviewNote.review_lor || "",
+
+          los:
+            reviewNote.review_los || "",
+
+          ldf:
+            reviewNote.review_ldf || "",
+
+          dcs:
+            reviewNote.review_dcs || "",
+
+          bms:
+            reviewNote.review_bms || "",
+
+          others:
+            reviewNote.review_other_findings || "",
+        },
+
+        group_findings: {
+          passbook:
+            findingNote.passbook_reconciliation || "",
+
+          past_due:
+            findingNote.past_due_delinquent_report || "",
+
+          collection:
+            findingNote.group_collection_record || "",
+
+          others:
+            findingNote.other_findings || "",
+        },
+
+        involved_staff: involvedStaff,
+
+        due_date:
+          findingNote.due_date ||
+          reviewNote.due_date ||
+          "",
+
+        photos,
+      });
+    } catch (error) {
+      console.error(
+        "OPEN TRAVEL PLAN DETAILS ERROR:",
+        error
+      );
+
+      alert(
+        error?.response?.data?.message ||
+          "Unable to load Travel Plan details."
+      );
+    } finally {
+      setTravelDetailLoading(false);
+    }
+  };
+
+  const handlePrint = () => {
+    window.print();
+  };
+
+  const handleExportExcel = () => {
+    const rows = reportData.travel_details || [];
+
+    if (rows.length === 0) {
+      alert("No travel records to export.");
+      return;
+    }
+
+    const headers = [
+      "Date",
+      "Employee No.",
+      "Employee Name",
+      "Position",
+      "Department",
+      "Branch Visited",
+      "Area",
+      "Region",
+      "Division",
+      "Time In",
+      "Time Out",
+      "Duration",
+      "Status",
+    ];
+
+    const escapeCsv = (value) => {
+      const text = String(value ?? "");
+
+      return `"${text.replace(/"/g, '""')}"`;
+    };
+
+    const csvRows = [
+      headers.map(escapeCsv).join(","),
+      ...rows.map((row) =>
+        [
+          row.date || "",
+          row.employee_no || "",
+          row.employee_name || "",
+          row.position || "",
+          row.department || "",
+          row.branch || "",
+          row.area || "",
+          row.region || "",
+          row.division || "",
+          formatTime(row.time_in),
+          formatTime(row.time_out),
+          row.duration || "",
+          row.status || "",
+        ]
+          .map(escapeCsv)
+          .join(",")
+      ),
+    ];
+
+    const csvContent =
+      "\uFEFF" + csvRows.join("\n");
+
+    const blob = new Blob(
+      [csvContent],
+      {
+        type: "text/csv;charset=utf-8;",
+      }
+    );
+
+    const url = URL.createObjectURL(blob);
+
+    const link = document.createElement("a");
+
+    link.href = url;
+    link.download =
+      `calendar-summary-${dateFrom}-to-${dateTo}.csv`;
+
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <div className="calendar-summary-page">
       <div className="calendar-summary-header">
@@ -535,11 +532,19 @@ export default function CalendarSummaryReport() {
         </div>
 
         <div className="calendar-summary-header-actions">
-          <button type="button" className="calendar-summary-btn secondary">
+          <button
+            type="button"
+            className="calendar-summary-btn secondary"
+            onClick={handlePrint}
+          >
             Print
           </button>
 
-          <button type="button" className="calendar-summary-btn primary">
+          <button
+            type="button"
+            className="calendar-summary-btn primary"
+            onClick={handleExportExcel}
+          >
             Export Excel
           </button>
         </div>
@@ -591,7 +596,12 @@ export default function CalendarSummaryReport() {
                   onChange={(e) => setDivision(e.target.value)}
                 >
                   <option value="all">All Divisions</option>
-                  <option value="DIVISION IV">DIVISION IV</option>
+
+                  {(reportData.filters?.divisions || []).map((item) => (
+                    <option key={item} value={item}>
+                      {item}
+                    </option>
+                  ))}
                 </select>
               </label>
 
@@ -602,12 +612,12 @@ export default function CalendarSummaryReport() {
                   onChange={(e) => setRegion(e.target.value)}
                 >
                   <option value="all">All Regions</option>
-                  <option value="ZAMBOANGA PENINSULA">
-                    ZAMBOANGA PENINSULA
-                  </option>
-                  <option value="REGION IX">
-                    REGION IX
-                  </option>
+
+                  {(reportData.filters?.regions || []).map((item) => (
+                    <option key={item} value={item}>
+                      {item}
+                    </option>
+                  ))}
                 </select>
               </label>
 
@@ -618,12 +628,12 @@ export default function CalendarSummaryReport() {
                   onChange={(e) => setArea(e.target.value)}
                 >
                   <option value="all">All Areas</option>
-                  <option value="ZAMBOANGA CITY I">
-                    ZAMBOANGA CITY I
-                  </option>
-                  <option value="PAGADIAN AREA">
-                    PAGADIAN AREA
-                  </option>
+
+                  {(reportData.filters?.areas || []).map((item) => (
+                    <option key={item} value={item}>
+                      {item}
+                    </option>
+                  ))}
                 </select>
               </label>
 
@@ -634,9 +644,12 @@ export default function CalendarSummaryReport() {
                   onChange={(e) => setBranch(e.target.value)}
                 >
                   <option value="all">All Branches</option>
-                  <option value="GUIWAN">GUIWAN</option>
-                  <option value="TETUAN">TETUAN</option>
-                  <option value="PAGADIAN">PAGADIAN</option>
+
+                  {(reportData.filters?.branches || []).map((item) => (
+                    <option key={item} value={item}>
+                      {item}
+                    </option>
+                  ))}
                 </select>
               </label>
 
@@ -650,7 +663,7 @@ export default function CalendarSummaryReport() {
                     All Departments
                   </option>
 
-                  {DEPARTMENT_OPTIONS.map((item) => (
+                  {(reportData.filters?.departments || []).map((item) => (
                     <option key={item} value={item}>
                       {item}
                     </option>
@@ -668,7 +681,7 @@ export default function CalendarSummaryReport() {
                     All Positions
                   </option>
 
-                  {POSITION_OPTIONS.map((item) => (
+                  {(reportData.filters?.positions || []).map((item) => (
                     <option key={item} value={item}>
                       {item}
                     </option>
@@ -682,18 +695,24 @@ export default function CalendarSummaryReport() {
                   value={employee}
                   onChange={(e) => setEmployee(e.target.value)}
                 >
-                  <option value="all">
-                    All Employees
-                  </option>
-                  <option value="000123">
-                    DELA CRUZ, JUAN
-                  </option>
-                  <option value="000456">
-                    SANTOS, MARIA
-                  </option>
-                  <option value="000789">
-                    RAMOS, CARLO
-                  </option>
+                  <option value="all">All Employees</option>
+
+                  {(reportData.filters?.employees || []).map((item) => {
+                    const value =
+                      item.employee_no ||
+                      item.employee_name ||
+                      "";
+
+                    const label = item.employee_no
+                      ? `${item.employee_no} - ${item.employee_name}`
+                      : item.employee_name;
+
+                    return (
+                      <option key={value} value={value}>
+                        {label}
+                      </option>
+                    );
+                  })}
                 </select>
               </label>
 
@@ -719,14 +738,14 @@ export default function CalendarSummaryReport() {
                 type="button"
                 className="calendar-summary-clear-btn"
                 onClick={() => {
-                  setDivision("");
-                  setRegion("");
-                  setArea("");
-                  setBranch("");
+                  setDivision("all");
+                  setRegion("all");
+                  setArea("all");
+                  setBranch("all");
                   setDepartment("all");
                   setPosition("all");
-                  setEmployee("");
-                  setStatus("");
+                  setEmployee("all");
+                  setStatus("all");
                   setSearch("");
                 }}
               >
@@ -852,8 +871,8 @@ export default function CalendarSummaryReport() {
                     <td>{row.area || "-"}</td>
                     <td>{row.region || "-"}</td>
                     <td>{row.division || "-"}</td>
-                    <td>{row.time_in || "-"}</td>
-                    <td>{row.time_out || "-"}</td>
+                    <td>{formatTime(row.time_in)}</td>
+                    <td>{formatTime(row.time_out)}</td>
                     <td>
                       <span
                         className={`calendar-summary-status ${String(
@@ -938,13 +957,8 @@ export default function CalendarSummaryReport() {
               </div>
 
               <span>
-                {
-                  <span>
-                    {selectedStaffTravels.length}{" "}
-                    {selectedStaffTravels.length === 1 ? "record" : "records"}
-                  </span>
-                }{" "}
-                records
+                {selectedStaffTravels.length}{" "}
+                {selectedStaffTravels.length === 1 ? "record" : "records"}
               </span>
             </div>
 
@@ -964,8 +978,9 @@ export default function CalendarSummaryReport() {
                     key={plan.id}
                     type="button"
                     className="calendar-summary-travel-item"
+                    disabled={travelDetailLoading}
                     onClick={() => {
-                      console.log("SELECTED TRAVEL:", plan);
+                      openTravelPlanDetails(plan);
                     }}
                   >
                     <div className="calendar-summary-travel-date">
@@ -1018,17 +1033,17 @@ export default function CalendarSummaryReport() {
                         </span>
 
                         <span>
-                          Time In: <b>{plan.time_in || "-"}</b>
+                          Time In: <b>{formatTime(plan.time_in)}</b>
                         </span>
 
                         <span>
-                          Time Out: <b>{plan.time_out || "-"}</b>
+                          Time Out: <b>{formatTime(plan.time_out)}</b>
                         </span>
                       </div>
                     </div>
 
                     <div className="calendar-summary-travel-arrow">
-                      View →
+                      {travelDetailLoading ? "Loading..." : "View →"}
                     </div>
                   </button>
                 ))
@@ -1096,14 +1111,14 @@ export default function CalendarSummaryReport() {
               <div>
                 <span>Time In</span>
                 <strong>
-                  {selectedTravelPlan.time_in}
+                  {formatTime(selectedTravelPlan.time_in)}
                 </strong>
               </div>
 
               <div>
                 <span>Time Out</span>
                 <strong>
-                  {selectedTravelPlan.time_out}
+                  {formatTime(selectedTravelPlan.time_out)}
                 </strong>
               </div>
 
@@ -1164,6 +1179,42 @@ export default function CalendarSummaryReport() {
                     <p>
                       {selectedTravelPlan
                         .branch_findings.cashbook ||
+                        "No finding recorded."}
+                    </p>
+                  </div>
+
+                  <div>
+                    <span>LOR</span>
+                    <p>
+                      {selectedTravelPlan
+                        .branch_findings.lor ||
+                        "No finding recorded."}
+                    </p>
+                  </div>
+
+                  <div>
+                    <span>LOS</span>
+                    <p>
+                      {selectedTravelPlan
+                        .branch_findings.los ||
+                        "No finding recorded."}
+                    </p>
+                  </div>
+
+                  <div>
+                    <span>LDF</span>
+                    <p>
+                      {selectedTravelPlan
+                        .branch_findings.ldf ||
+                        "No finding recorded."}
+                    </p>
+                  </div>
+
+                  <div>
+                    <span>DCS</span>
+                    <p>
+                      {selectedTravelPlan
+                        .branch_findings.dcs ||
                         "No finding recorded."}
                     </p>
                   </div>
@@ -1293,7 +1344,7 @@ export default function CalendarSummaryReport() {
 
               {selectedTravelPlan.photos.length === 0 ? (
                 <div className="calendar-summary-no-photos">
-                  No sample photos available.
+                  No travel photos available.
                 </div>
               ) : (
                 <div className="calendar-summary-photo-grid">
@@ -1308,7 +1359,30 @@ export default function CalendarSummaryReport() {
                           alt={photo.label}
                         />
 
-                        <span>{photo.label}</span>
+                        <div className="calendar-summary-photo-info">
+                          <span>{photo.label}</span>
+
+                          {photo.captured_at && (
+                            <small>
+                              {new Date(photo.captured_at).toLocaleString("en-PH", {
+                                timeZone: "Asia/Manila",
+                                month: "short",
+                                day: "2-digit",
+                                year: "numeric",
+                                hour: "numeric",
+                                minute: "2-digit",
+                                hour12: true,
+                              })}
+                            </small>
+                          )}
+
+                          {photo.latitude && photo.longitude && (
+                            <small>
+                              GPS: {Number(photo.latitude).toFixed(6)},{" "}
+                              {Number(photo.longitude).toFixed(6)}
+                            </small>
+                          )}
+                        </div>
                       </div>
                     )
                   )}
