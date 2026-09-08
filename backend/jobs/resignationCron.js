@@ -52,6 +52,23 @@ const processEffectiveResignations = async () => {
             AND later_rr.revoke_effective_date IS NOT NULL
         )
 
+        AND NOT EXISTS (
+          SELECT 1
+          FROM public.status_history sh
+          WHERE LOWER(TRIM(COALESCE(sh.employee_no, ''))) =
+                LOWER(TRIM(COALESCE(rr.employee_no, '')))
+
+            AND LOWER(TRIM(COALESCE(sh.status, ''))) = 'active'
+
+            AND LOWER(TRIM(COALESCE(sh.reason, ''))) IN (
+              're-apply',
+              'reapply',
+              'reactivated'
+            )
+
+            AND sh.effective_date::date >= rr.effective_date::date
+        )
+
       ORDER BY
         rr.effective_date ASC,
         rr.id ASC

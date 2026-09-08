@@ -118,12 +118,36 @@ const applyDueResignations = async () => {
       exit_date = rr.effective_date,
       exit_remarks = rr.remarks
     FROM public.resignation_requests rr
-    WHERE s.employee_no = rr.employee_no
+    WHERE LOWER(TRIM(COALESCE(s.employee_no, ''))) =
+          LOWER(TRIM(COALESCE(rr.employee_no, '')))
+
       AND LOWER(TRIM(COALESCE(rr.status, ''))) = 'approved'
+
       AND rr.revoke_effective_date IS NULL
+
       AND rr.effective_date IS NOT NULL
-      AND rr.effective_date <= CURRENT_DATE
+
+      AND rr.effective_date::date <=
+          (NOW() AT TIME ZONE 'Asia/Manila')::date
+
       AND LOWER(TRIM(COALESCE(s.status, ''))) <> 'inactive'
+
+      AND NOT EXISTS (
+        SELECT 1
+        FROM public.status_history sh
+        WHERE LOWER(TRIM(COALESCE(sh.employee_no, ''))) =
+              LOWER(TRIM(COALESCE(rr.employee_no, '')))
+
+          AND LOWER(TRIM(COALESCE(sh.status, ''))) = 'active'
+
+          AND LOWER(TRIM(COALESCE(sh.reason, ''))) IN (
+            're-apply',
+            'reapply',
+            'reactivated'
+          )
+
+          AND sh.effective_date::date >= rr.effective_date::date
+      )
   `);
 };
 
