@@ -347,41 +347,145 @@ const canUploadApprovedFile = (req) =>
       await client.query("BEGIN");
 
       // =====================================================
-      // 1. ACTIVE SUSPENSION
-      // If today is between start_date and end_date,
-      // change the employee from Active -> Inactive.
+      // 1. START ACTIVE SUSPENSIONS
+      // Active -> Inactive
       // =====================================================
-      await client.query(`
+      const suspendedStaff = await client.query(`
         UPDATE public.staff s
         SET status = 'Inactive'
         WHERE LOWER(TRIM(COALESCE(s.status, ''))) = 'active'
+
           AND EXISTS (
             SELECT 1
             FROM public.suspension_orders so
             WHERE so.employee_id = s.id
+
               AND LOWER(TRIM(COALESCE(so.status, ''))) = 'approved'
-              AND CURRENT_DATE >= so.start_date
-              AND CURRENT_DATE <= so.end_date
+
+              AND (NOW() AT TIME ZONE 'Asia/Manila')::date
+                  >= so.start_date::date
+
+              AND (NOW() AT TIME ZONE 'Asia/Manila')::date
+                  <= so.end_date::date
           )
+
+        RETURNING
+          s.id,
+          s.employee_no
       `);
 
       // =====================================================
-      // 2. FINISHED SUSPENSION
-      // If the suspension already ended,
-      // change Inactive -> Active,
-      // but only when there is no other current suspension.
+      // RECORD SUSPENSION START IN STATUS HISTORY
       // =====================================================
-      await client.query(`
-        UPDATE public.staff s
-        SET
-          status = 'Active'
+      for (const staff of suspendedStaff.rows) {
+        const suspensionRes = await client.query(
+          `
+          SELECT
+            so.id,
+            so.order_no,
+            so.start_date,
+            so.end_date,
+            so.reason,
+            so.details
+          FROM public.suspension_orders so
+          WHERE so.employee_id = $1
+
+            AND LOWER(TRIM(COALESCE(so.status, ''))) = 'approved'
+
+            AND (NOW() AT TIME ZONE 'Asia/Manila')::date
+                >= so.start_date::date
+
+            AND (NOW() AT TIME ZONE 'Asia/Manila')::date
+                <= so.end_date::date
+
+          ORDER BY
+            so.start_date ASC,
+            so.id ASC
+
+          LIMIT 1
+          `,
+          [staff.id]
+        );
+
+        if (suspensionRes.rowCount > 0) {
+          const suspension = suspensionRes.rows[0];
+
+          await client.query(
+            `
+            INSERT INTO public.status_history
+            (
+              employee_no,
+              effective_date,
+              status,
+              reason,
+              remarks
+            )
+            SELECT
+              $1,
+              $2::date,
+              'Inactive',
+              'Suspension',
+              $3
+            WHERE NOT EXISTS (
+              SELECT 1
+              FROM public.status_history sh
+              WHERE LOWER(TRIM(COALESCE(sh.employee_no, ''))) =
+                    LOWER(TRIM(COALESCE($1, '')))
+
+                AND sh.effective_date = $2::date
+
+                AND LOWER(TRIM(COALESCE(sh.status, ''))) =
+                    'inactive'
+
+                AND LOWER(TRIM(COALESCE(sh.reason, ''))) =
+                    'suspension'
+            )
+            `,
+            [
+              staff.employee_no,
+              suspension.start_date,
+              [
+                suspension.order_no
+                  ? `Suspension Order: ${suspension.order_no}`
+                  : null,
+                suspension.reason
+                  ? `Reason: ${suspension.reason}`
+                  : null,
+                suspension.end_date
+                  ? `Until: ${String(suspension.end_date).slice(0, 10)}`
+                  : null,
+                suspension.details
+                  ? `Details: ${suspension.details}`
+                  : null,
+              ]
+                .filter(Boolean)
+                .join(" | "),
+            ]
+          );
+        }
+      }
+
+      // =====================================================
+      // 2. FIND STAFF WHOSE SUSPENSION HAS FINISHED
+      //
+      // IMPORTANT:
+      // Only reactivate an employee when the latest relevant
+      // inactive history is Suspension.
+      // =====================================================
+      const finishedStaff = await client.query(`
+        SELECT DISTINCT
+          s.id,
+          s.employee_no
+        FROM public.staff s
+
         WHERE LOWER(TRIM(COALESCE(s.status, ''))) = 'inactive'
 
-          -- Employee has an approved suspension that has finished
+          -- At least one approved suspension already finished
           AND EXISTS (
             SELECT 1
             FROM public.suspension_orders finished_so
             WHERE finished_so.employee_id = s.id
+
               AND LOWER(
                 TRIM(
                   COALESCE(
@@ -390,15 +494,17 @@ const canUploadApprovedFile = (req) =>
                   )
                 )
               ) = 'approved'
-              AND CURRENT_DATE > finished_so.end_date
+
+              AND (NOW() AT TIME ZONE 'Asia/Manila')::date
+                  > finished_so.end_date::date
           )
 
-          -- Employee must NOT have another suspension
-          -- that is currently active
+          -- No approved suspension currently active
           AND NOT EXISTS (
             SELECT 1
             FROM public.suspension_orders active_so
             WHERE active_so.employee_id = s.id
+
               AND LOWER(
                 TRIM(
                   COALESCE(
@@ -407,12 +513,15 @@ const canUploadApprovedFile = (req) =>
                   )
                 )
               ) = 'approved'
-              AND CURRENT_DATE >= active_so.start_date
-              AND CURRENT_DATE <= active_so.end_date
+
+              AND (NOW() AT TIME ZONE 'Asia/Manila')::date
+                  >= active_so.start_date::date
+
+              AND (NOW() AT TIME ZONE 'Asia/Manila')::date
+                  <= active_so.end_date::date
           )
 
-          -- Do NOT reactivate employees whose inactive
-          -- status is caused by another exit transaction
+          -- Do not reactivate exit transactions
           AND LOWER(
             TRIM(
               COALESCE(
@@ -429,7 +538,113 @@ const canUploadApprovedFile = (req) =>
             'deceased',
             'death'
           )
+
+          -- Latest status history must show Suspension
+          AND (
+            SELECT LOWER(TRIM(COALESCE(sh.reason, '')))
+            FROM public.status_history sh
+            WHERE LOWER(TRIM(COALESCE(sh.employee_no, ''))) =
+                  LOWER(TRIM(COALESCE(s.employee_no, '')))
+            ORDER BY
+              sh.effective_date DESC,
+              sh.id DESC
+            LIMIT 1
+          ) = 'suspension'
       `);
+
+      // =====================================================
+      // 3. REACTIVATE FINISHED SUSPENSIONS
+      // =====================================================
+      for (const staff of finishedStaff.rows) {
+        const finishedSuspensionRes = await client.query(
+          `
+          SELECT
+            so.id,
+            so.order_no,
+            so.start_date,
+            so.end_date,
+            so.reason
+          FROM public.suspension_orders so
+          WHERE so.employee_id = $1
+
+            AND LOWER(TRIM(COALESCE(so.status, ''))) =
+                'approved'
+
+            AND (NOW() AT TIME ZONE 'Asia/Manila')::date
+                > so.end_date::date
+
+          ORDER BY
+            so.end_date DESC,
+            so.id DESC
+
+          LIMIT 1
+          `,
+          [staff.id]
+        );
+
+        if (finishedSuspensionRes.rowCount === 0) {
+          continue;
+        }
+
+        const suspension = finishedSuspensionRes.rows[0];
+
+        await client.query(
+          `
+          UPDATE public.staff
+          SET status = 'Active'
+          WHERE id = $1
+            AND LOWER(TRIM(COALESCE(status, ''))) = 'inactive'
+          `,
+          [staff.id]
+        );
+
+        // =====================================================
+        // RECORD RETURN FROM SUSPENSION
+        //
+        // Effective Active date = day AFTER suspension end.
+        // =====================================================
+        await client.query(
+          `
+          INSERT INTO public.status_history
+          (
+            employee_no,
+            effective_date,
+            status,
+            reason,
+            remarks
+          )
+          SELECT
+            $1,
+            ($2::date + INTERVAL '1 day')::date,
+            'Active',
+            'Suspension End',
+            $3
+
+          WHERE NOT EXISTS (
+            SELECT 1
+            FROM public.status_history sh
+            WHERE LOWER(TRIM(COALESCE(sh.employee_no, ''))) =
+                  LOWER(TRIM(COALESCE($1, '')))
+
+              AND sh.effective_date =
+                  ($2::date + INTERVAL '1 day')::date
+
+              AND LOWER(TRIM(COALESCE(sh.status, ''))) =
+                  'active'
+
+              AND LOWER(TRIM(COALESCE(sh.reason, ''))) =
+                  'suspension end'
+          )
+          `,
+          [
+            staff.employee_no,
+            suspension.end_date,
+            suspension.order_no
+              ? `Returned to Active after Suspension Order ${suspension.order_no}`
+              : "Returned to Active after suspension",
+          ]
+        );
+      }
 
       await client.query("COMMIT");
     } catch (e) {

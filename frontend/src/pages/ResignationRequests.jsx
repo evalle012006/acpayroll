@@ -45,7 +45,7 @@ const STATUS_RM = "Pending Regional Manager";
 const STATUS_AVP = "Pending Assistant Vice President";
 const STATUS_VP = "Pending Vice President";
 const STATUS_SVP = "Pending Senior Vice President";
-const STATUS_ADMIN = "Pending Admin";
+const STATUS_ADMIN = "Pending Hr Department";
 const STATUS_APPROVED = "Approved";
 const STATUS_REJECTED = "Rejected";
 const STATUS_REVOKED = "Revoked";
@@ -101,10 +101,9 @@ const isHRDeptManager =
     isSeniorVicePresident ||
     isPresident;
 
-  const canFinalAction =
-    isAdmin || isHr || isAccounting || isSeniorVicePresident || isHRDeptManager;
+  const canFinalAction = isAdmin || isHr || isAccounting || isSeniorVicePresident || isHRDeptManager; 
   
-    const [rows, setRows] = useState([]);
+  const [rows, setRows] = useState([]);
   const [staffList, setStaffList] = useState([]);
   const [branches, setBranches] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -528,7 +527,7 @@ const isHRDeptManager =
 
     return (
       canFinalAction &&
-      toStr(row.status) === STATUS_ADMIN
+      toStr(row.status) === STATUS_HR
     );
   };
 
@@ -794,7 +793,40 @@ const submitReapplyRequest = async (e) => {
     return false;
   };
 
-  const canRejectRow = (row) => canApproveRow(row);
+  const canRejectRow = (row) => {
+    const status = toStr(row?.status);
+
+    // Completed requests cannot be rejected
+    if (
+      status === STATUS_APPROVED ||
+      status === STATUS_REJECTED ||
+      status === STATUS_REVOKED
+    ) {
+      return false;
+    }
+
+    // Admin / IT / HR / Accounting can reject
+    // at any pending approval stage
+    if (
+      isAdmin ||
+      isHr ||
+      isAccounting ||
+      isHRDeptManager
+    ) {
+      return true;
+    }
+
+    // Operation approvers can reject only
+    // when the request is at their approval stage
+    if (isBranchManager && status === STATUS_BRANCH) return true;
+    if (isAreaManager && status === STATUS_AREA) return true;
+    if (isRegionalManager && status === STATUS_RM) return true;
+    if (isAssistantVicePresident && status === STATUS_AVP) return true;
+    if (isVicePresident && status === STATUS_VP) return true;
+    if (isSeniorVicePresident && status === STATUS_SVP) return true;
+
+    return false;
+  };
 
   const canDeleteRow = (row) => {
     const status = norm(row.status);
@@ -862,7 +894,7 @@ const submitReapplyRequest = async (e) => {
     if (status === STATUS_AVP) return "For AVP";
     if (status === STATUS_VP) return "For VP";
     if (status === STATUS_SVP) return "For SVP";
-    if (status === STATUS_ADMIN) return "For Admin";
+    if (status === STATUS_ADMIN) return "For Hr Department";
     if (status === STATUS_APPROVED) return "Approved";
     if (status === STATUS_REJECTED) return "Rejected";
     if (status === STATUS_REVOKED) return "Revoked";

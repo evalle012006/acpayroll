@@ -494,6 +494,40 @@ const canActOnCurrentStage = (req, row) => {
   return false;
 };
 
+// =====================================================
+// REJECT RESIGNATION ACCESS
+// Admin / IT / HR Dept / Accounting Dept:
+//   may reject at ANY pending approval stage
+//
+// Operation approvers:
+//   may reject only when it is their current stage
+// =====================================================
+const canRejectResignation = (req, row) => {
+  const status = clean(row?.status);
+
+  // Completed requests cannot be rejected again
+  if (
+    status === STATUS_APPROVED ||
+    status === STATUS_REJECTED ||
+    status === STATUS_REVOKED
+  ) {
+    return false;
+  }
+
+  // Management override for pending resignation
+  if (
+    isAdmin(req) ||
+    isIT(req) ||
+    isHRDepartment(req) ||
+    isAccountingDepartment(req)
+  ) {
+    return true;
+  }
+
+  // Normal approval-chain approver
+  return canActOnCurrentStage(req, row);
+};
+
 router.get(
   "/resignation-requests",
   requireAuth,
@@ -1584,9 +1618,9 @@ router.put(
 
       const existing = requestRes.rows[0];
 
-      if (!canActOnCurrentStage(req, existing)) {
+      if (!canRejectResignation(req, existing)) {
         return res.status(403).json({
-          message: "You cannot reject this current approval stage",
+          message: "You cannot reject this resignation request",
         });
       }
 
