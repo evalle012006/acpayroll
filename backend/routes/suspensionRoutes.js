@@ -341,6 +341,13 @@ const canUploadApprovedFile = (req) =>
   // SUSPENSION STAFF STATUS LIFECYCLE
   // =====================================================
   async function applyDueSuspensions() {
+
+    console.log("========== applyDueSuspensions START ==========");
+    console.log(
+      "[suspension] Manila time:",
+      new Date().toLocaleString("en-US", { timeZone: "Asia/Manila" })
+    );
+
     const client = await pool.connect();
 
     try {
@@ -373,6 +380,17 @@ const canUploadApprovedFile = (req) =>
           s.id,
           s.employee_no
       `);
+
+      console.log(
+        `[suspension] Staff changed to Inactive: ${suspendedStaff.rowCount}`
+      );
+
+      suspendedStaff.rows.forEach((row) => {
+        console.log("[suspension] suspended staff:", {
+          id: row.id,
+          employee_no: row.employee_no,
+        });
+      });
 
       // =====================================================
       // RECORD SUSPENSION START IN STATUS HISTORY
@@ -421,16 +439,16 @@ const canUploadApprovedFile = (req) =>
               remarks
             )
             SELECT
-              $1,
+              $1::varchar,
               $2::date,
-              'Inactive',
-              'Suspension',
-              $3
+              'Inactive'::varchar,
+              'Suspension'::varchar,
+              $3::text
             WHERE NOT EXISTS (
               SELECT 1
               FROM public.status_history sh
               WHERE LOWER(TRIM(COALESCE(sh.employee_no, ''))) =
-                    LOWER(TRIM(COALESCE($1, '')))
+                    LOWER(TRIM(COALESCE($1::varchar, '')))
 
                 AND sh.effective_date = $2::date
 
@@ -552,6 +570,17 @@ const canUploadApprovedFile = (req) =>
           ) = 'suspension'
       `);
 
+      console.log(
+        `[suspension] Staff eligible to return Active: ${finishedStaff.rowCount}`
+      );
+
+      finishedStaff.rows.forEach((row) => {
+        console.log("[suspension] finished suspension:", {
+          id: row.id,
+          employee_no: row.employee_no,
+        });
+      });
+
       // =====================================================
       // 3. REACTIVATE FINISHED SUSPENSIONS
       // =====================================================
@@ -614,17 +643,17 @@ const canUploadApprovedFile = (req) =>
             remarks
           )
           SELECT
-            $1,
+            $1::varchar,
             ($2::date + INTERVAL '1 day')::date,
-            'Active',
-            'Suspension End',
-            $3
+            'Active'::varchar,
+            'Suspension End'::varchar,
+            $3::text
 
           WHERE NOT EXISTS (
             SELECT 1
             FROM public.status_history sh
             WHERE LOWER(TRIM(COALESCE(sh.employee_no, ''))) =
-                  LOWER(TRIM(COALESCE($1, '')))
+                  LOWER(TRIM(COALESCE($1::varchar, '')))
 
               AND sh.effective_date =
                   ($2::date + INTERVAL '1 day')::date
@@ -650,10 +679,13 @@ const canUploadApprovedFile = (req) =>
     } catch (e) {
       await client.query("ROLLBACK");
 
-      console.error(
-        "applyDueSuspensions ERROR:",
-        e.message
-      );
+      console.error("========== applyDueSuspensions ERROR ==========");
+      console.error("message:", e.message);
+      console.error("code:", e.code);
+      console.error("detail:", e.detail);
+      console.error("hint:", e.hint);
+      console.error("where:", e.where);
+      console.error("===============================================");
 
       throw e;
     } finally {
@@ -951,8 +983,7 @@ router.post(
         return res.status(403).json({ message: "Access denied" });
       }
 
-      const employee_name =
-        clean(req.body?.employee_name) || clean(staff.fullname);
+      const employee_name = clean(staff.fullname);
 
       const seq = await client.query(
         `SELECT nextval('public.suspension_orders_id_seq') AS n`
@@ -1246,8 +1277,7 @@ router.put(
         attachment_mime = clean(req.file.mimetype);
       }
 
-      const employee_name =
-        clean(req.body?.employee_name) || clean(staff.fullname);
+      const employee_name = clean(staff.fullname);
 
       const upd = await client.query(
         `
@@ -1856,4 +1886,14 @@ router.put(
   }
 );
 
-module.exports = router;
+console.log("[suspension] suspensionRoutes.js loaded");
+
+applyDueSuspensions()
+  .then(() => {
+    console.log("[suspension] applyDueSuspensions initial run completed");
+  })
+  .catch((err) => {
+    console.error("[suspension] applyDueSuspensions initial run failed:", err);
+  });
+
+module.exports = router;  

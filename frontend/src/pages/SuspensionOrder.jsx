@@ -651,7 +651,6 @@ export default function SuspensionOrder() {
       const formData = new FormData();
 
       formData.append("employee_id", Number(form.employee_id));
-      formData.append("employee_name", clean(form.employee_name));
       formData.append("suspension_type", clean(form.suspension_type));
       formData.append("suspension_start", toDate10(form.suspension_start));
       formData.append("suspension_end", toDate10(form.suspension_end));
