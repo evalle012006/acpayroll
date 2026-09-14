@@ -103,7 +103,12 @@ const isHRDeptManager =
     isSeniorVicePresident ||
     isPresident;
 
-  const canFinalAction = isAdmin || isHr || isAccounting || isSeniorVicePresident || isHRDeptManager; 
+  const canFinalAction = isHRDeptManager;
+
+    const canManageResignationReturn =
+      isSystemAdmin ||
+      isAccounting ||
+      isHRDeptManager;
   
   const [rows, setRows] = useState([]);
   const [staffList, setStaffList] = useState([]);
@@ -886,7 +891,7 @@ const submitReapplyRequest = async (e) => {
     const today = getToday();
 
     return (
-      canFinalAction &&
+      canManageResignationReturn &&
       norm(row.status) === norm(STATUS_APPROVED) &&
       effectiveDate &&
       effectiveDate > today
@@ -898,7 +903,7 @@ const submitReapplyRequest = async (e) => {
     const today = getToday();
 
     return (
-      canFinalAction &&
+      canManageResignationReturn &&
       norm(row.status) === norm(STATUS_APPROVED) &&
       effectiveDate &&
       effectiveDate <= today

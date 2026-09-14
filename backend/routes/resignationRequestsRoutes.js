@@ -72,10 +72,15 @@ const isPresident = (req) => roleLower(req) === "president";
 // HR DEPARTMENT - ANY ROLE
 // =====================================================
 const isFinalApprover = (req) =>
+  isHRDepartment(req);
+
+// =====================================================
+// REVOKE / RE-APPLY ACCESS
+// Admin / HR Department / Accounting Department
+// =====================================================
+
+const canManageResignationReturn = (req) =>
   isAdmin(req) ||
-  isIT(req) ||
-  isHr(req) ||
-  isAccounting(req) ||
   isHRDepartment(req) ||
   isAccountingDepartment(req);
 
@@ -1674,11 +1679,12 @@ router.put(
         });
       }
 
-      if (!isFinalApprover(req)) {
+      if (!canManageResignationReturn(req)) {
         await client.query("ROLLBACK");
 
         return res.status(403).json({
-          message: "Only HR Department can revoke an approved resignation.",
+          message:
+            "Only Admin, HR Department, or Accounting Department can revoke an approved resignation.",
         });
       }
 
@@ -1899,12 +1905,12 @@ router.put(
         });
       }
 
-      if (!isFinalApprover(req)) {
+      if (!canManageResignationReturn(req)) {
         await client.query("ROLLBACK");
 
         return res.status(403).json({
           message:
-            "Only HR Department can submit a Re-Apply request.",
+            "Only Admin, HR Department, or Accounting Department can submit a Re-Apply request.",
         });
       }
 
