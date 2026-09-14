@@ -45,7 +45,7 @@ const STATUS_RM = "Pending Regional Manager";
 const STATUS_AVP = "Pending Assistant Vice President";
 const STATUS_VP = "Pending Vice President";
 const STATUS_SVP = "Pending Senior Vice President";
-const STATUS_ADMIN = "Pending Hr Department";
+const STATUS_HR = "Pending HR Department";
 const STATUS_APPROVED = "Approved";
 const STATUS_REJECTED = "Rejected";
 const STATUS_REVOKED = "Revoked";
@@ -77,6 +77,8 @@ const isHRDeptManager =
   ].includes(role);
 
   const isAdmin = ["admin", "it"].includes(role);
+  const isSystemAdmin = role === "admin";
+
   const isBranchManager = role === "branch manager";
   const isAreaManager = role === "area manager";
   const isRegionalManager = role === "regional manager";
@@ -497,15 +499,45 @@ const isHRDeptManager =
     try {
       setProcessingId(`approve-${row.id}`);
 
+      const shouldBypass =
+        isSystemAdmin &&
+        toStr(row.status) !== STATUS_HR;
+
       if (file) {
         const fd = new FormData();
+
         fd.append("attachment", file);
 
-        await api.put(`/resignation-requests/${row.id}/approve`, fd, {
-          headers: { "Content-Type": "multipart/form-data" },
-        });
+        if (shouldBypass) {
+          fd.append("bypass", "true");
+        }
+
+        await api.put(
+          `/resignation-requests/${row.id}/approve`,
+          fd,
+          {
+            headers: {
+              "Content-Type": "multipart/form-data",
+            },
+          }
+        );
+      } else if (shouldBypass) {
+        const fd = new FormData();
+        fd.append("bypass", "true");
+
+        await api.put(
+          `/resignation-requests/${row.id}/approve`,
+          fd,
+          {
+            headers: {
+              "Content-Type": "multipart/form-data",
+            },
+          }
+        );
       } else {
-        await api.put(`/resignation-requests/${row.id}/approve`);
+        await api.put(
+          `/resignation-requests/${row.id}/approve`
+        );
       }
 
       setUploadFiles((prev) => {
@@ -516,7 +548,10 @@ const isHRDeptManager =
 
       await fetchAll();
     } catch (err) {
-      alert(err?.response?.data?.message || "Failed to approve request.");
+      alert(
+        err?.response?.data?.message ||
+        "Failed to approve request."
+      );
     } finally {
       setProcessingId("");
     }
@@ -894,7 +929,7 @@ const submitReapplyRequest = async (e) => {
     if (status === STATUS_AVP) return "For AVP";
     if (status === STATUS_VP) return "For VP";
     if (status === STATUS_SVP) return "For SVP";
-    if (status === STATUS_ADMIN) return "For Hr Department";
+    if (status === STATUS_HR) return "For HR Department";
     if (status === STATUS_APPROVED) return "Approved";
     if (status === STATUS_REJECTED) return "Rejected";
     if (status === STATUS_REVOKED) return "Revoked";

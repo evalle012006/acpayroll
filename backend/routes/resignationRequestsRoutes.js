@@ -72,7 +72,12 @@ const isPresident = (req) => roleLower(req) === "president";
 // HR DEPARTMENT - ANY ROLE
 // =====================================================
 const isFinalApprover = (req) =>
-  isHRDepartment(req);
+  isAdmin(req) ||
+  isIT(req) ||
+  isHr(req) ||
+  isAccounting(req) ||
+  isHRDepartment(req) ||
+  isAccountingDepartment(req);
 
 // =====================================================
 // DELETE RESIGNATION ACCESS
