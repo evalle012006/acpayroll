@@ -24,9 +24,15 @@ const STAGE_LABELS = {
   "regional manager": "Regional Manager",
   "assistant vice president": "Assistant Vice President",
   "vice president": "Vice President",
-  admin: "Admin / IT / HR / Accounting",
+
+  admin: "HR Admin Order",
+  "hr order": "HR Admin Order",
+  "avp signed order": "AVP Staff-Signed Admin Order",
+  "hr final": "HR Final Approval",
+
   approved: "Approved",
   rejected: "Rejected",
+  voided: "Voided",
 };
 
 const BACK_OFFICE_DEPARTMENTS = [
@@ -70,15 +76,16 @@ const getApprovalChain = (department) => {
       "regional manager",
       "assistant vice president",
       "vice president",
-      "admin",
     ];
   }
 
+  // Back Office does not use the Operation management chain.
+  // It proceeds to the HR workflow according to backend logic.
   if (isBackOfficeDepartment(department)) {
-    return ["admin"];
+    return [];
   }
 
-  return ["admin"];
+  return [];
 };
 
 const getStageStatus = (order, stage) => {
@@ -98,13 +105,39 @@ const getCurrentStage = (order) => {
 
   if (status === "approved") return "approved";
   if (status === "rejected") return "rejected";
+  if (status === "voided") return "voided";
+
+  if (
+    status === "wait for hr order" ||
+    status === "wait for admin order"
+  ) {
+    return "hr order";
+  }
+
+  if (status === "wait for avp signed order") {
+    return "avp signed order";
+  }
+
+  if (
+    status === "wait for hr final approval" ||
+    status === "wait for hr final"
+  ) {
+    return "hr final";
+  }
 
   const stage = norm(order?.approval_stage);
 
-  if (stage && stage !== "approved") return stage;
+  if (stage === "admin") {
+    return "hr order";
+  }
+
+  if (stage) {
+    return stage;
+  }
 
   const chain = getApprovalChain(order?.department);
-  return chain[0] || "admin";
+
+  return chain[0] || "hr order";
 };
 
 const renderChainSummary = (order) => {
@@ -169,17 +202,35 @@ export default function DemotionOrder() {
     isITDepartment ||
     isAccountingDepartment;
 
-  const canFinalUpload =
+  const canHrWorkflow =
     isAdmin ||
-    isHRDepartment ||
-    isITDepartment ||
-    isAccountingDepartment;
+    isHRDepartment;
 
   const canVoidOrDelete =
     isAdmin ||
     isHRDepartment ||
     isITDepartment ||
     isAccountingDepartment;
+  
+  const canBypass =
+    isAdmin ||
+    isIt ||
+    isHr ||
+    isAccounting ||
+    isSeniorVicePresident ||
+    isHRDepartment ||
+    isITDepartment ||
+    isAccountingDepartment;
+
+  const canOperationDownload =
+  isOperationDepartment(department) &&
+  (
+    isBranchManager ||
+    isAreaManager ||
+    isRegionalManager ||
+    isAssistantVicePresident ||
+    isVicePresident
+  );
 
   const canDownloadFile =
     isAdmin ||
@@ -187,27 +238,56 @@ export default function DemotionOrder() {
     isHr ||
     isHRDepartment ||
     isAccounting ||
-    isBranchManager ||
-    isAreaManager ||
-    isRegionalManager ||
-    isAssistantVicePresident ||
-    isVicePresident ||
+    isAccountingDepartment ||
+    canOperationDownload ||
     isSeniorVicePresident ||
     isPresident;
 
   const canActOnStage = (order) => {
     const status = norm(order?.status);
 
-    if (status === "approved" || status === "rejected") {
+    if (
+      status === "approved" ||
+      status === "rejected" ||
+      status === "voided"
+    ) {
       return false;
     }
 
-    return (
-      isAdmin ||
-      isHRDepartment ||
-      isITDepartment ||
-      isAccountingDepartment
-    );
+    const stage = getCurrentStage(order);
+
+    // HR workflow stages are handled by their own buttons,
+    // not the normal management Approve/Reject buttons.
+    if (
+      stage === "admin" ||
+      stage === "hr order" ||
+      stage === "avp signed order" ||
+      stage === "hr final"
+    ) {
+      return false;
+    }
+
+    if (!isOperationDepartment(order?.department)) {
+      return false;
+    }
+
+    if (stage === "area manager") {
+      return isAreaManager;
+    }
+
+    if (stage === "regional manager") {
+      return isRegionalManager;
+    }
+
+    if (stage === "assistant vice president") {
+      return isAssistantVicePresident;
+    }
+
+    if (stage === "vice president") {
+      return isVicePresident;
+    }
+
+    return false;
   };
 
   const [orders, setOrders] = useState([]);
@@ -230,7 +310,13 @@ export default function DemotionOrder() {
   const [rejectSaving, setRejectSaving] = useState(false);
 
   const [approvalFiles, setApprovalFiles] = useState({});
-  const [finalUploadFiles, setFinalUploadFiles] = useState({});
+
+  // HR uploads the prepared Admin Order
+  const [hrOrderFiles, setHrOrderFiles] = useState({});
+
+  // AVP uploads the Admin Order signed by the employee
+  const [avpSignedFiles, setAvpSignedFiles] = useState({});
+
   const [processingId, setProcessingId] = useState("");
 
   const [employeeSearch, setEmployeeSearch] = useState("");
@@ -558,6 +644,122 @@ export default function DemotionOrder() {
     }
   };
 
+  const bypassOrder = async (order, action) => {
+    const id = order?.id;
+
+    if (!id) {
+      return alert("Invalid demotion order.");
+    }
+
+    if (!canBypass) {
+      return alert(
+        "You are not allowed to bypass demotion approval."
+      );
+    }
+
+    const stage = getCurrentStage(order);
+
+    const managementStages = [
+      "area manager",
+      "regional manager",
+      "assistant vice president",
+      "vice president",
+    ];
+
+    if (!managementStages.includes(stage)) {
+      return alert(
+        "Bypass is only available during management approval."
+      );
+    }
+
+    if (action === "approve" && !approvalFiles[id]) {
+      return alert(
+        "Upload the signed/approved file before bypass approval."
+      );
+    }
+
+    let reason = "";
+
+    if (action === "reject") {
+      reason = window.prompt(
+        `Enter rejection reason for ${
+          order.order_no || id
+        }:`
+      );
+
+      if (reason === null) return;
+
+      if (!clean(reason)) {
+        return alert("Rejection reason is required.");
+      }
+    }
+
+    const confirmed = window.confirm(
+      action === "approve"
+        ? `Bypass the remaining management approvals for ${
+            order.order_no || id
+          } and send it to HR Admin Order?`
+        : `Reject ${
+            order.order_no || id
+          } through bypass?`
+    );
+
+    if (!confirmed) return;
+
+    try {
+      setProcessingId(`${id}-bypass-${action}`);
+
+      const formData = new FormData();
+
+      formData.append("action", action);
+
+      if (action === "approve") {
+        formData.append(
+          "attachment",
+          approvalFiles[id]
+        );
+      }
+
+      if (action === "reject") {
+        formData.append(
+          "reason",
+          clean(reason)
+        );
+      }
+
+      await api.put(
+        `/demotion-orders/${id}/bypass`,
+        formData,
+        {
+          headers: {
+            "Content-Type": "multipart/form-data",
+          },
+        }
+      );
+
+      setApprovalFiles((previous) => {
+        const copy = { ...previous };
+        delete copy[id];
+        return copy;
+      });
+
+      await loadData();
+
+      alert(
+        action === "approve"
+          ? "Management approval bypassed. Waiting for HR Admin Order."
+          : "Demotion rejected through bypass."
+      );
+    } catch (e) {
+      setErr(
+        e?.response?.data?.message ||
+          "Failed to bypass demotion approval."
+      );
+    } finally {
+      setProcessingId("");
+    }
+  };
+
   const openReject = (order) => {
     if (!canActOnStage(order)) return;
 
@@ -585,35 +787,164 @@ export default function DemotionOrder() {
     setRejectSaving(false);
   };
 
-  const uploadFinalFile = async (order) => {
+  const uploadHrOrder = async (order) => {
     const id = order?.id;
-    const file = finalUploadFiles[id];
+    const file = hrOrderFiles[id];
 
-    if (!id) return alert("Invalid order.");
-    if (!file) return alert("Please select final approved file.");
-    if (!canFinalUpload) return alert("Only Admin, IT, HR, and Accounting can upload final file.");
+    if (!id) return alert("Invalid demotion order.");
 
-    if (!window.confirm(`Upload final approved file for ${order.order_no || id}?`)) return;
+    if (!canHrWorkflow) {
+      return alert("Only HR or Admin can upload the Admin Order.");
+    }
+
+    if (!file) {
+      return alert("Please select the Admin Order file.");
+    }
+
+    const confirmed = window.confirm(
+      `Upload Admin Order for ${order.order_no || id}?`
+    );
+
+    if (!confirmed) return;
 
     try {
-      setProcessingId(`${id}-final`);
+      setProcessingId(`${id}-hr-order`);
 
       const formData = new FormData();
       formData.append("attachment", file);
 
-      await api.post(`/demotion-orders/${id}/approved-file`, formData, {
-        headers: { "Content-Type": "multipart/form-data" },
-      });
+      await api.post(
+        `/demotion-orders/${id}/hr-order`,
+        formData,
+        {
+          headers: {
+            "Content-Type": "multipart/form-data",
+          },
+        }
+      );
 
-      setFinalUploadFiles((prev) => {
-        const copy = { ...prev };
+      setHrOrderFiles((previous) => {
+        const copy = { ...previous };
         delete copy[id];
         return copy;
       });
 
       await loadData();
+
+      alert(
+        "Admin Order uploaded successfully. Waiting for AVP to upload the staff-signed Admin Order."
+      );
     } catch (e) {
-      setErr(e?.response?.data?.message || "Failed to upload final approved file.");
+      setErr(
+        e?.response?.data?.message ||
+          "Failed to upload Admin Order."
+      );
+    } finally {
+      setProcessingId("");
+    }
+  };
+
+
+  const uploadAvpSignedOrder = async (order) => {
+    const id = order?.id;
+    const file = avpSignedFiles[id];
+
+    if (!id) return alert("Invalid demotion order.");
+
+    if (!isAssistantVicePresident) {
+      return alert(
+        "Only the responsible Assistant Vice President can upload the staff-signed Admin Order."
+      );
+    }
+
+    if (!file) {
+      return alert(
+        "Please select the staff-signed Admin Order."
+      );
+    }
+
+    const confirmed = window.confirm(
+      `Upload staff-signed Admin Order for ${
+        order.order_no || id
+      }?`
+    );
+
+    if (!confirmed) return;
+
+    try {
+      setProcessingId(`${id}-avp-signed`);
+
+      const formData = new FormData();
+      formData.append("attachment", file);
+
+      await api.post(
+        `/demotion-orders/${id}/avp-signed-order`,
+        formData,
+        {
+          headers: {
+            "Content-Type": "multipart/form-data",
+          },
+        }
+      );
+
+      setAvpSignedFiles((previous) => {
+        const copy = { ...previous };
+        delete copy[id];
+        return copy;
+      });
+
+      await loadData();
+
+      alert(
+        "Staff-signed Admin Order uploaded successfully. Waiting for HR Final Approval."
+      );
+    } catch (e) {
+      setErr(
+        e?.response?.data?.message ||
+          "Failed to upload staff-signed Admin Order."
+      );
+    } finally {
+      setProcessingId("");
+    }
+  };
+
+
+  const hrFinalApprove = async (order) => {
+    const id = order?.id;
+
+    if (!id) return alert("Invalid demotion order.");
+
+    if (!canHrWorkflow) {
+      return alert(
+        "Only HR or Admin can perform HR Final Approval."
+      );
+    }
+
+    const confirmed = window.confirm(
+      `Final approve demotion order ${
+        order.order_no || id
+      }?\n\nThis will apply the employee's new position and assignment.`
+    );
+
+    if (!confirmed) return;
+
+    try {
+      setProcessingId(`${id}-hr-final`);
+
+      await api.post(
+        `/demotion-orders/${id}/hr-final`
+      );
+
+      await loadData();
+
+      alert(
+        "Demotion approved successfully. Employee information has been updated."
+      );
+    } catch (e) {
+      setErr(
+        e?.response?.data?.message ||
+          "Failed to complete HR Final Approval."
+      );
     } finally {
       setProcessingId("");
     }
@@ -711,19 +1042,31 @@ export default function DemotionOrder() {
 
   const downloadFile = async (order, type = "latest") => {
     try {
-      const res = await api.get(`/demotion-orders/${order.id}/download/${type}`, {
-        responseType: "blob",
-      });
+      if (!order?.id) {
+        return alert("Invalid demotion order.");
+      }
+
+      const res = await api.get(
+        `/demotion-orders/${order.id}/download/${type}`,
+        {
+          responseType: "blob",
+        }
+      );
 
       const blob = new Blob([res.data]);
       const url = window.URL.createObjectURL(blob);
-      const a = document.createElement("a");
 
+      const a = document.createElement("a");
       a.href = url;
+
       a.download =
         type === "approved"
-          ? order.approved_attachment_name || order.attachment_name || `demotion-${order.id}`
-          : order.attachment_name || order.approved_attachment_name || `demotion-${order.id}`;
+          ? order.approved_attachment_name ||
+            order.attachment_name ||
+            `demotion-${order.id}`
+          : order.attachment_name ||
+            order.approved_attachment_name ||
+            `demotion-${order.id}`;
 
       document.body.appendChild(a);
       a.click();
@@ -731,7 +1074,28 @@ export default function DemotionOrder() {
 
       window.URL.revokeObjectURL(url);
     } catch (e) {
-      alert(e?.response?.data?.message || "Failed to download file.");
+      console.error("Demotion download error:", e);
+
+      let message = "Failed to download file.";
+
+      const data = e?.response?.data;
+
+      if (data instanceof Blob) {
+        try {
+          const text = await data.text();
+          const parsed = JSON.parse(text);
+
+          if (parsed?.message) {
+            message = parsed.message;
+          }
+        } catch {
+          // keep default message
+        }
+      } else if (data?.message) {
+        message = data.message;
+      }
+
+      alert(message);
     }
   };
 
@@ -741,8 +1105,38 @@ export default function DemotionOrder() {
     return `${b.code} - ${b.name}`;
   };
 
-  const isWaitingFinalUpload = (order) =>
-    norm(order?.status) === "wait for admin order" || norm(order?.approval_stage) === "admin";
+  const isWaitingHrOrder = (order) => {
+    const status = norm(order?.status);
+    const stage = norm(order?.approval_stage);
+
+    return (
+      status === "wait for hr order" ||
+      status === "wait for admin order" ||
+      stage === "admin" ||
+      stage === "hr order"
+    );
+  };
+
+  const isWaitingAvpSignedOrder = (order) => {
+    const status = norm(order?.status);
+    const stage = norm(order?.approval_stage);
+
+    return (
+      status === "wait for avp signed order" ||
+      stage === "avp signed order"
+    );
+  };
+
+  const isWaitingHrFinal = (order) => {
+    const status = norm(order?.status);
+    const stage = norm(order?.approval_stage);
+
+    return (
+      status === "wait for hr final approval" ||
+      status === "wait for hr final" ||
+      stage === "hr final"
+    );
+  };
 
   const totalDemotions = filteredOrders.length;
   const pendingDemotions = filteredOrders.filter((order) => {
@@ -791,9 +1185,9 @@ export default function DemotionOrder() {
             <div className="demotion-flow">
               <span>APPROVAL FLOW</span>
               <b>
-                Operation: AM → RM → AVP → VP → Final Upload
+                Operation: AM → RM → AVP → VP → HR Admin Order → AVP Staff-Signed Order → HR Final
                 <br />
-                Back Office: Final Upload
+                Back Office: HR Admin Order → HR Final
               </b>
             </div>
           </div>
@@ -934,11 +1328,28 @@ export default function DemotionOrder() {
                   const voided = orderStatus === "voided";
                   const currentStage = getCurrentStage(order);
                   const canAct = canActOnStage(order);
-                  const waitingFinal =
-                    isWaitingFinalUpload(order) &&
+                  const waitingHrOrder =
+                    isWaitingHrOrder(order) &&
                     !approved &&
                     !rejected &&
                     !voided;
+
+                  const waitingAvpSigned =
+                    isWaitingAvpSignedOrder(order) &&
+                    !approved &&
+                    !rejected &&
+                    !voided;
+
+                  const waitingHrFinal =
+                    isWaitingHrFinal(order) &&
+                    !approved &&
+                    !rejected &&
+                    !voided;
+
+                  const waitingWorkflow =
+                    waitingHrOrder ||
+                    waitingAvpSigned ||
+                    waitingHrFinal;
 
                   return (
                     <tr key={order.id}>
@@ -992,17 +1403,18 @@ export default function DemotionOrder() {
                       </td>
 
                       <td>
-                        {order.attachment_path && canDownloadFile ? (
-                          <button
-                            className="demotion-mini-btn"
-                            type="button"
-                            onClick={() => downloadFile(order, "latest")}
-                          >
-                            Download
-                          </button>
-                        ) : (
-                          <span className="demotion-muted">No file</span>
-                        )}
+                        {canDownloadFile &&
+                          (order.attachment_path || order.approved_attachment_path) ? (
+                            <button
+                              className="demotion-mini-btn"
+                              type="button"
+                              onClick={() => downloadFile(order, "latest")}
+                            >
+                              Download
+                            </button>
+                          ) : (
+                            <span className="demotion-muted">No file</span>
+                          )}
                       </td>
 
                       <td>
@@ -1016,7 +1428,7 @@ export default function DemotionOrder() {
                           </button>
 
                           {canAct &&
-                            !waitingFinal &&
+                            !waitingWorkflow &&
                             !approved &&
                             !rejected &&
                             !voided && (
@@ -1065,46 +1477,188 @@ export default function DemotionOrder() {
                               </>
                             )}
 
-                          {waitingFinal && canFinalUpload && (
-                            <>
-                              <label className="demotion-mini-btn demotion-file-btn">
-                                {finalUploadFiles[order.id]?.name
-                                  ? "Change Final File"
-                                  : "Final File"}
-                                <input
-                                  type="file"
-                                  onChange={(event) =>
-                                    setFinalUploadFiles((previous) => ({
-                                      ...previous,
-                                      [order.id]:
-                                        event.target.files?.[0] || null,
-                                    }))
-                                  }
-                                />
-                              </label>
+                          {canBypass &&
+                            !canAct &&
+                            !waitingWorkflow &&
+                            !approved &&
+                            !rejected &&
+                            !voided &&
+                            [
+                              "area manager",
+                              "regional manager",
+                              "assistant vice president",
+                              "vice president",
+                            ].includes(currentStage) && (
+                              <>
+                                <label className="demotion-mini-btn demotion-file-btn">
+                                  {approvalFiles[order.id]?.name
+                                    ? "Change File"
+                                    : "Upload File"}
 
+                                  <input
+                                    type="file"
+                                    onChange={(event) =>
+                                      setApprovalFiles((previous) => ({
+                                        ...previous,
+                                        [order.id]:
+                                          event.target.files?.[0] || null,
+                                      }))
+                                    }
+                                  />
+                                </label>
+
+                                <button
+                                  className="demotion-mini-btn demotion-approve"
+                                  type="button"
+                                  disabled={
+                                    processingId ===
+                                    `${order.id}-bypass-approve`
+                                  }
+                                  onClick={() =>
+                                    bypassOrder(order, "approve")
+                                  }
+                                >
+                                  {processingId ===
+                                  `${order.id}-bypass-approve`
+                                    ? "Bypassing..."
+                                    : "Bypass Approve"}
+                                </button>
+
+                                <button
+                                  className="demotion-mini-btn demotion-danger"
+                                  type="button"
+                                  disabled={
+                                    processingId ===
+                                    `${order.id}-bypass-reject`
+                                  }
+                                  onClick={() =>
+                                    bypassOrder(order, "reject")
+                                  }
+                                >
+                                  Bypass Reject
+                                </button>
+                              </>
+                            )}
+
+                          {/* HR PREPARES / UPLOADS ADMIN ORDER */}
+                            {waitingHrOrder && canHrWorkflow && (
+                              <>
+                                <label className="demotion-mini-btn demotion-file-btn">
+                                  {hrOrderFiles[order.id]?.name
+                                    ? "Change Admin Order"
+                                    : "Admin Order"}
+
+                                  <input
+                                    type="file"
+                                    onChange={(event) =>
+                                      setHrOrderFiles((previous) => ({
+                                        ...previous,
+                                        [order.id]:
+                                          event.target.files?.[0] || null,
+                                      }))
+                                    }
+                                  />
+                                </label>
+
+                                <button
+                                  className="demotion-mini-btn demotion-approve"
+                                  type="button"
+                                  disabled={
+                                    processingId === `${order.id}-hr-order`
+                                  }
+                                  onClick={() => uploadHrOrder(order)}
+                                >
+                                  {processingId === `${order.id}-hr-order`
+                                    ? "Uploading..."
+                                    : "Submit Admin Order"}
+                                </button>
+                              </>
+                            )}
+
+
+                            {/* AVP RETURNS EMPLOYEE-SIGNED ADMIN ORDER */}
+                            {waitingAvpSigned &&
+                              isAssistantVicePresident && (
+                                <>
+                                  <label className="demotion-mini-btn demotion-file-btn">
+                                    {avpSignedFiles[order.id]?.name
+                                      ? "Change Signed Order"
+                                      : "Staff-Signed Order"}
+
+                                    <input
+                                      type="file"
+                                      onChange={(event) =>
+                                        setAvpSignedFiles((previous) => ({
+                                          ...previous,
+                                          [order.id]:
+                                            event.target.files?.[0] || null,
+                                        }))
+                                      }
+                                    />
+                                  </label>
+
+                                  <button
+                                    className="demotion-mini-btn demotion-approve"
+                                    type="button"
+                                    disabled={
+                                      processingId === `${order.id}-avp-signed`
+                                    }
+                                    onClick={() =>
+                                      uploadAvpSignedOrder(order)
+                                    }
+                                  >
+                                    {processingId === `${order.id}-avp-signed`
+                                      ? "Uploading..."
+                                      : "Submit Signed Order"}
+                                  </button>
+                                </>
+                              )}
+
+
+                            {/* HR FINAL VERIFICATION / APPROVAL */}
+                            {waitingHrFinal && canHrWorkflow && (
                               <button
                                 className="demotion-mini-btn demotion-approve"
                                 type="button"
                                 disabled={
-                                  processingId === `${order.id}-final`
+                                  processingId === `${order.id}-hr-final`
                                 }
-                                onClick={() => uploadFinalFile(order)}
+                                onClick={() => hrFinalApprove(order)}
                               >
-                                {processingId === `${order.id}-final`
-                                  ? "Uploading..."
-                                  : "Final Approve"}
+                                {processingId === `${order.id}-hr-final`
+                                  ? "Approving..."
+                                  : "HR Final Approve"}
                               </button>
-                            </>
-                          )}
+                            )}
 
                           {!canAct &&
-                            !waitingFinal &&
+                            !(
+                              canBypass &&
+                              !waitingWorkflow &&
+                              [
+                                "area manager",
+                                "regional manager",
+                                "assistant vice president",
+                                "vice president",
+                              ].includes(currentStage)
+                            ) &&
                             !approved &&
                             !rejected &&
-                            !voided && (
-                              <span className="demotion-muted">Waiting</span>
-                            )}
+                            !voided &&
+                            !(
+                              waitingHrOrder && canHrWorkflow
+                            ) &&
+                            !(
+                              waitingAvpSigned &&
+                              isAssistantVicePresident
+                            ) &&
+                            !(
+                              waitingHrFinal && canHrWorkflow
+                            ) && (
+                              <span className="demotion-muted">
+                                Waiting
+                              </span>
+                          )}
 
                           {approved && canVoidOrDelete && (
                             <button
@@ -1141,9 +1695,16 @@ export default function DemotionOrder() {
                           </small>
                         )}
 
-                        {finalUploadFiles[order.id]?.name && (
+                        {hrOrderFiles[order.id]?.name && (
                           <small className="demotion-selected-file">
-                            {finalUploadFiles[order.id].name}
+                            Admin Order: {hrOrderFiles[order.id].name}
+                          </small>
+                        )}
+
+                        {avpSignedFiles[order.id]?.name && (
+                          <small className="demotion-selected-file">
+                            Staff-Signed Order:{" "}
+                            {avpSignedFiles[order.id].name}
                           </small>
                         )}
                       </td>

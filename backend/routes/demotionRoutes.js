@@ -115,6 +115,19 @@ const isFinalUploader = (req) => {
   );
 };
 
+const isHRWorkflowUser = (req) => {
+  const dept = norm(req.user?.department);
+
+  return (
+    isAdmin(req) ||
+    isHr(req) ||
+    dept === "hr" ||
+    dept === "hr department" ||
+    dept === "human resources" ||
+    dept === "human resources department"
+  );
+};
+
 const canCreateDemotion = (req) => {
   const dept = norm(req.user?.department);
 
@@ -165,6 +178,35 @@ const canVoidOrDeleteDemotion = (req) => {
   );
 };
 
+const canBypassDemotion = (req) => {
+  const dept = norm(req.user?.department);
+
+  const isHRDepartment =
+    dept === "hr" ||
+    dept === "hr department" ||
+    dept === "human resources" ||
+    dept === "human resources department";
+
+  const isITDepartment =
+    dept === "it" ||
+    dept === "it department";
+
+  const isAccountingDepartment =
+    dept === "accounting" ||
+    dept === "accounting department";
+
+  return (
+    isAdmin(req) ||
+    isIT(req) ||
+    isHr(req) ||
+    isAccounting(req) ||
+    isSeniorVicePresident(req) ||
+    isHRDepartment ||
+    isITDepartment ||
+    isAccountingDepartment
+  );
+};
+
 const getUserArea = (req) => toStr(req.user?.area);
 const getUserRegion = (req) => toStr(req.user?.region);
 const getUserDivision = (req) => toStr(req.user?.division);
@@ -209,10 +251,21 @@ const getInitialStage = (department, oldPosition) => {
   const pos = norm(oldPosition);
 
   if (isOperationDepartment(department)) {
-    if (pos.includes("area manager")) return "assistant vice president";
-    if (pos.includes("regional manager")) return "assistant vice president";
-    if (pos.includes("assistant vice president")) return "vice president";
-    if (pos.includes("vice president")) return "admin";
+    if (pos.includes("area manager")) {
+      return "regional manager";
+    }
+
+    if (pos.includes("regional manager")) {
+      return "assistant vice president";
+    }
+
+    if (pos.includes("assistant vice president")) {
+      return "vice president";
+    }
+
+    if (pos.includes("vice president")) {
+      return "admin";
+    }
 
     return "area manager";
   }
@@ -492,29 +545,44 @@ async function generateOrderNo(client, prefix) {
   ).padStart(4, "0")}`;
 }
 
-function userCanActStage(req, stage) {
+function userCanActStage(req, stage, staff) {
   const dept = norm(req.user?.department);
+  const currentStage = norm(stage);
 
-  const isHRDepartment =
-    dept === "hr" ||
-    dept === "hr department" ||
-    dept === "human resources" ||
-    dept === "human resources department";
+  if (!isOperationDepartment(dept)) {
+    return false;
+  }
 
-  const isITDepartment =
-    dept === "it" ||
-    dept === "it department";
+  if (!isOperationDepartment(staff?.department)) {
+    return false;
+  }
 
-  const isAccountingDepartment =
-    dept === "accounting" ||
-    dept === "accounting department";
+  if (currentStage === "area manager") {
+    return (
+      isAreaManager(req) &&
+      norm(getUserArea(req)) === norm(staff?.area)
+    );
+  }
 
-  return (
-    isAdmin(req) ||
-    isHRDepartment ||
-    isITDepartment ||
-    isAccountingDepartment
-  );
+  if (currentStage === "regional manager") {
+    return (
+      isRegionalManager(req) &&
+      norm(getUserRegion(req)) === norm(staff?.region)
+    );
+  }
+
+  if (currentStage === "assistant vice president") {
+    return (
+      isAssistantVicePresident(req) &&
+      norm(getUserDivision(req)) === norm(staff?.division)
+    );
+  }
+
+  if (currentStage === "vice president") {
+    return isVicePresident(req);
+  }
+
+  return false;
 }
 
 async function getStaffScope(client, staffId) {
@@ -688,7 +756,7 @@ router.get(
   requirePermission("demotion_order", "view"),
   async (req, res) => {
     try {
-      if (isTopManagement(req) || isAssistantVicePresident(req)) {
+      if (isTopManagement(req)) {
         const r = await pool.query(`
           SELECT ${demotionSelect}
           FROM public.demotion_orders dmo
@@ -696,6 +764,29 @@ router.get(
           LEFT JOIN public.branches b ON b.id = s.branch_id
           ORDER BY dmo.created_at DESC
         `);
+
+        return res.json(r.rows);
+      }
+
+      if (isAssistantVicePresident(req)) {
+        const division = getUserDivision(req);
+
+        if (!division) {
+          return res.json([]);
+        }
+
+        const r = await pool.query(
+          `
+          SELECT ${demotionSelect}
+          FROM public.demotion_orders dmo
+          JOIN public.staff s ON s.id = dmo.employee_id
+          LEFT JOIN public.branches b ON b.id = s.branch_id
+          WHERE LOWER(TRIM(COALESCE(dmo.prev_division, ''))) =
+                LOWER(TRIM($1))
+          ORDER BY dmo.created_at DESC
+          `,
+          [division]
+        );
 
         return res.json(r.rows);
       }
@@ -710,7 +801,7 @@ router.get(
           FROM public.demotion_orders dmo
           JOIN public.staff s ON s.id = dmo.employee_id
           LEFT JOIN public.branches b ON b.id = s.branch_id
-          WHERE s.branch_id = $1
+          WHERE dmo.prev_branch_id = $1
           ORDER BY dmo.created_at DESC
           `,
           [branchId]
@@ -729,7 +820,8 @@ router.get(
           FROM public.demotion_orders dmo
           JOIN public.staff s ON s.id = dmo.employee_id
           LEFT JOIN public.branches b ON b.id = s.branch_id
-          WHERE LOWER(TRIM(COALESCE(s.area, ''))) = LOWER(TRIM($1))
+          WHERE LOWER(TRIM(COALESCE(dmo.prev_area, ''))) =
+                LOWER(TRIM($1))
           ORDER BY dmo.created_at DESC
           `,
           [area]
@@ -748,7 +840,8 @@ router.get(
           FROM public.demotion_orders dmo
           JOIN public.staff s ON s.id = dmo.employee_id
           LEFT JOIN public.branches b ON b.id = s.branch_id
-          WHERE LOWER(TRIM(COALESCE(s.region, ''))) = LOWER(TRIM($1))
+          WHERE LOWER(TRIM(COALESCE(dmo.prev_region, ''))) =
+                LOWER(TRIM($1))
           ORDER BY dmo.created_at DESC
           `,
           [region]
@@ -1078,16 +1171,16 @@ router.get(
 
       const r = await client.query(
         `
-        SELECT
-          dmo.*,
-          s.branch_id,
-          s.area,
-          s.region,
-          s.division
-        FROM public.demotion_orders dmo
-        JOIN public.staff s ON s.id = dmo.employee_id
-        WHERE dmo.id = $1
-        LIMIT 1
+          SELECT
+            dmo.*,
+            dmo.prev_branch_id AS branch_id,
+            dmo.prev_area AS area,
+            dmo.prev_region AS region,
+            dmo.prev_division AS division,
+            dmo.prev_department AS department
+          FROM public.demotion_orders dmo
+          WHERE dmo.id = $1
+          LIMIT 1
         `,
         [id]
       );
@@ -1244,7 +1337,7 @@ router.put(
         );
       }
 
-      if (!userCanActStage(req, currentStage)) {
+      if (!userCanActStage(req, currentStage, approvalStaff)) {
         await client.query("ROLLBACK");
         return res.status(403).json({ 
           message: "Not your approval stage" 
@@ -1285,77 +1378,11 @@ router.put(
       const nextStage = chain[currentIndex + 1];
 
       if (!nextStage) {
-        await client.query(
-          `
-          UPDATE public.demotion_orders
-          SET
-            ${column} = 'Approved',
-            status = 'Approved',
-            approved_by = $2,
-            approved_at = NOW(),
+        await client.query("ROLLBACK");
 
-            attachment_path = $3,
-            attachment_name = $4,
-            attachment_mime = $5,
-
-            approved_attachment_path = $3,
-            approved_attachment_name = $4,
-            approved_attachment_mime = $5
-          WHERE id = $1
-          `,
-          [id, req.user?.id ?? null, latestPath, latestName, latestMime]
-        );
-
-        const toBranchId = toInt(order.to_branch_id);
-
-        if (!toBranchId) {
-          await client.query("ROLLBACK");
-          return res.status(400).json({ message: "Destination branch missing in order" });
-        }
-
-        await client.query(
-          `
-          UPDATE public.staff
-          SET
-            "position" = $1,
-            branch_id = $2,
-            division = $3,
-            region = $4,
-            area = $5,
-            department = $6
-          WHERE id = $7
-          `,
-          [
-            toStr(order.new_position),
-            toBranchId,
-            toStr(order.to_division),
-            toStr(order.to_region),
-            toStr(order.to_area),
-            toStr(order.to_department),
-            Number(order.employee_id),
-          ]
-        );
-
-        await client.query(
-          `
-          UPDATE public.staff_balances
-          SET
-            fullname = $1,
-            "position" = $2,
-            updated_at = NOW()
-          WHERE employee_no = (
-            SELECT employee_no
-            FROM public.staff
-            WHERE id = $3
-            LIMIT 1
-          )
-          `,
-          [toStr(order.employee_name), toStr(order.new_position), Number(order.employee_id)]
-        );
-
-        await client.query("COMMIT");
-        return res.json({
-          message: "Demotion fully approved. Latest approved file is available.",
+        return res.status(400).json({
+          message:
+            "Management approval cannot finalize a demotion order. The order must continue through the HR Admin Order and HR Final Approval workflow.",
         });
       }
 
@@ -1377,7 +1404,7 @@ router.put(
         [
           id,
           nextStage,
-          waitingAdmin ? "Wait for Admin Order" : "Pending",
+          waitingAdmin ? "Wait for HR Order" : "Pending",
           latestPath,
           latestName,
           latestMime,
@@ -1388,7 +1415,7 @@ router.put(
 
       return res.json({
         message: waitingAdmin
-          ? "Vice President approved. Waiting for Admin/IT/HR/Accounting final upload."
+          ? "Management approval completed. Waiting for HR to upload the Admin Order."
           : `Approved and moved to ${nextStage}.`,
       });
     } catch (e) {
@@ -1406,12 +1433,255 @@ router.put(
 
 /*
 |--------------------------------------------------------------------------
-| FINAL APPROVED FILE UPLOAD
+| BYPASS MANAGEMENT APPROVAL
+|--------------------------------------------------------------------------
+*/
+
+router.put(
+  "/demotion-orders/:id/bypass",
+  requireAuth,
+  requirePermission("demotion_order", "approve"),
+  upload.single("attachment"),
+  async (req, res) => {
+    const client = await pool.connect();
+
+    try {
+      const id = toInt(req.params.id);
+      const action = norm(req.body?.action);
+
+      if (!id) {
+        return res.status(400).json({
+          message: "Invalid id",
+        });
+      }
+
+      if (!["approve", "reject"].includes(action)) {
+        return res.status(400).json({
+          message: "Invalid action",
+        });
+      }
+
+      if (!canBypassDemotion(req)) {
+        return res.status(403).json({
+          message:
+            "You are not allowed to bypass demotion approval.",
+        });
+      }
+
+      const reason = toStr(req.body?.reason);
+
+      if (action === "reject" && !reason) {
+        return res.status(400).json({
+          message: "Rejection reason is required.",
+        });
+      }
+
+      if (action === "approve" && !req.file) {
+        return res.status(400).json({
+          message:
+            "Please upload the signed/approved demotion file before bypass approval.",
+        });
+      }
+
+      await client.query("BEGIN");
+
+      const cur = await client.query(
+        `
+        SELECT
+          dmo.*,
+          s.branch_id,
+          s.area,
+          s.region,
+          s.division,
+          s.department,
+          s.position
+        FROM public.demotion_orders dmo
+        JOIN public.staff s
+          ON s.id = dmo.employee_id
+        WHERE dmo.id = $1
+        FOR UPDATE
+        `,
+        [id]
+      );
+
+      if (!cur.rowCount) {
+        await client.query("ROLLBACK");
+
+        return res.status(404).json({
+          message: "Demotion order not found.",
+        });
+      }
+
+      const order = cur.rows[0];
+
+      if (
+        ["approved", "rejected", "voided"].includes(
+          norm(order.status)
+        )
+      ) {
+        await client.query("ROLLBACK");
+
+        return res.status(400).json({
+          message:
+            "This demotion order is already finalized.",
+        });
+      }
+
+      const currentStage = norm(order.approval_stage);
+
+      // Bypass is only for management approval stages.
+      const managementStages = [
+        "area manager",
+        "regional manager",
+        "assistant vice president",
+        "vice president",
+      ];
+
+      if (!managementStages.includes(currentStage)) {
+        await client.query("ROLLBACK");
+
+        return res.status(400).json({
+          message:
+            "Bypass approval is only available during the management approval stages.",
+        });
+      }
+
+      const column = statusColumnMap[currentStage];
+
+      if (!column) {
+        await client.query("ROLLBACK");
+
+        return res.status(400).json({
+          message: "Invalid approval stage.",
+        });
+      }
+
+      // ----------------------------------------------------
+      // BYPASS REJECT
+      // ----------------------------------------------------
+
+      if (action === "reject") {
+        await client.query(
+          `
+          UPDATE public.demotion_orders
+          SET
+            status = 'Rejected',
+            ${column} = 'Rejected',
+            rejected_by = $2,
+            rejected_at = NOW(),
+            rejection_reason = $3
+          WHERE id = $1
+          `,
+          [
+            id,
+            req.user?.id ?? null,
+            reason,
+          ]
+        );
+
+        await client.query("COMMIT");
+
+        return res.json({
+          message: "Demotion rejected through bypass.",
+        });
+      }
+
+      // ----------------------------------------------------
+      // BYPASS APPROVE
+      //
+      // Skip remaining management approvals and move
+      // directly to HR Admin Order.
+      // ----------------------------------------------------
+
+      const latestPath =
+        `/uploads/demotions/${req.file.filename}`;
+
+      const latestName =
+        req.file.originalname || null;
+
+      const latestMime =
+        req.file.mimetype || null;
+
+      const updates = [];
+
+      const chainOrder = [
+        "area manager",
+        "regional manager",
+        "assistant vice president",
+        "vice president",
+      ];
+
+      const currentIndex =
+        chainOrder.indexOf(currentStage);
+
+      for (
+        let index = currentIndex;
+        index < chainOrder.length;
+        index += 1
+      ) {
+        const stage = chainOrder[index];
+        const statusColumn = statusColumnMap[stage];
+
+        if (statusColumn) {
+          updates.push(
+            `${statusColumn} = 'Bypass Approved'`
+          );
+        }
+      }
+
+      await client.query(
+        `
+        UPDATE public.demotion_orders
+        SET
+          ${updates.join(",\n          ")},
+          approval_stage = 'admin',
+          status = 'Wait for HR Order',
+          attachment_path = $2,
+          attachment_name = $3,
+          attachment_mime = $4
+        WHERE id = $1
+        `,
+        [
+          id,
+          latestPath,
+          latestName,
+          latestMime,
+        ]
+      );
+
+      await client.query("COMMIT");
+
+      return res.json({
+        message:
+          "Management approval bypassed successfully. Waiting for HR Admin Order.",
+      });
+    } catch (e) {
+      try {
+        await client.query("ROLLBACK");
+      } catch {}
+
+      console.error(
+        "PUT /api/demotion-orders/:id/bypass ERROR:",
+        e
+      );
+
+      return res.status(500).json({
+        message: e?.message || "Server error",
+      });
+    } finally {
+      client.release();
+    }
+  }
+);
+
+/*
+|--------------------------------------------------------------------------
+| HR ADMIN ORDER UPLOAD
 |--------------------------------------------------------------------------
 */
 
 router.post(
-  "/demotion-orders/:id/approved-file",
+  "/demotion-orders/:id/hr-order",
   requireAuth,
   requirePermission("demotion_order", "upload_approved"),
   upload.single("attachment"),
@@ -1421,21 +1691,25 @@ router.post(
     try {
       const id = toInt(req.params.id);
 
-      if (!id) return res.status(400).json({ message: "Invalid id" });
-
-      if (!req.file) {
-        return res.status(400).json({ message: "Attachment is required" });
+      if (!id) {
+        return res.status(400).json({ message: "Invalid id" });
       }
 
-      if (!isFinalUploader(req)) {
+      if (!isHRWorkflowUser(req)) {
         return res.status(403).json({
-          message: "Only Admin, IT, HR, and Accounting can upload approved files",
+          message: "Only HR or Admin can upload the Admin Order.",
+        });
+      }
+
+      if (!req.file) {
+        return res.status(400).json({
+          message: "Admin Order file is required.",
         });
       }
 
       await client.query("BEGIN");
 
-      const cur = await client.query(
+      const result = await client.query(
         `
         SELECT *
         FROM public.demotion_orders
@@ -1445,55 +1719,427 @@ router.post(
         [id]
       );
 
-      if (cur.rowCount === 0) {
+      if (!result.rowCount) {
         await client.query("ROLLBACK");
-        return res.status(404).json({ message: "Demotion order not found" });
-      }
-
-      const order = cur.rows[0];
-
-      if (!["admin", "wait for admin order"].includes(norm(order.approval_stage)) &&
-          norm(order.status) !== "wait for admin order") {
-        await client.query("ROLLBACK");
-        return res.status(400).json({
-          message: "Final file can only be uploaded after VP approval or direct admin stage.",
+        return res.status(404).json({
+          message: "Demotion order not found",
         });
       }
 
-      const finalPath = `/uploads/demotions/${req.file.filename}`;
-      const finalName = req.file.originalname || null;
-      const finalMime = req.file.mimetype || null;
+      const order = result.rows[0];
+
+      const terminalStatus = norm(order.status);
+
+      if (
+        ["approved", "rejected", "voided"].includes(terminalStatus)
+      ) {
+        await client.query("ROLLBACK");
+
+        return res.status(400).json({
+          message:
+            "This demotion order is already finalized and can no longer receive an Admin Order.",
+        });
+      }
+
+      const isOperationOrder =
+        isOperationDepartment(order.prev_department);
+
+      const nextStage = isOperationOrder
+        ? "avp signed order"
+        : "hr final";
+
+      const nextStatus = isOperationOrder
+        ? "Wait for AVP Signed Order"
+        : "Wait for HR Final Approval";
+
+      if (
+        norm(order.approval_stage) !== "admin" ||
+        ![
+          "wait for admin order",
+          "wait for hr order",
+          "pending",
+        ].includes(norm(order.status))
+      ) {
+        await client.query("ROLLBACK");
+
+        return res.status(400).json({
+          message:
+            "HR Admin Order can only be uploaded after management approval.",
+        });
+      }
+
+      const filePath =
+        `/uploads/demotions/${req.file.filename}`;
+
+      const fileName =
+        req.file.originalname || null;
+
+      const fileMime =
+        req.file.mimetype || null;
 
       await client.query(
         `
         UPDATE public.demotion_orders
         SET
-          status = 'Approved',
           admin_status = 'Approved',
-          approval_stage = 'approved',
-          approved_by = $2,
-          approved_at = NOW(),
+
+          hr_order_status = 'Approved',
+          hr_order_by = $2,
+          hr_order_at = NOW(),
+
+          approval_stage = $3,
+          status = $4,
+
+          attachment_path = $5,
+          attachment_name = $6,
+          attachment_mime = $7
+        WHERE id = $1
+        `,
+        [
+          id,
+          req.user?.id ?? null,
+          nextStage,
+          nextStatus,
+          filePath,
+          fileName,
+          fileMime,
+        ]
+      );
+
+      await client.query("COMMIT");
+
+      return res.json({
+        message: isOperationOrder
+          ? "Admin Order uploaded successfully. Waiting for AVP to upload the staff-signed Admin Order."
+          : "Admin Order uploaded successfully. Waiting for HR final approval.",
+      });
+    } catch (e) {
+      try {
+        await client.query("ROLLBACK");
+      } catch {}
+
+      console.error(
+        "POST /api/demotion-orders/:id/hr-order ERROR:",
+        e
+      );
+
+      return res.status(500).json({
+        message: e?.message || "Server error",
+      });
+    } finally {
+      client.release();
+    }
+  }
+);
+
+/*
+|--------------------------------------------------------------------------
+| AVP STAFF-SIGNED ADMIN ORDER
+|--------------------------------------------------------------------------
+*/
+
+router.post(
+  "/demotion-orders/:id/avp-signed-order",
+  requireAuth,
+  requirePermission("demotion_order", "approve"),
+  upload.single("attachment"),
+  async (req, res) => {
+    const client = await pool.connect();
+
+    try {
+      const id = toInt(req.params.id);
+
+      if (!id) {
+        return res.status(400).json({ message: "Invalid id" });
+      }
+
+      if (!req.file) {
+        return res.status(400).json({
+          message:
+            "Staff-signed Admin Order is required.",
+        });
+      }
+
+      await client.query("BEGIN");
+
+      const result = await client.query(
+        `
+        SELECT *
+        FROM public.demotion_orders
+        WHERE id = $1
+        FOR UPDATE
+        `,
+        [id]
+      );
+
+      if (!result.rowCount) {
+        await client.query("ROLLBACK");
+
+        return res.status(404).json({
+          message: "Demotion order not found",
+        });
+      }
+
+      const order = result.rows[0];
+
+      if (!isOperationDepartment(order.prev_department)) {
+        await client.query("ROLLBACK");
+
+        return res.status(400).json({
+          message:
+            "The AVP staff-signed Admin Order step only applies to Operation Department demotion orders.",
+        });
+      }
+
+      if (
+        ["approved", "rejected", "voided"].includes(norm(order.status))
+      ) {
+        await client.query("ROLLBACK");
+
+        return res.status(400).json({
+          message:
+            "This demotion order is already finalized.",
+        });
+      }
+
+      if (
+        norm(order.approval_stage) !==
+        "avp signed order"
+      ) {
+        await client.query("ROLLBACK");
+
+        return res.status(400).json({
+          message:
+            "This demotion order is not waiting for the AVP signed Admin Order.",
+        });
+      }
+
+      /*
+       * The AVP handling this return stage must belong
+       * to the employee's ORIGINAL division.
+       */
+      const allowedAVP =
+        isAdmin(req) ||
+        (
+          isAssistantVicePresident(req) &&
+          isOperationDepartment(req.user?.department) &&
+          norm(getUserDivision(req)) ===
+            norm(order.prev_division)
+        );
+
+      if (!allowedAVP) {
+        await client.query("ROLLBACK");
+
+        return res.status(403).json({
+          message:
+            "Only the responsible Assistant Vice President can upload the signed Admin Order.",
+        });
+      }
+
+      const filePath =
+        `/uploads/demotions/${req.file.filename}`;
+
+      const fileName =
+        req.file.originalname || null;
+
+      const fileMime =
+        req.file.mimetype || null;
+
+      await client.query(
+        `
+        UPDATE public.demotion_orders
+        SET
+          avp_signed_order_status = 'Approved',
+          avp_signed_order_by = $2,
+          avp_signed_order_at = NOW(),
+
+          approval_stage = 'hr final',
+          status = 'Wait for HR Final Approval',
 
           attachment_path = $3,
           attachment_name = $4,
-          attachment_mime = $5,
-
-          approved_attachment_path = $3,
-          approved_attachment_name = $4,
-          approved_attachment_mime = $5
+          attachment_mime = $5
         WHERE id = $1
         `,
-        [id, req.user?.id ?? null, finalPath, finalName, finalMime]
+        [
+          id,
+          req.user?.id ?? null,
+          filePath,
+          fileName,
+          fileMime,
+        ]
       );
 
-      const toBranchId = toInt(order.to_branch_id);
+      await client.query("COMMIT");
+
+      return res.json({
+        message:
+          "Staff-signed Admin Order uploaded successfully. Waiting for HR final verification and approval.",
+      });
+    } catch (e) {
+      try {
+        await client.query("ROLLBACK");
+      } catch {}
+
+      console.error(
+        "POST /api/demotion-orders/:id/avp-signed-order ERROR:",
+        e
+      );
+
+      return res.status(500).json({
+        message: e?.message || "Server error",
+      });
+    } finally {
+      client.release();
+    }
+  }
+);
+
+/*
+|--------------------------------------------------------------------------
+| HR FINAL VERIFICATION / APPROVAL
+|--------------------------------------------------------------------------
+*/
+
+router.post(
+  "/demotion-orders/:id/hr-final",
+  requireAuth,
+  requirePermission("demotion_order", "upload_approved"),
+  async (req, res) => {
+    const client = await pool.connect();
+
+    try {
+      const id = toInt(req.params.id);
+
+      if (!id) {
+        return res.status(400).json({
+          message: "Invalid id",
+        });
+      }
+
+      if (!isHRWorkflowUser(req)) {
+        return res.status(403).json({
+          message:
+            "Only HR or Admin can perform final approval.",
+        });
+      }
+
+      await client.query("BEGIN");
+
+      const result = await client.query(
+        `
+        SELECT *
+        FROM public.demotion_orders
+        WHERE id = $1
+        FOR UPDATE
+        `,
+        [id]
+      );
+
+      if (!result.rowCount) {
+        await client.query("ROLLBACK");
+
+        return res.status(404).json({
+          message: "Demotion order not found",
+        });
+      }
+
+      const order = result.rows[0];
+
+      if (
+        ["approved", "rejected", "voided"].includes(norm(order.status))
+      ) {
+        await client.query("ROLLBACK");
+
+        return res.status(400).json({
+          message:
+            "This demotion order has already been finalized.",
+        });
+      }
+
+      if (
+        norm(order.approval_stage) !== "hr final"
+      ) {
+        await client.query("ROLLBACK");
+
+        return res.status(400).json({
+          message:
+            "This demotion order is not waiting for HR final approval.",
+        });
+      }
+
+      const isOperationOrder =
+        isOperationDepartment(order.prev_department);
+
+      if (
+        isOperationOrder &&
+        norm(order.avp_signed_order_status) !== "approved"
+      ) {
+        await client.query("ROLLBACK");
+
+        return res.status(400).json({
+          message:
+            "AVP staff-signed Admin Order has not been completed.",
+        });
+      }
+
+      if (!order.attachment_path) {
+        await client.query("ROLLBACK");
+
+        return res.status(400).json({
+          message:
+            "Signed Admin Order file is missing.",
+        });
+      }
+
+      const toBranchId =
+        toInt(order.to_branch_id);
 
       if (!toBranchId) {
         await client.query("ROLLBACK");
-        return res.status(400).json({ message: "Destination branch missing in order" });
+
+        return res.status(400).json({
+          message:
+            "Destination branch missing in order.",
+        });
       }
 
+      /*
+       * The AVP-uploaded file is already the final
+       * staff-signed Admin Order.
+       */
       await client.query(
+        `
+        UPDATE public.demotion_orders
+        SET
+          hr_final_status = 'Approved',
+          hr_final_by = $2,
+          hr_final_at = NOW(),
+
+          status = 'Approved',
+          approval_stage = 'approved',
+
+          approved_by = $2,
+          approved_at = NOW(),
+
+          approved_attachment_path =
+            attachment_path,
+          approved_attachment_name =
+            attachment_name,
+          approved_attachment_mime =
+            attachment_mime
+        WHERE id = $1
+        `,
+        [
+          id,
+          req.user?.id ?? null,
+        ]
+      );
+
+      /*
+       * Apply the actual demotion ONLY NOW.
+       */
+      const staffUpdate = await client.query(
         `
         UPDATE public.staff
         SET
@@ -1504,6 +2150,7 @@ router.post(
           area = $5,
           department = $6
         WHERE id = $7
+        RETURNING id, employee_no
         `,
         [
           toStr(order.new_position),
@@ -1516,35 +2163,52 @@ router.post(
         ]
       );
 
-      await client.query(
-        `
-        UPDATE public.staff_balances
-        SET
-          fullname = $1,
-          "position" = $2,
-          updated_at = NOW()
-        WHERE employee_no = (
-          SELECT employee_no
-          FROM public.staff
-          WHERE id = $3
-          LIMIT 1
-        )
-        `,
-        [toStr(order.employee_name), toStr(order.new_position), Number(order.employee_id)]
-      );
+      if (!staffUpdate.rowCount) {
+        throw new Error(
+          "Employee record was not found. Demotion was not applied."
+        );
+      }
+
+      const employeeNo =
+        toStr(staffUpdate.rows[0]?.employee_no);
+
+      if (employeeNo) {
+        await client.query(
+          `
+          UPDATE public.staff_balances
+          SET
+            fullname = $1,
+            "position" = $2,
+            updated_at = NOW()
+          WHERE employee_no = $3
+          `,
+          [
+            toStr(order.employee_name),
+            toStr(order.new_position),
+            employeeNo,
+          ]
+        );
+      }
 
       await client.query("COMMIT");
 
       return res.json({
-        message: "Final approved file uploaded. Demotion approved successfully.",
+        message:
+          "HR verified the staff-signed Admin Order. Demotion approved successfully.",
       });
     } catch (e) {
       try {
         await client.query("ROLLBACK");
       } catch {}
 
-      console.error("POST /api/demotion-orders/:id/approved-file ERROR:", e);
-      return res.status(500).json({ message: e?.message || "Server error" });
+      console.error(
+        "POST /api/demotion-orders/:id/hr-final ERROR:",
+        e
+      );
+
+      return res.status(500).json({
+        message: e?.message || "Server error",
+      });
     } finally {
       client.release();
     }
@@ -1637,8 +2301,8 @@ router.put(
         });
       }
 
-      // Restore the employee's previous position and previous branch.
-      await client.query(
+      // Restore the employee's previous position, branch, and scope.
+      const staffRestore = await client.query(
         `
         UPDATE public.staff
         SET
@@ -1649,6 +2313,7 @@ router.put(
           area = $5,
           department = $6
         WHERE id = $7
+        RETURNING id, employee_no
         `,
         [
           toStr(order.old_position),
@@ -1661,27 +2326,37 @@ router.put(
         ]
       );
 
+      // Safety check:
+      // Do not mark the demotion as Voided if the employee
+      // could not actually be restored.
+      if (!staffRestore.rowCount) {
+        throw new Error(
+          "Employee record was not found. Demotion could not be voided safely."
+        );
+      }
+
+      // We already have the employee number from the restored staff record.
+      const employeeNo =
+        toStr(staffRestore.rows[0]?.employee_no);
+
       // Restore the corresponding staff balance position.
-      await client.query(
-        `
-        UPDATE public.staff_balances
-        SET
-          fullname = $1,
-          "position" = $2,
-          updated_at = NOW()
-        WHERE employee_no = (
-          SELECT employee_no
-          FROM public.staff
-          WHERE id = $3
-          LIMIT 1
-        )
-        `,
-        [
-          toStr(order.employee_name),
-          toStr(order.old_position),
-          Number(order.employee_id),
-        ]
-      );
+      if (employeeNo) {
+        await client.query(
+          `
+          UPDATE public.staff_balances
+          SET
+            fullname = $1,
+            "position" = $2,
+            updated_at = NOW()
+          WHERE employee_no = $3
+          `,
+          [
+            toStr(order.employee_name),
+            toStr(order.old_position),
+            employeeNo,
+          ]
+        );
+      }
 
       await client.query(
         `

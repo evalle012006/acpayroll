@@ -21,6 +21,32 @@ const toNum = (v) => {
 
 const ACCOUNTING_FINAL = "Accounting Department";
 
+const getCbuMaintainingBalance = (position) => {
+  const p = norm(position);
+
+  switch (p) {
+    case "loan officer":
+    case "probationary loan officer":
+      return 8000;
+
+    case "acting branch manager":
+    case "branch manager":
+    case "acting area manager":
+      return 10000;
+
+    case "area manager":
+    case "acting regional manager":
+    case "regional manager":
+    case "assistant vice president":
+    case "vice president":
+    case "senior vice president":
+      return 20000;
+
+    default:
+      return 10000;
+  }
+};
+
 const getUserRole = (req) => norm(req.user?.role);
 const getUserDepartment = (req) =>
   norm(req.user?.department || req.user?.department_name);
@@ -608,12 +634,22 @@ async function finalizeCbuWithdrawal({ client, row, staff, fileKey, fileName }) 
   }
 
   const currentCbu = toNum(balance.rows[0].cbu);
+  const maintainingBalance = getCbuMaintainingBalance(staff.position);
 
-  if (currentCbu < amount) {
+  const availableToWithdraw = Math.max(
+    0,
+    currentCbu - maintainingBalance
+  );
+
+  if (amount > availableToWithdraw) {
     return {
       errorStatus: 400,
       error: {
-        message: `Insufficient CBU balance. Current balance is ${currentCbu}.`,
+        message:
+          `CBU withdrawal cannot be completed. ` +
+          `${staff.position || "Staff"} must maintain at least ₱${maintainingBalance.toLocaleString()} CBU. ` +
+          `Current CBU balance is ₱${currentCbu.toLocaleString()}. ` +
+          `Maximum withdrawable amount is ₱${availableToWithdraw.toLocaleString()}.`,
       },
     };
   }
@@ -784,10 +820,22 @@ router.post(
         return res.status(404).json({ message: "Balance not found" });
       }
 
-      if (toNum(balanceRes.rows[0].cbu) < amount) {
+      const currentCbu = toNum(balanceRes.rows[0].cbu);
+      const maintainingBalance = getCbuMaintainingBalance(staff.position);
+
+      const availableToWithdraw = Math.max(
+        0,
+        currentCbu - maintainingBalance
+      );
+
+      if (amount > availableToWithdraw) {
         await client.query("ROLLBACK");
+
         return res.status(400).json({
-          message: `Insufficient CBU balance. Current balance is ${balanceRes.rows[0].cbu}.`,
+          message:
+            `${staff.position || "Staff"} must maintain at least ₱${maintainingBalance.toLocaleString()} CBU. ` +
+            `Current CBU balance is ₱${currentCbu.toLocaleString()}. ` +
+            `Maximum withdrawable amount is ₱${availableToWithdraw.toLocaleString()}.`,
         });
       }
 

@@ -14,6 +14,32 @@ const readUser = () => {
 const toStr = (v) => String(v ?? "").trim();
 const norm = (v) => toStr(v).toLowerCase();
 
+const getCbuMaintainingBalance = (position) => {
+  const p = norm(position);
+
+  switch (p) {
+    case "loan officer":
+    case "probationary loan officer":
+      return 8000;
+
+    case "acting branch manager":
+    case "branch manager":
+    case "acting area manager":
+      return 10000;
+
+    case "area manager":
+    case "acting regional manager":
+    case "regional manager":
+    case "assistant vice president":
+    case "vice president":
+    case "senior vice president":
+      return 20000;
+
+    default:
+      return 10000;
+  }
+};
+
 const money = (v) =>
   Number(v || 0).toLocaleString(undefined, {
     minimumFractionDigits: 2,
@@ -617,11 +643,45 @@ export default function CBUWithdrawApprovalTab() {
   const handleCreate = async (e) => {
     e.preventDefault();
 
-    if (!form.employee_id) return alert("Please select employee.");
-    if (!form.amount || Number(form.amount) <= 0) return alert("Amount is required.");
-    if (!toStr(form.reason)) return alert("Reason is required.");
-    if (!form.attachment) return alert("Please attach the request file.");
+    if (!form.employee_id) {
+      return alert("Please select employee.");
+    }
 
+    const currentCbu = Number(form.cbu_balance || 0);
+    const withdrawAmount = Number(form.amount || 0);
+    const maintainingBalance = getCbuMaintainingBalance(form.position);
+
+    if (!withdrawAmount || withdrawAmount <= 0) {
+      return alert("Amount is required.");
+    }
+
+    const availableToWithdraw = Math.max(
+      0,
+      currentCbu - maintainingBalance
+    );
+
+    if (withdrawAmount > availableToWithdraw) {
+      return alert(
+        `${form.position || "Staff"} CBU maintaining balance is ₱${money(
+          maintainingBalance
+        )}.\n\n` +
+        `Current CBU Balance: ₱${money(currentCbu)}\n` +
+        `Maintaining Balance: ₱${money(maintainingBalance)}\n` +
+        `Maximum Withdrawable: ₱${money(availableToWithdraw)}\n` +
+        `Requested Amount: ₱${money(withdrawAmount)}\n\n` +
+        `This withdrawal cannot proceed because the account must maintain at least ₱${money(
+          maintainingBalance
+        )}.`
+      );
+    }
+
+    if (!toStr(form.reason)) {
+      return alert("Reason is required.");
+    }
+
+    if (!form.attachment) {
+      return alert("Please attach the request file.");
+    }
     try {
       setCreating(true);
 
