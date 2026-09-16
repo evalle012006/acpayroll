@@ -167,7 +167,11 @@ const STAGE_COLUMN = {
   "vice president": "vice_president_status",
   "senior vice president": "senior_vice_president_status",
   tread: "tread_status",
-  final: "final_status",
+
+  // New document-return workflow
+  "admin order": "admin_order_status",
+  "contract signing": "contract_signing_status",
+  "hr final": "hr_final_status",
 };
 
 const STAGE_APPROVAL_HISTORY = {
@@ -206,9 +210,19 @@ const STAGE_APPROVAL_HISTORY = {
     approvedAt: "tread_approved_at",
   },
 
-  final: {
-    approvedBy: "final_approved_by",
-    approvedAt: "final_approved_at",
+  "admin order": {
+    approvedBy: "admin_order_approved_by",
+    approvedAt: "admin_order_approved_at",
+  },
+
+  "contract signing": {
+    approvedBy: "contract_signing_approved_by",
+    approvedAt: "contract_signing_approved_at",
+  },
+
+  "hr final": {
+    approvedBy: "hr_final_approved_by",
+    approvedAt: "hr_final_approved_at",
   },
 };
 
@@ -238,10 +252,21 @@ const getRawPromotionChain = (department, oldPosition) => {
   const base = getBaseChainByPosition(oldPosition);
 
   if (isOperationDepartment(department)) {
-    return [...base, "tread", "final"];
+    return [
+      ...base,
+      "tread",
+      "admin order",
+      "contract signing",
+      "hr final",
+    ];
   }
 
-  return [...base, "final"];
+  return [
+    ...base,
+    "admin order",
+    "contract signing",
+    "hr final",
+  ];
 };
 
 async function getTableColumns(client, tableName) {
@@ -261,7 +286,14 @@ async function getTableColumns(client, tableName) {
 async function hasApproverAccount(client, stage, staff) {
   const s = norm(stage);
 
-  if (s === "final") return true;
+  if (
+    s === "admin order" ||
+    s === "contract signing" ||
+    s === "hr final"
+  ) {
+    return true;
+  }
+
   if (s === "tread") {
     const r = await client.query(
       `
@@ -338,19 +370,19 @@ async function getPromotionChain(client, staff) {
     if (exists) chain.push(stage);
   }
 
-  return chain.length ? chain : ["final"];
+  return chain.length ? chain : ["hr final"];
 }
 
 async function getInitialApprovalStage(client, staff) {
   const chain = await getPromotionChain(client, staff);
-  return chain[0] || "final";
+  return chain[0] || "hr final";
 }
 
 async function getNextApprovalStage(client, staff, currentStage) {
   const chain = await getPromotionChain(client, staff);
   const idx = chain.findIndex((x) => norm(x) === norm(currentStage));
 
-  if (idx < 0) return chain[0] || "final";
+  if (idx < 0) return chain[0] || "hr final";
   if (idx >= chain.length - 1) return "approved";
 
   return chain[idx + 1];
@@ -365,7 +397,7 @@ async function resolveCurrentActiveStage(
   const activeChain = await getPromotionChain(client, staff);
 
   if (!currentStage) {
-    return activeChain[0] || "final";
+    return activeChain[0] || "hr final";
   }
 
   const currentStillActive = await hasApproverAccount(
@@ -398,7 +430,7 @@ async function resolveCurrentActiveStage(
   return (
     nextActiveStage ||
     activeChain[0] ||
-    "final"
+    "hr final"
   );
 }
 
@@ -471,11 +503,35 @@ const canRoleActAtStage = (req, stage) => {
   if (s === "branch manager") return isBranchManager(req);
   if (s === "area manager") return isAreaManager(req);
   if (s === "regional manager") return isRegionalManager(req);
-  if (s === "assistant vice president") return isAssistantVicePresident(req);
+
+  if (s === "assistant vice president") {
+    return isAssistantVicePresident(req);
+  }
+
   if (s === "vice president") return isVicePresident(req);
-  if (s === "senior vice president") return isSeniorVicePresident(req);
-  if (s === "tread") return isTreadDepartmentUser(req);
-  if (s === "final") return isHrDepartmentUser(req) || isAdmin(req) || isIT(req);
+
+  if (s === "senior vice president") {
+    return isSeniorVicePresident(req);
+  }
+
+  if (s === "tread") {
+    return isTreadDepartmentUser(req);
+  }
+
+  // HR Department uploads Admin Order
+  if (s === "admin order") {
+    return isHrDepartmentUser(req);
+  }
+
+  // Admin Order returns to AVP for employee signing
+  if (s === "contract signing") {
+    return isAssistantVicePresident(req);
+  }
+
+  // Final signed document returns to HR
+  if (s === "hr final") {
+    return isHrDepartmentUser(req) || isAdmin(req);
+  }
 
   return false;
 };
@@ -584,7 +640,10 @@ const PROMOTION_HISTORY_SELECT = `
   uvp.username AS vice_president_approved_by_name,
   usvp.username AS senior_vice_president_approved_by_name,
   utread.username AS tread_approved_by_name,
-  ufinal.username AS final_approved_by_name
+
+  uadminorder.username AS admin_order_approved_by_name,
+  ucontract.username AS contract_signing_approved_by_name,
+  uhrfinal.username AS hr_final_approved_by_name
 `;
 
 const PROMOTION_HISTORY_JOINS = `
@@ -609,8 +668,14 @@ const PROMOTION_HISTORY_JOINS = `
   LEFT JOIN public.users utread
     ON utread.id = po.tread_approved_by
 
-  LEFT JOIN public.users ufinal
-    ON ufinal.id = po.final_approved_by
+  LEFT JOIN public.users uadminorder
+    ON uadminorder.id = po.admin_order_approved_by
+
+  LEFT JOIN public.users ucontract
+    ON ucontract.id = po.contract_signing_approved_by
+
+  LEFT JOIN public.users uhrfinal
+    ON uhrfinal.id = po.hr_final_approved_by
 `;
 
 router.get(
@@ -998,8 +1063,9 @@ router.post(
             vice_president_status,
             senior_vice_president_status,
             tread_status,
-            hr_status,
-            final_status
+            admin_order_status,
+            contract_signing_status,
+            hr_final_status
           )
         VALUES
           (
@@ -1009,15 +1075,16 @@ router.post(
             $23, $24, $25,
             NULL, NULL, NULL,
             $26, $27,
-            'Pending',
-            'Pending',
-            'Pending',
-            'Pending',
-            'Pending',
-            'Pending',
-            'Pending',
-            'Pending',
-            'Pending'
+            'Pending', -- branch_manager_status
+            'Pending', -- area_manager_status
+            'Pending', -- regional_manager_status
+            'Pending', -- assistant_vice_president_status
+            'Pending', -- vice_president_status
+            'Pending', -- senior_vice_president_status
+            'Pending', -- tread_status
+            'Pending', -- admin_order_status
+            'Pending', -- contract_signing_status
+            'Pending'  -- hr_final_status
           )
         RETURNING *;
         `,
@@ -1346,13 +1413,9 @@ router.put(
         return res.status(400).json({ message: "Invalid id" });
       }
 
-      if (!req.file) {
-        await client.query("ROLLBACK");
-        return res.status(400).json({
-          message: "Please upload the signed/approved promotion file before approving.",
-        });
-      }
-
+      // ============================================================
+      // LOAD PROMOTION
+      // ============================================================
       const cur = await client.query(
         `
         SELECT *
@@ -1365,19 +1428,38 @@ router.put(
 
       if (cur.rowCount === 0) {
         await client.query("ROLLBACK");
-        return res.status(404).json({ message: "Promotion order not found" });
+        return res.status(404).json({
+          message: "Promotion order not found",
+        });
       }
 
       const order = cur.rows[0];
 
-      if (["approved", "rejected", "voided"].includes(norm(order.status))) {
+      if (
+        ["approved", "rejected", "voided"].includes(
+          norm(order.status)
+        )
+      ) {
         await client.query("ROLLBACK");
-        return res.status(400).json({ message: "Order already finalized" });
+
+        return res.status(400).json({
+          message: "Order already finalized",
+        });
       }
 
+      // ============================================================
+      // LOAD STAFF FOR APPROVAL CHAIN
+      // ============================================================
       const staffRes = await client.query(
         `
-        SELECT id, branch_id, area, region, division, department, position
+        SELECT
+          id,
+          branch_id,
+          area,
+          region,
+          division,
+          department,
+          position
         FROM public.staff
         WHERE id = $1
         LIMIT 1
@@ -1395,48 +1477,138 @@ router.put(
         position: order.old_position,
       };
 
-      staff.department = order.department || staff.department;
-      staff.position = order.old_position || staff.position;
+      // IMPORTANT:
+      // Approval chain must remain based on the ORIGINAL
+      // department / position stored in promotion order.
+      staff.department =
+        order.department || staff.department;
 
-      let currentStage = await resolveCurrentActiveStage(
-        client,
-        staff,
-        order.approval_stage
-      );
+      staff.position =
+        order.old_position || staff.position;
+
+      // ============================================================
+      // RESOLVE CURRENT ACTIVE STAGE
+      // ============================================================
+      let currentStage =
+        await resolveCurrentActiveStage(
+          client,
+          staff,
+          order.approval_stage
+        );
+
+      currentStage = norm(currentStage);
 
       if (
-        norm(order.approval_stage) !== norm(currentStage)
+        norm(order.approval_stage) !== currentStage
       ) {
         await client.query(
           `
           UPDATE public.promotion_orders
-          SET approval_stage = $2::text
-          WHERE id = $1::integer
+          SET approval_stage = $2
+          WHERE id = $1
           `,
-          [id, String(currentStage)]
+          [id, currentStage]
         );
       }
 
+      // ============================================================
+      // AUTHORIZATION
+      // ============================================================
       if (!canRoleActAtStage(req, currentStage)) {
         await client.query("ROLLBACK");
-        return res.status(403).json({ message: "Not your approval stage" });
-      }
 
-      const latestPath = `/uploads/promotion-orders/${req.file.filename}`;
-      const latestName = req.file.originalname || null;
-      const latestMime = req.file.mimetype || null;
+        return res.status(403).json({
+          message: "Not your approval stage",
+        });
+      }
 
       const column = STAGE_COLUMN[currentStage];
+      const historyColumns =
+        STAGE_APPROVAL_HISTORY[currentStage];
 
-      if (!column) {
+      if (!column || !historyColumns) {
         await client.query("ROLLBACK");
-        return res.status(400).json({ message: "Invalid approval stage" });
+
+        return res.status(400).json({
+          message: "Invalid approval stage",
+        });
       }
 
-      if (currentStage === "final") {
-        if (!isHrDepartmentUser(req) && !isAdmin(req) && !isIT(req)) {
+      // ============================================================
+      // FILE REQUIREMENTS
+      //
+      // NO FILE:
+      // BM / AM / RM / AVP / VP / SVP / TREAD
+      //
+      // FILE REQUIRED:
+      // Admin Order
+      // Contract Signing
+      // HR Final
+      // ============================================================
+      const fileRequiredStages = [
+        "admin order",
+        "contract signing",
+        "hr final",
+      ];
+
+      if (
+        fileRequiredStages.includes(currentStage) &&
+        !req.file &&
+        !canBypassApproval(req)
+      ) {
+
+        let message =
+          "Please upload the required promotion file.";
+
+        if (currentStage === "admin order") {
+          message =
+            "Please upload the Admin Order file before approving.";
+        }
+
+        if (currentStage === "contract signing") {
+          message =
+            "Please upload the employee-signed contract before approving.";
+        }
+
+        if (currentStage === "hr final") {
+          message =
+            "HR must upload the final approved promotion file before final approval.";
+        }
+
+        return res.status(400).json({ message });
+      }
+
+      // File is OPTIONAL for management/TREAD.
+      const latestPath = req.file
+        ? `/uploads/promotion-orders/${req.file.filename}`
+        : null;
+
+      const latestName = req.file
+        ? req.file.originalname || null
+        : null;
+
+      const latestMime = req.file
+        ? req.file.mimetype || null
+        : null;
+
+      const userId =
+        req.user?.id ? Number(req.user.id) : null;
+
+      // ============================================================
+      // HR FINAL
+      // ============================================================
+      
+      if (currentStage === "hr final") {
+        if (
+          !isHrDepartmentUser(req) &&
+          !canBypassApproval(req)
+        ) {
           await client.query("ROLLBACK");
-          return res.status(403).json({ message: "Only HR Department can final approve and upload." });
+
+          return res.status(403).json({
+            message:
+              "Only HR Department or an authorized bypass user can perform final promotion approval.",
+          });
         }
 
         await client.query(
@@ -1444,35 +1616,46 @@ router.put(
           UPDATE public.promotion_orders
           SET
             status = 'Approved',
-            ${column} = 'Approved',
 
-            final_approved_by = $2::integer,
+            hr_final_status = 'Approved',
+            ${historyColumns.approvedBy} = $2,
+            ${historyColumns.approvedAt} = NOW(),
+
+            final_status = 'Approved',
+            final_approved_by = $2,
             final_approved_at = NOW(),
 
-            approved_by = $2::integer,
+            approved_by = $2,
             approved_at = NOW(),
 
             rejected_by = NULL,
             rejected_at = NULL,
             rejection_reason = NULL,
+
             approval_stage = NULL,
-            attachment_path = $3,
-            attachment_name = $4,
-            attachment_mime = $5,
+
+            hr_final_attachment_path = $3,
+            hr_final_attachment_name = $4,
+            hr_final_attachment_mime = $5,
+
             approved_attachment_path = $3,
             approved_attachment_name = $4,
             approved_attachment_mime = $5
-          WHERE id = $1::integer
+
+          WHERE id = $1
           `,
           [
             id,
-            req.user?.id ? Number(req.user.id) : null,
+            userId,
             latestPath,
             latestName,
             latestMime,
           ]
         );
 
+        // ========================================================
+        // ONLY HR FINAL CHANGES THE ACTUAL STAFF RECORD
+        // ========================================================
         await client.query(
           `
           UPDATE public.staff
@@ -1487,79 +1670,221 @@ router.put(
             order.new_position,
             toNum(order.new_salary),
             toNum(order.new_ecola),
-            order.present_branch_id ? Number(order.present_branch_id) : null,
+            order.present_branch_id
+              ? Number(order.present_branch_id)
+              : null,
             order.employee_id,
           ]
         );
 
         await client.query("COMMIT");
 
-        if (order.attachment_path && order.attachment_path !== latestPath) {
-          removeStoredFile(order.attachment_path);
-        }
-
-        return res.json({ message: "Promotion finalized by HR and staff updated." });
-      }
-
-      const nextStage = await getNextApprovalStage(client, staff, currentStage);
-
-      const historyColumns = STAGE_APPROVAL_HISTORY[currentStage];
-
-      if (!historyColumns) {
-        await client.query("ROLLBACK");
-
-        return res.status(400).json({
-          message: "Invalid approval history stage",
+        return res.json({
+          message:
+            "Promotion finalized by HR. Staff position, salary, ECOLA, and branch have been updated.",
+          status: "Approved",
+          approval_stage: null,
         });
       }
 
-      await client.query(
-        `
-        UPDATE public.promotion_orders
-        SET
-          ${column} = 'Approved',
+      // ============================================================
+      // NORMAL / TREAD / DOCUMENT STAGE APPROVAL
+      // ============================================================
+      const nextStage =
+        await getNextApprovalStage(
+          client,
+          staff,
+          currentStage
+        );
 
-          ${historyColumns.approvedBy} = $2::integer,
-          ${historyColumns.approvedAt} = NOW(),
+      // ============================================================
+      // MANAGEMENT / TREAD
+      //
+      // Normal approver:
+      //   approval only
+      //
+      // Admin bypass:
+      //   may upload a replacement/latest working document
+      // ============================================================
+      if (
+        currentStage !== "admin order" &&
+        currentStage !== "contract signing"
+      ) {
+        if (req.file && isAdmin(req)) {
+          await client.query(
+            `
+            UPDATE public.promotion_orders
+            SET
+              ${column} = 'Approved',
 
-          approval_stage = $3::text,
+              ${historyColumns.approvedBy} = $2,
+              ${historyColumns.approvedAt} = NOW(),
 
-          rejected_by = NULL,
-          rejected_at = NULL,
-          rejection_reason = NULL,
+              approval_stage = $3,
 
-          attachment_path = $4::text,
-          attachment_name = $5::text,
-          attachment_mime = $6::text
+              attachment_path = $4,
+              attachment_name = $5,
+              attachment_mime = $6,
 
-        WHERE id = $1::integer
-        `,
-        [
-          id,
-          req.user?.id ? Number(req.user.id) : null,
-          String(nextStage),
-          latestPath,
-          latestName,
-          latestMime,
-        ]
-      );
+              rejected_by = NULL,
+              rejected_at = NULL,
+              rejection_reason = NULL
+
+            WHERE id = $1
+            `,
+            [
+              id,
+              userId,
+              String(nextStage),
+              latestPath,
+              latestName,
+              latestMime,
+            ]
+          );
+        } else {
+          await client.query(
+            `
+            UPDATE public.promotion_orders
+            SET
+              ${column} = 'Approved',
+
+              ${historyColumns.approvedBy} = $2,
+              ${historyColumns.approvedAt} = NOW(),
+
+              approval_stage = $3,
+
+              rejected_by = NULL,
+              rejected_at = NULL,
+              rejection_reason = NULL
+
+            WHERE id = $1
+            `,
+            [
+              id,
+              userId,
+              String(nextStage),
+            ]
+          );
+        }
+      }
+
+      // ============================================================
+      // ADMIN ORDER
+      // SAVE ADMIN ORDER DOCUMENT
+      // ============================================================
+      if (currentStage === "admin order") {
+        await client.query(
+          `
+          UPDATE public.promotion_orders
+          SET
+            admin_order_status = 'Approved',
+
+            ${historyColumns.approvedBy} = $2,
+            ${historyColumns.approvedAt} = NOW(),
+
+            approval_stage = $3,
+
+            admin_order_attachment_path = $4,
+            admin_order_attachment_name = $5,
+            admin_order_attachment_mime = $6,
+
+            rejected_by = NULL,
+            rejected_at = NULL,
+            rejection_reason = NULL
+
+          WHERE id = $1
+          `,
+          [
+            id,
+            userId,
+            String(nextStage),
+            latestPath,
+            latestName,
+            latestMime,
+          ]
+        );
+      }
+
+      // ============================================================
+      // CONTRACT SIGNING
+      // SAVE EMPLOYEE-SIGNED CONTRACT
+      // ============================================================
+      if (currentStage === "contract signing") {
+        await client.query(
+          `
+          UPDATE public.promotion_orders
+          SET
+            contract_signing_status = 'Approved',
+
+            ${historyColumns.approvedBy} = $2,
+            ${historyColumns.approvedAt} = NOW(),
+
+            approval_stage = $3,
+
+            contract_signing_attachment_path = $4,
+            contract_signing_attachment_name = $5,
+            contract_signing_attachment_mime = $6,
+
+            rejected_by = NULL,
+            rejected_at = NULL,
+            rejection_reason = NULL
+
+          WHERE id = $1
+          `,
+          [
+            id,
+            userId,
+            String(nextStage),
+            latestPath,
+            latestName,
+            latestMime,
+          ]
+        );
+      }
 
       await client.query("COMMIT");
 
-      if (order.attachment_path && order.attachment_path !== latestPath) {
-        removeStoredFile(order.attachment_path);
+      // ============================================================
+      // RESPONSE
+      // ============================================================
+      let message =
+        `Promotion approved. Moved to ${nextStage}.`;
+
+      if (nextStage === "tread") {
+        message =
+          "Management approvals completed. Waiting for TREAD recommendation.";
+      }
+
+      if (nextStage === "admin order") {
+        message =
+          "TREAD/management approval completed. Waiting for Admin Order upload.";
+      }
+
+      if (nextStage === "contract signing") {
+        message =
+          "Admin Order uploaded. Waiting for AVP to return the employee-signed contract.";
+      }
+
+      if (nextStage === "hr final") {
+        message =
+          "Signed contract uploaded. Waiting for HR final approval.";
       }
 
       return res.json({
-        message:
-          nextStage === "final"
-            ? "Promotion approved. Waiting for HR Department final approval and upload."
-            : `Promotion approved. Moved to ${nextStage}.`,
+        message,
+        approval_stage: nextStage,
       });
     } catch (e) {
       await client.query("ROLLBACK");
-      console.error("PUT /api/promotion-orders/:id/approve ERROR:", e);
-      return res.status(500).json({ message: e?.message || "Server error" });
+
+      console.error(
+        "PUT /api/promotion-orders/:id/approve ERROR:",
+        e
+      );
+
+      return res.status(500).json({
+        message: e?.message || "Server error",
+      });
     } finally {
       client.release();
     }
@@ -1669,7 +1994,14 @@ router.put(
         return res.status(403).json({ message: "Not your approval stage" });
       }
 
-      const column = STAGE_COLUMN[currentStage] || "final_status";
+      const column = STAGE_COLUMN[currentStage];
+
+      if (!column) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({
+          message: "Invalid approval stage",
+        });
+      }
 
       await client.query(
         `
@@ -1747,12 +2079,13 @@ router.put(
         `
         UPDATE public.promotion_orders
         SET
-          status='Voided',
-          final_status='Voided',
-          approval_stage='final',
-          approved_by=NULL,
-          approved_at=NULL
-        WHERE id=$1
+          status = 'Voided',
+          hr_final_status = 'Voided',
+          final_status = 'Voided',
+          approval_stage = NULL,
+          approved_by = NULL,
+          approved_at = NULL
+        WHERE id = $1
         `,
         [id]
       );
@@ -1804,7 +2137,13 @@ router.delete(
 
       const check = await pool.query(
         `
-        SELECT attachment_path, approved_attachment_path, status
+        SELECT
+          attachment_path,
+          admin_order_attachment_path,
+          contract_signing_attachment_path,
+          hr_final_attachment_path,
+          approved_attachment_path,
+          status
         FROM public.promotion_orders
         WHERE id=$1
         `,
@@ -1823,8 +2162,21 @@ router.delete(
 
       await pool.query(`DELETE FROM public.promotion_orders WHERE id=$1`, [id]);
 
-      removeStoredFile(check.rows[0].attachment_path);
-      removeStoredFile(check.rows[0].approved_attachment_path);
+      const filesToDelete = [
+        check.rows[0].attachment_path,
+        check.rows[0].admin_order_attachment_path,
+        check.rows[0].contract_signing_attachment_path,
+        check.rows[0].hr_final_attachment_path,
+        check.rows[0].approved_attachment_path,
+      ];
+
+      const uniqueFiles = [
+        ...new Set(filesToDelete.filter(Boolean)),
+      ];
+
+      uniqueFiles.forEach((filePath) => {
+        removeStoredFile(filePath);
+      });
 
       return res.json({ message: "Promotion deleted." });
     } catch (e) {
@@ -1845,7 +2197,16 @@ router.get(
 
       if (!id) return res.status(400).json({ message: "Invalid id" });
 
-      if (!["request", "approved", "latest"].includes(type)) {
+      if (
+        ![
+          "request",
+          "admin-order",
+          "contract-signing",
+          "hr-final",
+          "approved",
+          "latest",
+        ].includes(type)
+      ) {
         return res.status(400).json({ message: "Invalid attachment type" });
       }
 
@@ -1869,17 +2230,54 @@ router.get(
         return res.status(403).json({ message: "Access denied" });
       }
 
-      let storedPath = row.attachment_path;
-      let storedName = row.attachment_name;
+      let storedPath = null;
+      let storedName = null;
 
+      // Original promotion request file
+      if (type === "request") {
+        storedPath = row.attachment_path;
+        storedName = row.attachment_name;
+      }
+
+      // Admin Order uploaded after TREAD/management approval
+      if (type === "admin-order") {
+        storedPath = row.admin_order_attachment_path;
+        storedName = row.admin_order_attachment_name;
+      }
+
+      // Contract signed by employee and returned by AVP
+      if (type === "contract-signing") {
+        storedPath = row.contract_signing_attachment_path;
+        storedName = row.contract_signing_attachment_name;
+      }
+
+      // HR final uploaded document
+      if (type === "hr-final") {
+        storedPath = row.hr_final_attachment_path;
+        storedName = row.hr_final_attachment_name;
+      }
+
+      // Final approved document
       if (type === "approved") {
         storedPath = row.approved_attachment_path;
         storedName = row.approved_attachment_name;
       }
 
+      // Most recent document available
       if (type === "latest") {
-        storedPath = row.approved_attachment_path || row.attachment_path;
-        storedName = row.approved_attachment_name || row.attachment_name;
+        storedPath =
+          row.approved_attachment_path ||
+          row.hr_final_attachment_path ||
+          row.contract_signing_attachment_path ||
+          row.admin_order_attachment_path ||
+          row.attachment_path;
+
+        storedName =
+          row.approved_attachment_name ||
+          row.hr_final_attachment_name ||
+          row.contract_signing_attachment_name ||
+          row.admin_order_attachment_name ||
+          row.attachment_name;
       }
 
       if (!storedPath) {

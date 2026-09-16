@@ -402,15 +402,15 @@ const renderChainSummary = (item) => {
                 </span>
               </div>
 
-              {isApproved && approvedAt ? (
-                <div className="loan-approval-date">
-                  Approved on {fmtDateTime(approvedAt)}
-                </div>
-              ) : (
-                <div className="loan-approval-date">
-                  Waiting for approval
-                </div>
-              )}
+              <div className="loan-approval-date">
+                {isApproved
+                  ? approvedAt
+                    ? `Approved on ${fmtDateTime(approvedAt)}`
+                    : "Approved"
+                  : isRejected
+                  ? "Rejected"
+                  : "Waiting for approval"}
+              </div>
             </div>
           </div>
         );
@@ -419,31 +419,107 @@ const renderChainSummary = (item) => {
   );
 };
 
-const buildMonthlySchedule = (totalAmount, monthlyAmount, termMonths = 0) => {
+const buildMonthlySchedule = (
+  totalAmount,
+  monthlyAmount,
+  termMonths = 0,
+  approvedAt = null
+) => {
   const rows = [];
-  let remaining = Math.round(toNum(totalAmount) * 100) / 100;
+
+  let remaining =
+    Math.round(toNum(totalAmount) * 100) / 100;
+
   const monthly = toNum(monthlyAmount);
   const term = Math.max(1, toNum(termMonths));
 
-  if (remaining <= 0 || monthly <= 0) return rows;
+  if (
+    remaining <= 0 ||
+    monthly <= 0 ||
+    !approvedAt
+  ) {
+    return rows;
+  }
 
-  const d = new Date();
-  d.setMonth(d.getMonth() + 1);
-  d.setDate(26);
+  // Use date-only portion to avoid timezone shifting.
+  const datePart = String(approvedAt).slice(0, 10);
+  const [year, month, day] = datePart
+    .split("-")
+    .map(Number);
+
+  if (!year || !month || !day) {
+    return rows;
+  }
+
+  /*
+    LOAN DEDUCTION RULE
+
+    Approval cycle:
+    10th of previous month through 9th of current month
+    = deduction on the 10th of current month.
+
+    Examples:
+    Aug 10 - Aug 25 -> Sep 10
+    Aug 26 - Sep 09 -> Sep 10
+    Sep 10 - Sep 25 -> Oct 10
+    Sep 26 - Oct 09 -> Oct 10
+
+    Simplified:
+    Approved on 1st-9th  -> 10th SAME month
+    Approved on 10th-end -> 10th NEXT month
+  */
+
+  let deductionYear = year;
+  let deductionMonth = month;
+
+  if (day >= 10) {
+    deductionMonth += 1;
+
+    if (deductionMonth > 12) {
+      deductionMonth = 1;
+      deductionYear += 1;
+    }
+  }
+
+  // JS month is zero-based.
+  const current = new Date(
+    deductionYear,
+    deductionMonth - 1,
+    10
+  );
 
   for (let i = 1; i <= term; i++) {
+    if (remaining <= 0) break;
+
     const isLastMonth = i === term;
-    const amount = isLastMonth ? remaining : Math.min(monthly, remaining);
+
+    const amount = isLastMonth
+      ? remaining
+      : Math.min(monthly, remaining);
 
     rows.push({
-      month: d.toLocaleString("en-US", { month: "long", year: "numeric" }),
-      amount,
+      month: current.toLocaleString("en-US", {
+        month: "long",
+        year: "numeric",
+      }),
+
+      date: [
+        current.getFullYear(),
+        String(current.getMonth() + 1).padStart(2, "0"),
+        "10",
+      ].join("-"),
+
+      amount:
+        Math.round(amount * 100) / 100,
     });
 
-    remaining = Math.round((remaining - amount) * 100) / 100;
-    d.setMonth(d.getMonth() + 1);
+    remaining =
+      Math.round(
+        (remaining - amount) * 100
+      ) / 100;
 
-    if (remaining <= 0) break;
+    current.setMonth(current.getMonth() + 1);
+    current.setDate(10);
   }
 
   return rows;
@@ -2145,7 +2221,8 @@ export default function LoanApprovalTab() {
                     buildMonthlySchedule(
                       selectedLoan.approved_total || selectedLoan.total,
                       selectedLoan.approved_per_month || selectedLoan.per_month,
-                      selectedLoan.term
+                      selectedLoan.approved_term || selectedLoan.term,
+                      selectedLoan.approved_at
                     ).length > 0 && (
                       <div className="form-group full">
                         <button
@@ -2347,10 +2424,16 @@ export default function LoanApprovalTab() {
                             finalApprovalData[selectedLoan.id]?.approved_total ||
                               selectedLoan.approved_total ||
                               selectedLoan.total,
+
                             finalApprovalData[selectedLoan.id]?.approved_per_month ||
                               selectedLoan.approved_per_month ||
                               selectedLoan.per_month,
-                            finalApprovalData[selectedLoan.id]?.approved_term || selectedLoan.term
+
+                            finalApprovalData[selectedLoan.id]?.approved_term ||
+                              selectedLoan.approved_term ||
+                              selectedLoan.term,
+
+                            todayDate()
                           ).length > 0 && (
                             <div className="preview-box" style={{ marginTop: 12 }}>
                               <div style={{ fontWeight: 600, marginBottom: 10 }}>
@@ -2361,10 +2444,16 @@ export default function LoanApprovalTab() {
                                 finalApprovalData[selectedLoan.id]?.approved_total ||
                                   selectedLoan.approved_total ||
                                   selectedLoan.total,
+
                                 finalApprovalData[selectedLoan.id]?.approved_per_month ||
                                   selectedLoan.approved_per_month ||
                                   selectedLoan.per_month,
-                                finalApprovalData[selectedLoan.id]?.approved_term || selectedLoan.term
+
+                                finalApprovalData[selectedLoan.id]?.approved_term ||
+                                  selectedLoan.approved_term ||
+                                  selectedLoan.term,
+
+                                todayDate()
                               ).map((row, idx) => (
                                 <div
                                   key={idx}
@@ -2567,7 +2656,8 @@ export default function LoanApprovalTab() {
                       return buildMonthlySchedule(
                         selectedLoan.approved_total || selectedLoan.total,
                         selectedLoan.approved_per_month || selectedLoan.per_month,
-                        selectedLoan.term
+                        selectedLoan.approved_term || selectedLoan.term,
+                        selectedLoan.approved_at
                       ).map((row, idx) => {
                         balance -= row.amount;
 

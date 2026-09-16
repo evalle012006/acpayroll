@@ -591,13 +591,13 @@ async function hasExistingLoanBalance(
 
         CASE
           /*
-            SAME RULE AS SCHEDULE OF BALANCES
+            LOAN DEDUCTION RULE
 
             Approved 1st - 9th
-            = first deduction on 25th SAME month
+            = first deduction on 10th SAME month
 
             Approved 10th - end
-            = first deduction on 25th NEXT month
+            = first deduction on 10th NEXT month
           */
           WHEN EXTRACT(
             DAY FROM lr.approved_at::date
@@ -608,7 +608,7 @@ async function hasExistingLoanBalance(
               'month',
               lr.approved_at::date
             )
-            + INTERVAL '24 days'
+            + INTERVAL '9 days'
           )::date
 
           ELSE (
@@ -617,7 +617,7 @@ async function hasExistingLoanBalance(
               lr.approved_at::date
             )
             + INTERVAL '1 month'
-            + INTERVAL '24 days'
+            + INTERVAL '9 days'
           )::date
         END AS first_deduction_date
 
@@ -663,7 +663,9 @@ async function hasExistingLoanBalance(
           -
           (
             CASE
-              -- First deduction has not happened yet.
+              /*
+                First deduction has not happened yet.
+              */
               WHEN
                 (
                   NOW()
@@ -671,22 +673,23 @@ async function hasExistingLoanBalance(
                 )::date
                 <
                 first_deduction_date
+
               THEN 0
 
               ELSE
                 (
                   /*
-                    Count completed 25th deductions.
+                    Count completed 10th deductions.
 
                     Example:
-                    First deduction = Sep 25
+                    First deduction = Sep 10
 
-                    Sep 24 → 0
-                    Sep 25 → 1
-                    Oct 10 → 1
-                    Oct 25 → 2
-                    Nov 24 → 2
-                    Nov 25 → 3
+                    Sep 09 -> 0
+                    Sep 10 -> 1
+                    Oct 09 -> 1
+                    Oct 10 -> 2
+                    Nov 09 -> 2
+                    Nov 10 -> 3
                   */
 
                   (
@@ -730,16 +733,14 @@ async function hasExistingLoanBalance(
                         NOW()
                         AT TIME ZONE 'Asia/Manila'
                       )::date
-                    )::int >= 25
+                    )::int >= 10
                     THEN 1
                     ELSE 0
                   END
                 )
             END
 
-            *
-
-            monthly_deduction
+            * monthly_deduction
           ),
           0
         ) AS remaining_balance
@@ -750,8 +751,11 @@ async function hasExistingLoanBalance(
     SELECT
       id,
       remaining_balance
+
     FROM calculated
+
     WHERE remaining_balance > 0
+
     LIMIT 1
     `,
     [
@@ -816,15 +820,20 @@ function buildLoanSchedule(
   // Loan deduction cutoff rule:
   //
   // Approved on the 1st–9th
-  // → first deduction is the 25th of SAME month
+  // → first deduction is the 10th of SAME month
   //
   // Approved on the 10th–end of month
-  // → first deduction is the 25th of NEXT month
+  // → first deduction is the 10th of NEXT month
+
   if (approvedDate.getDate() <= 9) {
-    current.setDate(25);
+    // Approved 1st-9th:
+    // first deduction = 10th of same month
+    current.setDate(10);
   } else {
+    // Approved 10th-end:
+    // first deduction = 10th of next month
     current.setMonth(current.getMonth() + 1);
-    current.setDate(25);
+    current.setDate(10);
   }
 
   while (remaining > 0) {
@@ -852,7 +861,7 @@ function buildLoanSchedule(
       current.getMonth() + 1
     );
 
-    current.setDate(25);
+    current.setDate(10);
   }
 
   return rows;
@@ -1951,14 +1960,21 @@ router.post(
           ? "vice_president_approved_at"
           : "accounting_approved_at";
 
+      const finalStatusColumn =
+        finalStage === "vice president"
+          ? "vice_president_status"
+          : "admin_status";
+
       await client.query(
         `
         UPDATE public.loan_requests
         SET
           status = 'Approved',
           approval_stage = 'completed',
-          admin_status = 'Approved',
+
+          ${finalStatusColumn} = 'Approved',
           ${finalApprovedAtColumn} = NOW(),
+
           approved_at = CURRENT_DATE,
           disbursement_date = CURRENT_DATE,
 

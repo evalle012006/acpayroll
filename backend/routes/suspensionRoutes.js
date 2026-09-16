@@ -342,12 +342,6 @@ const canUploadApprovedFile = (req) =>
   // =====================================================
   async function applyDueSuspensions() {
 
-    console.log("========== applyDueSuspensions START ==========");
-    console.log(
-      "[suspension] Manila time:",
-      new Date().toLocaleString("en-US", { timeZone: "Asia/Manila" })
-    );
-
     const client = await pool.connect();
 
     try {
@@ -380,17 +374,6 @@ const canUploadApprovedFile = (req) =>
           s.id,
           s.employee_no
       `);
-
-      console.log(
-        `[suspension] Staff changed to Inactive: ${suspendedStaff.rowCount}`
-      );
-
-      suspendedStaff.rows.forEach((row) => {
-        console.log("[suspension] suspended staff:", {
-          id: row.id,
-          employee_no: row.employee_no,
-        });
-      });
 
       // =====================================================
       // RECORD SUSPENSION START IN STATUS HISTORY
@@ -569,17 +552,6 @@ const canUploadApprovedFile = (req) =>
             LIMIT 1
           ) = 'suspension'
       `);
-
-      console.log(
-        `[suspension] Staff eligible to return Active: ${finishedStaff.rowCount}`
-      );
-
-      finishedStaff.rows.forEach((row) => {
-        console.log("[suspension] finished suspension:", {
-          id: row.id,
-          employee_no: row.employee_no,
-        });
-      });
 
       // =====================================================
       // 3. REACTIVATE FINISHED SUSPENSIONS

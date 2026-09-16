@@ -63,7 +63,11 @@ const STAGE_LABELS = {
   "vice president": "Vice President",
   "senior vice president": "Senior Vice President",
   tread: "TREAD Department",
-  final: "HR / Accounting / IT / Admin",
+
+  "admin order": "Admin Order",
+  "contract signing": "Contract Signing",
+  "hr final": "HR Final",
+
   approved: "Approved",
   rejected: "Rejected",
   voided: "Voided",
@@ -78,89 +82,99 @@ const getDepartment = (o) =>
 
 const normalizePosition = (position) =>
   norm(position)
+    .replace(/^acting\s+/i, "")
+    .replace(/\(acting\)/gi, "")
+    .replace(/acting/gi, "")
     .replace(/[_-]/g, " ")
     .replace(/\s+/g, " ")
     .trim();
 
-const getOperationStartStage = (oldPosition) => {
-  const pos = normalizePosition(oldPosition);
+const getBaseChainByPosition = (position) => {
+  const pos = normalizePosition(position);
 
-  if (pos.includes("branch manager")) return "regional manager";
-  if (pos.includes("area manager")) return "regional manager";
-  if (pos.includes("regional manager")) return "assistant vice president";
-  if (pos.includes("assistant vice president")) return "vice president";
-  if (pos.includes("vice president")) return "tread";
+  // SVP applicant:
+  // no management approval before document processing
+  if (pos.includes("senior vice president")) {
+    return [];
+  }
 
-  return "area manager";
-};
+  // VP applicant -> SVP
+  if (pos.includes("vice president")) {
+    return [
+      "senior vice president",
+    ];
+  }
 
-const getOperationChain = (oldPosition) => {
-  const full = [
+  // AVP applicant -> VP -> SVP
+  if (pos.includes("assistant vice president")) {
+    return [
+      "vice president",
+      "senior vice president",
+    ];
+  }
+
+  // RM applicant -> AVP -> VP
+  if (pos.includes("regional manager")) {
+    return [
+      "assistant vice president",
+      "vice president",
+    ];
+  }
+
+  // AM applicant -> RM -> AVP -> VP
+  if (pos.includes("area manager")) {
+    return [
+      "regional manager",
+      "assistant vice president",
+      "vice president",
+    ];
+  }
+
+  // BM applicant -> AM -> RM -> AVP -> VP
+  if (pos.includes("branch manager")) {
+    return [
+      "area manager",
+      "regional manager",
+      "assistant vice president",
+      "vice president",
+    ];
+  }
+
+  // LO / staff / other position
+  return [
+    "branch manager",
     "area manager",
     "regional manager",
     "assistant vice president",
     "vice president",
-    "tread",
-    "final",
   ];
-
-  const start = getOperationStartStage(oldPosition);
-
-  const idx = full.indexOf(start);
-
-  return idx >= 0
-    ? full.slice(idx)
-    : full;
 };
 
 const getApprovalChain = (department, oldPosition) => {
-  const dept = norm(department);
+  const baseChain = getBaseChainByPosition(oldPosition);
 
-  if (isOperationDepartment(dept))
-    return getOperationChain(oldPosition);
+  // OPERATION:
+  // management approval -> TREAD -> Admin Order
+  // -> Contract Signing -> HR Final
+  if (isOperationDepartment(department)) {
+    return [
+      ...baseChain,
+      "tread",
+      "admin order",
+      "contract signing",
+      "hr final",
+    ];
+  }
 
-  if (
-    dept === "it" ||
-    dept === "it department"
-  )
-    return ["assistant vice president", "final"];
-
-  if (
-    dept === "accounting" ||
-    dept === "accounting department"
-  )
-    return ["senior vice president", "final"];
-
-  if (
-    dept === "hr" ||
-    dept === "hr department" ||
-    dept === "human resources"
-  )
-    return ["senior vice president", "final"];
-
-  if (
-    dept === "office of the president"
-  )
-    return ["assistant vice president", "final"];
-
-  if (
-    dept === "tread" ||
-    dept === "tread department"
-  )
-    return ["assistant vice president", "final"];
-
-  if (
-    dept.includes("production")
-  )
-    return ["assistant vice president", "final"];
-
-  if (
-    dept === "audit" ||
-    dept === "audit department"
-  )
-    return ["senior vice president", "final"];
-
-  return ["final"];
+  // OTHER DEPARTMENTS:
+  // management approval -> Admin Order
+  // -> Contract Signing -> HR Final
+  return [
+    ...baseChain,
+    "admin order",
+    "contract signing",
+    "hr final",
+  ];
 };
 
 const getCurrentStageLabel = (o) => {
@@ -182,8 +196,10 @@ const stageStatus = (o, stage) => {
     "vice president": o?.vice_president_status,
     "senior vice president": o?.senior_vice_president_status,
     tread: o?.tread_status,
-    hr: o?.hr_status,
-    final: o?.final_status,
+
+    "admin order": o?.admin_order_status,
+    "contract signing": o?.contract_signing_status,
+    "hr final": o?.hr_final_status,
   };
 
   return toStr(map[stage] || "Pending");
@@ -195,6 +211,7 @@ const getApprovalHistory = (o) => {
   const rows = [
     {
       key: "branch_manager",
+      stage: "branch manager",
       label: "Branch Manager",
       status: o.branch_manager_status,
       approvedBy: o.branch_manager_approved_by_name,
@@ -202,6 +219,7 @@ const getApprovalHistory = (o) => {
     },
     {
       key: "area_manager",
+      stage: "area manager",
       label: "Area Manager",
       status: o.area_manager_status,
       approvedBy: o.area_manager_approved_by_name,
@@ -209,6 +227,7 @@ const getApprovalHistory = (o) => {
     },
     {
       key: "regional_manager",
+      stage: "regional manager",
       label: "Regional Manager",
       status: o.regional_manager_status,
       approvedBy: o.regional_manager_approved_by_name,
@@ -216,6 +235,7 @@ const getApprovalHistory = (o) => {
     },
     {
       key: "assistant_vice_president",
+      stage: "assistant vice president",
       label: "Assistant Vice President",
       status: o.assistant_vice_president_status,
       approvedBy: o.assistant_vice_president_approved_by_name,
@@ -223,6 +243,7 @@ const getApprovalHistory = (o) => {
     },
     {
       key: "vice_president",
+      stage: "vice president",
       label: "Vice President",
       status: o.vice_president_status,
       approvedBy: o.vice_president_approved_by_name,
@@ -230,6 +251,7 @@ const getApprovalHistory = (o) => {
     },
     {
       key: "senior_vice_president",
+      stage: "senior vice president",
       label: "Senior Vice President",
       status: o.senior_vice_president_status,
       approvedBy: o.senior_vice_president_approved_by_name,
@@ -237,25 +259,45 @@ const getApprovalHistory = (o) => {
     },
     {
       key: "tread",
+      stage: "tread",
       label: "TREAD Department",
       status: o.tread_status,
       approvedBy: o.tread_approved_by_name,
       approvedAt: o.tread_approved_at,
     },
     {
-      key: "final",
-      label: "HR Final Approval",
-      status: o.final_status,
-      approvedBy: o.final_approved_by_name,
-      approvedAt: o.final_approved_at,
+      key: "admin_order",
+      stage: "admin order",
+      label: "Admin Order",
+      status: o.admin_order_status,
+      approvedBy: o.admin_order_approved_by_name,
+      approvedAt: o.admin_order_approved_at,
+    },
+    {
+      key: "contract_signing",
+      stage: "contract signing",
+      label: "Contract Signing",
+      status: o.contract_signing_status,
+      approvedBy: o.contract_signing_approved_by_name,
+      approvedAt: o.contract_signing_approved_at,
+    },
+    {
+      key: "hr_final",
+      stage: "hr final",
+      label: "HR Final",
+      status: o.hr_final_status,
+      approvedBy: o.hr_final_approved_by_name,
+      approvedAt: o.hr_final_approved_at,
     },
   ];
 
-  return rows.filter(
-    (row) =>
-      row.status ||
-      row.approvedBy ||
-      row.approvedAt
+  const chain = getApprovalChain(
+    getDepartment(o),
+    o?.old_position
+  );
+
+  return rows.filter((row) =>
+    chain.includes(row.stage)
   );
 };
 
@@ -353,7 +395,9 @@ export default function PromotionOrder() {
     if (stage === "vice president") return isVicePresident;
     if (stage === "senior vice president") return isSeniorVicePresident;
     if (stage === "tread") return isTread;
-    if (stage === "final") return isHr || isAdmin || isIt;
+    if (stage === "admin order") return isHr;
+    if (stage === "contract signing") return isAssistantVicePresident;
+    if (stage === "hr final") return isHr;
 
     return false;
   };
@@ -978,12 +1022,24 @@ export default function PromotionOrder() {
     const file = approvalFiles[order.id];
     const stage = norm(order.approval_stage);
 
-    if (!file) {
-      alert(
-        stage === "final"
-          ? "HR must upload the final approved promotion file before approving."
-          : "Please upload the signed/approved promotion file before approving."
-      );
+    const fileRequiredStages = [
+      "admin order",
+      "contract signing",
+      "hr final",
+    ];
+
+    if (fileRequiredStages.includes(stage) && !file && !isAdmin && !isSeniorVicePresident) {
+      let message = "Please upload the required promotion file before approving.";
+
+      if (stage === "admin order") {message = "Please upload the Admin Order file before approving.";
+      } else if (stage === "contract signing") {
+        message = "Please upload the signed contract before approving.";
+      } else if (stage === "hr final") {
+        message =
+          "HR must upload the final approved promotion file before final approval.";
+      }
+
+      alert(message);
       return;
     }
 
@@ -991,7 +1047,10 @@ export default function PromotionOrder() {
       setUploadingId(String(order.id));
 
       const formData = new FormData();
-      formData.append("attachment", file);
+
+      if (file) {
+        formData.append("attachment", file);
+      }
 
       await api.put(`/promotion-orders/${order.id}/approve`, formData, {
         headers: { "Content-Type": "multipart/form-data" },
@@ -1190,18 +1249,36 @@ export default function PromotionOrder() {
 
   const closeViewOrder = () => setViewOrder(null);
 
+  const stageRequiresFile = (o) => {
+    const stage = norm(o?.approval_stage);
+
+    return [
+      "admin order",
+      "contract signing",
+      "hr final",
+    ].includes(stage);
+  };
+
   const actionButtonLabel = (o) => {
-    const stage = norm(
-      o?.approval_stage
-    );
+    const stage = norm(o?.approval_stage);
 
-    if (stage === "final")
+    if (stage === "tread") {
+      return "Recommend";
+    }
+
+    if (stage === "admin order") {
+      return "Upload Admin Order + Approve";
+    }
+
+    if (stage === "contract signing") {
+      return "Upload Signed Contract + Approve";
+    }
+
+    if (stage === "hr final") {
       return "HR Final Upload + Approve";
+    }
 
-    if (stage === "tread")
-      return "Upload + Recommend";
-
-    return "Upload + Approve";
+    return "Approve";
   };
 
   return (
@@ -1228,7 +1305,7 @@ export default function PromotionOrder() {
 
               <strong>
                 BM → AM → RM → AVP → VP → TREAD →
-                HR Final
+                Admin Order → Contract Signing → HR Final
               </strong>
             </div>
           </div>
@@ -1456,7 +1533,7 @@ export default function PromotionOrder() {
                       <td>
                         {canAct && isPending ? (
                           <div className="po-action-stack">
-                            <div className="po-file-actions">
+                            <div className="po-action-row">
                               <button
                                 className="po-mini-btn po-view-btn"
                                 type="button"
@@ -1465,36 +1542,35 @@ export default function PromotionOrder() {
                                 View
                               </button>
 
-                              <label className="po-mini-btn po-upload-btn">
-                                {approvalFiles[o.id]?.name ? "Change File" : "Upload File"}
-                                <input
-                                  type="file"
-                                  hidden
-                                  accept=".pdf,.png,.jpg,.jpeg,.doc,.docx"
-                                  onChange={(e) =>
-                                    setApprovalFiles((prev) => ({
-                                      ...prev,
-                                      [o.id]: e.target.files?.[0] || null,
-                                    }))
-                                  }
-                                />
-                              </label>
-                            </div>
+                              {(stageRequiresFile(o) || isAdmin) && (
+                                <label className="po-mini-btn po-upload-btn">
+                                  {approvalFiles[o.id]?.name
+                                    ? "Change File"
+                                    : "Upload File"}
 
-                            {approvalFiles[o.id]?.name ? (
-                              <div className="po-file-name" title={approvalFiles[o.id].name}>
-                                {approvalFiles[o.id].name}
-                              </div>
-                            ) : null}
+                                  <input
+                                    type="file"
+                                    hidden
+                                    accept=".pdf,.png,.jpg,.jpeg,.doc,.docx"
+                                    onChange={(e) =>
+                                      setApprovalFiles((prev) => ({
+                                        ...prev,
+                                        [o.id]: e.target.files?.[0] || null,
+                                      }))
+                                    }
+                                  />
+                                </label>
+                              )}
 
-                            <div className="po-file-actions">
                               <button
                                 className="po-mini-btn po-approve"
                                 type="button"
                                 disabled={uploadingId === String(o.id)}
                                 onClick={() => approve(o)}
                               >
-                                {uploadingId === String(o.id) ? "Approving..." : actionButtonLabel(o)}
+                                {uploadingId === String(o.id)
+                                  ? "Approving..."
+                                  : actionButtonLabel(o)}
                               </button>
 
                               <button
@@ -1505,6 +1581,15 @@ export default function PromotionOrder() {
                                 Reject
                               </button>
                             </div>
+
+                            {approvalFiles[o.id]?.name && (
+                              <div
+                                className="po-file-name"
+                                title={approvalFiles[o.id].name}
+                              >
+                                {approvalFiles[o.id].name}
+                              </div>
+                            )}
                           </div>
                         ) : (
                           <div className="po-action-stack">

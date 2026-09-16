@@ -515,7 +515,7 @@ button.po-summary-card.active {
 }
 
 .po-table td {
-  padding: 20px 13px;
+  padding: 14px 13px;
 
   border-bottom: 1px solid var(--po-border);
 
@@ -524,7 +524,7 @@ button.po-summary-card.active {
 
   font-size: 13px;
   font-weight: 750;
-  vertical-align: top;
+  vertical-align: middle;
 }
 
 .po-table tbody tr:hover td {
@@ -539,10 +539,9 @@ button.po-summary-card.active {
 
 .po-table th:last-child,
 .po-table td:last-child {
-  width: 560px;
-  min-width: 560px;
-
-  vertical-align: top;
+  width: 260px;
+  min-width: 260px;
+  vertical-align: middle;
 }
 
 .po-empty {
@@ -627,12 +626,14 @@ button.po-summary-card.active {
 }
 
 .po-action-stack {
-  min-width: 500px;
+  min-width: 0;
 
   display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 10px;
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-start;
+  flex-wrap: nowrap;
+  gap: 8px;
 }
 
 .po-mini-btn {
@@ -1605,4 +1606,49 @@ body.dark .po-approval-history-empty {
 
     border-top: 1px dashed var(--po-border);
   }
+}
+
+/* =========================================================
+   PROMOTION TABLE - ACTION BUTTON ALIGNMENT
+   ========================================================= */
+
+.po-table td:last-child {
+  min-width: 250px;
+  vertical-align: middle;
+}
+
+.po-action-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  width: max-content;
+}
+
+.po-action-row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  flex-wrap: nowrap;
+  white-space: nowrap;
+}
+
+.po-action-row .po-mini-btn,
+.po-action-row .po-upload-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: auto;
+  min-width: max-content;
+  margin: 0;
+  flex: 0 0 auto;
+}
+
+.po-file-name {
+  max-width: 250px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
