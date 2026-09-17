@@ -4,6 +4,7 @@ const pool = require("../db");
 
 const { requireAuth } = require("../middlewares/authMiddleware");
 const { requirePermission } = require("../middlewares/permissionMiddleware");
+const { getCashbondLimit } = require("../utils/cashbondLimits");
 
 const {
   isAdmin,
@@ -166,6 +167,7 @@ async function getScopedStaffRowByEmployeeNo(client, employeeNo) {
     SELECT
       id,
       employee_no,
+      "position",
       branch_id,
       area,
       region,
@@ -442,6 +444,55 @@ router.put(
         return toNum(v);
       };
 
+      const staffPosition = access.staffRow?.position;
+      const cashbondLimit = getCashbondLimit(staffPosition);
+
+      const existingCashbond = toNum(oldBal.cashbond);
+      const requestedCashbond = keepNum("cashbond");
+
+      if (cashbondLimit !== null) {
+        /*
+          Employee is within the normal limit.
+          Prevent Cashbond from going over the position maximum.
+        */
+        if (
+          existingCashbond <= cashbondLimit &&
+          requestedCashbond > cashbondLimit
+        ) {
+          await client.query("ROLLBACK");
+
+          return res.status(400).json({
+            message:
+              `Cashbond cannot exceed ₱${Number(cashbondLimit).toLocaleString()} ` +
+              `for ${staffPosition}.`,
+            cashbond_limit: cashbondLimit,
+            current_cashbond: existingCashbond,
+          });
+        }
+
+        /*
+          Existing Cashbond may already be above the limit because
+          the employee was demoted.
+
+          Preserve that amount, but never allow another increase.
+        */
+        if (
+          existingCashbond > cashbondLimit &&
+          requestedCashbond > existingCashbond
+        ) {
+          await client.query("ROLLBACK");
+
+          return res.status(400).json({
+            message:
+              `Cashbond is already above the current position limit of ` +
+              `₱${Number(cashbondLimit).toLocaleString()}. ` +
+              `The existing balance may be preserved but cannot be increased.`,
+            cashbond_limit: cashbondLimit,
+            current_cashbond: existingCashbond,
+          });
+        }
+      }
+
       await client.query(
         `
         UPDATE public.staff_balances
@@ -460,7 +511,7 @@ router.put(
         `,
         [
           keepNum("cbu"),
-          keepNum("cashbond"),
+          requestedCashbond,
           keepNum("utility"),
           keepNum("salary_advance"),
           keepNum("special_advance"),
@@ -1249,32 +1300,80 @@ router.get(
           [employeeNo]
         );
 
-      await client.query("COMMIT");
-
       if (r.rowCount === 0) {
+        const staffPosition = access.staffRow?.position || "";
+        const cashbondLimit = getCashbondLimit(staffPosition);
+
+        await client.query("COMMIT");
+
         return res.json({
           staff_id: access.staffRow.id,
           employee_no: employeeNo,
           fullname: "",
-          position: "",
+          position: staffPosition,
           last_name: "",
           first_name: "",
           middle_name: "",
+
           cbu: 0,
           cashbond: 0,
           utility: 0,
+
+          // =========================================
+          // CASHBOND LIMIT INFORMATION
+          // =========================================
+          cashbond_limit: cashbondLimit,
+
+          cashbond_remaining:
+            cashbondLimit === null
+              ? null
+              : cashbondLimit,
+
+          cashbond_limit_reached: false,
+
+          cashbond_above_limit: false,
+
           salary_advance: 0,
           special_advance: 0,
           cash_advance: 0,
           motorcycle_loan: 0,
           other_receivable: 0,
           staff_accounts_payable: 0,
+
           created_at: null,
           updated_at: null,
         });
       }
 
-      return res.json(r.rows[0]);
+      const balance = r.rows[0];
+
+      const cashbondLimit = getCashbondLimit(balance.position);
+      const currentCashbond = toNum(balance.cashbond);
+
+      // =========================================
+      // CASHBOND LIMIT INFORMATION
+      // =========================================
+      balance.cashbond_limit = cashbondLimit;
+
+      balance.cashbond_remaining =
+        cashbondLimit === null
+          ? null
+          : Math.max(
+              cashbondLimit - currentCashbond,
+              0
+            );
+
+      balance.cashbond_limit_reached =
+        cashbondLimit !== null &&
+        currentCashbond >= cashbondLimit;
+
+      balance.cashbond_above_limit =
+        cashbondLimit !== null &&
+        currentCashbond > cashbondLimit;
+
+      await client.query("COMMIT");
+
+      return res.json(balance);
     } catch (e) {
       try {
         await client.query("ROLLBACK");

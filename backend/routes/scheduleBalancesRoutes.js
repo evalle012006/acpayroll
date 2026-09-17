@@ -4,6 +4,7 @@ const pool = require("../db");
 
 const { requireAuth } = require("../middlewares/authMiddleware");
 const { requirePermission } = require("../middlewares/permissionMiddleware");
+const { getCashbondLimit } = require("../utils/cashbondLimits");
 
 const toNum = (v) => {
   const n = Number(v ?? 0);
@@ -2043,6 +2044,66 @@ router.put(
       }
 
       const staff = staffResult.rows[0];
+
+      const cashbondLimit = getCashbondLimit(staff.position);
+
+      const existingBalanceResult = await client.query(
+        `
+        SELECT COALESCE(cashbond, 0) AS cashbond
+        FROM public.staff_balances
+        WHERE employee_no = $1
+        LIMIT 1
+        FOR UPDATE
+        `,
+        [staff.employee_no]
+      );
+
+      const existingCashbond = toNum(
+        existingBalanceResult.rows[0]?.cashbond
+      );
+
+      if (cashbondLimit !== null) {
+        /*
+          NORMAL CASE:
+          Current balance is still within the employee's position limit.
+          Do not allow a manual edit above the maximum.
+        */
+        if (
+          existingCashbond <= cashbondLimit &&
+          cashbond > cashbondLimit
+        ) {
+          await client.query("ROLLBACK");
+
+          return res.status(400).json({
+            message:
+              `Cashbond cannot exceed ₱${Number(cashbondLimit).toLocaleString()} ` +
+              `for ${staff.position}.`,
+            cashbond_limit: cashbondLimit,
+            current_cashbond: existingCashbond,
+          });
+        }
+
+        /*
+          DEMOTION / EXISTING ABOVE-LIMIT CASE:
+          Preserve the existing higher Cashbond.
+          Do not allow it to increase further.
+        */
+        if (
+          existingCashbond > cashbondLimit &&
+          cashbond > existingCashbond
+        ) {
+          await client.query("ROLLBACK");
+
+          return res.status(400).json({
+            message:
+              `Cashbond is already above the current position limit of ` +
+              `₱${Number(cashbondLimit).toLocaleString()}. ` +
+              `The existing balance may be preserved but cannot be increased.`,
+            cashbond_limit: cashbondLimit,
+            current_cashbond: existingCashbond,
+          });
+        }
+      }
 
       if (!toStr(staff.employee_no)) {
         await client.query("ROLLBACK");

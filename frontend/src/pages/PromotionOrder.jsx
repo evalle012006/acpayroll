@@ -64,8 +64,8 @@ const STAGE_LABELS = {
   "senior vice president": "Senior Vice President",
   tread: "TREAD Department",
 
-  "admin order": "Admin Order",
-  "contract signing": "Contract Signing",
+  "admin order": "HR Admin Order",
+  "contract signing": "AVP / Contract Signing",
   "hr final": "HR Final",
 
   approved: "Approved",
@@ -1023,17 +1023,24 @@ export default function PromotionOrder() {
     const stage = norm(order.approval_stage);
 
     const fileRequiredStages = [
+      "branch manager",
+      "area manager",
+      "regional manager",
+      "assistant vice president",
+      "vice president",
+      "senior vice president",
+      "tread",
       "admin order",
       "contract signing",
       "hr final",
     ];
 
-    if (fileRequiredStages.includes(stage) && !file && !isAdmin && !isSeniorVicePresident) {
+    if (fileRequiredStages.includes(stage) && !file) {
       let message = "Please upload the required promotion file before approving.";
 
       if (stage === "admin order") {message = "Please upload the Admin Order file before approving.";
       } else if (stage === "contract signing") {
-        message = "Please upload the signed contract before approving.";
+        message = "AVP must upload the employee-signed Admin Order before approving.";
       } else if (stage === "hr final") {
         message =
           "HR must upload the final approved promotion file before final approval.";
@@ -1253,6 +1260,13 @@ export default function PromotionOrder() {
     const stage = norm(o?.approval_stage);
 
     return [
+      "branch manager",
+      "area manager",
+      "regional manager",
+      "assistant vice president",
+      "vice president",
+      "senior vice president",
+      "tread",
       "admin order",
       "contract signing",
       "hr final",
@@ -1262,8 +1276,32 @@ export default function PromotionOrder() {
   const actionButtonLabel = (o) => {
     const stage = norm(o?.approval_stage);
 
+    if (stage === "branch manager") {
+      return "Upload + Approve BM";
+    }
+
+    if (stage === "area manager") {
+      return "Upload + Approve AM";
+    }
+
+    if (stage === "regional manager") {
+      return "Upload + Approve RM";
+    }
+
+    if (stage === "assistant vice president") {
+      return "Upload + Approve AVP";
+    }
+
+    if (stage === "vice president") {
+      return "Upload + Approve VP";
+    }
+
+    if (stage === "senior vice president") {
+      return "Upload + Approve SVP";
+    }
+
     if (stage === "tread") {
-      return "Recommend";
+      return "Upload + Recommend";
     }
 
     if (stage === "admin order") {
@@ -1271,14 +1309,14 @@ export default function PromotionOrder() {
     }
 
     if (stage === "contract signing") {
-      return "Upload Signed Contract + Approve";
+      return "Upload Employee-Signed File + Approve";
     }
 
     if (stage === "hr final") {
       return "HR Final Upload + Approve";
     }
 
-    return "Approve";
+    return "Upload + Approve";
   };
 
   return (
@@ -1305,7 +1343,7 @@ export default function PromotionOrder() {
 
               <strong>
                 BM → AM → RM → AVP → VP → TREAD →
-                Admin Order → Contract Signing → HR Final
+                HR Admin Order → AVP / Employee Signing → HR Final
               </strong>
             </div>
           </div>

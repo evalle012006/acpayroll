@@ -1,6 +1,8 @@
 const cron = require("node-cron");
 const pool = require("../db");
 
+const {getCashbondLimit,} = require("../utils/cashbondLimits");
+
 // =====================================================
 // HELPERS
 // =====================================================
@@ -721,76 +723,153 @@ async function addMonthlyContractBalances(
   staff,
   monthLabel
 ) {
-  const cbu = toNum(staff.cbu);
-  const cashbond = toNum(staff.cashbond);
-  const utility = toNum(staff.utility);
-
-  // This is the idempotency gate.
-  //
-  // If this row already exists, this employee was already
-  // processed for this month. Nothing will be added again.
-  const postingResult = await client.query(
-    `
-    INSERT INTO public.monthly_balance_postings
-    (
-      month_label,
-      employee_no,
-      cbu,
-      cashbond,
-      utility
-    )
-    VALUES
-    (
-      $1,
-      $2,
-      $3,
-      $4,
-      $5
-    )
-
-    ON CONFLICT (month_label, employee_no)
-    DO NOTHING
-
-    RETURNING
-      id,
-      month_label,
-      employee_no,
-      cbu,
-      cashbond,
-      utility
-    `,
-    [
-      monthLabel,
-      staff.employee_no,
-      cbu,
-      cashbond,
-      utility,
-    ]
+  const cbu = Math.max(toNum(staff.cbu), 0);
+  const configuredCashbond = Math.max(
+    toNum(staff.cashbond),
+    0
   );
+  const utility = Math.max(
+    toNum(staff.utility),
+    0
+  );
+
+  // =====================================================
+  // CASHBOND POSITION LIMIT
+  // =====================================================
+
+  const cashbondLimit = getCashbondLimit(
+    staff.position
+  );
+
+  /*
+    Lock/read the employee's current accumulated balance.
+
+    This is the actual current Cashbond already saved in
+    Staff Information > Personal Balances.
+  */
+  const currentBalanceResult =
+    await client.query(
+      `
+      SELECT
+        COALESCE(cashbond, 0) AS cashbond
+      FROM public.staff_balances
+      WHERE employee_no = $1
+      LIMIT 1
+      FOR UPDATE
+      `,
+      [staff.employee_no]
+    );
+
+  const currentCashbond = Math.max(
+    toNum(
+      currentBalanceResult.rows[0]?.cashbond
+    ),
+    0
+  );
+
+  /*
+    Positions not defined in cashbondLimits.js:
+    preserve the existing behavior and post the configured
+    monthly Cashbond normally.
+  */
+  let cashbondToPost = configuredCashbond;
+
+  if (cashbondLimit !== null) {
+    const remainingCashbondCapacity =
+      Math.max(
+        cashbondLimit - currentCashbond,
+        0
+      );
+
+    /*
+      Never post more than the remaining capacity.
+
+      Example:
+        Current Cashbond = 28,000
+        Maximum          = 30,000
+        Monthly          = 4,000
+
+        cashbondToPost = 2,000
+    */
+    cashbondToPost = Math.min(
+      configuredCashbond,
+      remainingCashbondCapacity
+    );
+  }
+
+  // =====================================================
+  // MONTHLY POSTING
+  // =====================================================
+  //
+  // This row is also the idempotency gate.
+  //
+  // If this employee/month already exists, nothing is
+  // added to staff_balances again.
+  // =====================================================
+
+  const postingResult =
+    await client.query(
+      `
+      INSERT INTO public.monthly_balance_postings
+      (
+        month_label,
+        employee_no,
+        cbu,
+        cashbond,
+        utility
+      )
+      VALUES
+      (
+        $1,
+        $2,
+        $3,
+        $4,
+        $5
+      )
+
+      ON CONFLICT (month_label, employee_no)
+      DO NOTHING
+
+      RETURNING
+        id,
+        month_label,
+        employee_no,
+        cbu,
+        cashbond,
+        utility
+      `,
+      [
+        monthLabel,
+        staff.employee_no,
+        cbu,
+        cashbondToPost,
+        utility,
+      ]
+    );
 
   if (!postingResult.rowCount) {
     return {
       newlyPosted: false,
       cbu,
-      cashbond,
+      cashbond: cashbondToPost,
+      configuredCashbond,
+      cashbondLimit,
+      currentCashbond,
       utility,
     };
   }
 
-  // Add the contract deduction to the accumulated current balance.
-  //
-  // Manual current corrections remain the starting balance.
-  //
-  // Example:
-  // Current CBU = 9,500
-  // Contract CBU = 500
-  // New current CBU = 10,000
+  // =====================================================
+  // UPDATE ACCUMULATED PERSONAL BALANCES
+  // =====================================================
+
   await client.query(
     `
     INSERT INTO public.staff_balances
     (
       employee_no,
       fullname,
+      position,
       cbu,
       cashbond,
       utility,
@@ -803,43 +882,93 @@ async function addMonthlyContractBalances(
       $3,
       $4,
       $5,
+      $6,
       NOW()
     )
 
     ON CONFLICT (employee_no)
     DO UPDATE SET
+
       fullname = COALESCE(
         NULLIF(EXCLUDED.fullname, ''),
         public.staff_balances.fullname
       ),
 
+      position = COALESCE(
+        NULLIF(EXCLUDED.position, ''),
+        public.staff_balances.position
+      ),
+
       cbu =
-        COALESCE(public.staff_balances.cbu, 0)
-        + COALESCE(EXCLUDED.cbu, 0),
+        COALESCE(
+          public.staff_balances.cbu,
+          0
+        )
+        +
+        COALESCE(
+          EXCLUDED.cbu,
+          0
+        ),
 
       cashbond =
-        COALESCE(public.staff_balances.cashbond, 0)
-        + COALESCE(EXCLUDED.cashbond, 0),
+        COALESCE(
+          public.staff_balances.cashbond,
+          0
+        )
+        +
+        COALESCE(
+          EXCLUDED.cashbond,
+          0
+        ),
 
       utility =
-        COALESCE(public.staff_balances.utility, 0)
-        + COALESCE(EXCLUDED.utility, 0),
+        COALESCE(
+          public.staff_balances.utility,
+          0
+        )
+        +
+        COALESCE(
+          EXCLUDED.utility,
+          0
+        ),
 
       updated_at = NOW()
     `,
     [
       staff.employee_no,
       staff.fullname || staff.employee_no,
+      staff.position || null,
       cbu,
-      cashbond,
+      cashbondToPost,
       utility,
     ]
   );
 
   return {
     newlyPosted: true,
+
     cbu,
-    cashbond,
+
+    cashbond: cashbondToPost,
+    configuredCashbond,
+
+    cashbondLimit,
+
+    previousCashbond:
+      currentCashbond,
+
+    remainingCashbondCapacity:
+      cashbondLimit === null
+        ? null
+        : Math.max(
+            cashbondLimit -
+              (
+                currentCashbond +
+                cashbondToPost
+              ),
+            0
+          ),
+
     utility,
   };
 }
@@ -1251,6 +1380,8 @@ async function postMonthlyBalances(
           ),
           employee_no
         ) AS fullname,
+
+        position,
 
         COALESCE(cbu, 0) AS cbu,
         COALESCE(cashbond, 0) AS cashbond,

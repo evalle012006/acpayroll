@@ -1,22 +1,81 @@
 import React from "react";
 import { money, toNum } from "./staffInfoUtils";
 
-export default function PersonalBalancesStep({ balanceForm, onBalanceChange, readOnlyLoans = false, openingLoanRows = [] }) {
+export default function PersonalBalancesStep({
+  balanceForm,
+  onBalanceChange,
+  readOnlyLoans = false,
+  openingLoanRows = [],
+  cashbondLimit = null,
+}) {
   const totalSavings =
     toNum(balanceForm.cbu) +
     toNum(balanceForm.cashbond) +
     toNum(balanceForm.utility ?? balanceForm.utility_charge);
+
   const totalBalances =
     toNum(balanceForm.salary_advance) + toNum(balanceForm.special_advance) + toNum(balanceForm.cash_advance) +
     toNum(balanceForm.motorcycle_loan) + toNum(balanceForm.pag_ibig_loan) + toNum(balanceForm.other_receivable) +
     toNum(balanceForm.staff_accounts_payable);
+  
+  const currentCashbond = toNum(balanceForm.cashbond);
+
+  const normalizedCashbondLimit =
+    cashbondLimit === null ||
+    cashbondLimit === undefined ||
+    cashbondLimit === ""
+      ? null
+      : toNum(cashbondLimit);
+
+  const hasCashbondLimit =
+    normalizedCashbondLimit !== null &&
+    normalizedCashbondLimit > 0;
+
+  const cashbondRemaining = hasCashbondLimit
+    ? Math.max(normalizedCashbondLimit - currentCashbond, 0)
+    : null;
+
+  const cashbondLimitReached =
+    hasCashbondLimit &&
+    currentCashbond >= normalizedCashbondLimit;
 
   return (
     <div className="modal-body staff-add-grid">
       <div className="staff-add-left" style={{ width: "100%" }}>
         <div className="field full" style={{ marginTop: 8 }}><h3 style={{ margin: 0 }}>Personal Savings</h3></div>
         <div className="field"><label>CBU</label><input className="input" name="cbu" value={balanceForm.cbu} onChange={onBalanceChange} /></div>
-        <div className="field"><label>Cashbond</label><input className="input" name="cashbond" value={balanceForm.cashbond} onChange={onBalanceChange} /></div>
+        <div className="field">
+          <label>
+            Cashbond
+            {hasCashbondLimit
+              ? ` — Maximum: ${money(normalizedCashbondLimit)}`
+              : ""}
+          </label>
+
+          <input
+            className="input"
+            name="cashbond"
+            type="number"
+            min="0"
+            step="0.01"
+            value={balanceForm.cashbond}
+            onChange={onBalanceChange}
+          />
+
+          {hasCashbondLimit ? (
+            <div
+              style={{
+                marginTop: 6,
+                fontSize: 12,
+                opacity: 0.8,
+              }}
+            >
+              {cashbondLimitReached
+                ? `Maximum Cashbond reached (${money(normalizedCashbondLimit)})`
+                : `Remaining before maximum: ${money(cashbondRemaining)}`}
+            </div>
+          ) : null}
+        </div>
         <div className="field"><label>Utility</label><input className="input" name="utility" value={balanceForm.utility ?? balanceForm.utility_charge ?? ""} onChange={onBalanceChange} /></div>
         <div className="field full"><label>Total Personal Savings</label><div className="input" style={{ background: "var(--panel-2)" }}>{money(totalSavings)}</div></div>
         <div className="field full" style={{ marginTop: 16 }}><h3 style={{ margin: 0 }}>Personal Balances</h3></div>

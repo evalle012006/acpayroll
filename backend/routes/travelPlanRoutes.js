@@ -683,22 +683,41 @@ router.post("/travel-plans", requireAuth, async (req, res) => {
       });
     }
 
-    const hasThreeConsecutiveVisits =
-      await wouldCreateThreeConsecutiveBranchVisits(
-        client,
-        {
-          employeeName,
-          branchName,
-          planDate,
-        }
-      );
+    // =====================================================
+    // CONSECUTIVE BRANCH VISIT RESTRICTION
+    // =====================================================
+    //
+    // AUDIT DEPARTMENT:
+    // - Any role
+    // - Unlimited consecutive visits to the same branch
+    //
+    // OTHER DEPARTMENTS:
+    // - Keep existing maximum of 2 consecutive visits
+    // - Third consecutive visit to the same branch is blocked
+    // =====================================================
 
-    if (hasThreeConsecutiveVisits) {
-      return res.status(400).json({
-        message:
-          `${employeeName} cannot visit ${branchName} three times in a row. ` +
-          "Select a different branch before visiting this branch again.",
-      });
+    const currentDepartment = normalizeDepartment(
+      req.user?.department
+    );
+
+    if (!isAuditDepartment(currentDepartment)) {
+      const hasThreeConsecutiveVisits =
+        await wouldCreateThreeConsecutiveBranchVisits(
+          client,
+          {
+            employeeName,
+            branchName,
+            planDate,
+          }
+        );
+
+      if (hasThreeConsecutiveVisits) {
+        return res.status(400).json({
+          message:
+            `${employeeName} cannot visit ${branchName} three times in a row. ` +
+            "Select a different branch before visiting this branch again.",
+        });
+      }
     }
 
     const result = await client.query(
@@ -911,23 +930,41 @@ router.put("/travel-plans/:id", requireAuth, async (req, res) => {
       });
     }
 
-    const hasThreeConsecutiveVisits =
-      await wouldCreateThreeConsecutiveBranchVisits(
-        client,
-        {
-          employeeName,
-          branchName,
-          planDate,
-          excludePlanId: id,
-        }
-      );
+    // =====================================================
+    // CONSECUTIVE BRANCH VISIT RESTRICTION
+    // =====================================================
+    //
+    // AUDIT DEPARTMENT:
+    // - Any role
+    // - Unlimited consecutive visits to the same branch
+    //
+    // OTHER DEPARTMENTS:
+    // - Keep existing maximum of 2 consecutive visits
+    // =====================================================
 
-    if (hasThreeConsecutiveVisits) {
-      return res.status(400).json({
-        message:
-          `${employeeName} cannot visit ${branchName} three times in a row. ` +
-          "Select a different branch before visiting this branch again.",
-      });
+    const currentDepartment = normalizeDepartment(
+      req.user?.department
+    );
+
+    if (!isAuditDepartment(currentDepartment)) {
+      const hasThreeConsecutiveVisits =
+        await wouldCreateThreeConsecutiveBranchVisits(
+          client,
+          {
+            employeeName,
+            branchName,
+            planDate,
+            excludePlanId: id,
+          }
+        );
+
+      if (hasThreeConsecutiveVisits) {
+        return res.status(400).json({
+          message:
+            `${employeeName} cannot visit ${branchName} three times in a row. ` +
+            "Select a different branch before visiting this branch again.",
+        });
+      }
     }
 
     const result = await client.query(

@@ -85,6 +85,8 @@ export default function Soa() {
     isIt ||
     isHr ||
     isAccounting ||
+    isHrDepartment ||
+    isAccountingDepartment ||
     isTread ||
     isBranchManager ||
     isAreaManager ||
@@ -129,6 +131,11 @@ export default function Soa() {
 
   const [attachmentFile, setAttachmentFile] = useState(null);
 
+  const [approvalFile, setApprovalFile] = useState(null);
+  const [approvalSaving, setApprovalSaving] = useState(false);
+  const [rejectReason, setRejectReason] = useState("");
+  const [rejecting, setRejecting] = useState(false);
+
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
@@ -160,6 +167,122 @@ export default function Soa() {
     (branches || []).forEach((b) => m.set(Number(b.id), b));
     return m;
   }, [branches]);
+
+  const norm = (v) => toStr(v).toLowerCase();
+
+  const currentUserBranchId = Number(
+    user?.branch_id ??
+    user?.branchId ??
+    user?.branch?.id ??
+    0
+  );
+
+  const canActAsHr =
+    isAdmin ||
+    isHr ||
+    isHrDepartment;
+
+  const isSelectedSettlementBranch = (row) => {
+    const settlementBranchId = Number(row?.settlement_branch_id || 0);
+
+    return (
+      currentUserBranchId > 0 &&
+      settlementBranchId > 0 &&
+      currentUserBranchId === settlementBranchId
+    );
+  };
+
+  const canActAtSettlementStage = (row) => {
+    if (!row) return false;
+
+    const status = norm(row.status);
+    const stage = norm(row.approval_stage);
+
+    if (
+      status === "approved" ||
+      status === "rejected" ||
+      status === "void" ||
+      stage === "completed" ||
+      stage === "rejected"
+    ) {
+      return false;
+    }
+
+    if (stage === "hr_initial") {
+      return canActAsHr;
+    }
+
+    if (stage === "branch") {
+      return isSelectedSettlementBranch(row);
+    }
+
+    if (stage === "hr_final") {
+      return canActAsHr;
+    }
+
+    return false;
+  };
+
+  const canEditSettlement = (row) => {
+    if (!canEdit || !row) return false;
+
+    return (
+      norm(row.status) !== "approved" &&
+      norm(row.status) !== "rejected" &&
+      norm(row.status) !== "void" &&
+      norm(row.approval_stage) === "hr_initial" &&
+      norm(row.hr_initial_status) !== "approved"
+    );
+  };
+
+  const getWorkflowLabel = (row) => {
+    const status = norm(row?.status);
+    const stage = norm(row?.approval_stage);
+
+    if (status === "approved" || stage === "completed") {
+      return "Approved";
+    }
+
+    if (status === "rejected" || stage === "rejected") {
+      return "Rejected";
+    }
+
+    if (status === "void") {
+      return "VOID";
+    }
+
+    if (stage === "hr_initial") {
+      return "Pending HR Initial";
+    }
+
+    if (stage === "branch") {
+      return "Pending Settlement Branch";
+    }
+
+    if (stage === "hr_final") {
+      return "Pending HR Final";
+    }
+
+    return row?.status || "Pending";
+  };
+
+  const getApprovalButtonLabel = (row) => {
+    const stage = norm(row?.approval_stage);
+
+    if (stage === "hr_initial") {
+      return "Upload + Approve HR Initial";
+    }
+
+    if (stage === "branch") {
+      return "Upload + Approve Branch";
+    }
+
+    if (stage === "hr_final") {
+      return "Upload + Final Approve";
+    }
+
+    return "Upload + Approve";
+  };
 
   const filteredStaff = useMemo(() => {
     const q = staffSearch.toLowerCase();
@@ -574,6 +697,165 @@ export default function Soa() {
     }
   };
 
+  const downloadWorkflowFile = async (
+    id,
+    type,
+    fallbackName = ""
+  ) => {
+    try {
+      const res = await api.get(
+        `/settlements/${id}/download/${type}`,
+        {
+          responseType: "blob",
+        }
+      );
+
+      const blob = new Blob([res.data]);
+      const url = window.URL.createObjectURL(blob);
+
+      const a = document.createElement("a");
+      a.href = url;
+      a.download =
+        fallbackName ||
+        `settlement-${id}-${type}`;
+
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      alert(
+        err?.response?.data?.message ||
+          "Failed to download settlement document."
+      );
+    }
+  };
+
+  const approveSettlement = async (row) => {
+    if (!row) return;
+
+    if (!canActAtSettlementStage(row)) {
+      return alert(
+        "You are not authorized to approve the current settlement stage."
+      );
+    }
+
+    if (!approvalFile) {
+      return alert(
+        "Please select the required document before approving."
+      );
+    }
+
+    const stageLabel = getWorkflowLabel(row);
+
+    if (
+      !window.confirm(
+        `Approve ${stageLabel} and upload the selected document?`
+      )
+    ) {
+      return;
+    }
+
+    try {
+      setApprovalSaving(true);
+
+      const formData = new FormData();
+      formData.append("attachment", approvalFile);
+
+      const res = await api.put(
+        `/settlements/${row.id}/approve`,
+        formData,
+        {
+          headers: {
+            "Content-Type": "multipart/form-data",
+          },
+        }
+      );
+
+      alert(
+        res?.data?.message ||
+          "Settlement approved successfully."
+      );
+
+      setApprovalFile(null);
+      setRejectReason("");
+
+      await loadSettlements();
+
+      if (res?.data?.settlement) {
+        setViewRow(res.data.settlement);
+      } else {
+        setViewRow(null);
+      }
+    } catch (err) {
+      alert(
+        err?.response?.data?.message ||
+          "Failed to approve settlement."
+      );
+    } finally {
+      setApprovalSaving(false);
+    }
+  };
+
+  const rejectSettlement = async (row) => {
+    if (!row) return;
+
+    if (!canActAtSettlementStage(row)) {
+      return alert(
+        "You are not authorized to reject the current settlement stage."
+      );
+    }
+
+    const reason = toStr(rejectReason);
+
+    if (!reason) {
+      return alert("Please enter a rejection reason.");
+    }
+
+    if (
+      !window.confirm(
+        "Reject this settlement at the current approval stage?"
+      )
+    ) {
+      return;
+    }
+
+    try {
+      setRejecting(true);
+
+      const res = await api.put(
+        `/settlements/${row.id}/reject`,
+        {
+          reason,
+        }
+      );
+
+      alert(
+        res?.data?.message ||
+          "Settlement rejected."
+      );
+
+      setApprovalFile(null);
+      setRejectReason("");
+
+      await loadSettlements();
+
+      if (res?.data?.settlement) {
+        setViewRow(res.data.settlement);
+      } else {
+        setViewRow(null);
+      }
+    } catch (err) {
+      alert(
+        err?.response?.data?.message ||
+          "Failed to reject settlement."
+      );
+    } finally {
+      setRejecting(false);
+    }
+  };
+
   const money = (v) => toNum(v).toLocaleString();
 
   const totalRecords=filteredSettlements.length;
@@ -612,7 +894,9 @@ export default function Soa() {
 
             <div className="soa-flow">
               <span>WORKFLOW</span>
-              <b>Create Settlement → Review → Settlement Record</b>
+              <b>
+                Create → HR Initial → Settlement Branch → HR Final → Approved
+              </b>
             </div>
           </div>
 
@@ -712,6 +996,7 @@ export default function Soa() {
                 <th>Liabilities</th>
                 <th>Net</th>
                 <th>Description</th>
+                <th>Status</th>
                 <th>File</th>
                 <th>Created</th>
                 <th>Action</th>
@@ -721,11 +1006,11 @@ export default function Soa() {
             <tbody>
               {loadingList?(
                 <tr>
-                  <td colSpan={11} className="soa-empty">Loading settlement records...</td>
+                  <td colSpan={12} className="soa-empty">Loading settlement records...</td>
                 </tr>
               ):filteredSettlements.length===0?(
                 <tr>
-                  <td colSpan={11} className="soa-empty">No settlement records found.</td>
+                  <td colSpan={12} className="soa-empty">No settlement records found.</td>
                 </tr>
               ):(
                 pagedSettlements.map((r)=>(
@@ -751,51 +1036,90 @@ export default function Soa() {
 
                     <td className="soa-description">
                       {r.description
-                        ?r.description.length>60
-                          ?`${r.description.slice(0,60)}...`
-                          :r.description
-                        :"-"}
+                        ? r.description.length > 60
+                          ? `${r.description.slice(0, 60)}...`
+                          : r.description
+                        : "-"}
                     </td>
 
+                    {/* STATUS */}
                     <td>
-                      {r.attachment_path?(
+                      <span
+                        className={`pill ${
+                          norm(r.status) === "approved"
+                            ? "approved"
+                            : norm(r.status) === "rejected"
+                            ? "rejected"
+                            : norm(r.status) === "void"
+                            ? "void"
+                            : "pending"
+                        }`}
+                      >
+                        {getWorkflowLabel(r)}
+                      </span>
+                    </td>
+
+                    {/* FILE */}
+                    <td>
+                      {r.attachment_path ||
+                      r.hr_initial_attachment_path ||
+                      r.branch_attachment_path ||
+                      r.hr_final_attachment_path ? (
                         <button
                           type="button"
                           className="soa-action-btn soa-action-download"
-                          onClick={()=>downloadSettlementFile(r.id,r.attachment_name)}
+                          onClick={() =>
+                            downloadWorkflowFile(
+                              r.id,
+                              "latest",
+                              r.hr_final_attachment_name ||
+                                r.branch_attachment_name ||
+                                r.hr_initial_attachment_name ||
+                                r.attachment_name ||
+                                `settlement-${r.id}`
+                            )
+                          }
                         >
-                          Download
+                          Download Latest
                         </button>
-                      ):"-"}
+                      ) : (
+                        "-"
+                      )}
                     </td>
 
+                    {/* CREATED */}
                     <td>{fmtDate(r.created_at)}</td>
 
+                    {/* ACTION */}
                     <td>
                       <div className="soa-row-actions">
                         <button
                           type="button"
                           className="soa-action-btn soa-action-view"
-                          onClick={()=>setViewRow(r)}
+                          onClick={() => {
+                            setApprovalFile(null);
+                            setRejectReason("");
+                            setViewRow(r);
+                          }}
                         >
                           View
                         </button>
 
-                        {canEdit&&(
+                        {canEditSettlement(r) && (
                           <button
                             type="button"
                             className="soa-action-btn soa-action-edit"
-                            onClick={()=>openEditSettlement(r)}
+                            onClick={() => openEditSettlement(r)}
                           >
                             Edit
                           </button>
                         )}
 
-                        {canDelete&&(
+                        {canDelete && (
                           <button
                             type="button"
                             className="soa-action-btn soa-action-delete"
-                            onClick={()=>deleteSettlement(r.id)}
+                            onClick={() => deleteSettlement(r.id)}
                           >
                             Delete
                           </button>
@@ -866,7 +1190,9 @@ export default function Soa() {
           <div className="modal saas-modal" onMouseDown={(e) => e.stopPropagation()}>
             <div className="modal-head">
               <div>
-                <h3 className="modal-title">Create Settlement</h3>
+                <h3 className="modal-title">
+                  {editingRow ? "Edit Settlement" : "Create Settlement"}
+                </h3>
                 <p className="modal-subtitle">
                   Pick the settlement branch. Managers can view based on their scope.
                 </p>
@@ -1180,7 +1506,11 @@ export default function Soa() {
                 </button>
 
                 <button className="btn-primary" type="submit" disabled={saving}>
-                  {saving ? "Saving..." : "Save Settlement"}
+                  {saving
+                    ? "Saving..."
+                    : editingRow
+                    ? "Update Settlement"
+                    : "Save Settlement"}
                 </button>
               </div>
             </form>
@@ -1189,19 +1519,44 @@ export default function Soa() {
       )}
 
       {viewRow && (
-        <div className="modal-overlay" onMouseDown={() => setViewRow(null)}>
-          <div className="modal saas-modal" onMouseDown={(e) => e.stopPropagation()}>
+        <div
+          className="modal-overlay"
+          onMouseDown={() => {
+            if (!approvalSaving && !rejecting) {
+              setViewRow(null);
+              setApprovalFile(null);
+              setRejectReason("");
+            }
+          }}
+        >
+          <div
+            className="modal saas-modal"
+            onMouseDown={(e) => e.stopPropagation()}
+          >
             <div className="modal-head">
               <div>
-                <h3 className="modal-title">Settlement Record</h3>
+                <h3 className="modal-title">
+                  Settlement Record
+                </h3>
+
                 <p className="modal-subtitle">
-                  {viewRow.employee_name} • Employee No: {viewRow.employee_no} •
-                  Settlement Branch: {viewRow.settlement_branch_code || "-"} -{" "}
+                  {viewRow.employee_name} • Employee No:{" "}
+                  {viewRow.employee_no} • Settlement Branch:{" "}
+                  {viewRow.settlement_branch_code || "-"} -{" "}
                   {viewRow.settlement_branch_name || "-"}
                 </p>
               </div>
 
-              <button className="modal-x" type="button" onClick={() => setViewRow(null)}>
+              <button
+                className="modal-x"
+                type="button"
+                disabled={approvalSaving || rejecting}
+                onClick={() => {
+                  setViewRow(null);
+                  setApprovalFile(null);
+                  setRejectReason("");
+                }}
+              >
                 ✕
               </button>
             </div>
@@ -1216,15 +1571,31 @@ export default function Soa() {
                 }}
               >
                 <div className="pill">
-                  Benefits: <strong>{money(viewRow.total_benefits)}</strong>
+                  Benefits:{" "}
+                  <strong>
+                    ₱{money(viewRow.total_benefits)}
+                  </strong>
                 </div>
 
                 <div className="pill">
-                  Liabilities: <strong>{money(viewRow.liabilities)}</strong>
+                  Liabilities:{" "}
+                  <strong>
+                    ₱{money(viewRow.liabilities)}
+                  </strong>
                 </div>
 
                 <div className="pill">
-                  Net Settlement: <strong>{money(viewRow.net_settlement)}</strong>
+                  Net Settlement:{" "}
+                  <strong>
+                    ₱{money(viewRow.net_settlement)}
+                  </strong>
+                </div>
+
+                <div className="pill">
+                  Status:{" "}
+                  <strong>
+                    {getWorkflowLabel(viewRow)}
+                  </strong>
                 </div>
               </div>
 
@@ -1255,62 +1626,169 @@ export default function Soa() {
 
                   <tr>
                     <td>CBU</td>
-                    <td>{money(viewRow.cbu)}</td>
+                    <td>₱{money(viewRow.cbu)}</td>
                   </tr>
 
                   <tr>
                     <td>Cashbond</td>
-                    <td>{money(viewRow.cashbond)}</td>
+                    <td>₱{money(viewRow.cashbond)}</td>
                   </tr>
 
                   <tr>
                     <td>Utility</td>
-                    <td>{money(viewRow.utility)}</td>
-                  </tr>
-
-                  <tr>
-                    <td>Liabilities</td>
-                    <td>{money(viewRow.liabilities)}</td>
+                    <td>₱{money(viewRow.utility)}</td>
                   </tr>
 
                   <tr>
                     <td>13th Month Pay</td>
-                    <td>{money(viewRow.thirteenth_month_pay)}</td>
+                    <td>
+                      ₱{money(viewRow.thirteenth_month_pay)}
+                    </td>
                   </tr>
 
                   <tr>
                     <td>Last Pay</td>
-                    <td>{money(viewRow.last_pay)}</td>
+                    <td>₱{money(viewRow.last_pay)}</td>
                   </tr>
 
                   <tr>
                     <td>Separation Pay</td>
-                    <td>{money(viewRow.separation_pay)}</td>
+                    <td>
+                      ₱{money(viewRow.separation_pay)}
+                    </td>
                   </tr>
 
                   <tr>
                     <td>Cash Assistance</td>
-                    <td>{money(viewRow.cash_assistance)}</td>
+                    <td>
+                      ₱{money(viewRow.cash_assistance)}
+                    </td>
                   </tr>
 
                   <tr>
-                    <td>File</td>
+                    <td>Liabilities</td>
+                    <td>
+                      ₱{money(viewRow.liabilities)}
+                    </td>
+                  </tr>
+
+                  <tr>
+                    <td>Original File</td>
                     <td>
                       {viewRow.attachment_path ? (
                         <button
                           className="btn-secondary"
                           type="button"
                           onClick={() =>
-                            downloadSettlementFile(viewRow.id, viewRow.attachment_name)
+                            downloadWorkflowFile(
+                              viewRow.id,
+                              "source",
+                              viewRow.attachment_name
+                            )
                           }
                         >
-                          Download File
+                          Download Original
                         </button>
                       ) : (
                         "No file"
                       )}
                     </td>
                   </tr>
+
+                  <tr>
+                    <td>HR Initial</td>
+                    <td>
+                      <strong>
+                        {viewRow.hr_initial_status ||
+                          "Pending"}
+                      </strong>
+
+                      {viewRow.hr_initial_attachment_path && (
+                        <>
+                          {" "}
+                          <button
+                            className="btn-secondary"
+                            type="button"
+                            onClick={() =>
+                              downloadWorkflowFile(
+                                viewRow.id,
+                                "hr_initial",
+                                viewRow.hr_initial_attachment_name
+                              )
+                            }
+                          >
+                            Download File
+                          </button>
+                        </>
+                      )}
+                    </td>
+                  </tr>
+
+                  <tr>
+                    <td>Settlement Branch</td>
+                    <td>
+                      <strong>
+                        {viewRow.branch_status || "Pending"}
+                      </strong>
+
+                      {viewRow.branch_attachment_path && (
+                        <>
+                          {" "}
+                          <button
+                            className="btn-secondary"
+                            type="button"
+                            onClick={() =>
+                              downloadWorkflowFile(
+                                viewRow.id,
+                                "branch",
+                                viewRow.branch_attachment_name
+                              )
+                            }
+                          >
+                            Download File
+                          </button>
+                        </>
+                      )}
+                    </td>
+                  </tr>
+
+                  <tr>
+                    <td>HR Final</td>
+                    <td>
+                      <strong>
+                        {viewRow.hr_final_status ||
+                          "Pending"}
+                      </strong>
+
+                      {viewRow.hr_final_attachment_path && (
+                        <>
+                          {" "}
+                          <button
+                            className="btn-secondary"
+                            type="button"
+                            onClick={() =>
+                              downloadWorkflowFile(
+                                viewRow.id,
+                                "hr_final",
+                                viewRow.hr_final_attachment_name
+                              )
+                            }
+                          >
+                            Download File
+                          </button>
+                        </>
+                      )}
+                    </td>
+                  </tr>
+
+                  {norm(viewRow.status) === "rejected" && (
+                    <tr>
+                      <td>Rejection Reason</td>
+                      <td>
+                        {viewRow.rejection_reason || "-"}
+                      </td>
+                    </tr>
+                  )}
 
                   <tr>
                     <td>Created</td>
@@ -1323,10 +1801,110 @@ export default function Soa() {
                   </tr>
                 </tbody>
               </table>
+
+              {canActAtSettlementStage(viewRow) && (
+                <div
+                  style={{
+                    marginTop: 18,
+                    padding: 16,
+                    border:
+                      "1px solid rgba(148,163,184,0.25)",
+                    borderRadius: 12,
+                  }}
+                >
+                  <h4 style={{ marginTop: 0 }}>
+                    {getWorkflowLabel(viewRow)}
+                  </h4>
+
+                  <div
+                    className="form-group"
+                    style={{ marginBottom: 14 }}
+                  >
+                    <label>
+                      Required Approval Document
+                    </label>
+
+                    <input
+                      type="file"
+                      accept=".pdf,.png,.jpg,.jpeg,.doc,.docx"
+                      onChange={(e) =>
+                        setApprovalFile(
+                          e.target.files?.[0] || null
+                        )
+                      }
+                    />
+
+                    {approvalFile && (
+                      <small>
+                        Selected: {approvalFile.name}
+                      </small>
+                    )}
+                  </div>
+
+                  <button
+                    type="button"
+                    className="btn-primary"
+                    disabled={
+                      approvalSaving ||
+                      rejecting ||
+                      !approvalFile
+                    }
+                    onClick={() =>
+                      approveSettlement(viewRow)
+                    }
+                  >
+                    {approvalSaving
+                      ? "Approving..."
+                      : getApprovalButtonLabel(viewRow)}
+                  </button>
+
+                  <div
+                    className="form-group"
+                    style={{ marginTop: 20 }}
+                  >
+                    <label>Rejection Reason</label>
+
+                    <textarea
+                      rows={3}
+                      value={rejectReason}
+                      onChange={(e) =>
+                        setRejectReason(e.target.value)
+                      }
+                      placeholder="Enter reason before rejecting..."
+                    />
+                  </div>
+
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    disabled={
+                      approvalSaving ||
+                      rejecting ||
+                      !toStr(rejectReason)
+                    }
+                    onClick={() =>
+                      rejectSettlement(viewRow)
+                    }
+                  >
+                    {rejecting
+                      ? "Rejecting..."
+                      : "Reject"}
+                  </button>
+                </div>
+              )}
             </div>
 
             <div className="modal-buttons">
-              <button className="btn-primary" type="button" onClick={() => setViewRow(null)}>
+              <button
+                className="btn-primary"
+                type="button"
+                disabled={approvalSaving || rejecting}
+                onClick={() => {
+                  setViewRow(null);
+                  setApprovalFile(null);
+                  setRejectReason("");
+                }}
+              >
                 Close
               </button>
             </div>

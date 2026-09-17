@@ -336,12 +336,26 @@ async function hasApproverAccount(client, stage, staff) {
     where.push(`LOWER(TRIM(COALESCE(region,''))) = $${params.length}`);
   }
 
+  // AVP approver must belong to the employee's division
   if (
-    ["assistant vice president", "vice president", "senior vice president"].includes(s) &&
+    s === "assistant vice president" &&
+    cols.includes("division")
+  ) {
+    params.push(norm(staff.division));
+    where.push(
+      `LOWER(TRIM(COALESCE(division,''))) = $${params.length}`
+    );
+  }
+
+  // VP / SVP keep department-based approver lookup
+  if (
+    ["vice president", "senior vice president"].includes(s) &&
     cols.includes("department")
   ) {
     params.push(norm(staff.department));
-    where.push(`LOWER(TRIM(COALESCE(department,''))) = $${params.length}`);
+    where.push(
+      `LOWER(TRIM(COALESCE(department,''))) = $${params.length}`
+    );
   }
 
   try {
@@ -1536,16 +1550,17 @@ router.put(
 
       // ============================================================
       // FILE REQUIREMENTS
-      //
-      // NO FILE:
-      // BM / AM / RM / AVP / VP / SVP / TREAD
-      //
-      // FILE REQUIRED:
-      // Admin Order
-      // Contract Signing
-      // HR Final
+      // EVERY APPROVAL STAGE MUST UPLOAD A FILE
       // ============================================================
+
       const fileRequiredStages = [
+        "branch manager",
+        "area manager",
+        "regional manager",
+        "assistant vice president",
+        "vice president",
+        "senior vice president",
+        "tread",
         "admin order",
         "contract signing",
         "hr final",
@@ -1553,32 +1568,15 @@ router.put(
 
       if (
         fileRequiredStages.includes(currentStage) &&
-        !req.file &&
-        !canBypassApproval(req)
+        !req.file
       ) {
+        await client.query("ROLLBACK");
 
-        let message =
-          "Please upload the required promotion file.";
-
-        if (currentStage === "admin order") {
-          message =
-            "Please upload the Admin Order file before approving.";
-        }
-
-        if (currentStage === "contract signing") {
-          message =
-            "Please upload the employee-signed contract before approving.";
-        }
-
-        if (currentStage === "hr final") {
-          message =
-            "HR must upload the final approved promotion file before final approval.";
-        }
-
-        return res.status(400).json({ message });
+        return res.status(400).json({
+          message: `Please upload the signed/approved file for ${currentStage} before approving.`,
+        });
       }
 
-      // File is OPTIONAL for management/TREAD.
       const latestPath = req.file
         ? `/uploads/promotion-orders/${req.file.filename}`
         : null;
@@ -1708,70 +1706,47 @@ router.put(
       // ============================================================
       if (
         currentStage !== "admin order" &&
-        currentStage !== "contract signing"
+        currentStage !== "contract signing" &&
+        currentStage !== "hr final"
       ) {
-        if (req.file && isAdmin(req)) {
-          await client.query(
-            `
-            UPDATE public.promotion_orders
-            SET
-              ${column} = 'Approved',
+        await client.query(
+          `
+          UPDATE public.promotion_orders
+          SET
+            ${column} = 'Approved',
 
-              ${historyColumns.approvedBy} = $2,
-              ${historyColumns.approvedAt} = NOW(),
+            ${historyColumns.approvedBy} = $2,
+            ${historyColumns.approvedAt} = NOW(),
 
-              approval_stage = $3,
+            approval_stage = $3,
 
-              attachment_path = $4,
-              attachment_name = $5,
-              attachment_mime = $6,
+            attachment_path = $4,
+            attachment_name = $5,
+            attachment_mime = $6,
 
-              rejected_by = NULL,
-              rejected_at = NULL,
-              rejection_reason = NULL
+            rejected_by = NULL,
+            rejected_at = NULL,
+            rejection_reason = NULL
 
-            WHERE id = $1
-            `,
-            [
-              id,
-              userId,
-              String(nextStage),
-              latestPath,
-              latestName,
-              latestMime,
-            ]
-          );
-        } else {
-          await client.query(
-            `
-            UPDATE public.promotion_orders
-            SET
-              ${column} = 'Approved',
-
-              ${historyColumns.approvedBy} = $2,
-              ${historyColumns.approvedAt} = NOW(),
-
-              approval_stage = $3,
-
-              rejected_by = NULL,
-              rejected_at = NULL,
-              rejection_reason = NULL
-
-            WHERE id = $1
-            `,
-            [
-              id,
-              userId,
-              String(nextStage),
-            ]
-          );
-        }
+          WHERE id = $1
+          `,
+          [
+            id,
+            userId,
+            String(nextStage),
+            latestPath,
+            latestName,
+            latestMime,
+          ]
+        );
       }
 
       // ============================================================
       // ADMIN ORDER
-      // SAVE ADMIN ORDER DOCUMENT
+      // HR UPLOADS ADMIN ORDER
+      // AFTER HR APPROVES -> ALWAYS RETURN TO AVP
       // ============================================================
+
       if (currentStage === "admin order") {
         await client.query(
           `
@@ -1782,11 +1757,11 @@ router.put(
             ${historyColumns.approvedBy} = $2,
             ${historyColumns.approvedAt} = NOW(),
 
-            approval_stage = $3,
+            approval_stage = 'contract signing',
 
-            admin_order_attachment_path = $4,
-            admin_order_attachment_name = $5,
-            admin_order_attachment_mime = $6,
+            admin_order_attachment_path = $3,
+            admin_order_attachment_name = $4,
+            admin_order_attachment_mime = $5,
 
             rejected_by = NULL,
             rejected_at = NULL,
@@ -1797,7 +1772,6 @@ router.put(
           [
             id,
             userId,
-            String(nextStage),
             latestPath,
             latestName,
             latestMime,
@@ -1807,8 +1781,10 @@ router.put(
 
       // ============================================================
       // CONTRACT SIGNING
-      // SAVE EMPLOYEE-SIGNED CONTRACT
+      // AVP UPLOADS EMPLOYEE-SIGNED DOCUMENT
+      // AFTER AVP APPROVES -> ALWAYS RETURN TO HR FINAL
       // ============================================================
+
       if (currentStage === "contract signing") {
         await client.query(
           `
@@ -1819,11 +1795,11 @@ router.put(
             ${historyColumns.approvedBy} = $2,
             ${historyColumns.approvedAt} = NOW(),
 
-            approval_stage = $3,
+            approval_stage = 'hr final',
 
-            contract_signing_attachment_path = $4,
-            contract_signing_attachment_name = $5,
-            contract_signing_attachment_mime = $6,
+            contract_signing_attachment_path = $3,
+            contract_signing_attachment_name = $4,
+            contract_signing_attachment_mime = $5,
 
             rejected_by = NULL,
             rejected_at = NULL,
@@ -1834,7 +1810,6 @@ router.put(
           [
             id,
             userId,
-            String(nextStage),
             latestPath,
             latestName,
             latestMime,
@@ -1842,37 +1817,53 @@ router.put(
         );
       }
 
-      await client.query("COMMIT");
-
       // ============================================================
       // RESPONSE
       // ============================================================
-      let message =
-        `Promotion approved. Moved to ${nextStage}.`;
+      let responseStage = nextStage;
 
-      if (nextStage === "tread") {
+      // Document-return workflow uses fixed transitions.
+      // HR Admin Order -> AVP
+      if (currentStage === "admin order") {
+        responseStage = "contract signing";
+      }
+
+      // AVP signed document -> HR Final
+      if (currentStage === "contract signing") {
+        responseStage = "hr final";
+      }
+
+      let message =
+        `Promotion approved. Moved to ${responseStage}.`;
+
+      if (responseStage === "tread") {
         message =
           "Management approvals completed. Waiting for TREAD recommendation.";
       }
 
-      if (nextStage === "admin order") {
+      if (responseStage === "admin order") {
         message =
           "TREAD/management approval completed. Waiting for Admin Order upload.";
       }
 
-      if (nextStage === "contract signing") {
+      if (responseStage === "contract signing") {
         message =
           "Admin Order uploaded. Waiting for AVP to return the employee-signed contract.";
       }
 
-      if (nextStage === "hr final") {
+      if (responseStage === "hr final") {
         message =
           "Signed contract uploaded. Waiting for HR final approval.";
       }
 
+      // IMPORTANT:
+      // Commit BM / AM / RM / AVP / VP / SVP / TREAD /
+      // Admin Order / Contract Signing approval changes.
+      await client.query("COMMIT");
+
       return res.json({
         message,
-        approval_stage: nextStage,
+        approval_stage: responseStage,
       });
     } catch (e) {
       await client.query("ROLLBACK");

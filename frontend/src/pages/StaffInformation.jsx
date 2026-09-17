@@ -110,6 +110,10 @@ export default function StaffInformation() {
   const [balanceForm, setBalanceForm] = useState({
     cbu: "",
     cashbond: "",
+    cashbond_limit: null,
+    cashbond_remaining: null,
+    cashbond_limit_reached: false,
+    cashbond_above_limit: false,
     utility: "",
     salary_advance: "",
     special_advance: "",
@@ -341,6 +345,10 @@ export default function StaffInformation() {
     setBalanceForm({
       cbu: "",
       cashbond: "",
+      cashbond_limit: null,
+      cashbond_remaining: null,
+      cashbond_limit_reached: false,
+      cashbond_above_limit: false,
       utility: "",
       salary_advance: "",
       special_advance: "",
@@ -723,7 +731,23 @@ export default function StaffInformation() {
 
     setBalanceForm({
       cbu: String(balanceRow?.cbu ?? s.cbu ?? ""),
-      cashbond: String(balanceRow?.cashbond ?? s.cashbond ?? ""),
+
+      cashbond: String(
+        balanceRow?.cashbond ?? s.cashbond ?? ""
+      ),
+
+      cashbond_limit:
+        balanceRow?.cashbond_limit ?? null,
+
+      cashbond_remaining:
+        balanceRow?.cashbond_remaining ?? null,
+
+      cashbond_limit_reached:
+        Boolean(balanceRow?.cashbond_limit_reached),
+
+      cashbond_above_limit:
+        Boolean(balanceRow?.cashbond_above_limit),
+
       utility: String(
         balanceRow?.utility ??
           balanceRow?.utility_charge ??
@@ -731,6 +755,7 @@ export default function StaffInformation() {
           s.utility ??
           ""
       ),
+
       utility_charge: String(
         balanceRow?.utility_charge ??
           balanceRow?.utility ??
@@ -738,14 +763,47 @@ export default function StaffInformation() {
           s.utility ??
           ""
       ),
-      salary_advance: String(balanceRow?.salary_advance ?? s.salary_advance ?? ""),
-      special_advance: String(balanceRow?.special_advance ?? s.special_advance ?? ""),
-      cash_advance: String(balanceRow?.cash_advance ?? s.cash_advance ?? ""),
-      motorcycle_loan: String(balanceRow?.motorcycle_loan ?? s.motorcycle_loan ?? ""),
-      pag_ibig_loan: String(balanceRow?.pag_ibig_loan ?? s.pag_ibig_loan ?? ""),
-      other_receivable: String(balanceRow?.other_receivable ?? s.other_receivable ?? ""),
+
+      salary_advance: String(
+        balanceRow?.salary_advance ??
+          s.salary_advance ??
+          ""
+      ),
+
+      special_advance: String(
+        balanceRow?.special_advance ??
+          s.special_advance ??
+          ""
+      ),
+
+      cash_advance: String(
+        balanceRow?.cash_advance ??
+          s.cash_advance ??
+          ""
+      ),
+
+      motorcycle_loan: String(
+        balanceRow?.motorcycle_loan ??
+          s.motorcycle_loan ??
+          ""
+      ),
+
+      pag_ibig_loan: String(
+        balanceRow?.pag_ibig_loan ??
+          s.pag_ibig_loan ??
+          ""
+      ),
+
+      other_receivable: String(
+        balanceRow?.other_receivable ??
+          s.other_receivable ??
+          ""
+      ),
+
       staff_accounts_payable: String(
-        balanceRow?.staff_accounts_payable ?? s.staff_accounts_payable ?? ""
+        balanceRow?.staff_accounts_payable ??
+          s.staff_accounts_payable ??
+          ""
       ),
     });
 
@@ -1223,6 +1281,7 @@ export default function StaffInformation() {
                   <PersonalBalancesStep
                     balanceForm={balanceForm}
                     onBalanceChange={onBalanceChange}
+                    cashbondLimit={balanceForm.cashbond_limit}
                   />
                 )}
               </div>
