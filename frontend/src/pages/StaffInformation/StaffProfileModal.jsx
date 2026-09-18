@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import api from "../../api/axiosClient";
-import PersonalBalancesStep from "./PersonalBalancesStep";
 import { safeJsonArray, toStr, fmtDate, toNum, money, displayName, loanDisplayDate, compute13thMonthBreakdown, } from "./staffInfoUtils";
 
 export default function StaffProfileModal({ 
