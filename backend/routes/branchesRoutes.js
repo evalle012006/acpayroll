@@ -332,10 +332,14 @@ router.put(
   requireAuth,
   requirePermission("branch", "edit"),
   async (req, res) => {
+    const client = await pool.connect();
+
     try {
       const id = toInt(req.params.id);
 
-      if (!id) return res.status(400).json({ message: "Invalid branch id" });
+      if (!id) {
+        return res.status(400).json({ message: "Invalid branch id" });
+      }
 
       const code = toStr(req.body?.code);
       const name = toStr(req.body?.name);
@@ -346,58 +350,134 @@ router.put(
       const latitude = toNumOrNull(req.body?.latitude);
       const longitude = toNumOrNull(req.body?.longitude);
 
-      if (!code) return res.status(400).json({ message: "Branch code is required" });
-      if (!name) return res.status(400).json({ message: "Branch name is required" });
-      if (!area) return res.status(400).json({ message: "Area is required" });
-      if (!region) return res.status(400).json({ message: "Region is required" });
-      if (!division) return res.status(400).json({ message: "Division is required" });
+      if (!code) {
+        return res.status(400).json({ message: "Branch code is required" });
+      }
 
-      const dup = await pool.query(
+      if (!name) {
+        return res.status(400).json({ message: "Branch name is required" });
+      }
+
+      if (!area) {
+        return res.status(400).json({ message: "Area is required" });
+      }
+
+      if (!region) {
+        return res.status(400).json({ message: "Region is required" });
+      }
+
+      if (!division) {
+        return res.status(400).json({ message: "Division is required" });
+      }
+
+      await client.query("BEGIN");
+
+      // -----------------------------------------------------
+      // CHECK DUPLICATE BRANCH CODE / NAME
+      // -----------------------------------------------------
+      const dup = await client.query(
         `
-        SELECT id
-        FROM public.branches
-        WHERE (
-          LOWER(TRIM(code)) = LOWER(TRIM($1))
-          OR LOWER(TRIM(name)) = LOWER(TRIM($2))
-        )
-          AND id <> $3
-        LIMIT 1
+          SELECT id
+          FROM public.branches
+          WHERE (
+            LOWER(TRIM(code)) = LOWER(TRIM($1))
+            OR LOWER(TRIM(name)) = LOWER(TRIM($2))
+          )
+            AND id <> $3
+          LIMIT 1
         `,
         [code, name, id]
       );
 
       if (dup.rowCount > 0) {
+        await client.query("ROLLBACK");
+
         return res.status(409).json({
           message: "Branch code or name already exists",
         });
       }
 
-      const upd = await pool.query(
+      // -----------------------------------------------------
+      // UPDATE BRANCH
+      // -----------------------------------------------------
+      const upd = await client.query(
         `
-        UPDATE public.branches
-        SET
-          code = $1,
-          name = $2,
-          area = $3,
-          region = $4,
-          division = $5,
-          address = $6,
-          latitude = $7,
-          longitude = $8
-        WHERE id = $9
-        RETURNING id, code, name, area, region, division, address, latitude, longitude
+          UPDATE public.branches
+          SET
+            code = $1,
+            name = $2,
+            area = $3,
+            region = $4,
+            division = $5,
+            address = $6,
+            latitude = $7,
+            longitude = $8
+          WHERE id = $9
+          RETURNING
+            id,
+            code,
+            name,
+            area,
+            region,
+            division,
+            address,
+            latitude,
+            longitude
         `,
-        [code, name, area, region, division, address, latitude, longitude, id]
+        [
+          code,
+          name,
+          area,
+          region,
+          division,
+          address,
+          latitude,
+          longitude,
+          id,
+        ]
       );
 
       if (upd.rowCount === 0) {
-        return res.status(404).json({ message: "Branch not found" });
+        await client.query("ROLLBACK");
+
+        return res.status(404).json({
+          message: "Branch not found",
+        });
       }
 
-      return res.json(upd.rows[0]);
+      // -----------------------------------------------------
+      // SYNC ALL STAFF ASSIGNED TO THIS BRANCH
+      // -----------------------------------------------------
+      const staffSync = await client.query(
+        `
+          UPDATE public.staff
+          SET
+            area = $1,
+            region = $2,
+            division = $3
+          WHERE branch_id = $4
+        `,
+        [area, region, division, id]
+      );
+
+      await client.query("COMMIT");
+
+      return res.json({
+        ...upd.rows[0],
+        staff_updated: staffSync.rowCount,
+      });
     } catch (e) {
-      console.error("PUT /api/branches/:id ERROR:", e.message);
-      return res.status(500).json({ message: "Server error" });
+      try {
+        await client.query("ROLLBACK");
+      } catch (_) {}
+
+      console.error("PUT /api/branches/:id ERROR:", e);
+
+      return res.status(500).json({
+        message: "Server error",
+      });
+    } finally {
+      client.release();
     }
   }
 );
