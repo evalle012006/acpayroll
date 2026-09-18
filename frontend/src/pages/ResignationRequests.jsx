@@ -45,7 +45,11 @@ const STATUS_RM = "Pending Regional Manager";
 const STATUS_AVP = "Pending Assistant Vice President";
 const STATUS_VP = "Pending Vice President";
 const STATUS_SVP = "Pending Senior Vice President";
+
 const STATUS_HR = "Pending HR Department";
+const STATUS_AVP_SIGNATURE = "Pending AVP Signature";
+const STATUS_HR_FINAL = "Pending HR Final Approval";
+
 const STATUS_APPROVED = "Approved";
 const STATUS_REJECTED = "Rejected";
 const STATUS_REVOKED = "Revoked";
@@ -57,13 +61,22 @@ export default function ResignationRequests() {
   const user = useMemo(() => readUser(), []);
   const role = norm(user?.role);
   const dept = norm(
-  user?.department ||
-  user?.department_name ||
-  user?.departmentName ||
-  user?.user_department ||
-  user?.dept ||
-  ""
-);
+    user?.department ||
+    user?.department_name ||
+    user?.departmentName ||
+    user?.user_department ||
+    user?.dept ||
+    ""
+  );
+
+  const isHRDepartment =
+    dept === "hr department";
+
+  const isAccountingDepartment =
+    dept === "accounting department";
+
+  const isIT =
+    role === "it";
 
 const isHRDeptManager =
   dept.includes("hr") &&
@@ -103,12 +116,20 @@ const isHRDeptManager =
     isSeniorVicePresident ||
     isPresident;
 
-  const canFinalAction = isHRDeptManager;
+  const canFinalAction =
+    isSystemAdmin ||
+    isHRDepartment;
 
     const canManageResignationReturn =
       isSystemAdmin ||
-      isAccounting ||
-      isHRDeptManager;
+      isHRDepartment ||
+      isAccountingDepartment;
+
+    const canDeleteAction =
+      isSystemAdmin ||
+      isIT ||
+      isHRDepartment ||
+      isAccountingDepartment;
   
   const [rows, setRows] = useState([]);
   const [staffList, setStaffList] = useState([]);
@@ -464,49 +485,37 @@ const isHRDeptManager =
     }));
   };
 
-  const uploadOnly = async (row) => {
-    const file = uploadFiles[row.id];
-
-    if (!file) {
-      return alert("Please choose a file first.");
-    }
-
-    try {
-      setProcessingId(`upload-${row.id}`);
-
-      const fd = new FormData();
-      fd.append("attachment", file);
-
-      await api.put(`/resignation-requests/${row.id}/upload`, fd, {
-        headers: { "Content-Type": "multipart/form-data" },
-      });
-
-      setUploadFiles((prev) => {
-        const copy = { ...prev };
-        delete copy[row.id];
-        return copy;
-      });
-
-      alert("File uploaded.");
-      await fetchAll();
-    } catch (err) {
-      alert(err?.response?.data?.message || "Failed to upload file.");
-    } finally {
-      setProcessingId("");
-    }
-  };
-
   const approveRequest = async (row) => {
     const file = uploadFiles[row.id];
+
+    const status = toStr(row.status);
+
+    const requiresFile =
+      isSystemAdmin ||
+      status === STATUS_HR ||
+      status === STATUS_AVP_SIGNATURE;
+
+    if (requiresFile && !file) {
+      return alert(
+        status === STATUS_AVP_SIGNATURE
+          ? "Please choose the signed file before AVP approval."
+          : "Please choose a file before approval."
+      );
+    }
 
     if (!window.confirm("Approve this resignation request?")) return;
 
     try {
       setProcessingId(`approve-${row.id}`);
 
+      // System Admin uses backend bypass for ANY pending stage.
       const shouldBypass =
         isSystemAdmin &&
-        toStr(row.status) !== STATUS_HR;
+        ![
+          STATUS_APPROVED,
+          STATUS_REJECTED,
+          STATUS_REVOKED,
+        ].includes(toStr(row.status));
 
       if (file) {
         const fd = new FormData();
@@ -516,19 +525,6 @@ const isHRDeptManager =
         if (shouldBypass) {
           fd.append("bypass", "true");
         }
-
-        await api.put(
-          `/resignation-requests/${row.id}/approve`,
-          fd,
-          {
-            headers: {
-              "Content-Type": "multipart/form-data",
-            },
-          }
-        );
-      } else if (shouldBypass) {
-        const fd = new FormData();
-        fd.append("bypass", "true");
 
         await api.put(
           `/resignation-requests/${row.id}/approve`,
@@ -553,9 +549,11 @@ const isHRDeptManager =
 
       await fetchAll();
     } catch (err) {
+      console.error("Approve resignation error:", err);
+
       alert(
         err?.response?.data?.message ||
-        "Failed to approve request."
+          "Failed to approve request."
       );
     } finally {
       setProcessingId("");
@@ -565,9 +563,11 @@ const isHRDeptManager =
   const isFinalApprovalRow = (row) => {
     if (!row) return false;
 
+    const status = toStr(row.status);
+
     return (
-      canFinalAction &&
-      toStr(row.status) === STATUS_HR
+      status === STATUS_HR_FINAL &&
+      (isSystemAdmin || isHRDepartment)
     );
   };
 
@@ -591,9 +591,11 @@ const isHRDeptManager =
       );
     }
 
-    if (!finalApproveForm.attachment) {
+    // Admin bypass requires a file.
+    // Normal HR Final Approval may reuse the AVP signed file.
+    if (isSystemAdmin && !finalApproveForm.attachment) {
       return alert(
-        "Final approved file is required."
+        "Attachment file is required for Admin final approval."
       );
     }
 
@@ -617,10 +619,18 @@ const isHRDeptManager =
         finalApproveForm.effective_date
       );
 
-      fd.append(
-        "attachment",
-        finalApproveForm.attachment
-      );
+      if (finalApproveForm.attachment) {
+        fd.append(
+          "attachment",
+          finalApproveForm.attachment
+        );
+      }
+
+      // IMPORTANT:
+      // Admin must enter the backend ADMIN BYPASS handler.
+      if (isSystemAdmin) {
+        fd.append("bypass", "true");
+      }
 
       await api.put(
         `/resignation-requests/${finalApproveRow.id}/approve`,
@@ -640,6 +650,11 @@ const isHRDeptManager =
 
       await fetchAll();
     } catch (err) {
+      console.error(
+        "Final approve resignation error:",
+        err
+      );
+
       alert(
         err?.response?.data?.message ||
           "Failed to final approve resignation request."
@@ -812,31 +827,8 @@ const submitReapplyRequest = async (e) => {
   };
 
   const canApproveRow = (row) => {
-    const status = toStr(row.status);
-
-    if (
-      (isAdmin || isHr || isAccounting || isSeniorVicePresident || isHRDeptManager) &&
-      status !== STATUS_APPROVED &&
-      status !== STATUS_REJECTED &&
-      status !== STATUS_REVOKED
-    ) {
-      return true;
-    }
-
-    if (isBranchManager && status === STATUS_BRANCH) return true;
-    if (isAreaManager && status === STATUS_AREA) return true;
-    if (isRegionalManager && status === STATUS_RM) return true;
-    if (isAssistantVicePresident && status === STATUS_AVP) return true;
-    if (isVicePresident && status === STATUS_VP) return true;
-    if (isSeniorVicePresident && status === STATUS_SVP) return true;
-
-    return false;
-  };
-
-  const canRejectRow = (row) => {
     const status = toStr(row?.status);
 
-    // Completed requests cannot be rejected
     if (
       status === STATUS_APPROVED ||
       status === STATUS_REJECTED ||
@@ -845,25 +837,129 @@ const submitReapplyRequest = async (e) => {
       return false;
     }
 
-    // Admin / IT / HR / Accounting can reject
-    // at any pending approval stage
+    // SYSTEM ADMIN:
+    // can bypass approve the CURRENT pending stage.
+    if (isSystemAdmin) {
+      return true;
+    }
+
+    // HR DEPARTMENT:
+    // 1st HR approval
+    // 2nd/final HR approval
     if (
-      isAdmin ||
-      isHr ||
-      isAccounting ||
-      isHRDeptManager
+      isHRDepartment &&
+      (
+        status === STATUS_HR ||
+        status === STATUS_HR_FINAL
+      )
     ) {
       return true;
     }
 
-    // Operation approvers can reject only
-    // when the request is at their approval stage
-    if (isBranchManager && status === STATUS_BRANCH) return true;
-    if (isAreaManager && status === STATUS_AREA) return true;
-    if (isRegionalManager && status === STATUS_RM) return true;
-    if (isAssistantVicePresident && status === STATUS_AVP) return true;
-    if (isVicePresident && status === STATUS_VP) return true;
-    if (isSeniorVicePresident && status === STATUS_SVP) return true;
+    // Normal management approval stages
+    if (isBranchManager && status === STATUS_BRANCH) {
+      return true;
+    }
+
+    if (isAreaManager && status === STATUS_AREA) {
+      return true;
+    }
+
+    if (isRegionalManager && status === STATUS_RM) {
+      return true;
+    }
+
+    // AVP has TWO possible stages:
+    // normal AVP approval + signed-file approval
+    if (
+      isAssistantVicePresident &&
+      (
+        status === STATUS_AVP ||
+        status === STATUS_AVP_SIGNATURE
+      )
+    ) {
+      return true;
+    }
+
+    if (isVicePresident && status === STATUS_VP) {
+      return true;
+    }
+
+    if (isSeniorVicePresident && status === STATUS_SVP) {
+      return true;
+    }
+
+    return false;
+  };
+
+  const canRejectRow = (row) => {
+    const status = toStr(row?.status);
+
+    if (
+      status === STATUS_APPROVED ||
+      status === STATUS_REJECTED ||
+      status === STATUS_REVOKED
+    ) {
+      return false;
+    }
+
+    // Admin / IT / HR Department / Accounting Department
+    // can reject any pending stage.
+    if (
+      isSystemAdmin ||
+      isIT ||
+      isHRDepartment ||
+      isAccountingDepartment
+    ) {
+      return true;
+    }
+
+    if (
+      isBranchManager &&
+      status === STATUS_BRANCH
+    ) {
+      return true;
+    }
+
+    if (
+      isAreaManager &&
+      status === STATUS_AREA
+    ) {
+      return true;
+    }
+
+    if (
+      isRegionalManager &&
+      status === STATUS_RM
+    ) {
+      return true;
+    }
+
+    // AVP can reject both:
+    // normal AVP approval and AVP signature stage.
+    if (
+      isAssistantVicePresident &&
+      (
+        status === STATUS_AVP ||
+        status === STATUS_AVP_SIGNATURE
+      )
+    ) {
+      return true;
+    }
+
+    if (
+      isVicePresident &&
+      status === STATUS_VP
+    ) {
+      return true;
+    }
+
+    if (
+      isSeniorVicePresident &&
+      status === STATUS_SVP
+    ) {
+      return true;
+    }
 
     return false;
   };
@@ -872,7 +968,7 @@ const submitReapplyRequest = async (e) => {
     const status = norm(row.status);
 
     return (
-      canFinalAction &&
+      canDeleteAction &&
       status !== norm(STATUS_APPROVED)
     );
   };
@@ -935,6 +1031,8 @@ const submitReapplyRequest = async (e) => {
     if (status === STATUS_VP) return "For VP";
     if (status === STATUS_SVP) return "For SVP";
     if (status === STATUS_HR) return "For HR Department";
+    if (status === STATUS_AVP_SIGNATURE) return "For AVP Signature";
+    if (status === STATUS_HR_FINAL) return "For HR Final Approval";
     if (status === STATUS_APPROVED) return "Approved";
     if (status === STATUS_REJECTED) return "Rejected";
     if (status === STATUS_REVOKED) return "Revoked";
@@ -967,38 +1065,54 @@ const submitReapplyRequest = async (e) => {
     const history = [
       {
         role: "Branch Manager",
-        approvedBy: row.branch_manager_approved_by_username,
+        approvedBy: row.branch_manager_approved_by_name,
         approvedAt: row.branch_manager_approved_at,
       },
       {
         role: "Area Manager",
-        approvedBy: row.area_manager_approved_by_username,
+        approvedBy: row.area_manager_approved_by_name,
         approvedAt: row.area_manager_approved_at,
       },
       {
         role: "Regional Manager",
-        approvedBy: row.regional_manager_approved_by_username,
+        approvedBy: row.regional_manager_approved_by_name,
         approvedAt: row.regional_manager_approved_at,
       },
       {
         role: "Assistant Vice President",
-        approvedBy: row.avp_approved_by_username,
+        approvedBy: row.avp_approved_by_name,
         approvedAt: row.avp_approved_at,
       },
       {
         role: "Vice President",
-        approvedBy: row.vp_approved_by_username,
+        approvedBy: row.vp_approved_by_name,
         approvedAt: row.vp_approved_at,
       },
       {
         role: "Senior Vice President",
-        approvedBy: row.svp_approved_by_username,
+        approvedBy: row.svp_approved_by_name,
         approvedAt: row.svp_approved_at,
       },
+
+      // NEW WORKFLOW
       {
-        role: "Final Approval",
-        approvedBy: row.approved_by_username,
-        approvedAt: row.approved_at,
+        role: "HR Department - Initial Approval",
+        approvedBy: row.hr_initial_approved_by_name,
+        approvedAt: row.hr_initial_approved_at,
+      },
+      {
+        role: "AVP - Signature Approval",
+        approvedBy: row.avp_signature_approved_by_name,
+        approvedAt: row.avp_signature_approved_at,
+      },
+      {
+        role: "HR Department - Final Approval",
+        approvedBy:
+          row.hr_final_approved_by_name ||
+          row.approved_by_name,
+        approvedAt:
+          row.hr_final_approved_at ||
+          row.approved_at,
       },
     ];
 
@@ -1042,7 +1156,7 @@ const submitReapplyRequest = async (e) => {
               <b>
                 Branch Manager → Area Manager → Regional Manager →
                 Assistant Vice President → Vice President →
-                Admin / HR / Accounting
+                HR Department → AVP Signature → HR Final Approval
               </b>
             </div>
           </div>
@@ -1270,19 +1384,6 @@ const submitReapplyRequest = async (e) => {
                                   }
                                 />
                               </label>
-
-                              {selectedFile&&(
-                                <button
-                                  className="reg-action-btn reg-action-download"
-                                  type="button"
-                                  onClick={()=>uploadOnly(row)}
-                                  disabled={processingId===`upload-${row.id}`}
-                                >
-                                  {processingId===`upload-${row.id}`
-                                    ?"Uploading..."
-                                    :"Upload File"}
-                                </button>
-                              )}
 
                               <button
                                 className="reg-action-btn reg-action-approve"
@@ -1817,7 +1918,9 @@ const submitReapplyRequest = async (e) => {
                 </div>
 
                 <div className="form-group full">
-                  <label>Final Approved File</label>
+                  <label>
+                    Final Approved File (Optional)
+                  </label>
 
                   <input
                     type="file"
@@ -1828,8 +1931,11 @@ const submitReapplyRequest = async (e) => {
                           e.target.files?.[0] || null,
                       }))
                     }
-                    required
                   />
+
+                  <small>
+                    Leave blank to use the AVP signed file.
+                  </small>
                 </div>
               </div>
 
