@@ -94,6 +94,8 @@ export default function StaffInformation() {
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("All");
+  const [educationFilter, setEducationFilter] = useState("All");
+  const [courseFilter, setCourseFilter] = useState("");
 
   const [pageSize, setPageSize] = useState(25);
   const [page, setPage] = useState(1);
@@ -477,6 +479,51 @@ export default function StaffInformation() {
     };
   }, [viewStaff, editStaff]);
 
+  const getEducationEntries = (education) => {
+    if (!education) return [];
+
+    if (Array.isArray(education)) {
+      return education;
+    }
+
+    if (typeof education === "string") {
+      try {
+        const parsed = JSON.parse(education);
+        return Array.isArray(parsed) ? parsed : [];
+      } catch {
+        return [];
+      }
+    }
+
+    return [];
+  };
+
+  const getEducationText = (s) => {
+    return getEducationEntries(s?.education)
+      .map((edu) =>
+        [
+          edu?.level,
+          edu?.education_level,
+          edu?.school_level,
+          edu?.school,
+          edu?.school_name,
+          edu?.course,
+          edu?.degree,
+          edu?.year_graduated,
+        ]
+          .filter(Boolean)
+          .join(" ")
+      )
+      .join(" ");
+  };
+
+  const getCourseText = (s) => {
+    return getEducationEntries(s?.education)
+      .map((edu) => edu?.course || "")
+      .filter(Boolean)
+      .join(" ");
+  };
+
   const filteredStaff = useMemo(() => {
     const q = norm(search);
 
@@ -532,7 +579,26 @@ export default function StaffInformation() {
     }
 
       const st = String(s.status || "Active");
-      if (statusFilter !== "All" && st !== statusFilter) return false;
+
+      if (statusFilter !== "All" && st !== statusFilter) {
+        return false;
+      }
+
+      if (educationFilter !== "All") {
+        const educationText = norm(getEducationText(s));
+
+        if (!educationText.includes(norm(educationFilter))) {
+          return false;
+        }
+      }
+
+      if (courseFilter.trim()) {
+        const courseText = norm(getCourseText(s));
+
+        if (!courseText.includes(norm(courseFilter))) {
+          return false;
+        }
+      }
 
       if (!q) return true;
 
@@ -561,6 +627,7 @@ export default function StaffInformation() {
         s.province,
         s.contact,
         s.email,
+        getEducationText(s),
       ]
         .map((x) => norm(x))
         .join(" ");
@@ -568,19 +635,21 @@ export default function StaffInformation() {
       return hay.includes(q);
     });
       }, [
-      staff,
-      search,
-      statusFilter,
-      role,
-      user,
-      sameBranch,
-      findBranch,
-      isAccountingDepartmentUser,
-      isHrDepartmentUser,
-      isFullViewDepartmentUser,
-      isProductionLogisticDepartmentUser,
-      userDepartment,
-    ]);
+        staff,
+        search,
+        statusFilter,
+        educationFilter,
+        courseFilter,
+        role,
+        user,
+        sameBranch,
+        findBranch,
+        isAccountingDepartmentUser,
+        isHrDepartmentUser,
+        isFullViewDepartmentUser,
+        isProductionLogisticDepartmentUser,
+        userDepartment,
+      ]);
 
   const totalPages = Math.max(1, Math.ceil(filteredStaff.length / pageSize));
 
@@ -591,7 +660,7 @@ export default function StaffInformation() {
 
   useEffect(() => {
     setPage(1);
-  }, [search, statusFilter, pageSize]);
+  }, [search, statusFilter, educationFilter, courseFilter, pageSize]);
 
   useEffect(() => {
     if (page > totalPages) setPage(totalPages);
@@ -1000,6 +1069,30 @@ export default function StaffInformation() {
 
           <select
             className="input"
+            value={educationFilter}
+            onChange={(e) => setEducationFilter(e.target.value)}
+            style={{ width: 190 }}
+          >
+            <option value="All">All Education</option>
+            <option value="Elementary">Elementary</option>
+            <option value="High School">High School</option>
+            <option value="Senior High School">Senior High School</option>
+            <option value="Vocational">Vocational</option>
+            <option value="College">College</option>
+            <option value="Post Graduate">Post Graduate</option>
+          </select>
+
+          <input
+            className="input"
+            type="text"
+            placeholder="Filter by course..."
+            value={courseFilter}
+            onChange={(e) => setCourseFilter(e.target.value)}
+            style={{ width: 210 }}
+          />
+
+          <select
+            className="input"
             value={pageSize}
             onChange={(e) => setPageSize(Number(e.target.value))}
             style={{ width: 130 }}
@@ -1032,6 +1125,9 @@ export default function StaffInformation() {
             onClick={() => {
               setSearch("");
               setSearchInput("");
+              setStatusFilter("All");
+              setEducationFilter("All");
+              setCourseFilter("");
             }}
           >
             Clear
