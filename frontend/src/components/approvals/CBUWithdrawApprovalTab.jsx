@@ -612,9 +612,29 @@ export default function CBUWithdrawApprovalTab() {
     setShowEmployeeDropdown(false);
   };
 
-  const handleEmployeeSelect = (employeeId) => {
-    const emp = searchableStaff.find((s) => String(s.id) === String(employeeId));
+  const handleEmployeeSelect = async (employeeId) => {
+    const emp = searchableStaff.find(
+      (s) => String(s.id) === String(employeeId)
+    );
+
+    if (!emp) return;
+
     const display = staffName(emp);
+
+    let currentCbu = 0;
+
+    try {
+      if (emp?.employee_no) {
+        const balanceRes = await api.get(
+          `/staff-balances/${encodeURIComponent(emp.employee_no)}`
+        );
+
+        currentCbu = Number(balanceRes.data?.cbu ?? 0);
+      }
+    } catch (err) {
+      console.error("Failed to load current CBU balance:", err);
+      currentCbu = 0;
+    }
 
     setForm((prev) => ({
       ...prev,
@@ -624,19 +644,19 @@ export default function CBUWithdrawApprovalTab() {
       branch: emp?._branch || emp?.branch_name || emp?.branch || "",
       position: emp?.position || "",
       department: emp?.department || "",
-      cbu_balance:
-        emp?.cbu_balance ??
-        emp?.staff_balance_cbu ??
-        emp?.current_cbu ??
-        emp?.staff_cbu ??
-        emp?.cbu ??
-        "",
+
+      // Current CBU from staff_balances
+      cbu_balance: currentCbu,
+
       date_created: todayDate(),
     }));
 
     setEmployeeSearch(
-      emp ? `${emp.employee_no ? `${emp.employee_no} - ` : ""}${display}` : ""
+      emp
+        ? `${emp.employee_no ? `${emp.employee_no} - ` : ""}${display}`
+        : ""
     );
+
     setShowEmployeeDropdown(false);
   };
 
