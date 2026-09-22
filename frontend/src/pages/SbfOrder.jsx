@@ -81,6 +81,7 @@ export default function SbfOrder() {
   const itManager = isItDepartment && managerRole;
   const hrManager = isHrDepartment && managerRole;
   const accountingManager = isAccountingDepartment && managerRole;
+  const treadAvp = isTreadDepartment && isAssistantVicePresident;
 
   /*
     OPERATION:
@@ -130,6 +131,7 @@ export default function SbfOrder() {
     accountingManager ||
     itManager ||
     hrManager ||
+    treadAvp ||
     operationCanCreate;
 
   const canApprove =
