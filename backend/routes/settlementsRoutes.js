@@ -47,9 +47,17 @@ const getUserBranchId = (req) => {
   return toInt(
     req.user?.branch_id ??
       req.user?.branchId ??
-      req.user?.branch?.id
+      req.user?.branch?.id ??
+      req.user?.staff?.branch_id
   );
 };
+
+const getUserBranchCode = (req) =>
+  toStr(
+    req.user?.branch_code ??
+      req.user?.branchCode ??
+      req.user?.branch?.code
+  );
 
 const getUserArea = (req) => toStr(req.user?.area);
 const getUserRegion = (req) => toStr(req.user?.region);
@@ -67,9 +75,9 @@ const getUserDepartment = (req) =>
 const getUserRole = (req) =>
   toStr(req.user?.role || req.user?.position);
 
-// ============================================================
-// DEPARTMENT HELPERS
-// ============================================================
+  // ============================================================
+  // DEPARTMENT HELPERS
+  // ============================================================
 
 const isHRDepartmentUser = (req) => {
   const dept = norm(getUserDepartment(req));
@@ -81,6 +89,12 @@ const isHRDepartmentUser = (req) => {
     dept === "human resources department"
   );
 };
+
+const isActingBranchManager = (req) =>
+  norm(getUserRole(req)) === "acting branch manager";
+
+const isSettlementBranchManager = (req) =>
+  isBranchManager(req) || isActingBranchManager(req);
 
 const isAccountingDepartmentUser = (req) => {
   const dept = norm(getUserDepartment(req));
@@ -123,7 +137,7 @@ const canViewSettlements = (req) =>
   isHRDepartmentUser(req) ||
   isAccountingDepartmentUser(req) ||
   isTread(req) ||
-  isBranchManager(req) ||
+  isSettlementBranchManager(req) ||
   isAreaManager(req) ||
   isRegionalManager(req) ||
   isAssistantVicePresident(req) ||
@@ -149,20 +163,65 @@ const canActAsHR = (req) => {
   );
 };
 
-const isSelectedSettlementBranch = (req, settlement) => {
-  const userBranchId = getUserBranchId(req);
+const isSelectedSettlementBranch = async (req, settlement) => {
+  let userBranchId = getUserBranchId(req);
+  let userBranchCode = getUserBranchCode(req);
+
   const settlementBranchId = toInt(
     settlement?.settlement_branch_id
   );
 
-  if (!userBranchId || !settlementBranchId) {
-    return false;
+  const settlementBranchCode = toStr(
+    settlement?.settlement_branch_code
+  );
+
+  // If branch is missing from req.user/JWT,
+  // resolve it from the deployed users table.
+  if (!userBranchId && !userBranchCode) {
+    const userId = getUserId(req);
+
+    if (userId) {
+      const result = await pool.query(
+        `
+        SELECT
+          u.branch_id,
+          b.code AS branch_code
+        FROM public.users u
+        LEFT JOIN public.branches b
+          ON b.id = u.branch_id
+        WHERE u.id = $1
+        LIMIT 1
+        `,
+        [userId]
+      );
+
+      if (result.rowCount > 0) {
+        userBranchId = toInt(result.rows[0].branch_id);
+        userBranchCode = toStr(result.rows[0].branch_code);
+      }
+    }
   }
 
-  return userBranchId === settlementBranchId;
+  if (
+    userBranchId &&
+    settlementBranchId &&
+    userBranchId === settlementBranchId
+  ) {
+    return true;
+  }
+
+  if (
+    userBranchCode &&
+    settlementBranchCode &&
+    norm(userBranchCode) === norm(settlementBranchCode)
+  ) {
+    return true;
+  }
+
+  return false;
 };
 
-const canActAtSettlementStage = (req, settlement) => {
+const canActAtSettlementStage = async (req, settlement) => {
   const stage = norm(settlement?.approval_stage);
 
   if (stage === "hr_initial") {
@@ -170,7 +229,7 @@ const canActAtSettlementStage = (req, settlement) => {
   }
 
   if (stage === "branch") {
-    return isSelectedSettlementBranch(req, settlement);
+    return await isSelectedSettlementBranch(req, settlement);
   }
 
   if (stage === "hr_final") {
@@ -330,8 +389,9 @@ async function canAccessSettlement(req, settlement) {
 
   // Branch Manager:
   // access based on selected settlement branch.
-  if (isBranchManager(req)) {
-    return isSelectedSettlementBranch(req, settlement);
+
+  if (isSettlementBranchManager(req)) {
+    return await isSelectedSettlementBranch(req, settlement);
   }
 
   const staffId = toInt(settlement.staff_id);
@@ -438,10 +498,35 @@ router.get(
       // settlement_branch_id is compared with user.branch_id.
       // ------------------------------------------------------
 
-      if (isBranchManager(req)) {
-        const branchId = getUserBranchId(req);
+      if (isSettlementBranchManager(req)) {
+        const userId = getUserId(req);
+        let branchId = getUserBranchId(req);
+        let branchCode = getUserBranchCode(req);
 
-        if (!branchId) {
+        // If branch information is not included in req.user/JWT,
+        // get it directly from the deployed users table.
+        if ((!branchId && !branchCode) && userId) {
+          const userResult = await pool.query(
+            `
+            SELECT
+              u.branch_id,
+              b.code AS branch_code
+            FROM public.users u
+            LEFT JOIN public.branches b
+              ON b.id = u.branch_id
+            WHERE u.id = $1
+            LIMIT 1
+            `,
+            [userId]
+          );
+
+          if (userResult.rowCount > 0) {
+            branchId = toInt(userResult.rows[0].branch_id);
+            branchCode = toStr(userResult.rows[0].branch_code);
+          }
+        }
+
+        if (!branchId && !branchCode) {
           return res.json([]);
         }
 
@@ -449,13 +534,32 @@ router.get(
           `
           SELECT *
           FROM public.settlements
-          WHERE settlement_branch_id = $1
+          WHERE
+            ($1::bigint IS NOT NULL AND settlement_branch_id = $1)
+            OR
+            (
+              NULLIF(TRIM($2), '') IS NOT NULL
+              AND LOWER(TRIM(COALESCE(settlement_branch_code, '')))
+                  = LOWER(TRIM($2))
+            )
           ORDER BY id DESC
           `,
-          [branchId]
+          [
+            branchId || null,
+            branchCode || null,
+          ]
         );
 
-        return res.json(r.rows);
+        const rows = r.rows.map((row) => ({
+          ...row,
+
+          // Backend is the authority for whether this branch
+          // can act on the current settlement stage.
+          can_act_current_stage:
+            norm(row.approval_stage) === "branch",
+        }));
+
+        return res.json(rows);
       }
 
       // ------------------------------------------------------
@@ -1238,10 +1342,10 @@ router.put(
       }
 
       if (
-        !canActAtSettlementStage(
+        !(await canActAtSettlementStage(
           req,
           settlement
-        )
+        ))
       ) {
         await client.query("ROLLBACK");
         removeUploadedFile(req.file);
@@ -1535,10 +1639,10 @@ router.put(
       }
 
       if (
-        !canActAtSettlementStage(
+        !(await canActAtSettlementStage(
           req,
           settlement
-        )
+        ))
       ) {
         await client.query("ROLLBACK");
 

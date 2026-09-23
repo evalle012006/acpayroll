@@ -91,6 +91,7 @@ export default function Soa() {
     isAccountingDepartment ||
     isTread ||
     isBranchManager ||
+    isActingBranchManager ||
     isAreaManager ||
     isRegionalManager ||
     isAssistantVicePresident ||
@@ -172,27 +173,10 @@ export default function Soa() {
 
   const norm = (v) => toStr(v).toLowerCase();
 
-  const currentUserBranchId = Number(
-    user?.branch_id ??
-    user?.branchId ??
-    user?.branch?.id ??
-    0
-  );
-
   const canActAsHr =
     isAdmin ||
     isHr ||
     isHrDepartment;
-
-  const isSelectedSettlementBranch = (row) => {
-    const settlementBranchId = Number(row?.settlement_branch_id || 0);
-
-    return (
-      currentUserBranchId > 0 &&
-      settlementBranchId > 0 &&
-      currentUserBranchId === settlementBranchId
-    );
-  };
 
   const canActAtSettlementStage = (row) => {
     if (!row) return false;
@@ -215,7 +199,7 @@ export default function Soa() {
     }
 
     if (stage === "branch") {
-      return isSelectedSettlementBranch(row);
+      return row?.can_act_current_stage === true;
     }
 
     if (stage === "hr_final") {
