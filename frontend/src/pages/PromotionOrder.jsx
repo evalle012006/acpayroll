@@ -64,8 +64,8 @@ const STAGE_LABELS = {
   "senior vice president": "Senior Vice President",
   tread: "TREAD Department",
 
-  "admin order": "HR Admin Order",
-  "contract signing": "AVP / Contract Signing",
+  "admin order": "HR Department",
+  "contract signing": "AVP / Upload Signed Contract by the Staff",
   "hr final": "HR Final",
 
   approved: "Approved",
@@ -1038,9 +1038,10 @@ export default function PromotionOrder() {
     if (fileRequiredStages.includes(stage) && !file) {
       let message = "Please upload the required promotion file before approving.";
 
-      if (stage === "admin order") {message = "Please upload the Admin Order file before approving.";
+      if (stage === "admin order") {
+        message = "HR Department must upload the Receiving Copy before approving.";
       } else if (stage === "contract signing") {
-        message = "AVP must upload the employee-signed Admin Order before approving.";
+        message = "AVP must upload the Signed Contract by the Staff before approving.";
       } else if (stage === "hr final") {
         message =
           "HR must upload the final approved promotion file before final approval.";
@@ -1305,11 +1306,11 @@ export default function PromotionOrder() {
     }
 
     if (stage === "admin order") {
-      return "Upload Admin Order + Approve";
+      return "Upload Receiving Copy + Approve";
     }
 
     if (stage === "contract signing") {
-      return "Upload Employee-Signed File + Approve";
+      return "Upload Signed Contract + Approve";
     }
 
     if (stage === "hr final") {
@@ -1583,8 +1584,8 @@ export default function PromotionOrder() {
                               {(stageRequiresFile(o) || isAdmin) && (
                                 <label className="po-mini-btn po-upload-btn">
                                   {approvalFiles[o.id]?.name
-                                    ? "Change File"
-                                    : "Upload File"}
+                                    ? "Change Receiving Copy"
+                                    : "Upload Receiving Copy"}
 
                                   <input
                                     type="file"
