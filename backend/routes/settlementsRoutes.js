@@ -535,12 +535,16 @@ router.get(
           SELECT *
           FROM public.settlements
           WHERE
-            ($1::bigint IS NOT NULL AND settlement_branch_id = $1)
+            (
+              NULLIF(TRIM($1::text), '') IS NOT NULL
+              AND TRIM(COALESCE(settlement_branch_id::text, ''))
+                  = TRIM($1::text)
+            )
             OR
             (
-              NULLIF(TRIM($2), '') IS NOT NULL
-              AND LOWER(TRIM(COALESCE(settlement_branch_code, '')))
-                  = LOWER(TRIM($2))
+              NULLIF(TRIM($2::text), '') IS NOT NULL
+              AND LOWER(TRIM(COALESCE(settlement_branch_code::text, '')))
+                  = LOWER(TRIM($2::text))
             )
           ORDER BY id DESC
           `,
