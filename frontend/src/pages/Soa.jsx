@@ -77,6 +77,8 @@ export default function Soa() {
     isIt ||
     isHr ||
     isAccounting ||
+    isBranchManager ||
+    isActingBranchManager ||
     isITDepartmentManager ||
     isAccountingDepartment;
 
