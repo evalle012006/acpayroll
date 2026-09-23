@@ -184,11 +184,12 @@ const isSelectedSettlementBranch = async (req, settlement) => {
       const result = await pool.query(
         `
         SELECT
-          u.branch_id,
+          b.id AS branch_id,
           b.code AS branch_code
         FROM public.users u
         LEFT JOIN public.branches b
-          ON b.id = u.branch_id
+          ON LOWER(TRIM(b.code::text))
+            = LOWER(TRIM(u.branch_id::text))
         WHERE u.id = $1
         LIMIT 1
         `,
@@ -509,11 +510,12 @@ router.get(
           const userResult = await pool.query(
             `
             SELECT
-              u.branch_id,
+              b.id AS branch_id,
               b.code AS branch_code
             FROM public.users u
             LEFT JOIN public.branches b
-              ON b.id = u.branch_id
+              ON LOWER(TRIM(b.code::text))
+                = LOWER(TRIM(u.branch_id::text))
             WHERE u.id = $1
             LIMIT 1
             `,
