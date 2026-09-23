@@ -66,7 +66,7 @@ const STAGE_LABELS = {
 
   "admin order": "HR Department",
   "contract signing": "AVP / Upload Signed Contract by the Staff",
-  "hr final": "HR Final",
+  "hr final": "Waiting for HR to Receive",
 
   approved: "Approved",
   rejected: "Rejected",
@@ -284,7 +284,7 @@ const getApprovalHistory = (o) => {
     {
       key: "hr_final",
       stage: "hr final",
-      label: "HR Final",
+      label: "HR Received",
       status: o.hr_final_status,
       approvedBy: o.hr_final_approved_by_name,
       approvedAt: o.hr_final_approved_at,
@@ -1032,19 +1032,15 @@ export default function PromotionOrder() {
       "tread",
       "admin order",
       "contract signing",
-      "hr final",
     ];
 
     if (fileRequiredStages.includes(stage) && !file) {
       let message = "Please upload the required promotion file before approving.";
 
       if (stage === "admin order") {
-        message = "HR Department must upload the Receiving Copy before approving.";
+        message = "HR Department must upload the Admin Order before approving.";
       } else if (stage === "contract signing") {
-        message = "AVP must upload the Signed Contract by the Staff before approving.";
-      } else if (stage === "hr final") {
-        message =
-          "HR must upload the final approved promotion file before final approval.";
+        message = "AVP must upload the Receiving Copy before approving.";
       }
 
       alert(message);
@@ -1270,7 +1266,6 @@ export default function PromotionOrder() {
       "tread",
       "admin order",
       "contract signing",
-      "hr final",
     ].includes(stage);
   };
 
@@ -1306,15 +1301,15 @@ export default function PromotionOrder() {
     }
 
     if (stage === "admin order") {
-      return "Upload Receiving Copy + Approve";
+      return "Approve";
     }
 
     if (stage === "contract signing") {
-      return "Upload Signed Contract + Approve";
+      return "Approve";
     }
 
     if (stage === "hr final") {
-      return "HR Final Upload + Approve";
+      return "Received";
     }
 
     return "Upload + Approve";
@@ -1344,7 +1339,8 @@ export default function PromotionOrder() {
 
               <strong>
                 BM → AM → RM → AVP → VP → TREAD →
-                HR Admin Order → AVP / Employee Signing → HR Final
+                HR Department → AVP / Upload Signed Contract by the Staff →
+                Waiting for HR to Receive → Completed
               </strong>
             </div>
           </div>
@@ -1584,8 +1580,16 @@ export default function PromotionOrder() {
                               {(stageRequiresFile(o) || isAdmin) && (
                                 <label className="po-mini-btn po-upload-btn">
                                   {approvalFiles[o.id]?.name
-                                    ? "Change Receiving Copy"
-                                    : "Upload Receiving Copy"}
+                                    ? norm(o.approval_stage) === "admin order"
+                                      ? "Change Admin Order"
+                                      : norm(o.approval_stage) === "contract signing"
+                                      ? "Change Receiving Copy"
+                                      : "Change File"
+                                    : norm(o.approval_stage) === "admin order"
+                                    ? "Upload Admin Order"
+                                    : norm(o.approval_stage) === "contract signing"
+                                    ? "Upload Receiving Copy"
+                                    : "Upload File"}
 
                                   <input
                                     type="file"

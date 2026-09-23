@@ -1550,7 +1550,8 @@ router.put(
 
       // ============================================================
       // FILE REQUIREMENTS
-      // EVERY APPROVAL STAGE MUST UPLOAD A FILE
+      // FILE REQUIRED FOR APPROVAL / DOCUMENT UPLOAD STAGES
+      // HR FINAL / RECEIVED DOES NOT REQUIRE A FILE
       // ============================================================
 
       const fileRequiredStages = [
@@ -1563,7 +1564,6 @@ router.put(
         "tread",
         "admin order",
         "contract signing",
-        "hr final",
       ];
 
       if (
@@ -1593,9 +1593,12 @@ router.put(
         req.user?.id ? Number(req.user.id) : null;
 
       // ============================================================
-      // HR FINAL
+      // HR RECEIVED / COMPLETED
+      // No additional file is required here.
+      // Once HR confirms receipt, the promotion is completed
+      // and the actual staff record is updated.
       // ============================================================
-      
+
       if (currentStage === "hr final") {
         if (
           !isHrDepartmentUser(req) &&
@@ -1605,64 +1608,53 @@ router.put(
 
           return res.status(403).json({
             message:
-              "Only HR Department or an authorized bypass user can perform final promotion approval.",
+              "Only HR Department or an authorized bypass user can confirm receipt of the promotion.",
           });
         }
 
         await client.query(
           `
-          UPDATE public.promotion_orders
-          SET
-            status = 'Approved',
+            UPDATE public.promotion_orders
+            SET
+              status = 'Approved',
 
-            hr_final_status = 'Approved',
-            ${historyColumns.approvedBy} = $2,
-            ${historyColumns.approvedAt} = NOW(),
+              hr_final_status = 'Received',
+              ${historyColumns.approvedBy} = $2,
+              ${historyColumns.approvedAt} = NOW(),
 
-            final_status = 'Approved',
-            final_approved_by = $2,
-            final_approved_at = NOW(),
+              final_status = 'Approved',
+              final_approved_by = $2,
+              final_approved_at = NOW(),
 
-            approved_by = $2,
-            approved_at = NOW(),
+              approved_by = $2,
+              approved_at = NOW(),
 
-            rejected_by = NULL,
-            rejected_at = NULL,
-            rejection_reason = NULL,
+              rejected_by = NULL,
+              rejected_at = NULL,
+              rejection_reason = NULL,
 
-            approval_stage = NULL,
+              approval_stage = NULL
 
-            hr_final_attachment_path = $3,
-            hr_final_attachment_name = $4,
-            hr_final_attachment_mime = $5,
-
-            approved_attachment_path = $3,
-            approved_attachment_name = $4,
-            approved_attachment_mime = $5
-
-          WHERE id = $1
+            WHERE id = $1
           `,
           [
             id,
             userId,
-            latestPath,
-            latestName,
-            latestMime,
           ]
         );
 
         // ========================================================
-        // ONLY HR FINAL CHANGES THE ACTUAL STAFF RECORD
+        // ONLY HR RECEIVED / COMPLETED CHANGES ACTUAL STAFF RECORD
         // ========================================================
         await client.query(
           `
-          UPDATE public.staff
-          SET
-            "position" = $1,
-            salary = $2,
-            ecola = $3,
-            branch_id = $4
-          WHERE id = $5
+            UPDATE public.staff
+            SET
+              "position" = $1,
+              salary = $2,
+              ecola = $3,
+              branch_id = $4
+            WHERE id = $5
           `,
           [
             order.new_position,
@@ -1679,8 +1671,9 @@ router.put(
 
         return res.json({
           message:
-            "Promotion finalized by HR. Staff position, salary, ECOLA, and branch have been updated.",
+            "Promotion received by HR and completed. Staff position, salary, ECOLA, and branch have been updated.",
           status: "Approved",
+          hr_final_status: "Received",
           approval_stage: null,
         });
       }
@@ -1853,7 +1846,7 @@ router.put(
 
       if (responseStage === "hr final") {
         message =
-          "Signed contract uploaded. Waiting for HR final approval.";
+          "Receiving Copy uploaded. Waiting for HR to confirm receipt.";
       }
 
       // IMPORTANT:
