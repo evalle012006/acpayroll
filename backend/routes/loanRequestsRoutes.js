@@ -254,6 +254,81 @@ const getRawApprovalChain = (staff) => {
     ];
   }
 
+  // =====================================================
+  // IT DEPARTMENT LOAN APPROVAL CHAIN
+  //
+  // Loan Officer:
+  // BM -> AM -> RM -> AVP -> Accounting
+  //
+  // AVP applicant:
+  // SVP -> Accounting
+  // =====================================================
+
+  const isITDepartment =
+    dept === "it" ||
+    dept === "it department" ||
+    dept === "information technology" ||
+    dept === "information technology department";
+
+  if (isITDepartment) {
+    // SVP applicant
+    // -> Accounting Final
+    if (isSvpPos(pos)) {
+      return [
+        ACCOUNTING_FINAL,
+      ];
+    }
+
+    // AVP applicant
+    // -> SVP -> Accounting Final
+    if (isAvpPos(pos)) {
+      return [
+        "senior vice president",
+        ACCOUNTING_FINAL,
+      ];
+    }
+
+    // RM applicant
+    // -> AVP -> Accounting Final
+    if (isRegionalManagerPos(pos)) {
+      return [
+        "assistant vice president",
+        ACCOUNTING_FINAL,
+      ];
+    }
+
+    // AM applicant
+    // -> RM -> AVP -> Accounting Final
+    if (isAreaManagerPos(pos)) {
+      return [
+        "regional manager",
+        "assistant vice president",
+        ACCOUNTING_FINAL,
+      ];
+    }
+
+    // BM applicant
+    // -> AM -> RM -> AVP -> Accounting Final
+    if (isBranchManagerPos(pos)) {
+      return [
+        "area manager",
+        "regional manager",
+        "assistant vice president",
+        ACCOUNTING_FINAL,
+      ];
+    }
+
+    // Loan Officer / regular IT staff
+    // -> BM -> AM -> RM -> AVP -> Accounting Final
+    return [
+      "branch manager",
+      "area manager",
+      "regional manager",
+      "assistant vice president",
+      ACCOUNTING_FINAL,
+    ];
+  }
+
   // BACK OFFICE APPROVAL CHAIN
   //
   // Regular staff / below BM:

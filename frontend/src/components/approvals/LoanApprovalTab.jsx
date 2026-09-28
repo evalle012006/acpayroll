@@ -258,6 +258,83 @@ const getDynamicApprovalChain = (item) => {
     ];
   }
 
+    // =====================================================
+    // IT DEPARTMENT LOAN APPROVAL CHAIN
+    //
+    // Loan Officer:
+    // BM -> AM -> RM -> AVP -> Accounting
+    //
+    // AVP applicant:
+    // SVP -> Accounting
+    // =====================================================
+
+    const dept = norm(department);
+
+    const isITDepartment =
+      dept === "it" ||
+      dept === "it department" ||
+      dept === "information technology" ||
+      dept === "information technology department";
+
+    if (isITDepartment) {
+      // SVP applicant
+      // -> Accounting Final
+      if (isSvpPos(position)) {
+        return [
+          ACCOUNTING_FINAL,
+        ];
+      }
+
+      // AVP applicant
+      // -> SVP -> Accounting Final
+      if (isAvpPos(position)) {
+        return [
+          "senior vice president",
+          ACCOUNTING_FINAL,
+        ];
+      }
+
+      // RM applicant
+      // -> AVP -> Accounting Final
+      if (isRegionalManagerPos(position)) {
+        return [
+          "assistant vice president",
+          ACCOUNTING_FINAL,
+        ];
+      }
+
+      // AM applicant
+      // -> RM -> AVP -> Accounting Final
+      if (isAreaManagerPos(position)) {
+        return [
+          "regional manager",
+          "assistant vice president",
+          ACCOUNTING_FINAL,
+        ];
+      }
+
+      // BM applicant
+      // -> AM -> RM -> AVP -> Accounting Final
+      if (isBranchManagerPos(position)) {
+        return [
+          "area manager",
+          "regional manager",
+          "assistant vice president",
+          ACCOUNTING_FINAL,
+        ];
+      }
+
+      // Loan Officer / regular IT staff
+      // -> BM -> AM -> RM -> AVP -> Accounting Final
+      return [
+        "branch manager",
+        "area manager",
+        "regional manager",
+        "assistant vice president",
+        ACCOUNTING_FINAL,
+      ];
+    }
+
   if (isSvpPos(position)) return [ACCOUNTING_FINAL];
 
   if (isVpPos(position)) {
