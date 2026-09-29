@@ -75,6 +75,10 @@ export default function ResignationRequests() {
   const isAccountingDepartment =
     dept === "accounting department";
 
+  const isOperationDepartment =
+    dept === "operation" ||
+    dept === "operation department";
+
   const isIT =
     role === "it";
 
@@ -197,7 +201,15 @@ const isHRDeptManager =
 
       const [reqRes, staffRes, branchRes] = await Promise.all([
         api.get("/resignation-requests").catch(() => ({ data: [] })),
-        api.get("/staff").catch(() => ({ data: [] })),
+        api.get("/staff").catch((err) => {
+          console.error(
+            "RESIGNATION /staff ERROR:",
+            err?.response?.status,
+            err?.response?.data
+          );
+
+          return { data: [] };
+        }),
         api.get("/branches").catch(() => ({ data: [] })),
       ]);
 
@@ -260,10 +272,10 @@ const isHRDeptManager =
   const searchableStaff = useMemo(() => {
     let scopedStaff = staffList || [];
 
-    if (isBranchManager && !isHRDeptManager) {
-      scopedStaff = scopedStaff.filter(
-        (s) => String(s.branch_id) === String(user?.branch_id)
-      );
+    if (isOperationDepartment && isBranchManager) {
+      // GET /staff is already branch-scoped by the backend
+      // for Branch Manager accounts.
+      scopedStaff = staffList || [];
     }
 
     if (isAreaManager && !isHRDeptManager) {
@@ -308,14 +320,15 @@ const isHRDeptManager =
         return { ...s, _display: display, _searchBlob: searchBlob };
       });
     }, [
-    staffList,
-    buildName,
-    user,
-    isBranchManager,
-    isAreaManager,
-    isRegionalManager,
-    isAssistantVicePresident,
-  ]);
+      staffList,
+      buildName,
+      user,
+      isOperationDepartment,
+      isBranchManager,
+      isAreaManager,
+      isRegionalManager,
+      isAssistantVicePresident,
+    ]);
 
   const filteredEmployees = useMemo(() => {
     const q = norm(employeeSearch);
