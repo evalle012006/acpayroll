@@ -459,11 +459,44 @@ async function hasApproverAccount(client, stage, staff) {
 
     if (userCols.includes("department")) {
       params.push(norm(staff.department));
-      where.push(`LOWER(TRIM(COALESCE(department, ''))) = $${params.length}`);
+
+      const departmentParam = `$${params.length}`;
+
+      where.push(`
+        (
+          LOWER(
+            REGEXP_REPLACE(
+              TRIM(COALESCE(users.department, '')),
+              '\\s+',
+              ' ',
+              'g'
+            )
+          ) = ${departmentParam}
+
+          OR EXISTS (
+            SELECT 1
+            FROM public.user_department_scopes uds
+            WHERE uds.user_id = users.id
+              AND LOWER(
+                REGEXP_REPLACE(
+                  TRIM(COALESCE(uds.department, '')),
+                  '\\s+',
+                  ' ',
+                  'g'
+                )
+              ) = ${departmentParam}
+          )
+        )
+      `);
     }
 
     const r = await client.query(
-      `SELECT id FROM public.users WHERE ${where.join(" AND ")} LIMIT 1`,
+      `
+        SELECT id
+        FROM public.users
+        WHERE ${where.join(" AND ")}
+        LIMIT 1
+      `,
       params
     );
 
