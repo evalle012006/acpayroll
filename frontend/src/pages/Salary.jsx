@@ -38,10 +38,26 @@ export default function Salary() {
 
   const [selectedStaff, setSelectedStaff] = useState(null);
 
+  const [salaryHistory, setSalaryHistory] = useState([]);
+  const [salaryHistoryLoading, setSalaryHistoryLoading] = useState(false);
+  const [salaryHistoryError, setSalaryHistoryError] = useState("");
+
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
 
   const [branchFilter, setBranchFilter] = useState("All");
+
+  const [salaryMonth, setSalaryMonth] = useState(() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(
+      now.getMonth() + 1
+    ).padStart(2, "0")}`;
+  });
+
+  const [effectiveSalaryRows, setEffectiveSalaryRows] = useState([]);
+  const [effectiveSalaryLoading, setEffectiveSalaryLoading] = useState(false);
+  const [effectiveSalaryError, setEffectiveSalaryError] = useState("");
+
   const [logoBase64, setLogoBase64] = useState("");
 
   useEffect(() => {
@@ -118,11 +134,63 @@ export default function Salary() {
     setBranchFilter("All");
   }, []);
 
+  useEffect(() => {
+    const loadEffectiveSalary = async () => {
+      if (!salaryMonth) return;
+
+      setEffectiveSalaryLoading(true);
+      setEffectiveSalaryError("");
+
+      try {
+        const res = await api.get("/salary-history/effective", {
+          params: {
+            branchId: branchFilter,
+            month: salaryMonth,
+          },
+        });
+
+        setEffectiveSalaryRows(
+          Array.isArray(res.data) ? res.data : []
+        );
+      } catch (err) {
+        console.error(
+          "Fetch effective salary failed:",
+          err
+        );
+
+        setEffectiveSalaryRows([]);
+
+        setEffectiveSalaryError(
+          err?.response?.data?.message ||
+            "Failed to load salary for selected month."
+        );
+      } finally {
+        setEffectiveSalaryLoading(false);
+      }
+    };
+
+    loadEffectiveSalary();
+  }, [salaryMonth, branchFilter]);
+
   const branchMap = useMemo(() => {
     const m = new Map();
     (branches || []).forEach((b) => m.set(String(b.id), b));
     return m;
   }, [branches]);
+
+  const effectiveSalaryByEmpNo = useMemo(() => {
+    const map = new Map();
+
+    for (const row of effectiveSalaryRows || []) {
+      const employeeNo = toStr(row.employee_no);
+
+      if (employeeNo) {
+        map.set(employeeNo, row);
+      }
+    }
+
+    return map;
+  }, [effectiveSalaryRows]);
 
   const balancesByEmpNo = useMemo(() => {
     const m = new Map();
@@ -221,9 +289,24 @@ export default function Salary() {
       };
       const monthlySap = approvedSapByEmp.get(String(s.id)) || 0;
 
-      const salary = toNum(s.salary);
-      const ecola = toNum(s.ecola);
-      const totalCompensation = salary + ecola;
+      const effectiveSalary =
+        effectiveSalaryByEmpNo.get(toStr(s.employee_no));
+
+      const hasSalaryHistory =
+        effectiveSalary?.has_history === true;
+
+      const salary = hasSalaryHistory
+        ? toNum(effectiveSalary.salary)
+        : null;
+
+      const ecola = hasSalaryHistory
+        ? toNum(effectiveSalary.ecola)
+        : null;
+
+      const totalCompensation =
+        hasSalaryHistory
+          ? toNum(salary) + toNum(ecola)
+          : null;
 
       const transportation = toNum(s.transportation);
       const repairing = toNum(s.repairing);
@@ -235,7 +318,9 @@ export default function Salary() {
       const total_allowances =
         transportation + repairing + postage + additional_target + additional_monitoring + others_allowance;
 
-      const grossPay = totalCompensation + total_allowances;
+      const grossPay = hasSalaryHistory
+        ? toNum(totalCompensation) + total_allowances
+        : null;
 
       const hdmf_er = toNum(s.hdmf_er);
       const sss_er = toNum(s.sss_er);
@@ -274,7 +359,9 @@ export default function Salary() {
         other_receivable +
         staff_accounts_payable;
 
-      const net_pay = grossPay - total_deduction;
+      const net_pay = hasSalaryHistory
+        ? toNum(grossPay) - total_deduction
+        : null;
 
       const br = branchMap.get(String(s.branch_id ?? "")) || null;
 
@@ -296,6 +383,11 @@ export default function Salary() {
         salary,
         ecola,
         totalCompensation,
+
+        has_salary_history: hasSalaryHistory,
+        salary_effective_date:
+          effectiveSalary?.effective_date || null,
+        salary_month: salaryMonth,
 
         transportation,
         repairing,
@@ -337,10 +429,21 @@ export default function Salary() {
         total_deduction,
         net_pay,
 
-        payroll_date: new Date().toISOString(),
+        payroll_date: salaryMonth
+        ? `${salaryMonth}-25`
+        : null,
+      
       };
     });
-  }, [staff, balancesByEmpNo, approvedLoansByEmp, approvedSapByEmp, branchMap]);
+  }, [
+    staff,
+    balancesByEmpNo,
+    approvedLoansByEmp,
+    approvedSapByEmp,
+    branchMap,
+    effectiveSalaryByEmpNo,
+    salaryMonth,
+  ]);
 
   const filteredStaff = useMemo(() => {
     const q = toStr(search).toLowerCase();
@@ -570,6 +673,14 @@ export default function Salary() {
 
   const printSalary = () => {
     if (!selectedStaff) return;
+
+    if (!selectedStaff.has_salary_history) {
+      alert(
+        `No salary history recorded for ${selectedStaff.salary_month || "the selected month"}.`
+      );
+      return;
+    }
+
     const html = buildPayslipHTML(selectedStaff, { autoPrint: true });
     const w = window.open("", "_blank", "width=900,height=650");
     if (!w) return alert("Popup blocked. Allow popups then try again.");
@@ -580,6 +691,13 @@ export default function Salary() {
 
   const downloadPayslip = async () => {
     if (!selectedStaff) return;
+
+    if (!selectedStaff.has_salary_history) {
+      alert(
+        `No salary history recorded for ${selectedStaff.salary_month || "the selected month"}.`
+      );
+      return;
+    }
 
     const html = buildPayslipHTML(selectedStaff, { autoPrint: false });
     const w = window.open("", "_blank", "width=900,height=650");
@@ -623,12 +741,49 @@ export default function Salary() {
     const empNo = toStr(emp.employee_no);
     const hasBal = balancesByEmpNo.has(empNo);
 
-    if (!hasBal && empNo) {
-      await fetchBalanceForEmp(empNo);
-    }
+    setSalaryHistory([]);
+    setSalaryHistoryError("");
+    setSalaryHistoryLoading(true);
 
-    const latest = staffWithComputed.find((x) => String(x.id) === String(emp.id)) || emp;
-    setSelectedStaff(latest);
+    try {
+      if (!hasBal && empNo) {
+        await fetchBalanceForEmp(empNo);
+      }
+
+      const latest =
+        staffWithComputed.find(
+          (x) => String(x.id) === String(emp.id)
+        ) || emp;
+
+      setSelectedStaff(latest);
+
+      if (empNo) {
+        try {
+          const historyRes = await api.get(
+            `/salary-history/${encodeURIComponent(empNo)}`
+          );
+
+          setSalaryHistory(
+            Array.isArray(historyRes.data)
+              ? historyRes.data
+              : []
+          );
+        } catch (historyErr) {
+          console.error(
+            "Fetch salary history failed:",
+            historyErr
+          );
+
+          setSalaryHistory([]);
+          setSalaryHistoryError(
+            historyErr?.response?.data?.message ||
+              "Failed to load salary history."
+          );
+        }
+      }
+    } finally {
+      setSalaryHistoryLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -662,6 +817,14 @@ export default function Salary() {
           </select>
 
           <input
+            type="month"
+            className="search-input"
+            style={{ maxWidth: 190 }}
+            value={salaryMonth}
+            onChange={(e) => setSalaryMonth(e.target.value)}
+          />
+
+          <input
             type="text"
             placeholder="Search name, position, area, branch..."
             value={searchInput}
@@ -689,8 +852,40 @@ export default function Salary() {
           </strong>
         </div>
         <div className="pill">
+          Month:{" "}
+          <strong>
+            {salaryMonth
+              ? new Date(
+                  `${salaryMonth}-01T00:00:00`
+                ).toLocaleDateString(undefined, {
+                  month: "long",
+                  year: "numeric",
+                })
+              : "-"}
+          </strong>
+        </div>
+
+        {effectiveSalaryLoading && (
+          <div style={{ marginBottom: 12 }}>
+            Loading salary history...
+          </div>
+        )}
+
+        {effectiveSalaryError && (
+          <div
+            style={{
+              marginBottom: 12,
+              color: "#dc2626",
+            }}
+          >
+            {effectiveSalaryError}
+          </div>
+        )}
+
+        <div className="pill">
           Results: <strong>{filteredStaff.length}</strong>
         </div>
+
       </div>
 
       <div className="salary-card">
@@ -767,19 +962,67 @@ export default function Salary() {
 
             <div className="salary-modal-grid">
               <div className="salary-box">
-                <div className="box-title">Basic Pay</div>
-                <div className="box-row">
-                  <span>Salary</span>
-                  <strong>{money(selectedStaff.salary)}</strong>
+                <div className="box-title">
+                  Basic Pay
+                  {selectedStaff.salary_month && (
+                    <span
+                      style={{
+                        marginLeft: 8,
+                        fontSize: 12,
+                        opacity: 0.65,
+                        fontWeight: 400,
+                      }}
+                    >
+                      ({selectedStaff.salary_month})
+                    </span>
+                  )}
                 </div>
-                <div className="box-row">
-                  <span>Ecola</span>
-                  <strong>{money(selectedStaff.ecola)}</strong>
-                </div>
-                <div className="box-row total">
-                  <span>Total Compensation</span>
-                  <strong>{money(selectedStaff.totalCompensation)}</strong>
-                </div>
+
+                {!selectedStaff.has_salary_history ? (
+                  <div
+                    style={{
+                      padding: "14px 0",
+                      color: "#dc2626",
+                      fontWeight: 600,
+                    }}
+                  >
+                    No salary history recorded for this month.
+                  </div>
+                ) : (
+                  <>
+                    <div className="box-row">
+                      <span>Salary</span>
+                      <strong>{money(selectedStaff.salary)}</strong>
+                    </div>
+
+                    <div className="box-row">
+                      <span>Ecola</span>
+                      <strong>{money(selectedStaff.ecola)}</strong>
+                    </div>
+
+                    <div className="box-row total">
+                      <span>Total Compensation</span>
+                      <strong>
+                        {money(selectedStaff.totalCompensation)}
+                      </strong>
+                    </div>
+
+                    <div
+                      style={{
+                        marginTop: 8,
+                        fontSize: 12,
+                        opacity: 0.65,
+                      }}
+                    >
+                      Effective:{" "}
+                      {selectedStaff.salary_effective_date
+                        ? String(
+                            selectedStaff.salary_effective_date
+                          ).slice(0, 10)
+                        : "-"}
+                    </div>
+                  </>
+                )}
               </div>
 
               <div className="salary-box">
@@ -889,6 +1132,76 @@ export default function Salary() {
               <div className="salary-box full">
                 <div className="box-title">Net Pay</div>
                 <div className="net-pay">{money(selectedStaff.net_pay)}</div>
+              </div>
+
+              <div className="salary-box full">
+                <div className="box-title">Salary History</div>
+
+                {salaryHistoryLoading ? (
+                  <div style={{ padding: "12px 0" }}>
+                    Loading salary history...
+                  </div>
+                ) : salaryHistoryError ? (
+                  <div
+                    style={{
+                      padding: "12px 0",
+                      color: "#dc2626",
+                    }}
+                  >
+                    {salaryHistoryError}
+                  </div>
+                ) : salaryHistory.length === 0 ? (
+                  <div
+                    style={{
+                      padding: "12px 0",
+                      opacity: 0.7,
+                    }}
+                  >
+                    No salary history recorded yet.
+                  </div>
+                ) : (
+                  <div style={{ overflowX: "auto" }}>
+                    <table className="salary-table">
+                      <thead>
+                        <tr>
+                          <th>Effective Date</th>
+                          <th>Salary</th>
+                          <th>ECOLA</th>
+                          <th>Total Compensation</th>
+                        </tr>
+                      </thead>
+
+                      <tbody>
+                        {[...salaryHistory]
+                          .sort(
+                            (a, b) =>
+                              new Date(b.effective_date) -
+                              new Date(a.effective_date)
+                          )
+                          .map((row) => (
+                            <tr key={row.id}>
+                              <td>
+                                {row.effective_date
+                                  ? String(row.effective_date).slice(0, 10)
+                                  : "-"}
+                              </td>
+
+                              <td>{money(row.salary)}</td>
+
+                              <td>{money(row.ecola)}</td>
+
+                              <td>
+                                {money(
+                                  toNum(row.salary) +
+                                    toNum(row.ecola)
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </div>
             </div>
 

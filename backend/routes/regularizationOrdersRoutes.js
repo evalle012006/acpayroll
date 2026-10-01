@@ -327,6 +327,18 @@ router.put(
 
       const existing = check.rows[0];
 
+      if (
+        ["approved", "rejected"].includes(
+          clean(existing.status).toLowerCase()
+        )
+      ) {
+        await client.query("ROLLBACK");
+
+        return res.status(400).json({
+          message: "Regularization order already finalized.",
+        });
+      }
+
       const approvedPath = req.file
         ? `/uploads/regularization/${req.file.filename}`
         : existing.approved_attachment_path || existing.attachment_path;
@@ -360,14 +372,14 @@ router.put(
 
       await client.query(
         `
-        UPDATE public.staff
-        SET
-          position = COALESCE(NULLIF($2, ''), position),
-          salary = COALESCE($3, salary),
-          ecola = COALESCE($4, ecola),
-          branch_id = COALESCE($5, branch_id),
-          regularization_date = COALESCE($6::date, regularization_date)
-        WHERE id = $1
+          UPDATE public.staff
+          SET
+            position = COALESCE(NULLIF($2, ''), position),
+            salary = COALESCE($3, salary),
+            ecola = COALESCE($4, ecola),
+            branch_id = COALESCE($5, branch_id),
+            regularization_date = COALESCE($6::date, regularization_date)
+          WHERE id = $1
         `,
         [
           row.employee_id,
@@ -378,6 +390,33 @@ router.put(
           row.effective_date,
         ]
       );
+
+      // ========================================================
+      // SAVE REGULARIZED SALARY TO SALARY HISTORY
+      // ========================================================
+      const employeeNo = clean(row.employee_no);
+
+      if (employeeNo && row.effective_date) {
+        await client.query(
+          `
+            INSERT INTO public.salary_history
+              (
+                employee_no,
+                effective_date,
+                salary,
+                ecola
+              )
+            VALUES
+              ($1, $2::date, $3, $4)
+          `,
+          [
+            employeeNo,
+            row.effective_date,
+            toNum(row.present_salary),
+            toNum(row.present_ecola),
+          ]
+        );
+      }
 
       await client.query("COMMIT");
       return res.json(row);

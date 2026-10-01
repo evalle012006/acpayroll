@@ -1667,6 +1667,46 @@ router.put(
           ]
         );
 
+        // ========================================================
+        // SAVE PROMOTED SALARY TO SALARY HISTORY
+        // ========================================================
+        const promotedStaff = await client.query(
+          `
+            SELECT employee_no
+            FROM public.staff
+            WHERE id = $1
+            LIMIT 1
+          `,
+          [order.employee_id]
+        );
+
+        const employeeNo =
+          promotedStaff.rows[0]?.employee_no
+            ? String(promotedStaff.rows[0].employee_no).trim()
+            : "";
+
+        if (employeeNo && order.effective_date) {
+          await client.query(
+            `
+              INSERT INTO public.salary_history
+                (
+                  employee_no,
+                  effective_date,
+                  salary,
+                  ecola
+                )
+              VALUES
+                ($1, $2::date, $3, $4)
+            `,
+            [
+              employeeNo,
+              order.effective_date,
+              toNum(order.new_salary),
+              toNum(order.new_ecola),
+            ]
+          );
+        }
+
         await client.query("COMMIT");
 
         return res.json({
@@ -2076,13 +2116,13 @@ router.put(
 
       await client.query(
         `
-        UPDATE public.staff
-        SET
-          "position" = $1,
-          salary = $2,
-          ecola = $3,
-          branch_id = $4
-        WHERE id = $5
+          UPDATE public.staff
+          SET
+            "position" = $1,
+            salary = $2,
+            ecola = $3,
+            branch_id = $4
+          WHERE id = $5
         `,
         [
           order.old_position,
@@ -2092,6 +2132,42 @@ router.put(
           order.employee_id,
         ]
       );
+
+      // ========================================================
+      // REMOVE VOIDED PROMOTION FROM SALARY HISTORY
+      // ========================================================
+      const voidedStaff = await client.query(
+        `
+          SELECT employee_no
+          FROM public.staff
+          WHERE id = $1
+          LIMIT 1
+        `,
+        [order.employee_id]
+      );
+
+      const employeeNo =
+        voidedStaff.rows[0]?.employee_no
+          ? String(voidedStaff.rows[0].employee_no).trim()
+          : "";
+
+      if (employeeNo && order.effective_date) {
+        await client.query(
+          `
+            DELETE FROM public.salary_history
+            WHERE TRIM(employee_no) = $1
+              AND effective_date = $2::date
+              AND salary = $3
+              AND ecola = $4
+          `,
+          [
+            employeeNo,
+            order.effective_date,
+            toNum(order.new_salary),
+            toNum(order.new_ecola),
+          ]
+        );
+      }
 
       await client.query("COMMIT");
       return res.json({ message: "Promotion voided and staff reverted." });

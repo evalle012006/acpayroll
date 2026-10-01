@@ -7,17 +7,103 @@ const { requirePermission } = require("../middlewares/permissionMiddleware");
 
 const toStr = (v) => String(v ?? "").trim();
 
+// ============================================================
+// CREATE MISSING SALARY HISTORY BASELINES
+// ============================================================
+
+router.post(
+  "/initialize",
+  requireAuth,
+  requirePermission("salary_history", "view"),
+  async (req, res) => {
+    const client = await pool.connect();
+
+    try {
+      await client.query("BEGIN");
+
+      const result = await client.query(
+        `
+        INSERT INTO public.salary_history
+          (
+            employee_no,
+            effective_date,
+            salary,
+            ecola
+          )
+        SELECT
+          TRIM(s.employee_no),
+          COALESCE(
+            s.start_date,
+            s.regularization_date,
+            CURRENT_DATE
+          )::date,
+          COALESCE(s.salary, 0),
+          COALESCE(s.ecola, 0)
+        FROM public.staff s
+        WHERE TRIM(COALESCE(s.employee_no, '')) <> ''
+
+          AND NOT EXISTS (
+            SELECT 1
+            FROM public.salary_history sh
+            WHERE TRIM(sh.employee_no) =
+                  TRIM(s.employee_no)
+          )
+        RETURNING
+          id,
+          employee_no,
+          effective_date,
+          salary,
+          ecola
+        `
+      );
+
+      await client.query("COMMIT");
+
+      return res.json({
+        message: "Salary history baseline initialized.",
+        inserted: result.rowCount,
+        rows: result.rows,
+      });
+    } catch (err) {
+      await client.query("ROLLBACK");
+
+      console.error(
+        "POST /salary-history/initialize ERROR:",
+        err
+      );
+
+      return res.status(500).json({
+        message:
+          err.message ||
+          "Failed to initialize salary history.",
+      });
+    } finally {
+      client.release();
+    }
+  }
+);
+
 router.get(
   "/effective",
   requireAuth,
   requirePermission("salary_history", "view"),
   async (req, res) => {
     try {
-      const branchId = Number(req.query.branchId);
+      const branchRaw = toStr(req.query.branchId);
+      const branchId =
+        branchRaw && branchRaw.toLowerCase() !== "all"
+          ? Number(branchRaw)
+          : null;
+
       const month = toStr(req.query.month);
 
-      if (!Number.isFinite(branchId)) {
-        return res.status(400).json({ message: "branchId is required" });
+      if (
+        branchId !== null &&
+        (!Number.isFinite(branchId) || branchId <= 0)
+      ) {
+        return res.status(400).json({
+          message: "branchId must be a valid branch ID or All",
+        });
       }
 
       if (!/^\d{4}-\d{2}$/.test(month)) {
@@ -32,11 +118,10 @@ router.get(
         branch_staff AS (
           SELECT
             s.id AS staff_id,
-            TRIM(COALESCE(s.employee_no, '')) AS employee_no,
-            COALESCE(s.salary, 0) AS current_salary,
-            COALESCE(s.ecola, 0) AS current_ecola
+            TRIM(COALESCE(s.employee_no, '')) AS employee_no
           FROM public.staff s
-          WHERE s.branch_id = $1
+          WHERE
+            ($1::int IS NULL OR s.branch_id = $1::int)
             AND TRIM(COALESCE(s.employee_no, '')) <> ''
         ),
         latest_history AS (
@@ -59,12 +144,32 @@ router.get(
         SELECT
           bs.staff_id,
           bs.employee_no,
-          COALESCE(lh.salary, bs.current_salary, 0) AS salary,
-          COALESCE(lh.ecola, bs.current_ecola, 0) AS ecola,
-          lh.effective_date
+
+          CASE
+            WHEN lh.id IS NOT NULL
+              THEN lh.salary
+            ELSE NULL
+          END AS salary,
+
+          CASE
+            WHEN lh.id IS NOT NULL
+              THEN lh.ecola
+            ELSE NULL
+          END AS ecola,
+
+          lh.effective_date,
+
+          CASE
+            WHEN lh.id IS NOT NULL
+              THEN TRUE
+            ELSE FALSE
+          END AS has_history
+
         FROM branch_staff bs
+
         LEFT JOIN latest_history lh
           ON lh.employee_no = bs.employee_no
+
         ORDER BY bs.employee_no
         `,
         [branchId, month]
