@@ -207,17 +207,38 @@ const STAGE_RM = "regional manager";
 const STAGE_AVP = "assistant vice president";
 const STAGE_ADMIN = "admin";
 
+const STAGE_HR_ADMIN_ORDER = "hr admin order";
+const STAGE_AVP_SIGNED_ORDER = "avp signed admin order";
+const STAGE_HR_RECEIVED = "hr received";
+const STAGE_RECEIVED = "received";
+
 const LABELS = {
   [STAGE_AREA]: "Pending Area Manager",
   [STAGE_RM]: "Pending Regional Manager",
   [STAGE_AVP]: "Pending Assistant Vice President",
   [STAGE_ADMIN]: "Pending Admin/HR/Accounting",
+
+  [STAGE_HR_ADMIN_ORDER]: "Wait for HR Admin Order",
+  [STAGE_AVP_SIGNED_ORDER]: "Wait for AVP Signed Admin Order",
+  [STAGE_HR_RECEIVED]: "Wait to Received",
+  [STAGE_RECEIVED]: "Received",
 };
 
 const getCurrentStage = (row) => {
   const explicit = toStr(row?.approval_stage).toLowerCase();
 
-  if ([STAGE_AREA, STAGE_RM, STAGE_AVP, STAGE_ADMIN].includes(explicit)) {
+  if (
+    [
+      STAGE_AREA,
+      STAGE_RM,
+      STAGE_AVP,
+      STAGE_ADMIN,
+      STAGE_HR_ADMIN_ORDER,
+      STAGE_AVP_SIGNED_ORDER,
+      STAGE_HR_RECEIVED,
+      STAGE_RECEIVED,
+    ].includes(explicit)
+  ) {
     return explicit;
   }
 
@@ -325,17 +346,15 @@ const canDownloadApprovedFile = (req, row) => {
 
   if (
     isAreaManager(req) &&
-    String(row?.status || "").toLowerCase() === "approved"
+    ["approved", "received"].includes(
+      String(row?.status || "").trim().toLowerCase()
+    )
   ) {
     return true;
   }
 
   return false;
 };
-
-const canUploadApprovedFile = (req) =>
-  hasSuspensionFullAccess(req);
-
 
   // =====================================================
   // SUSPENSION STAFF STATUS LIFECYCLE
@@ -361,7 +380,8 @@ const canUploadApprovedFile = (req) =>
             FROM public.suspension_orders so
             WHERE so.employee_id = s.id
 
-              AND LOWER(TRIM(COALESCE(so.status, ''))) = 'approved'
+              AND LOWER(TRIM(COALESCE(so.status, '')))
+                IN ('approved', 'received')
 
               AND (NOW() AT TIME ZONE 'Asia/Manila')::date
                   >= so.start_date::date
@@ -391,7 +411,8 @@ const canUploadApprovedFile = (req) =>
           FROM public.suspension_orders so
           WHERE so.employee_id = $1
 
-            AND LOWER(TRIM(COALESCE(so.status, ''))) = 'approved'
+            AND LOWER(TRIM(COALESCE(so.status, '')))
+              IN ('approved', 'received')
 
             AND (NOW() AT TIME ZONE 'Asia/Manila')::date
                 >= so.start_date::date
@@ -494,7 +515,7 @@ const canUploadApprovedFile = (req) =>
                     ''
                   )
                 )
-              ) = 'approved'
+              ) IN ('approved', 'received')
 
               AND (NOW() AT TIME ZONE 'Asia/Manila')::date
                   > finished_so.end_date::date
@@ -513,7 +534,7 @@ const canUploadApprovedFile = (req) =>
                     ''
                   )
                 )
-              ) = 'approved'
+              ) IN ('approved', 'received')
 
               AND (NOW() AT TIME ZONE 'Asia/Manila')::date
                   >= active_so.start_date::date
@@ -568,8 +589,8 @@ const canUploadApprovedFile = (req) =>
           FROM public.suspension_orders so
           WHERE so.employee_id = $1
 
-            AND LOWER(TRIM(COALESCE(so.status, ''))) =
-                'approved'
+            AND LOWER(TRIM(COALESCE(so.status, '')))
+              IN ('approved', 'received')
 
             AND (NOW() AT TIME ZONE 'Asia/Manila')::date
                 > so.end_date::date
@@ -1141,10 +1162,15 @@ router.put(
 
       const existing = existingRes.rows[0];
 
-      if (String(existing.status || "").toLowerCase() === "approved") {
+      if (
+        ["approved", "received"].includes(
+          String(existing.status || "").trim().toLowerCase()
+        )
+      ) {
         await client.query("ROLLBACK");
+
         return res.status(400).json({
-          message: "Approved orders cannot be edited",
+          message: "Completed suspension orders cannot be edited",
         });
       }
 
@@ -1389,10 +1415,15 @@ router.delete(
 
       const existing = existingRes.rows[0];
 
-      if (String(existing.status || "").toLowerCase() === "approved") {
+      if (
+        ["approved", "received"].includes(
+          String(existing.status || "").trim().toLowerCase()
+        )
+      ) {
         await client.query("ROLLBACK");
+
         return res.status(400).json({
-          message: "Approved orders cannot be deleted",
+          message: "Completed suspension orders cannot be deleted",
         });
       }
 
@@ -1407,10 +1438,20 @@ router.delete(
 
       await client.query("COMMIT");
 
-      if (existing.attachment_path) removeStoredFile(existing.attachment_path);
+      if (existing.attachment_path) {
+        removeStoredFile(existing.attachment_path);
+      }
 
       if (existing.approved_attachment_path) {
         removeStoredFile(existing.approved_attachment_path);
+      }
+
+      if (existing.admin_order_attachment_path) {
+        removeStoredFile(existing.admin_order_attachment_path);
+      }
+
+      if (existing.signed_admin_order_path) {
+        removeStoredFile(existing.signed_admin_order_path);
       }
 
       return res.json({ message: "Suspension order deleted successfully" });
@@ -1435,7 +1476,14 @@ router.get(
 
       if (!id) return res.status(400).json({ message: "Invalid id" });
 
-      if (!["request", "approved"].includes(type)) {
+      if (
+        ![
+          "request",
+          "approved",
+          "admin-order",
+          "signed-admin-order",
+        ].includes(type)
+      ) {
         return res.status(400).json({ message: "Invalid file type" });
       }
 
@@ -1456,15 +1504,30 @@ router.get(
         return res.status(403).json({ message: "Access denied" });
       }
 
-      if (type === "approved" && !canDownloadApprovedFile(req, row)) {
+      if (
+        type !== "request" &&
+        !canDownloadApprovedFile(req, row)
+      ) {
         return res.status(403).json({ message: "Access denied" });
       }
 
-      const storedPath =
-        type === "request" ? row.attachment_path : row.approved_attachment_path;
+      let storedPath = null;
+      let storedName = null;
 
-      const storedName =
-        type === "request" ? row.attachment_name : row.approved_attachment_name;
+      if (type === "request") {
+        storedPath = row.attachment_path;
+        storedName = row.attachment_name;
+      } else if (type === "approved") {
+        // Legacy approved attachment
+        storedPath = row.approved_attachment_path;
+        storedName = row.approved_attachment_name;
+      } else if (type === "admin-order") {
+        storedPath = row.admin_order_attachment_path;
+        storedName = row.admin_order_attachment_name;
+      } else if (type === "signed-admin-order") {
+        storedPath = row.signed_admin_order_path;
+        storedName = row.signed_admin_order_name;
+      }
 
       if (!storedPath) {
         return res.status(404).json({ message: "No attachment found" });
@@ -1488,8 +1551,12 @@ router.get(
   }
 );
 
+// =====================================================
+// HR UPLOAD ADMIN ORDER
+// =====================================================
+
 router.post(
-  "/suspension-orders/:id/approved-file",
+  "/suspension-orders/:id/admin-order",
   requireAuth,
   requirePermission("suspension_order", "upload_approved"),
   upload.single("attachment"),
@@ -1497,18 +1564,252 @@ router.post(
     try {
       const id = toInt(req.params.id);
 
-      if (!id) return res.status(400).json({ message: "Invalid id" });
-
-      if (!req.file) {
-        return res.status(400).json({ message: "Attachment is required" });
+      if (!id) {
+        return res.status(400).json({ message: "Invalid id" });
       }
 
-      if (!canUploadApprovedFile(req)) {
-        return res.status(403).json({ message: "Access denied" });
+      if (!req.file) {
+        return res.status(400).json({
+          message: "Admin Order file is required",
+        });
+      }
+
+      if (!(isHr(req) || isHrDepartmentUser(req) || isAdmin(req))) {
+        removeStoredFile(`/uploads/suspension/${req.file.filename}`);
+
+        return res.status(403).json({
+          message: "Only HR/Admin can upload the Admin Order",
+        });
       }
 
       const existing = await pool.query(
-        `SELECT * FROM public.suspension_orders WHERE id = $1`,
+        `
+        SELECT *
+        FROM public.suspension_orders
+        WHERE id = $1
+        `,
+        [id]
+      );
+
+      if (existing.rowCount === 0) {
+        removeStoredFile(`/uploads/suspension/${req.file.filename}`);
+
+        return res.status(404).json({
+          message: "Suspension order not found",
+        });
+      }
+
+      const row = existing.rows[0];
+      const currentStage = getCurrentStage(row);
+
+      if (currentStage !== STAGE_HR_ADMIN_ORDER) {
+        removeStoredFile(`/uploads/suspension/${req.file.filename}`);
+
+        return res.status(400).json({
+          message: "This order is not waiting for HR Admin Order",
+        });
+      }
+
+      const newPath =
+        `/uploads/suspension/${req.file.filename}`;
+
+      const oldPath =
+        row.admin_order_attachment_path || null;
+
+      const result = await pool.query(
+        `
+        UPDATE public.suspension_orders
+        SET
+          admin_order_attachment_path = $2,
+          admin_order_attachment_name = $3,
+          admin_order_attachment_mime = $4,
+          admin_order_uploaded_by = $5,
+          admin_order_uploaded_at = NOW(),
+
+          approval_stage = $6,
+          status = $7
+        WHERE id = $1
+        RETURNING *;
+        `,
+        [
+          id,
+          newPath,
+          clean(req.file.originalname),
+          clean(req.file.mimetype),
+          toInt(req.user?.id),
+          STAGE_AVP_SIGNED_ORDER,
+          LABELS[STAGE_AVP_SIGNED_ORDER],
+        ]
+      );
+
+      if (oldPath && oldPath !== newPath) {
+        removeStoredFile(oldPath);
+      }
+
+      return res.json(result.rows[0]);
+    } catch (e) {
+      if (req.file) {
+        removeStoredFile(
+          `/uploads/suspension/${req.file.filename}`
+        );
+      }
+
+      console.error(
+        "POST /api/suspension-orders/:id/admin-order ERROR:",
+        e.message
+      );
+
+      return res.status(500).json({
+        message: e?.message || "Server error",
+      });
+    }
+  }
+);
+
+// =====================================================
+// AVP UPLOAD SIGNED ADMIN ORDER
+// =====================================================
+router.post(
+  "/suspension-orders/:id/avp-signed-order",
+  requireAuth,
+  requirePermission("suspension_order", "upload_approved"),
+  upload.single("attachment"),
+  async (req, res) => {
+    try {
+      const id = toInt(req.params.id);
+
+      if (!id) {
+        return res.status(400).json({ message: "Invalid id" });
+      }
+
+      if (!req.file) {
+        return res.status(400).json({
+          message: "Signed Admin Order file is required",
+        });
+      }
+
+      if (!isAssistantVicePresident(req)) {
+        removeStoredFile(`/uploads/suspension/${req.file.filename}`);
+
+        return res.status(403).json({
+          message:
+            "Only Assistant Vice President can upload the signed Admin Order",
+        });
+      }
+
+      const existing = await pool.query(
+        `
+        SELECT *
+        FROM public.suspension_orders
+        WHERE id = $1
+        `,
+        [id]
+      );
+
+      if (existing.rowCount === 0) {
+        removeStoredFile(`/uploads/suspension/${req.file.filename}`);
+
+        return res.status(404).json({
+          message: "Suspension order not found",
+        });
+      }
+
+      const row = existing.rows[0];
+      const currentStage = getCurrentStage(row);
+
+      if (currentStage !== STAGE_AVP_SIGNED_ORDER) {
+        removeStoredFile(`/uploads/suspension/${req.file.filename}`);
+
+        return res.status(400).json({
+          message:
+            "This order is not waiting for AVP Signed Admin Order",
+        });
+      }
+
+      const newPath =
+        `/uploads/suspension/${req.file.filename}`;
+
+      const oldPath =
+        row.signed_admin_order_path || null;
+
+      const result = await pool.query(
+        `
+        UPDATE public.suspension_orders
+        SET
+          signed_admin_order_path = $2,
+          signed_admin_order_name = $3,
+          signed_admin_order_mime = $4,
+          signed_admin_order_uploaded_by = $5,
+          signed_admin_order_uploaded_at = NOW(),
+
+          approval_stage = $6,
+          status = $7
+        WHERE id = $1
+        RETURNING *;
+        `,
+        [
+          id,
+          newPath,
+          clean(req.file.originalname),
+          clean(req.file.mimetype),
+          toInt(req.user?.id),
+          STAGE_HR_RECEIVED,
+          LABELS[STAGE_HR_RECEIVED],
+        ]
+      );
+
+      if (oldPath && oldPath !== newPath) {
+        removeStoredFile(oldPath);
+      }
+
+      return res.json(result.rows[0]);
+    } catch (e) {
+      if (req.file) {
+        removeStoredFile(
+          `/uploads/suspension/${req.file.filename}`
+        );
+      }
+
+      console.error(
+        "POST /api/suspension-orders/:id/avp-signed-order ERROR:",
+        e.message
+      );
+
+      return res.status(500).json({
+        message: e?.message || "Server error",
+      });
+    }
+  }
+);
+
+
+// =====================================================
+// HR RECEIVED
+// =====================================================
+router.put(
+  "/suspension-orders/:id/received",
+  requireAuth,
+  requirePermission("suspension_order", "approve"),
+  async (req, res) => {
+    try {
+      const id = toInt(req.params.id);
+
+      if (!id) {
+        return res.status(400).json({ message: "Invalid id" });
+      }
+
+      if (!(isHr(req) || isHrDepartmentUser(req) || isAdmin(req))) {
+        return res.status(403).json({
+          message: "Only HR/Admin can mark the order as Received",
+        });
+      }
+
+      const existing = await pool.query(
+        `
+        SELECT *
+        FROM public.suspension_orders
+        WHERE id = $1
+        `,
         [id]
       );
 
@@ -1519,46 +1820,55 @@ router.post(
       }
 
       const row = existing.rows[0];
-      const oldApprovedPath = row.approved_attachment_path || null;
-      const newPath = `/uploads/suspension/${req.file.filename}`;
+      const currentStage = getCurrentStage(row);
+
+      if (currentStage !== STAGE_HR_RECEIVED) {
+        return res.status(400).json({
+          message: "This order is not waiting to be received",
+        });
+      }
+
+      if (!row.signed_admin_order_path) {
+        return res.status(400).json({
+          message: "Signed Admin Order is required",
+        });
+      }
 
       const result = await pool.query(
         `
-        UPDATE public.suspension_orders
-        SET
-          approved_attachment_path = $2,
-          approved_attachment_name = $3,
-          approved_attachment_mime = $4
-        WHERE id = $1
-        RETURNING *;
+          UPDATE public.suspension_orders
+          SET
+            received_by = $2,
+            received_at = NOW(),
+
+            approval_stage = $3,
+            status = 'Received',
+
+            approved_by = $4,
+            approved_at = NOW()
+          WHERE id = $1
+          RETURNING *;
         `,
         [
           id,
-          newPath,
-          clean(req.file.originalname),
-          clean(req.file.mimetype),
+          toInt(req.user?.id),
+          STAGE_RECEIVED,
+          String(req.user?.id || ""),
         ]
       );
 
-      if (oldApprovedPath && oldApprovedPath !== newPath) {
-        removeStoredFile(oldApprovedPath);
-      }
-
-
-      // =====================================================
-      // APPLY SUSPENSION STATUS AFTER APPROVED FILE UPLOAD
-      // =====================================================
       await applyDueSuspensions();
-
 
       return res.json(result.rows[0]);
     } catch (e) {
       console.error(
-        "POST /api/suspension-orders/:id/approved-file ERROR:",
+        "PUT /api/suspension-orders/:id/received ERROR:",
         e.message
       );
 
-      return res.status(500).json({ message: e?.message || "Server error" });
+      return res.status(500).json({
+        message: e?.message || "Server error",
+      });
     }
   }
 );
@@ -1621,26 +1931,29 @@ router.put(
 
         result = await pool.query(
           `
-          UPDATE public.suspension_orders
-          SET
-            admin_status = 'Approved',
-            admin_approved_by = $2,
-            admin_approved_at = NOW(),
-            approved_by = $3,
-            approved_at = NOW(),
-            approval_stage = $4,
-            status = 'Approved',
-            rejected_by = NULL,
-            rejected_at = NULL,
-            rejection_reason = NULL
-          WHERE id = $1
-          RETURNING *;
+            UPDATE public.suspension_orders
+            SET
+              admin_status = 'Approved',
+              admin_approved_by = $2,
+              admin_approved_at = NOW(),
+
+              approved_by = NULL,
+              approved_at = NULL,
+
+              approval_stage = $3,
+              status = $4,
+
+              rejected_by = NULL,
+              rejected_at = NULL,
+              rejection_reason = NULL
+            WHERE id = $1
+            RETURNING *;
           `,
           [
             id,
             approverId,
-            approverText,
-            STAGE_ADMIN,
+            STAGE_HR_ADMIN_ORDER,
+            LABELS[STAGE_HR_ADMIN_ORDER],
           ]
         );
       } else if (isAreaManager(req)) {

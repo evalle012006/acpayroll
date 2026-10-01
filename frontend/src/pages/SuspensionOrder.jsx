@@ -173,8 +173,32 @@ export default function SuspensionOrder() {
     isAssistantVicePresident ||
     isVicePresident;
 
-  const canUploadApprovedFile =
-    hasSuspensionFullAccess;
+  const canUploadAdminOrder = (order) => {
+    const stage = norm(order?.approval_stage);
+
+    return (
+      (isHr || isHRDepartment) &&
+      stage === "hr admin order"
+    );
+  };
+
+  const canUploadSignedAdminOrder = (order) => {
+    const stage = norm(order?.approval_stage);
+
+    return (
+      isAssistantVicePresident &&
+      stage === "avp signed admin order"
+    );
+  };
+
+  const canReceiveSuspension = (order) => {
+    const stage = norm(order?.approval_stage);
+
+    return (
+      (isHr || isHRDepartment) &&
+      stage === "hr received"
+    );
+  };
 
   const canDownloadApprovedFile = (order) => {
     const approved = norm(order?.status) === "approved";
@@ -204,16 +228,45 @@ export default function SuspensionOrder() {
 
   const stageLabel = (o) => {
     const status = clean(o?.status);
-
-    if (status === "Approved") return "Approved";
-    if (status === "Rejected") return "Rejected";
-
     const stage = norm(o?.approval_stage);
 
-    if (stage === "area manager") return "Pending Area Manager";
-    if (stage === "regional manager") return "Pending Regional Manager";
-    if (stage === "assistant vice president") return "Pending Assistant Vice President";
-    if (stage === "admin") return "Pending Admin/HR/Accounting";
+    if (status === "Rejected") return "Rejected";
+
+    if (stage === "area manager") {
+      return "Pending Area Manager";
+    }
+
+    if (stage === "regional manager") {
+      return "Pending Regional Manager";
+    }
+
+    if (stage === "assistant vice president") {
+      return "Pending Assistant Vice President";
+    }
+
+    if (stage === "admin") {
+      return "Pending Admin/HR/Accounting";
+    }
+
+    if (stage === "hr admin order") {
+      return "Wait for HR Admin Order";
+    }
+
+    if (stage === "avp signed admin order") {
+      return "Wait for AVP Signed Admin Order";
+    }
+
+    if (stage === "hr received") {
+      return "Wait to Received";
+    }
+
+    if (stage === "received") {
+      return "Received";
+    }
+
+    if (status === "Approved") {
+      return "Approved";
+    }
 
     return status || "Pending";
   };
@@ -224,7 +277,9 @@ export default function SuspensionOrder() {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState("");
-  const [uploadingApproved, setUploadingApproved] = useState({});
+  const [uploadingAdminOrder, setUploadingAdminOrder] = useState({});
+  const [uploadingSignedAdminOrder, setUploadingSignedAdminOrder] = useState({});
+  const [receivingOrder, setReceivingOrder] = useState({});
 
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
@@ -470,7 +525,9 @@ export default function SuspensionOrder() {
   const badgeClass = (status) => {
     const s = norm(status || "Pending");
 
-    if (s === "approved") return "po-badge po-approved";
+    if (s === "approved" || s === "received") {
+      return "po-badge po-approved";
+    }
     if (s === "rejected") return "po-badge po-rejected";
 
     return "po-badge po-pending";
@@ -741,9 +798,11 @@ export default function SuspensionOrder() {
   };
 
   const deleteOrder = async (o) => {
-    const approved = norm(o.status) === "approved";
+    const completed = ["approved", "received"].includes(
+      norm(o.status)
+    );
 
-    if (!canEditDelete || approved) return;
+    if (!canEditDelete || completed) return;
     if (!window.confirm("Delete this suspension order?")) return;
 
     try {
@@ -776,31 +835,132 @@ export default function SuspensionOrder() {
     }
   };
 
-  const uploadApprovedFile = async (orderId, file) => {
+  const uploadAdminOrder = async (orderId, file) => {
     if (!file) return;
 
     try {
-      setUploadingApproved((prev) => ({ ...prev, [orderId]: true }));
+      setUploadingAdminOrder((prev) => ({
+        ...prev,
+        [orderId]: true,
+      }));
 
       const formData = new FormData();
       formData.append("attachment", file);
 
-      await api.post(`/suspension-orders/${orderId}/approved-file`, formData, {
-        headers: { "Content-Type": "multipart/form-data" },
-      });
+      await api.post(
+        `/suspension-orders/${orderId}/admin-order`,
+        formData,
+        {
+          headers: {
+            "Content-Type": "multipart/form-data",
+          },
+        }
+      );
 
       await loadData();
     } catch (e) {
-      alert(e?.response?.data?.message || "Failed to upload approved file.");
+      alert(
+        e?.response?.data?.message ||
+          "Failed to upload Admin Order."
+      );
     } finally {
-      setUploadingApproved((prev) => ({ ...prev, [orderId]: false }));
+      setUploadingAdminOrder((prev) => ({
+        ...prev,
+        [orderId]: false,
+      }));
     }
   };
 
-  const totalRequests=filteredOrders.length;
-  const pendingRequests=filteredOrders.filter((o)=>norm(o.status)!=="approved"&&norm(o.status)!=="rejected").length;
-  const approvedRequests=filteredOrders.filter((o)=>norm(o.status)==="approved").length;
-  const rejectedRequests=filteredOrders.filter((o)=>norm(o.status)==="rejected").length;
+  const uploadSignedAdminOrder = async (orderId, file) => {
+    if (!file) return;
+
+    try {
+      setUploadingSignedAdminOrder((prev) => ({
+        ...prev,
+        [orderId]: true,
+      }));
+
+      const formData = new FormData();
+      formData.append("attachment", file);
+
+      await api.post(
+        `/suspension-orders/${orderId}/avp-signed-order`,
+        formData,
+        {
+          headers: {
+            "Content-Type": "multipart/form-data",
+          },
+        }
+      );
+
+      await loadData();
+    } catch (e) {
+      alert(
+        e?.response?.data?.message ||
+          "Failed to upload Signed Admin Order."
+      );
+    } finally {
+      setUploadingSignedAdminOrder((prev) => ({
+        ...prev,
+        [orderId]: false,
+      }));
+    }
+  };
+
+  const receiveSuspensionOrder = async (order) => {
+    if (!canReceiveSuspension(order)) return;
+
+    if (
+      !window.confirm(
+        "Confirm that HR received the signed Admin Order?"
+      )
+    ) {
+      return;
+    }
+
+    try {
+      setReceivingOrder((prev) => ({
+        ...prev,
+        [order.id]: true,
+      }));
+
+      await api.put(
+        `/suspension-orders/${order.id}/received`
+      );
+
+      await loadData();
+    } catch (e) {
+      alert(
+        e?.response?.data?.message ||
+          "Failed to mark suspension order as received."
+      );
+    } finally {
+      setReceivingOrder((prev) => ({
+        ...prev,
+        [order.id]: false,
+      }));
+    }
+  };
+
+  const totalRequests = filteredOrders.length;
+
+  const pendingRequests = filteredOrders.filter(
+    (o) =>
+      !["approved", "received", "rejected"].includes(
+        norm(o.status)
+      )
+  ).length;
+
+  const approvedRequests = filteredOrders.filter(
+    (o) =>
+      ["approved", "received"].includes(
+        norm(o.status)
+      )
+  ).length;
+
+  const rejectedRequests = filteredOrders.filter(
+    (o) => norm(o.status) === "rejected"
+  ).length;
 
   const getPageNumbers=()=>{
     const pages=[];
@@ -832,7 +992,8 @@ export default function SuspensionOrder() {
               <span>APPROVAL FLOW</span>
               <b>
                 Area Manager → Regional Manager → Assistant Vice President
-                → Admin / HR / Accounting
+                → Admin / HR / Accounting → HR Admin Order
+                → AVP Signed Admin Order → HR Received
               </b>
             </div>
           </div>
@@ -891,7 +1052,7 @@ export default function SuspensionOrder() {
         <article className="po-summary-card po-summary-approved">
           <div className="po-summary-icon">A</div>
           <div>
-            <span>Approved</span>
+            <span>Completed</span>
             <strong>{approvedRequests}</strong>
             <small>Completed suspension orders</small>
           </div>
@@ -986,8 +1147,10 @@ export default function SuspensionOrder() {
                   </td>
                 </tr>
               ):(
-                pagedOrders.map((o)=>{
-                  const approved=norm(o.status)==="approved";
+                pagedOrders.map((o) => {
+                  const completed = ["approved", "received"].includes(
+                    norm(o.status)
+                  );
 
                   return(
                     <tr key={o.id}>
@@ -1033,15 +1196,15 @@ export default function SuspensionOrder() {
 
                       <td>
                         <div className="po-file-actions">
-                          {o.attachment_path&&canDownloadRequestFile&&(
+                          {o.attachment_path && canDownloadRequestFile && (
                             <button
                               className="po-action-btn po-action-download"
                               type="button"
-                              onClick={()=>
+                              onClick={() =>
                                 downloadFile(
                                   o.id,
                                   "request",
-                                  o.attachment_name||""
+                                  o.attachment_name || ""
                                 )
                               }
                             >
@@ -1049,44 +1212,107 @@ export default function SuspensionOrder() {
                             </button>
                           )}
 
-                          {o.approved_attachment_path&&canDownloadApprovedFile(o)&&(
-                            <button
-                              className="po-action-btn po-action-download"
-                              type="button"
-                              onClick={()=>
-                                downloadFile(
-                                  o.id,
-                                  "approved",
-                                  o.approved_attachment_name||""
-                                )
-                              }
-                            >
-                              Approved File
-                            </button>
-                          )}
+                          {/* Legacy approved file */}
+                          {o.approved_attachment_path &&
+                            canDownloadApprovedFile(o) && (
+                              <button
+                                className="po-action-btn po-action-download"
+                                type="button"
+                                onClick={() =>
+                                  downloadFile(
+                                    o.id,
+                                    "approved",
+                                    o.approved_attachment_name || ""
+                                  )
+                                }
+                              >
+                                Approved File
+                              </button>
+                            )}
 
-                          {canUploadApprovedFile&&(
+                          {/* HR Admin Order */}
+                          {o.admin_order_attachment_path &&
+                            canDownloadApprovedFile(o) && (
+                              <button
+                                className="po-action-btn po-action-download"
+                                type="button"
+                                onClick={() =>
+                                  downloadFile(
+                                    o.id,
+                                    "admin-order",
+                                    o.admin_order_attachment_name || "admin-order"
+                                  )
+                                }
+                              >
+                                Admin Order
+                              </button>
+                            )}
+
+                          {/* AVP Signed Admin Order */}
+                          {o.signed_admin_order_path &&
+                            canDownloadApprovedFile(o) && (
+                              <button
+                                className="po-action-btn po-action-download"
+                                type="button"
+                                onClick={() =>
+                                  downloadFile(
+                                    o.id,
+                                    "signed-admin-order",
+                                    o.signed_admin_order_name || "signed-admin-order"
+                                  )
+                                }
+                              >
+                                Signed Admin Order
+                              </button>
+                            )}
+
+                          {/* HR uploads Admin Order */}
+                          {canUploadAdminOrder(o) && (
                             <label className="po-action-btn po-action-upload">
-                              {uploadingApproved[o.id]
-                                ?"Uploading..."
-                                :"Upload Approved"}
+                              {uploadingAdminOrder[o.id]
+                                ? "Uploading..."
+                                : "Upload Admin Order"}
 
                               <input
                                 type="file"
                                 hidden
-                                onChange={(e)=>
-                                  uploadApprovedFile(
-                                    o.id,
-                                    e.target.files?.[0]||null
-                                  )
-                                }
+                                disabled={uploadingAdminOrder[o.id]}
+                                onChange={(e) => {
+                                  const file = e.target.files?.[0] || null;
+                                  uploadAdminOrder(o.id, file);
+                                  e.target.value = "";
+                                }}
                               />
                             </label>
                           )}
 
-                          {!o.attachment_path&&
-                          !o.approved_attachment_path&&
-                          !canUploadApprovedFile&&"-"}
+                          {/* AVP uploads signed Admin Order */}
+                          {canUploadSignedAdminOrder(o) && (
+                            <label className="po-action-btn po-action-upload">
+                              {uploadingSignedAdminOrder[o.id]
+                                ? "Uploading..."
+                                : "Upload Signed Order"}
+
+                              <input
+                                type="file"
+                                hidden
+                                disabled={uploadingSignedAdminOrder[o.id]}
+                                onChange={(e) => {
+                                  const file = e.target.files?.[0] || null;
+                                  uploadSignedAdminOrder(o.id, file);
+                                  e.target.value = "";
+                                }}
+                              />
+                            </label>
+                          )}
+
+                          {!o.attachment_path &&
+                            !o.approved_attachment_path &&
+                            !o.admin_order_attachment_path &&
+                            !o.signed_admin_order_path &&
+                            !canUploadAdminOrder(o) &&
+                            !canUploadSignedAdminOrder(o) &&
+                            "-"}
                         </div>
                       </td>
 
@@ -1105,7 +1331,7 @@ export default function SuspensionOrder() {
                               <button
                                 className="po-action-btn po-action-edit"
                                 type="button"
-                                disabled={approved}
+                                disabled={completed}
                                 onClick={()=>openEdit(o)}
                               >
                                 Edit
@@ -1114,7 +1340,7 @@ export default function SuspensionOrder() {
                               <button
                                 className="po-action-btn po-action-delete"
                                 type="button"
-                                disabled={approved}
+                                disabled={completed}
                                 onClick={()=>deleteOrder(o)}
                               >
                                 Delete
@@ -1142,11 +1368,26 @@ export default function SuspensionOrder() {
                             </>
                           )}
 
-                          {!canEditDelete&&!canApproveStage(o)&&(
-                            <span className="po-view-only">
-                              View only
-                            </span>
+                          {canReceiveSuspension(o) && (
+                            <button
+                              className="po-action-btn po-action-approve"
+                              type="button"
+                              disabled={receivingOrder[o.id]}
+                              onClick={() => receiveSuspensionOrder(o)}
+                            >
+                              {receivingOrder[o.id] ? "Receiving..." : "Received"}
+                            </button>
                           )}
+
+                          {!canEditDelete &&
+                            !canApproveStage(o) &&
+                            !canReceiveSuspension(o) &&
+                            !canUploadAdminOrder(o) &&
+                            !canUploadSignedAdminOrder(o) && (
+                              <span className="po-view-only">
+                                View only
+                              </span>
+                            )}
                         </div>
                       </td>
                     </tr>
