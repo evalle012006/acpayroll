@@ -2110,28 +2110,29 @@ router.post(
        */
       await client.query(
         `
-        UPDATE public.demotion_orders
-        SET
-          hr_final_status = 'Approved',
-          hr_final_by = $2,
-          hr_final_at = NOW(),
+          UPDATE public.demotion_orders
+          SET
+            hr_final_status = 'Approved',
+            hr_final_by = $2,
+            hr_final_at = NOW(),
 
-          status = 'Approved',
-          approval_stage = 'approved',
+            status = 'Approved',
+            approval_stage = 'approved',
 
-          approved_by = $2,
-          approved_at = NOW(),
+            approved_by = $3,
+            approved_at = NOW(),
 
-          approved_attachment_path =
-            attachment_path,
-          approved_attachment_name =
-            attachment_name,
-          approved_attachment_mime =
-            attachment_mime
-        WHERE id = $1
+            approved_attachment_path =
+              attachment_path,
+            approved_attachment_name =
+              attachment_name,
+            approved_attachment_mime =
+              attachment_mime
+          WHERE id = $1
         `,
         [
           id,
+          req.user?.id ?? null,
           req.user?.id ?? null,
         ]
       );

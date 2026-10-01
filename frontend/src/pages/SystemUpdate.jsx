@@ -187,6 +187,41 @@ export default function SystemUpdate() {
           </div>
         </button>
 
+        <button
+          type="button"
+          className="sys-card"
+          onClick={() =>
+            navigate("/system-update/pag-ibig-remittances")
+          }
+        >
+          <div className="sys-card-head">
+            <div>
+              <div className="sys-card-title">
+                Bonus Computations
+              </div>
+
+              <div className="sys-card-meta">
+                Manage employee 13th / 14th 15th Month Pay.
+              </div>
+            </div>
+
+            <span className="sys-pill">Manage</span>
+          </div>
+
+          <div className="sys-card-body">
+            <p className="sys-mini">
+              Create, review, and maintain employee and employer
+              .
+            </p>
+
+            <div className="sys-actions">
+              <span className="sys-link">
+                Open →
+              </span>
+            </div>
+          </div>
+        </button>
+
       </div>
     </div>
   );
