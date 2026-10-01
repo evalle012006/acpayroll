@@ -74,12 +74,8 @@ export default function Soa() {
 
   const canEdit =
     isAdmin ||
-    isIt ||
-    isHr ||
-    isAccounting ||
-    isBranchManager ||
-    isActingBranchManager ||
-    isITDepartmentManager ||
+    isHrDepartment ||
+    isITDepartment ||
     isAccountingDepartment;
 
   const canView =
@@ -110,10 +106,13 @@ export default function Soa() {
     isITDepartmentManager ||
     isHrDepartment;
 
-  const canDelete = 
-    isAdmin || 
-    isITDepartmentManager ||
-    isIt;
+  const canVoid =
+    isAdmin ||
+    isHrDepartment ||
+    isITDepartment ||
+    isAccountingDepartment;
+
+  const canDelete = isAdmin;
 
   const [staffList, setStaffList] = useState([]);
   const [branches, setBranches] = useState([]);
@@ -661,6 +660,50 @@ export default function Soa() {
     }
   };
 
+  const voidSettlement = async (row) => {
+    if (!row) return;
+
+    if (!canVoid) {
+      return alert("Access denied.");
+    }
+
+    if (norm(row.status) === "void") {
+      return alert("Settlement is already voided.");
+    }
+
+    if (
+      !window.confirm(
+        `Void settlement #${row.id} for ${row.employee_name || "this employee"}?`
+      )
+    ) {
+      return;
+    }
+
+    try {
+      const res = await api.put(
+        `/settlements/${row.id}/void`
+      );
+
+      alert(
+        res?.data?.message ||
+          "Settlement voided successfully."
+      );
+
+      await loadSettlements();
+
+      if (viewRow?.id === row.id) {
+        setViewRow(
+          res?.data?.settlement || null
+        );
+      }
+    } catch (err) {
+      alert(
+        err?.response?.data?.message ||
+          "Failed to void settlement."
+      );
+    }
+  };
+
   const downloadSettlementFile = async (id, fallbackName = "") => {
     try {
       const res = await api.get(`/settlements/${id}/download`, {
@@ -1098,6 +1141,16 @@ export default function Soa() {
                             onClick={() => openEditSettlement(r)}
                           >
                             Edit
+                          </button>
+                        )}
+
+                        {canVoid && norm(r.status) !== "void" && (
+                          <button
+                            type="button"
+                            className="soa-action-btn soa-action-delete"
+                            onClick={() => voidSettlement(r)}
+                          >
+                            Void
                           </button>
                         )}
 

@@ -105,6 +105,24 @@ const isAccountingDepartmentUser = (req) => {
   );
 };
 
+const isITDepartmentUser = (req) => {
+  const dept = norm(getUserDepartment(req));
+
+  return (
+    dept === "it" ||
+    dept === "it department"
+  );
+};
+
+const canEditOrVoidSettlement = (req) => {
+  return (
+    isAdmin(req) ||
+    isHRDepartmentUser(req) ||
+    isITDepartmentUser(req) ||
+    isAccountingDepartmentUser(req)
+  );
+};
+
 const isITDepartmentManager = (req) => {
   const dept = norm(getUserDepartment(req));
   const role = norm(getUserRole(req));
@@ -683,6 +701,15 @@ router.put(
     const client = await pool.connect();
 
     try {
+      if (!canEditOrVoidSettlement(req)) {
+        removeUploadedFile(req.file);
+
+        return res.status(403).json({
+          message:
+            "Only Admin, HR Department, IT Department, and Accounting Department can edit settlements.",
+        });
+      }
+
       const id = toInt(req.params.id);
 
       if (!id) {
@@ -888,9 +915,16 @@ router.put(
 router.put(
   "/settlements/:id/void",
   requireAuth,
-  requirePermission("statement_of_account", "delete"),
+  requirePermission("statement_of_account", "edit"),
   async (req, res) => {
     try {
+      if (!canEditOrVoidSettlement(req)) {
+        return res.status(403).json({
+          message:
+            "Only Admin, HR Department, IT Department, and Accounting Department can void settlements.",
+        });
+      }
+
       const id = toInt(req.params.id);
 
       if (!id) {
@@ -2109,6 +2143,12 @@ router.delete(
   ),
   async (req, res) => {
     try {
+      if (!isAdmin(req)) {
+        return res.status(403).json({
+          message: "Only Admin can delete settlements.",
+        });
+      }
+
       const id = toInt(req.params.id);
 
       if (!id) {
