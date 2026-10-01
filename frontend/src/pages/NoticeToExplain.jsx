@@ -116,6 +116,7 @@ export default function NoticeToExplain() {
     isAdmin ||
     isIT ||
     isHR ||
+    isHRDepartment ||
     isAccounting ||
     isAuditDepartment;
 
@@ -123,6 +124,7 @@ export default function NoticeToExplain() {
     isAdmin ||
     isIT ||
     isHR ||
+    isHRDepartment ||
     isAccounting ||
     isAuditDepartment;
 
