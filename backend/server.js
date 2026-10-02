@@ -7,7 +7,6 @@ const authRoutes = require("./routes/authRoutes");
 const userRoutes = require("./routes/userRoutes");
 const staffRoutes = require("./routes/staffRoutes");
 const reportRoutes = require("./routes/reportRoutes");
-const bonusRoutes = require("./routes/bonusRoutes");
 const leaveRoutes = require("./routes/leaveRoutes");
 const settlementsRoutes = require("./routes/settlementsRoutes");
 const departmentsRoutes = require("./routes/departmentsRoutes");
@@ -56,6 +55,9 @@ const boardResolutionRoutes = require("./routes/boardResolutionRoutes");
 const rolePermissionsRoutes = require("./routes/rolePermissionsRoutes");
 const awolReportsRoutes = require("./routes/awolReportsRoutes");
 const otherReceivableRoutes = require("./routes/otherReceivableRoutes");
+const bonusRoutes = require("./routes/bonusRoutes");
+const bonusComputationRoutes =
+  require("./routes/bonusComputationRoutes");
 
 const terminationRoutes = require("./routes/terminationRoutes");
 const { startMonthlyBalancePoster } = require("./jobs/monthlyBalancePoster");
@@ -80,6 +82,7 @@ app.use("/api/auth", authRoutes);
 app.use("/api/users", userRoutes);
 
 app.use("/api/bonus", bonusRoutes);
+app.use("/api/bonus-computations", bonusComputationRoutes);
 app.use("/api/schedule-balances", scheduleBalancesRoutes);
 app.use("/api/transport-overrides", transportOverrideRoutes);
 app.use("/api/logistic", logisticRoutes);

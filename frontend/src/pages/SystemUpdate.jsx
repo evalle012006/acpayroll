@@ -191,7 +191,7 @@ export default function SystemUpdate() {
           type="button"
           className="sys-card"
           onClick={() =>
-            navigate("/system-update/pag-ibig-remittances")
+            navigate("/system-update/bonus-computations")
           }
         >
           <div className="sys-card-head">
@@ -201,7 +201,7 @@ export default function SystemUpdate() {
               </div>
 
               <div className="sys-card-meta">
-                Manage employee 13th / 14th 15th Month Pay.
+                Manage employee 13th, 14th, and 15th Month Pay.
               </div>
             </div>
 
@@ -210,8 +210,8 @@ export default function SystemUpdate() {
 
           <div className="sys-card-body">
             <p className="sys-mini">
-              Create, review, and maintain employee and employer
-              .
+              Compute, review, and maintain employee 13th, 14th,
+              and 15th month pay records.
             </p>
 
             <div className="sys-actions">

@@ -202,6 +202,12 @@ export default function DemotionOrder() {
     isITDepartment ||
     isAccountingDepartment;
 
+  const canEdit =
+    isAdmin ||
+    isHRDepartment ||
+    isITDepartment ||
+    isAccountingDepartment;
+
   const canHrWorkflow =
     isAdmin ||
     isHRDepartment;
@@ -242,6 +248,18 @@ export default function DemotionOrder() {
     canOperationDownload ||
     isSeniorVicePresident ||
     isPresident;
+
+  const canEditOrder = (order) => {
+    if (!canEdit || !order) return false;
+
+    const status = norm(order.status);
+
+    return (
+      status !== "approved" &&
+      status !== "rejected" &&
+      status !== "voided"
+    );
+  };
 
   const canActOnStage = (order) => {
     const status = norm(order?.status);
@@ -304,6 +322,7 @@ export default function DemotionOrder() {
 
   const [showModal, setShowModal] = useState(false);
   const [viewOrder, setViewOrder] = useState(null);
+  const [editingOrder, setEditingOrder] = useState(null);
 
   const [rejecting, setRejecting] = useState(null);
   const [rejectReason, setRejectReason] = useState("");
@@ -501,14 +520,67 @@ export default function DemotionOrder() {
 
   const openCreate = () => {
     setErr("");
+    setEditingOrder(null);
     setForm(emptyForm);
     setEmployeeSearch("");
     setShowEmployeeDropdown(false);
     setShowModal(true);
   };
 
+  const openEdit = (order) => {
+    if (!canEditOrder(order)) {
+      return alert("You are not allowed to edit this demotion order.");
+    }
+
+    setErr("");
+    setEditingOrder(order);
+
+    const emp = staff.find(
+      (x) => String(x.id) === String(order.employee_id)
+    );
+
+    setForm({
+      employee_id: String(order.employee_id || ""),
+      first_name: clean(emp?.first_name),
+      last_name: clean(emp?.last_name),
+      middle_name: clean(emp?.middle_name),
+
+      prev_position: clean(order.old_position),
+      new_position: clean(order.new_position),
+
+      prev_branch_id:
+        order.prev_branch_id != null
+          ? String(order.prev_branch_id)
+          : "",
+
+      to_branch_id:
+        order.to_branch_id != null
+          ? String(order.to_branch_id)
+          : "",
+
+      to_division: clean(order.to_division),
+      to_region: clean(order.to_region),
+      to_area: clean(order.to_area),
+      to_department: clean(order.to_department),
+
+      effective_date: toDate10(order.effective_date),
+      details: clean(order.details),
+
+      // New file is optional during Edit.
+      attachment: null,
+    });
+
+    setEmployeeSearch(
+      `${order.employee_id} — ${order.employee_name || ""}`
+    );
+
+    setShowEmployeeDropdown(false);
+    setShowModal(true);
+  };
+
   const closeModal = () => {
     setShowModal(false);
+    setEditingOrder(null);
     setSaving(false);
     setErr("");
     setForm(emptyForm);
@@ -541,7 +613,17 @@ export default function DemotionOrder() {
   const submitCreate = async (e) => {
     e.preventDefault();
 
-    if (!canCreate || saving) return;
+    if (saving) return;
+
+    if (editingOrder) {
+      if (!canEdit) {
+        return setErr("You are not allowed to edit demotion orders.");
+      }
+    } else {
+      if (!canCreate) {
+        return setErr("You are not allowed to create demotion orders.");
+      }
+    }
 
     setErr("");
 
@@ -550,7 +632,9 @@ export default function DemotionOrder() {
     if (!toDate10(form.effective_date)) return setErr("Effective date is required.");
     if (!form.to_branch_id) return setErr("Destination branch is required.");
     if (!form.to_department) { return setErr("Destination department is required.");}
-    if (!form.attachment) return setErr("Demotion request file is required.");
+    if (!editingOrder && !form.attachment) {
+      return setErr("Demotion request file is required.");
+    }
 
     const formData = new FormData();
 
@@ -572,14 +656,30 @@ export default function DemotionOrder() {
     formData.append("to_region", clean(form.to_region));
     formData.append("to_area", clean(form.to_area));
     formData.append("to_department", clean(form.to_department));
-    formData.append("attachment", form.attachment);
+    if (form.attachment) {
+      formData.append("attachment", form.attachment);
+    }
 
     setSaving(true);
 
     try {
-      await api.post("/demotion-orders", formData, {
-        headers: { "Content-Type": "multipart/form-data" },
-      });
+      if (editingOrder) {
+        await api.put(
+          `/demotion-orders/${editingOrder.id}/edit`,
+          formData,
+          {
+            headers: {
+              "Content-Type": "multipart/form-data",
+            },
+          }
+        );
+      } else {
+        await api.post("/demotion-orders", formData, {
+          headers: {
+            "Content-Type": "multipart/form-data",
+          },
+        });
+      }
 
       closeModal();
       await loadData();
@@ -1427,6 +1527,17 @@ export default function DemotionOrder() {
                             View
                           </button>
 
+                          {canEditOrder(order) && (
+                            <button
+                              className="demotion-mini-btn demotion-edit"
+                              type="button"
+                              disabled={!!processingId}
+                              onClick={() => openEdit(order)}
+                            >
+                              Edit
+                            </button>
+                          )}
+
                           {canAct &&
                             !waitingWorkflow &&
                             !approved &&
@@ -1793,9 +1904,14 @@ export default function DemotionOrder() {
             <div className="demotion-modal-head">
               <div>
                 <span className="demotion-modal-eyebrow">
-                  NEW TRANSACTION
+                  {editingOrder ? "EDIT TRANSACTION" : "NEW TRANSACTION"}
                 </span>
-                <h3>Create Demotion Order</h3>
+
+                <h3>
+                  {editingOrder
+                    ? "Edit Demotion Order"
+                    : "Create Demotion Order"}
+                </h3>
                 <p>
                   Select an employee, define the new position and branch,
                   then upload the supporting demotion file.
@@ -1823,6 +1939,7 @@ export default function DemotionOrder() {
                     type="text"
                     placeholder="Search employee ID, name, or employee number..."
                     value={employeeSearch}
+                    disabled={!!editingOrder}
                     onChange={(event) => {
                       setEmployeeSearch(event.target.value);
                       setShowEmployeeDropdown(true);
@@ -1846,7 +1963,7 @@ export default function DemotionOrder() {
                     onFocus={() => setShowEmployeeDropdown(true)}
                   />
 
-                  {showEmployeeDropdown && (
+                  {showEmployeeDropdown && !editingOrder && (
                     <div className="demotion-search-dropdown">
                       {filteredStaff.length === 0 ? (
                         <div className="demotion-search-empty">
@@ -1905,7 +2022,7 @@ export default function DemotionOrder() {
                       }))
                     }
                     placeholder="Enter new position"
-                    required
+                    required={!editingOrder}
                   />
                 </div>
 
@@ -1951,7 +2068,7 @@ export default function DemotionOrder() {
                         ),
                       }));
                     }}
-                    required
+                    required={!editingOrder}
                   >
                     <option value="">Select branch</option>
 
@@ -2001,7 +2118,7 @@ export default function DemotionOrder() {
                         to_department: event.target.value,
                       }))
                     }
-                    required
+                    required={!editingOrder}
                   >
                     <option value="">
                       Select destination department
@@ -2052,7 +2169,7 @@ export default function DemotionOrder() {
                         effective_date: event.target.value,
                       }))
                     }
-                    required
+                    required={!editingOrder}
                   />
                 </div>
 
@@ -2067,7 +2184,7 @@ export default function DemotionOrder() {
                           event.target.files?.[0] || null,
                       }))
                     }
-                    required
+                    required={!editingOrder}
                   />
                 </div>
 
@@ -2104,7 +2221,11 @@ export default function DemotionOrder() {
                   type="submit"
                   disabled={saving}
                 >
-                  {saving ? "Saving..." : "Create Demotion"}
+                  {saving
+                    ? "Saving..."
+                    : editingOrder
+                    ? "Save Changes"
+                    : "Create Demotion"}
                 </button>
               </div>
             </form>
@@ -2279,6 +2400,17 @@ export default function DemotionOrder() {
         </div>
       )}
 
+      {pagedOrders.map((order) => {
+        <button
+          type="button"
+          className="demotion-action-btn demotion-action-edit"
+          onClick={() => openEdit(order)}
+          disabled={!!processingId}
+        >
+          Edit
+        </button>
+      })}
+
       {rejecting && (
         <div
           className="demotion-modal-overlay"
@@ -2320,7 +2452,7 @@ export default function DemotionOrder() {
                   }
                   placeholder="Explain why this demotion order is being rejected..."
                   rows={5}
-                  required
+                  required={!editingOrder}
                 />
               </div>
 

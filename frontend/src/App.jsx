@@ -47,6 +47,7 @@ import StaffAccountsPayable from "./pages/StaffAccountsPayable";
 import OtherReceivable from "./pages/OtherReceivable";
 import BoardResolutionRequests from "./pages/BoardResolutionRequests";
 import TravelPlan from "./pages/Calendar";
+import BonusComputation from "./pages/BonusComputation";
 import Permissions from "./pages/Permissions";
 import StaffReport from "./pages/StaffReport";
 import NoticeToExplain from "./pages/NoticeToExplain";
@@ -790,6 +791,15 @@ function AppShell() {
               <Chat />
             </ProtectedLayout>
           </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/system-update/bonus-computations"
+        element={
+          <Page module="system_update">
+            <BonusComputation />
+          </Page>
         }
       />
 

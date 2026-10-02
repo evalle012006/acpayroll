@@ -1,0 +1,398 @@
+.bonus-comp-page {
+  width: 100%;
+  min-height: 100%;
+  color: var(--text-color, #1f2937);
+}
+
+.bonus-comp-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.bonus-comp-header h1 {
+  margin: 0 0 5px;
+  font-size: 26px;
+  font-weight: 700;
+}
+
+.bonus-comp-header p {
+  margin: 0;
+  opacity: 0.7;
+}
+
+/* FILTERS */
+
+.bonus-comp-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 14px;
+  padding: 16px;
+  margin-bottom: 18px;
+  background: var(--card-bg, #ffffff);
+  border: 1px solid var(--border-color, #e5e7eb);
+  border-radius: 10px;
+}
+
+.bonus-filter {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 160px;
+}
+
+.bonus-filter label {
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.bonus-filter select,
+.bonus-filter input {
+  height: 38px;
+  padding: 0 10px;
+  border: 1px solid var(--border-color, #d1d5db);
+  border-radius: 6px;
+  background: var(--card-bg, #ffffff);
+  color: inherit;
+  outline: none;
+}
+
+.bonus-search {
+  flex: 1;
+  min-width: 250px;
+}
+
+/* MAIN TABLE */
+
+.bonus-comp-table-wrap {
+  width: 100%;
+  overflow-x: auto;
+  background: var(--card-bg, #ffffff);
+  border: 1px solid var(--border-color, #e5e7eb);
+  border-radius: 10px;
+}
+
+.bonus-comp-table {
+  width: 100%;
+  min-width: 1100px;
+  border-collapse: collapse;
+}
+
+.bonus-comp-table th,
+.bonus-comp-table td {
+  padding: 11px 12px;
+  border-bottom: 1px solid var(--border-color, #e5e7eb);
+  white-space: nowrap;
+  font-size: 13px;
+}
+
+.bonus-comp-table th {
+  text-align: left;
+  font-weight: 700;
+  background: rgba(0, 0, 0, 0.035);
+}
+
+.bonus-comp-table .num {
+  text-align: right;
+}
+
+.employee-name {
+  font-weight: 600;
+}
+
+.bonus-empty {
+  padding: 35px !important;
+  text-align: center;
+  opacity: 0.65;
+}
+
+/* ACTION BUTTONS */
+
+.bonus-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.bonus-btn {
+  border: 0;
+  border-radius: 6px;
+  padding: 7px 12px;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 12px;
+}
+
+.bonus-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.bonus-btn.view,
+.bonus-btn.secondary {
+  background: #e5e7eb;
+  color: #111827;
+}
+
+.bonus-btn.edit,
+.bonus-btn.primary {
+  background: #2563eb;
+  color: #ffffff;
+}
+
+/* MODAL */
+
+.bonus-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(0, 0, 0, 0.55);
+}
+
+.bonus-modal {
+  width: min(1000px, 96vw);
+  max-height: 92vh;
+  overflow-y: auto;
+  background: var(--card-bg, #ffffff);
+  color: var(--text-color, #1f2937);
+  border-radius: 12px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+}
+
+.bonus-modal-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px 20px;
+  border-bottom: 1px solid var(--border-color, #e5e7eb);
+}
+
+.bonus-modal-header h2 {
+  margin: 0 0 4px;
+  font-size: 20px;
+}
+
+.bonus-modal-header p {
+  margin: 0;
+  font-size: 13px;
+  opacity: 0.7;
+}
+
+.bonus-modal-close {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-size: 28px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+/* EMPLOYEE INFORMATION */
+
+.bonus-employee-info {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border-color, #e5e7eb);
+}
+
+.bonus-employee-info > div {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.bonus-employee-info span {
+  font-size: 11px;
+  opacity: 0.65;
+}
+
+.bonus-employee-info strong {
+  font-size: 13px;
+}
+
+/* MONTH TABLE */
+
+.bonus-month-table-wrap {
+  padding: 18px 20px;
+  overflow-x: auto;
+}
+
+.bonus-month-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.bonus-month-table th,
+.bonus-month-table td {
+  padding: 9px 10px;
+  border: 1px solid var(--border-color, #e5e7eb);
+}
+
+.bonus-month-table th {
+  font-size: 12px;
+  text-align: right;
+  background: rgba(0, 0, 0, 0.035);
+}
+
+.bonus-month-table th:first-child {
+  text-align: left;
+}
+
+.bonus-month-table td {
+  text-align: right;
+  font-size: 13px;
+}
+
+.bonus-month-table td:first-child {
+  text-align: left;
+  font-weight: 600;
+}
+
+.bonus-month-table input {
+  width: 100%;
+  min-width: 130px;
+  height: 34px;
+  padding: 0 8px;
+  text-align: right;
+  border: 1px solid var(--border-color, #d1d5db);
+  border-radius: 5px;
+  background: var(--card-bg, #ffffff);
+  color: inherit;
+}
+
+.bonus-month-table tfoot th {
+  font-size: 13px;
+}
+
+.bonus-modal-loading {
+  padding: 50px 20px;
+  text-align: center;
+}
+
+/* FOOTER */
+
+.bonus-modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 15px 20px;
+  border-top: 1px solid var(--border-color, #e5e7eb);
+}
+
+/* RESPONSIVE */
+
+@media (max-width: 800px) {
+  .bonus-employee-info {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 520px) {
+  .bonus-employee-info {
+    grid-template-columns: 1fr;
+  }
+
+  .bonus-comp-filters {
+    align-items: stretch;
+  }
+
+  .bonus-filter,
+  .bonus-search {
+    width: 100%;
+    min-width: 100%;
+  }
+}
+
+/* DARK MODE */
+
+[data-theme="dark"] .bonus-comp-page,
+.dark .bonus-comp-page {
+  --card-bg: #1f2937;
+  --text-color: #f3f4f6;
+  --border-color: #374151;
+}
+
+[data-theme="dark"] .bonus-btn.view,
+[data-theme="dark"] .bonus-btn.secondary,
+.dark .bonus-btn.view,
+.dark .bonus-btn.secondary {
+  background: #374151;
+  color: #f3f4f6;
+}
+
+/* PAGINATION */
+
+.bonus-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 14px;
+  padding: 12px 14px;
+  background: var(--card-bg, #ffffff);
+  border: 1px solid var(--border-color, #e5e7eb);
+  border-radius: 8px;
+}
+
+.bonus-pagination-info {
+  font-size: 13px;
+  opacity: 0.75;
+}
+
+.bonus-pagination-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.bonus-page-btn {
+  min-width: 80px;
+  padding: 7px 12px;
+  border: 1px solid var(--border-color, #d1d5db);
+  border-radius: 6px;
+  background: var(--card-bg, #ffffff);
+  color: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.bonus-page-btn:hover:not(:disabled) {
+  background: rgba(0, 0, 0, 0.05);
+}
+
+.bonus-page-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.bonus-page-number {
+  min-width: 90px;
+  text-align: center;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+@media (max-width: 600px) {
+  .bonus-pagination {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .bonus-pagination-info {
+    text-align: center;
+  }
+
+  .bonus-pagination-actions {
+    justify-content: center;
+  }
+}

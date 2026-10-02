@@ -153,6 +153,31 @@ const canCreateDemotion = (req) => {
   );
 };
 
+const canEditDemotion = (req) => {
+  const dept = norm(req.user?.department);
+
+  const isHRDepartment =
+    dept === "hr" ||
+    dept === "hr department" ||
+    dept === "human resources" ||
+    dept === "human resources department";
+
+  const isITDepartment =
+    dept === "it" ||
+    dept === "it department";
+
+  const isAccountingDepartment =
+    dept === "accounting" ||
+    dept === "accounting department";
+
+  return (
+    isAdmin(req) ||
+    isHRDepartment ||
+    isITDepartment ||
+    isAccountingDepartment
+  );
+};
+
 const canVoidOrDeleteDemotion = (req) => {
   const dept = norm(req.user?.department);
 
@@ -1140,6 +1165,260 @@ router.post(
       await client.query("ROLLBACK");
       console.error("POST /api/demotion-orders ERROR:", e);
       return res.status(500).json({ message: e?.message || "Server error" });
+    } finally {
+      client.release();
+    }
+  }
+);
+
+/*
+|--------------------------------------------------------------------------
+| EDIT DEMOTION ORDER
+|--------------------------------------------------------------------------
+*/
+
+router.put(
+  "/demotion-orders/:id/edit",
+  requireAuth,
+  requirePermission("demotion_order", "edit"),
+  upload.single("attachment"),
+  async (req, res) => {
+    const client = await pool.connect();
+
+    try {
+      await client.query("BEGIN");
+
+      const id = toInt(req.params.id);
+
+      if (!id) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({
+          message: "Invalid demotion order ID",
+        });
+      }
+
+      if (!canEditDemotion(req)) {
+        await client.query("ROLLBACK");
+
+        if (req.file?.path) {
+          try {
+            fs.unlinkSync(req.file.path);
+          } catch {}
+        }
+
+        return res.status(403).json({
+          message:
+            "Only Admin, IT Department, HR Department, and Accounting Department can edit demotion orders.",
+        });
+      }
+
+      const existingResult = await client.query(
+        `
+        SELECT *
+        FROM public.demotion_orders
+        WHERE id = $1
+        FOR UPDATE
+        `,
+        [id]
+      );
+
+      if (!existingResult.rowCount) {
+        await client.query("ROLLBACK");
+
+        if (req.file?.path) {
+          try {
+            fs.unlinkSync(req.file.path);
+          } catch {}
+        }
+
+        return res.status(404).json({
+          message: "Demotion order not found",
+        });
+      }
+
+      const existing = existingResult.rows[0];
+      const currentStatus = norm(existing.status);
+
+      if (
+        currentStatus === "approved" ||
+        currentStatus === "rejected" ||
+        currentStatus === "voided"
+      ) {
+        await client.query("ROLLBACK");
+
+        if (req.file?.path) {
+          try {
+            fs.unlinkSync(req.file.path);
+          } catch {}
+        }
+
+        return res.status(400).json({
+          message:
+            "Approved, rejected, or voided demotion orders can no longer be edited.",
+        });
+      }
+
+      const b = req.body || {};
+
+      const new_position = toStr(b.new_position);
+      const effective_date = toDateOrNull(b.effective_date);
+      const details = toStr(b.details);
+      const to_branch_id = toInt(b.to_branch_id);
+      const to_department = toStr(b.to_department);
+
+      if (!new_position) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({
+          message: "New position required",
+        });
+      }
+
+      if (!effective_date) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({
+          message: "Effective date required",
+        });
+      }
+
+      if (!to_branch_id) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({
+          message: "Destination branch required",
+        });
+      }
+
+      if (!to_department) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({
+          message: "Destination department required",
+        });
+      }
+
+      const branchResult = await client.query(
+        `
+        SELECT
+          id,
+          code,
+          name,
+          area,
+          region,
+          division
+        FROM public.branches
+        WHERE id = $1
+        LIMIT 1
+        `,
+        [to_branch_id]
+      );
+
+      if (!branchResult.rowCount) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({
+          message: "Destination branch not found",
+        });
+      }
+
+      const branch = branchResult.rows[0];
+
+      let attachmentPath = existing.attachment_path;
+      let attachmentName = existing.attachment_name;
+      let attachmentMime = existing.attachment_mime;
+
+      if (req.file) {
+        attachmentPath = `/uploads/demotions/${req.file.filename}`;
+        attachmentName = req.file.originalname || null;
+        attachmentMime = req.file.mimetype || null;
+      }
+
+      const updated = await client.query(
+        `
+        UPDATE public.demotion_orders
+        SET
+          new_position = $1,
+          to_branch_id = $2,
+          to_branch_code = $3,
+          to_branch_name = $4,
+          to_division = $5,
+          to_region = $6,
+          to_area = $7,
+          to_department = $8,
+          effective_date = $9::date,
+          details = $10,
+          attachment_path = $11,
+          attachment_name = $12,
+          attachment_mime = $13
+        WHERE id = $14
+        RETURNING *
+        `,
+        [
+          new_position,
+          to_branch_id,
+          toStr(branch.code),
+          toStr(branch.name),
+          toStr(branch.division),
+          toStr(branch.region),
+          toStr(branch.area),
+          to_department,
+          effective_date,
+          details,
+          attachmentPath,
+          attachmentName,
+          attachmentMime,
+          id,
+        ]
+      );
+
+      await client.query("COMMIT");
+
+      // Remove old request attachment only after DB update succeeds.
+      if (
+        req.file &&
+        existing.attachment_path &&
+        existing.attachment_path !== attachmentPath
+      ) {
+        try {
+          const oldFile = path.join(
+            __dirname,
+            "..",
+            existing.attachment_path.replace(/^\/+/, "")
+          );
+
+          if (fs.existsSync(oldFile)) {
+            fs.unlinkSync(oldFile);
+          }
+        } catch (cleanupError) {
+          console.error(
+            "Failed to remove old demotion attachment:",
+            cleanupError
+          );
+        }
+      }
+
+      return res.json({
+        message: "Demotion order updated successfully.",
+        order: updated.rows[0],
+      });
+    } catch (e) {
+      try {
+        await client.query("ROLLBACK");
+      } catch {}
+
+      // New upload should not remain when edit fails.
+      if (req.file?.path) {
+        try {
+          if (fs.existsSync(req.file.path)) {
+            fs.unlinkSync(req.file.path);
+          }
+        } catch {}
+      }
+
+      console.error(
+        "PUT /api/demotion-orders/:id/edit ERROR:",
+        e
+      );
+
+      return res.status(500).json({
+        message: e?.message || "Server error",
+      });
     } finally {
       client.release();
     }
