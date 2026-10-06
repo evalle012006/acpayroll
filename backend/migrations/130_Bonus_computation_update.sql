@@ -1,0 +1,9 @@
+BEGIN;
+
+ALTER TABLE public.bonus_computations
+ADD COLUMN IF NOT EXISTS total_compensation NUMERIC NOT NULL DEFAULT 0;
+
+ALTER TABLE public.bonus_computations
+ADD COLUMN IF NOT EXISTS deductions NUMERIC NOT NULL DEFAULT 0;
+
+COMMIT;

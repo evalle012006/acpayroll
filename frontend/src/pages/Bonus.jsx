@@ -421,7 +421,7 @@ export default function Bonus() {
     };
 
     loadSavedForBranch();
-  }, [branch, bonusMonth]);
+  }, [branch, bonusMonth, bonusType]);
 
   useEffect(() => {
     const loadStatusHistory = async () => {
