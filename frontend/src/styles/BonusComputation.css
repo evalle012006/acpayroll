@@ -396,3 +396,62 @@
     justify-content: center;
   }
 }
+
+/* =========================================
+   BONUS BENEFIT SUMMARY
+========================================= */
+
+.bonus-benefit-summary {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 10px;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border-color, #374151);
+}
+
+.bonus-benefit-summary > div {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 12px;
+  border: 1px solid var(--border-color, #374151);
+  border-radius: 7px;
+}
+
+.bonus-benefit-summary span {
+  font-size: 11px;
+  opacity: 0.7;
+  font-weight: 600;
+}
+
+.bonus-benefit-summary strong {
+  font-size: 14px;
+}
+
+.bonus-benefit-summary .bonus-benefit-highlight {
+  background: #16a34a;
+  border-color: #22c55e;
+  color: #ffffff;
+}
+
+.bonus-benefit-summary .bonus-benefit-highlight span {
+  opacity: 1;
+  font-weight: 700;
+}
+
+.bonus-benefit-summary .bonus-benefit-highlight strong {
+  font-size: 18px;
+  font-weight: 800;
+}
+
+@media (max-width: 1000px) {
+  .bonus-benefit-summary {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 600px) {
+  .bonus-benefit-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

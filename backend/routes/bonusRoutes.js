@@ -45,48 +45,6 @@ const normalizeBonusMonth = (v) => {
   return `${y}-${m}-01`;
 };
 
-const bonusTypeFromLine = (line) => {
-  const month13 = toNum(
-    line?.month_13
-  );
-
-  const month14 = toNum(
-    line?.month_14
-  );
-
-  const month15 = toNum(
-    line?.month_15
-  );
-
-  const result = toNum(
-    line?.result
-  );
-
-  if (
-    month13 > 0 &&
-    Math.abs(
-      result - month13
-    ) < 0.01
-  ) {
-    return "13th Month";
-  }
-
-  if (
-    month14 > 0 &&
-    Math.abs(
-      result - month14
-    ) < 0.01
-  ) {
-    return "14th Month";
-  }
-
-  if (month15 > 0) {
-    return "15th Month";
-  }
-
-  return "13th Month";
-};
-
 /* ================= GET BRANCH BONUS ================= */
 
 router.get(
@@ -108,6 +66,27 @@ router.get(
             ?.bonus_month
         );
 
+      const bonusType =
+        String(
+          req.query?.bonus_type ?? ""
+        ).trim();
+
+      const allowedBonusTypes = new Set([
+        "13th Month",
+        "14th Month",
+        "15th Month",
+      ]);
+
+      if (
+        bonusType &&
+        !allowedBonusTypes.has(bonusType)
+      ) {
+        return res.status(400).json({
+          message:
+            "bonus_type must be 13th Month, 14th Month, or 15th Month.",
+        });
+      }
+
       if (!branchId) {
         return res.status(400).json({
           message:
@@ -119,17 +98,28 @@ router.get(
         branchId,
       ];
 
-      let whereExtra = "";
+      const whereParts = [];
 
       if (bonusMonth) {
-        params.push(
-          bonusMonth
-        );
+        params.push(bonusMonth);
 
-        whereExtra = `
-          AND br.bonus_month = $2::date
-        `;
+        whereParts.push(
+          `br.bonus_month = $${params.length}::date`
+        );
       }
+
+      if (bonusType) {
+        params.push(bonusType);
+
+        whereParts.push(
+          `br.bonus_type = $${params.length}`
+        );
+      }
+
+      const whereExtra =
+        whereParts.length > 0
+          ? `AND ${whereParts.join("\nAND ")}`
+          : "";
 
       const result =
         await pool.query(
@@ -151,6 +141,7 @@ router.get(
 
             br.branch_id,
             br.bonus_month,
+            br.bonus_type,
 
             s.employee_no,
             s.fullname,
@@ -214,9 +205,21 @@ router.post(
           ?.bonus_month
       );
 
+    const bonus_type =
+      String(
+        req.body?.bonus_type ??
+        "13th Month"
+      ).trim();
+
     const notes =
       req.body?.notes ??
       null;
+
+    const allowedBonusTypes = new Set([
+      "13th Month",
+      "14th Month",
+      "15th Month",
+    ]);
 
     if (
       !branch_id ||
@@ -225,6 +228,13 @@ router.post(
       return res.status(400).json({
         message:
           "branch_id and bonus_month are required.",
+      });
+    }
+
+    if (!allowedBonusTypes.has(bonus_type)) {
+      return res.status(400).json({
+        message:
+          "bonus_type must be 13th Month, 14th Month, or 15th Month.",
       });
     }
 
@@ -239,15 +249,17 @@ router.post(
       const existing =
         await client.query(
           `
-          SELECT id
-          FROM public.bonus_runs
-          WHERE branch_id = $1
-            AND bonus_month = $2::date
-          LIMIT 1
+            SELECT id
+            FROM public.bonus_runs
+            WHERE branch_id = $1
+              AND bonus_month = $2::date
+              AND bonus_type = $3
+            LIMIT 1
           `,
           [
             branch_id,
             bonus_month,
+            bonus_type,
           ]
         );
 
@@ -277,27 +289,30 @@ router.post(
         const inserted =
           await client.query(
             `
-            INSERT INTO public.bonus_runs
-            (
-              branch_id,
-              bonus_month,
-              notes,
-              created_at,
-              updated_at
-            )
-            VALUES
-            (
-              $1,
-              $2::date,
-              $3,
-              NOW(),
-              NOW()
-            )
-            RETURNING id
+              INSERT INTO public.bonus_runs
+              (
+                branch_id,
+                bonus_month,
+                bonus_type,
+                notes,
+                created_at,
+                updated_at
+              )
+              VALUES
+              (
+                $1,
+                $2::date,
+                $3,
+                $4,
+                NOW(),
+                NOW()
+              )
+              RETURNING id
             `,
             [
               branch_id,
               bonus_month,
+              bonus_type,
               notes,
             ]
           );
@@ -315,7 +330,9 @@ router.post(
           runId,
         branch_id,
         bonus_month,
+        bonus_type,
       });
+
     } catch (err) {
       await client.query(
         "ROLLBACK"
@@ -469,9 +486,16 @@ router.post(
       const runCheck =
         await client.query(
           `
-          SELECT id
-          FROM public.bonus_runs
-          WHERE id = $1
+            SELECT
+              id,
+              branch_id,
+              bonus_month,
+              bonus_type,
+              EXTRACT(
+                YEAR FROM bonus_month
+              )::int AS bonus_year
+            FROM public.bonus_runs
+            WHERE id = $1
           `,
           [runId]
         );
@@ -490,6 +514,28 @@ router.post(
         });
       }
 
+      const run =
+        runCheck.rows[0];
+
+      const releaseYear =
+        toInt(run.bonus_year);
+
+      const computationYear =
+        run.bonus_type === "15th Month"
+          ? releaseYear - 1
+          : releaseYear;
+
+      if (!computationYear) {
+        await client.query(
+          "ROLLBACK"
+        );
+
+        return res.status(400).json({
+          message:
+            "Unable to determine bonus computation year.",
+        });
+      }
+
       const upserted = [];
 
       for (const l of lines) {
@@ -500,6 +546,101 @@ router.post(
 
         if (!employee_id)
           continue;
+
+        const computationRes =
+          await client.query(
+            `
+              SELECT
+                COALESCE(
+                  SUM(total_compensation),
+                  0
+                )::numeric AS annual_compensation,
+
+                COALESCE(
+                  SUM(month_13),
+                  0
+                )::numeric AS month_13,
+
+                COALESCE(
+                  SUM(month_14),
+                  0
+                )::numeric AS month_14,
+
+                COALESCE(
+                  SUM(month_15),
+                  0
+                )::numeric AS month_15
+
+              FROM public.bonus_computations
+
+              WHERE staff_id = $1
+                AND computation_year = $2
+            `,
+            [
+              employee_id,
+              computationYear,
+            ]
+          );
+
+        const computation =
+          computationRes.rows[0];
+
+        const annualCompensation =
+          toNum(
+            computation?.annual_compensation
+          );
+
+        const month13 =
+          toNum(
+            computation?.month_13
+          );
+
+        const month14 =
+          toNum(
+            computation?.month_14
+          );
+
+        const month15 =
+          toNum(
+            computation?.month_15
+          );
+
+        const salary =
+          annualCompensation / 12;
+
+        let percentage = 100;
+        let payableResult = 0;
+
+        if (run.bonus_type === "13th Month") {
+          payableResult = month13;
+        } else if (
+          run.bonus_type === "14th Month"
+        ) {
+          payableResult = month14;
+        } else if (
+          run.bonus_type === "15th Month"
+        ) {
+          percentage =
+            toNum(l.percentage);
+
+          if (
+            percentage < 0 ||
+            percentage > 100
+          ) {
+            await client.query(
+              "ROLLBACK"
+            );
+
+            return res.status(400).json({
+              message:
+                "15th Month evaluation percentage must be from 0 to 100.",
+            });
+          }
+
+          payableResult =
+            month15 *
+            (percentage / 100);
+        }
 
         const result =
           await client.query(
@@ -542,24 +683,12 @@ router.post(
             [
               runId,
               employee_id,
-              toNum(
-                l.salary
-              ),
-              toNum(
-                l.month_13
-              ),
-              toNum(
-                l.month_14
-              ),
-              toNum(
-                l.month_15
-              ),
-              toNum(
-                l.percentage
-              ),
-              toNum(
-                l.result
-              ),
+              salary,
+              month13,
+              month14,
+              month15,
+              percentage,
+              payableResult,
             ]
           );
 
@@ -706,6 +835,7 @@ router.put(
             bl.release_date,
 
             br.bonus_month,
+            br.bonus_type,
 
             s.employee_no
 
@@ -731,9 +861,26 @@ router.put(
           detailRes.rows[0];
 
         const bonusType =
-          bonusTypeFromLine(
-            detail
+          String(
+            detail.bonus_type ?? ""
+          ).trim();
+
+        if (
+          ![
+            "13th Month",
+            "14th Month",
+            "15th Month",
+          ].includes(bonusType)
+        ) {
+          await client.query(
+            "ROLLBACK"
           );
+
+          return res.status(400).json({
+            message:
+              "Invalid bonus type for release.",
+          });
+        }
 
         await client.query(
           `

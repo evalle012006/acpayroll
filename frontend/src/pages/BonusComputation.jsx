@@ -28,9 +28,27 @@ const money = (value) => {
   });
 };
 
+const formatDate = (value) => {
+  if (!value) return "-";
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return "-";
+  }
+
+  return date.toLocaleDateString("en-PH", {
+    year: "numeric",
+    month: "short",
+    day: "2-digit",
+  });
+};
+
 const emptyMonths = () =>
   MONTHS.map((_, index) => ({
     month: index + 1,
+    total_compensation: 0,
+    deductions: 0,
     month_13: 0,
     month_14: 0,
     month_15: 0,
@@ -192,21 +210,27 @@ export default function BonusComputation() {
     departmentRows.forEach((row) => {
       if (!row.branch_id) return;
 
-      branchMap.set(
-        String(row.branch_id),
-        row.branch_name || `Branch ${row.branch_id}`
-      );
+      const id = String(row.branch_id);
+
+      branchMap.set(id, {
+        id,
+        code: String(row.branch_code || "").trim(),
+        name:
+          String(row.branch_name || "").trim() ||
+          `Branch ${row.branch_id}`,
+      });
     });
 
-    return [...branchMap.entries()]
-      .map(([id, name]) => ({
-        id,
-        name,
-      }))
-      .sort((a, b) =>
-        String(a.name).localeCompare(String(b.name))
-      );
-    }, [rows, department]);
+    return [...branchMap.values()].sort((a, b) => {
+      const codeA = String(a.code || "");
+      const codeB = String(b.code || "");
+
+      return codeA.localeCompare(codeB, undefined, {
+        numeric: true,
+        sensitivity: "base",
+      });
+    });
+  }, [rows, department]);
 
     useEffect(() => {
       setBranch("ALL");
@@ -258,12 +282,23 @@ export default function BonusComputation() {
 
             return {
               month: monthNumber,
+
+              total_compensation: Number(
+                saved?.total_compensation ?? 0
+              ),
+
+              deductions: Number(
+                saved?.deductions ?? 0
+              ),
+
               month_13: Number(
                 saved?.month_13 ?? 0
               ),
+
               month_14: Number(
                 saved?.month_14 ?? 0
               ),
+
               month_15: Number(
                 saved?.month_15 ?? 0
               ),
@@ -307,17 +342,25 @@ export default function BonusComputation() {
 
   const updateMonth = (index, field, value) => {
     setMonths((prev) =>
-      prev.map((item, i) =>
-        i === index
-          ? {
-              ...item,
-              [field]:
-                value === ""
-                  ? ""
-                  : Number(value),
-            }
-          : item
-      )
+      prev.map((item, itemIndex) => {
+        if (itemIndex !== index) {
+          return item;
+        }
+
+        if (field === "month_13") {
+          return {
+            ...item,
+            month_13: value,
+            month_14: value,
+            month_15: value,
+          };
+        }
+
+        return {
+          ...item,
+          [field]: value,
+        };
+      })
     );
   };
 
@@ -328,27 +371,66 @@ export default function BonusComputation() {
   const totals = useMemo(() => {
     return months.reduce(
       (acc, item) => {
-        acc.month_13 += Number(
+        const totalCompensation = Number(
+          item.total_compensation || 0
+        );
+
+        const deductions = Number(
+          item.deductions || 0
+        );
+
+        const month13 = Number(
           item.month_13 || 0
         );
 
-        acc.month_14 += Number(
+        const month14 = Number(
           item.month_14 || 0
         );
 
-        acc.month_15 += Number(
+        const month15 = Number(
           item.month_15 || 0
         );
+
+        const totalBonus =
+          totalCompensation -
+          deductions +
+          month13 +
+          month14;
+
+        acc.total_compensation +=
+          totalCompensation;
+
+        acc.deductions += deductions;
+        acc.month_13 += month13;
+        acc.month_14 += month14;
+        acc.month_15 += month15;
+        acc.total_bonus += totalBonus;
 
         return acc;
       },
       {
+        total_compensation: 0,
+        deductions: 0,
         month_13: 0,
         month_14: 0,
         month_15: 0,
+        total_bonus: 0,
       }
     );
   }, [months]);
+
+  const totalBenefits = useMemo(() => {
+    const totalGross = Number(
+      selectedStaff?.total_gross || 0
+    );
+
+    return (
+      totalGross +
+      Number(totals.month_13 || 0) +
+      Number(totals.month_14 || 0) -
+      Number(totals.deductions || 0)
+    );
+  }, [selectedStaff, totals]);
 
   /* =========================================================
      SAVE MONTHLY VALUES
@@ -368,6 +450,14 @@ export default function BonusComputation() {
           year,
           months: months.map((item) => ({
             month: item.month,
+
+            total_compensation: Number(
+              item.total_compensation || 0
+            ),
+
+            deductions: Number(
+              item.deductions || 0
+            ),
 
             month_13: Number(
               item.month_13 || 0
@@ -481,7 +571,9 @@ export default function BonusComputation() {
                 key={item.id}
                 value={item.id}
               >
-                {item.name}
+                {item.code
+                  ? `${item.code} - ${item.name}`
+                  : item.name}
               </option>
             ))}
           </select>
@@ -507,10 +599,11 @@ export default function BonusComputation() {
         <table className="bonus-comp-table">
           <thead>
             <tr>
-              <th>Department</th>
               <th>Employee No.</th>
               <th>Employee Name</th>
               <th>Position</th>
+              <th>Date of Deployment</th>
+              <th>Date of Regularization</th>
               <th className="num">Salary</th>
               <th className="num">ECOLA</th>
               <th className="num">Total Gross</th>
@@ -523,7 +616,7 @@ export default function BonusComputation() {
             {loading ? (
               <tr>
                 <td
-                  colSpan="9"
+                  colSpan="10"
                   className="bonus-empty"
                 >
                   Loading bonus computations...
@@ -532,7 +625,7 @@ export default function BonusComputation() {
             ) : filteredRows.length === 0 ? (
               <tr>
                 <td
-                  colSpan="9"
+                  colSpan="10"
                   className="bonus-empty"
                 >
                   No employees found.
@@ -541,10 +634,6 @@ export default function BonusComputation() {
             ) : (
               paginatedRows.map((row) => (
                 <tr key={row.staff_id}>
-                  <td>
-                    {row.department || "-"}
-                  </td>
-
                   <td>
                     {row.employee_no || "-"}
                   </td>
@@ -555,6 +644,14 @@ export default function BonusComputation() {
 
                   <td>
                     {row.position || "-"}
+                  </td>
+
+                  <td>
+                    {formatDate(row.start_date)}
+                  </td>
+
+                  <td>
+                    {formatDate(row.regularization_date)}
                   </td>
 
                   <td className="num">
@@ -571,9 +668,10 @@ export default function BonusComputation() {
 
                   <td className="num">
                     {money(
-                      Number(row.month_13 || 0) +
-                      Number(row.month_14 || 0) +
-                      Number(row.month_15 || 0)
+                      Number(row.total_compensation || 0) -
+                        Number(row.deductions || 0) +
+                        Number(row.month_13 || 0) +
+                        Number(row.month_14 || 0)
                     )}
                   </td>
 
@@ -590,19 +688,6 @@ export default function BonusComputation() {
                         }
                       >
                         View
-                      </button>
-
-                      <button
-                        type="button"
-                        className="bonus-btn edit"
-                        onClick={() =>
-                          openEmployee(
-                            row,
-                            "edit"
-                          )
-                        }
-                      >
-                        Edit
                       </button>
                     </div>
                   </td>
@@ -726,6 +811,22 @@ export default function BonusComputation() {
                 </div>
 
                 <div>
+                  <span>Date of Deployment</span>
+                  <strong>
+                    {formatDate(selectedStaff.start_date)}
+                  </strong>
+                </div>
+
+                <div>
+                  <span>Date of Regularization</span>
+                  <strong>
+                    {formatDate(
+                      selectedStaff.regularization_date
+                    )}
+                  </strong>
+                </div>
+
+                <div>
                   <span>Salary</span>
                   <strong>
                     ₱{" "}
@@ -762,6 +863,52 @@ export default function BonusComputation() {
               </div>
             )}
 
+            {selectedStaff && !modalLoading && (
+              <div className="bonus-benefit-summary">
+                <div>
+                  <span>Total Gross</span>
+                  <strong>
+                    ₱ {money(selectedStaff.total_gross)}
+                  </strong>
+                </div>
+
+                <div>
+                  <span>13th Month Total</span>
+                  <strong>
+                    ₱ {money(totals.month_13)}
+                  </strong>
+                </div>
+
+                <div>
+                  <span>14th Month Total</span>
+                  <strong>
+                    ₱ {money(totals.month_14)}
+                  </strong>
+                </div>
+
+                <div>
+                  <span>15th Month Total</span>
+                  <strong>
+                    ₱ {money(totals.month_15)}
+                  </strong>
+                </div>
+
+                <div>
+                  <span>Deductions</span>
+                  <strong>
+                    ₱ {money(totals.deductions)}
+                  </strong>
+                </div>
+
+                <div className="bonus-benefit-highlight">
+                  <span>Total Benefits</span>
+                  <strong>
+                    ₱ {money(totalBenefits)}
+                  </strong>
+                </div>
+              </div>
+            )}
+
             {modalLoading ? (
               <div className="bonus-modal-loading">
                 Loading monthly computation...
@@ -772,9 +919,12 @@ export default function BonusComputation() {
                   <thead>
                     <tr>
                       <th>Month</th>
+                      <th>Total Compensation</th>
+                      <th>Deductions</th>
                       <th>13th Month</th>
                       <th>14th Month</th>
                       <th>15th Month</th>
+                      <th>Total Bonus</th>
                     </tr>
                   </thead>
 
@@ -784,6 +934,46 @@ export default function BonusComputation() {
                         <tr key={item.month}>
                           <td>
                             {MONTHS[index]}
+                          </td>
+
+                          <td>
+                            {modalMode === "edit" ? (
+                              <input
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                value={item.total_compensation}
+                                onChange={(e) =>
+                                  updateMonth(
+                                    index,
+                                    "total_compensation",
+                                    e.target.value
+                                  )
+                                }
+                              />
+                            ) : (
+                              money(item.total_compensation)
+                            )}
+                          </td>
+
+                          <td>
+                            {modalMode === "edit" ? (
+                              <input
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                value={item.deductions}
+                                onChange={(e) =>
+                                  updateMonth(
+                                    index,
+                                    "deductions",
+                                    e.target.value
+                                  )
+                                }
+                              />
+                            ) : (
+                              money(item.deductions)
+                            )}
                           </td>
 
                           <td>
@@ -811,56 +1001,14 @@ export default function BonusComputation() {
                               )
                             )}
                           </td>
-
+                          <td>{money(item.month_14)}</td>
+                          <td>{money(item.month_15)}</td>
                           <td>
-                            {modalMode ===
-                            "edit" ? (
-                              <input
-                                type="number"
-                                min="0"
-                                step="0.01"
-                                value={
-                                  item.month_14
-                                }
-                                onChange={(e) =>
-                                  updateMonth(
-                                    index,
-                                    "month_14",
-                                    e.target
-                                      .value
-                                  )
-                                }
-                              />
-                            ) : (
-                              money(
-                                item.month_14
-                              )
-                            )}
-                          </td>
-
-                          <td>
-                            {modalMode ===
-                            "edit" ? (
-                              <input
-                                type="number"
-                                min="0"
-                                step="0.01"
-                                value={
-                                  item.month_15
-                                }
-                                onChange={(e) =>
-                                  updateMonth(
-                                    index,
-                                    "month_15",
-                                    e.target
-                                      .value
-                                  )
-                                }
-                              />
-                            ) : (
-                              money(
-                                item.month_15
-                              )
+                            {money(
+                              Number(item.total_compensation || 0) -
+                                Number(item.deductions || 0) +
+                                Number(item.month_13 || 0) +
+                                Number(item.month_14 || 0)
                             )}
                           </td>
                         </tr>
@@ -873,21 +1021,27 @@ export default function BonusComputation() {
                       <th>Total</th>
 
                       <th>
-                        {money(
-                          totals.month_13
-                        )}
+                        {money(totals.total_compensation)}
                       </th>
 
                       <th>
-                        {money(
-                          totals.month_14
-                        )}
+                        {money(totals.deductions)}
                       </th>
 
                       <th>
-                        {money(
-                          totals.month_15
-                        )}
+                        {money(totals.month_13)}
+                      </th>
+
+                      <th>
+                        {money(totals.month_14)}
+                      </th>
+
+                      <th>
+                        {money(totals.month_15)}
+                      </th>
+
+                      <th>
+                        {money(totals.total_bonus)}
                       </th>
                     </tr>
                   </tfoot>

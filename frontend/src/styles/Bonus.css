@@ -311,3 +311,408 @@
     width: 100%;
   }
 }
+
+/* =========================================================
+   NEW BRANCH BONUS SUMMARY
+   ========================================================= */
+
+.bonus-summary-card {
+  overflow: visible;
+}
+
+.bonus-table-scroll {
+  width: 100%;
+  overflow-x: auto;
+  overflow-y: auto;
+}
+
+.bonus-summary-table {
+  min-width: 1900px;
+}
+
+.bonus-summary-table th {
+  white-space: normal;
+  line-height: 1.25;
+  vertical-align: middle;
+}
+
+.bonus-summary-table td {
+  vertical-align: middle;
+}
+
+.bonus-summary-table .row-number {
+  text-align: center;
+  font-weight: 700;
+}
+
+.bonus-summary-table .employee-name {
+  min-width: 180px;
+  font-weight: 700;
+}
+
+.bonus-summary-table .money-head,
+.bonus-summary-table .money-cell {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.bonus-summary-table .gross-cell {
+  font-weight: 800;
+}
+
+.bonus-summary-table .deduction-cell {
+  font-weight: 700;
+}
+
+.total-benefits-head {
+  min-width: 155px;
+  text-align: center !important;
+  font-size: 12px;
+  font-weight: 900 !important;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  box-shadow: inset 0 -4px 0 rgba(255, 255, 255, 0.25);
+}
+
+.total-benefits-cell {
+  min-width: 155px;
+  font-weight: 900;
+}
+
+.total-benefits-amount {
+  padding: 9px 12px;
+  border: 2px solid currentColor;
+  border-radius: 8px;
+  text-align: center;
+  font-size: 14px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.print-head,
+.action-head {
+  text-align: center !important;
+}
+
+.bonus-print-cell {
+  position: relative;
+  text-align: center;
+  overflow: visible;
+}
+
+.bonus-print-dropdown {
+  position: relative;
+  display: inline-block;
+}
+
+.bonus-print-btn {
+  min-width: 88px;
+  height: 34px;
+  padding: 0 12px;
+  border: 1px solid rgba(120, 140, 170, 0.35);
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.bonus-print-btn:hover {
+  background: rgba(120, 140, 170, 0.12);
+}
+
+.bonus-print-menu {
+  position: absolute;
+  z-index: 99999;
+  top: calc(100% + 6px);
+  right: 0;
+  width: 185px;
+  padding: 6px;
+  border: 1px solid rgba(120, 140, 170, 0.3);
+  border-radius: 10px;
+  background: var(--card-bg, #111c2f);
+  box-shadow: 0 14px 35px rgba(0, 0, 0, 0.28);
+}
+
+.bonus-print-menu.open-up {
+  top: auto;
+  bottom: calc(100% + 6px);
+}
+
+.bonus-print-menu button {
+  display: block;
+  width: 100%;
+  padding: 10px 11px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.bonus-print-menu button:hover {
+  background: rgba(120, 140, 170, 0.14);
+}
+
+.bonus-grand-total td {
+  font-weight: 900;
+}
+
+.bonus-grand-total .total-benefits-amount {
+  font-size: 15px;
+}
+
+/* =========================================================
+   ADMINISTRATIVE ORDER - BONUS PRINT
+   ========================================================= */
+
+.admin-order-print {
+  display: none;
+}
+
+@media print {
+
+  @page {
+    size: landscape;
+    margin: 7mm;
+  }
+
+  html,
+  body {
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #fff !important;
+  }
+
+  body * {
+    visibility: hidden !important;
+  }
+
+  .print-only,
+  .print-only * {
+    visibility: visible !important;
+  }
+
+  .print-only {
+    display: block !important;
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+  }
+
+  .admin-order-print {
+    display: block !important;
+    width: 100%;
+    color: #000;
+    background: #fff;
+    font-family: "Times New Roman", Times, serif;
+    box-sizing: border-box;
+  }
+
+  /* COMPANY */
+
+  .admin-order-company {
+    text-align: center;
+    margin-bottom: 2mm;
+  }
+
+  .admin-order-company-name {
+    font-size: 28pt;
+    line-height: 1;
+    font-weight: 700;
+  }
+
+  .admin-order-address {
+    margin-top: 2mm;
+    font-size: 12pt;
+    font-style: italic;
+  }
+
+  /* TITLE */
+
+  .admin-order-title-row {
+    position: relative;
+    margin-top: 1mm;
+    text-align: center;
+  }
+
+  .admin-order-title {
+    font-size: 18pt;
+    font-weight: 700;
+  }
+
+  .admin-order-date {
+    position: absolute;
+    right: 5mm;
+    top: 2mm;
+    font-size: 11pt;
+    font-weight: 700;
+  }
+
+  .admin-order-description {
+    margin-top: 1mm;
+    text-align: center;
+    font-size: 11pt;
+    font-weight: 700;
+  }
+
+  .admin-order-branch {
+    margin: 6mm 0 1mm;
+    font-size: 11pt;
+  }
+
+  /* TABLE */
+
+  .admin-order-table {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
+    font-size: 7.5pt;
+  }
+
+  .admin-order-table th,
+  .admin-order-table td {
+    border: 1px solid #000 !important;
+    padding: 2px 3px;
+    vertical-align: middle;
+  }
+
+  .admin-order-table th {
+    text-align: center;
+    font-weight: 700;
+  }
+
+  .admin-order-table td {
+    height: 18px;
+  }
+
+  .admin-order-table .col-no {
+    width: 28px;
+  }
+
+  .admin-order-table .col-name {
+    width: 180px;
+  }
+
+  .admin-order-table th small {
+    display: block;
+    margin-top: 2px;
+    font-size: 6.5pt;
+  }
+
+  .admin-order-table .group-head {
+    font-size: 8pt;
+  }
+
+  .admin-order-table .salary-head {
+    background: #c6def1 !important;
+  }
+
+  .admin-order-table .bonus-head {
+    background: #dceaf5 !important;
+  }
+
+  .admin-order-table tbody td:nth-child(3),
+  .admin-order-table tbody td:nth-child(4),
+  .admin-order-table tbody td:nth-child(5),
+  .admin-order-table tbody td:nth-child(6) {
+    background: #c6def1 !important;
+  }
+
+  .admin-order-table tbody td:nth-child(10) {
+    background: #dceaf5 !important;
+    text-align: center;
+  }
+
+  .admin-order-table tbody td:nth-child(11) {
+    background: #e2f0d9 !important;
+  }
+
+  .print-name {
+    text-align: left;
+    white-space: nowrap;
+  }
+
+  .print-money {
+    text-align: right;
+    white-space: nowrap;
+  }
+
+  .bonus-value {
+    background: #e2f0d9 !important;
+  }
+
+  .admin-order-total td {
+    font-weight: 700;
+  }
+
+  .admin-order-total td:first-child {
+    text-align: center;
+    font-size: 9pt;
+  }
+
+  .total-red {
+    color: #f00 !important;
+    font-weight: 700;
+  }
+
+  /* SIGNATURES */
+
+  .admin-order-signatures {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 18mm;
+    padding: 0 12mm;
+  }
+
+  .signature-block {
+    width: 34%;
+    text-align: center;
+    font-family: Arial, Helvetica, sans-serif;
+  }
+
+  .signature-label {
+    text-align: left;
+    margin-bottom: 3mm;
+    font-size: 9pt;
+  }
+
+  .signature-sgd {
+    margin-bottom: 3mm;
+    font-size: 9pt;
+  }
+
+  .signature-name {
+    font-size: 10pt;
+    font-weight: 700;
+  }
+
+  .signature-line {
+    margin-top: 2mm;
+    border-top: 1px solid #000;
+  }
+
+  .signature-position {
+    margin-top: 1mm;
+    font-size: 9pt;
+    color: #555;
+  }
+}
+
+.signature-print-head {
+  width: 200px;
+  min-width: 200px;
+}
+
+.employee-signature-cell {
+  height: 32px !important;
+  min-width: 120px;
+  background: #fff !important;
+}
