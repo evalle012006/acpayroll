@@ -82,26 +82,66 @@ const formatMonthYearLabel = (value) => {
 
 const buildMonthYearOptions = (staffRows = []) => {
   const current = new Date();
-  let minDate = new Date(current.getFullYear(), 0, 1);
+
+  let minDate = new Date(
+    current.getFullYear(),
+    0,
+    1
+  );
 
   for (const s of staffRows) {
-    const start = parseDate(s?.start_date);
+    const start = parseDate(
+      s?.start_date
+    );
+
     if (start) {
-      const normalized = new Date(start.getFullYear(), start.getMonth(), 1);
-      if (normalized < minDate) minDate = normalized;
+      const normalized = new Date(
+        start.getFullYear(),
+        start.getMonth(),
+        1
+      );
+
+      if (normalized < minDate) {
+        minDate = normalized;
+      }
     }
   }
 
   const options = [];
-  const cursor = new Date(current.getFullYear(), current.getMonth(), 1);
+
+  /*
+   * Include the entire current year.
+   *
+   * This is required because:
+   * - 13th Month releases in December
+   * - 14th Month releases in December
+   *
+   * HR must be able to prepare/select
+   * December of the current year even
+   * before December arrives.
+   */
+  const cursor = new Date(
+    current.getFullYear(),
+    11,
+    1
+  );
 
   while (cursor >= minDate) {
-    const value = `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, "0")}-01`;
+    const value =
+      `${cursor.getFullYear()}-` +
+      `${String(
+        cursor.getMonth() + 1
+      ).padStart(2, "0")}-01`;
+
     options.push({
       value,
-      label: formatMonthYearLabel(value),
+      label:
+        formatMonthYearLabel(value),
     });
-    cursor.setMonth(cursor.getMonth() - 1);
+
+    cursor.setMonth(
+      cursor.getMonth() - 1
+    );
   }
 
   return options;
@@ -1851,39 +1891,14 @@ export default function Bonus() {
                     <tr key={`bonus-print-${row.id}`}>
                       <td>{index + 1}</td>
 
-                      <td className="print-name">
-                        {row.fullname || "-"}
-                      </td>
-
-                      <td>
-                        {row.employee_no || "-"}
-                      </td>
-
-                      <td>
-                        {row.position || "-"}
-                      </td>
-
-                      <td>
-                        {formatDisplayDate(row.start_date)}
-                      </td>
-
-                      <td>
-                        {formatDisplayDate(
-                          row.regularization_date
-                        )}
-                      </td>
-
-                      <td className="print-money">
-                        {fmtMoney(annualBasic)}
-                      </td>
-
-                      <td className="print-money">
-                        {fmtMoney(annualEcola)}
-                      </td>
-
-                      <td className="print-money">
-                        {fmtMoney(annualCompensation)}
-                      </td>
+                      <td className="print-name">{row.fullname || "-"}</td>
+                      <td>{row.employee_no || "-"}</td>
+                      <td>{row.position || "-"}</td>
+                      <td>{formatDisplayDate(row.start_date)}</td>
+                      <td>{formatDisplayDate(row.regularization_date)}</td>
+                      <td className="print-money">{fmtMoney(annualBasic)}</td>
+                      <td className="print-money">{fmtMoney(annualEcola)}</td>
+                      <td className="print-money">{fmtMoney(annualCompensation)}</td>
 
                       <td>
                         12
