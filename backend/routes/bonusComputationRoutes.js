@@ -311,6 +311,362 @@ router.get(
 );
 
 /* =========================================================
+   GENERATE / RECALCULATE YEAR
+   POST /api/bonus-computations/recalculate
+
+   Rules:
+   - Uses Salary History as source of Salary + ECOLA
+   - Respects employee deployment date
+   - Creates January - December rows
+   - Preserves existing deductions
+   - 13th Month = monthly eligible compensation / 12
+   - 14th Month = same as 13th Month
+   - 15th Month Base = same as 13th Month
+========================================================= */
+
+router.post(
+  "/recalculate",
+  requireAuth,
+  async (req, res) => {
+    const client = await pool.connect();
+
+    try {
+      const year = validYear(req.body?.year);
+
+      if (!year) {
+        return res.status(400).json({
+          message: "Valid year is required.",
+        });
+      }
+
+      await client.query("BEGIN");
+
+      /* =====================================================
+         LOAD STAFF
+      ===================================================== */
+
+      const staffResult = await client.query(
+        `
+          SELECT
+            s.id AS staff_id,
+
+            TRIM(
+              COALESCE(s.employee_no, '')
+            ) AS employee_no,
+
+            s.start_date,
+
+            COALESCE(
+              s.salary,
+              0
+            )::numeric AS salary,
+
+            COALESCE(
+              s.ecola,
+              0
+            )::numeric AS ecola
+
+          FROM public.staff s
+
+          WHERE TRIM(
+            COALESCE(s.employee_no, '')
+          ) <> ''
+
+          ORDER BY s.id ASC;
+        `
+      );
+
+      let processedStaff = 0;
+      let processedMonths = 0;
+
+      /* =====================================================
+         PROCESS EACH STAFF
+      ===================================================== */
+
+      for (const staff of staffResult.rows) {
+        const staffId =
+          toInt(staff.staff_id);
+
+        const employeeNo =
+          String(
+            staff.employee_no || ""
+          ).trim();
+
+        if (!staffId || !employeeNo) {
+          continue;
+        }
+
+        const startDate =
+          toDateOnlyUtc(
+            staff.start_date
+          );
+
+        /* ===================================================
+           LOAD SALARY HISTORY
+
+           We include history before the selected year because
+           the latest previous salary remains effective until
+           another Salary History record replaces it.
+        =================================================== */
+
+        const historyResult =
+          await client.query(
+            `
+              SELECT
+                id,
+
+                TRIM(employee_no)
+                  AS employee_no,
+
+                effective_date,
+
+                COALESCE(
+                  salary,
+                  0
+                )::numeric AS salary,
+
+                COALESCE(
+                  ecola,
+                  0
+                )::numeric AS ecola,
+
+                created_at
+
+              FROM public.salary_history
+
+              WHERE TRIM(employee_no) = $1
+
+                AND effective_date <=
+                  make_date($2, 12, 31)
+
+              ORDER BY
+                effective_date ASC,
+                created_at ASC,
+                id ASC;
+            `,
+            [
+              employeeNo,
+              year,
+            ]
+          );
+
+        const salaryHistory =
+          historyResult.rows;
+
+        /* ===================================================
+           JANUARY - DECEMBER
+        =================================================== */
+
+        for (
+          let month = 1;
+          month <= 12;
+          month += 1
+        ) {
+          const monthEnd =
+            new Date(
+              Date.UTC(
+                year,
+                month,
+                0
+              )
+            )
+              .toISOString()
+              .slice(0, 10);
+
+          let totalCompensation = 0;
+
+          /* ===============================================
+             EMPLOYEE MUST ALREADY BE DEPLOYED
+          =============================================== */
+
+          const isDeployed =
+            !startDate ||
+            startDate <= monthEnd;
+
+          if (isDeployed) {
+            let applicableHistory = null;
+
+            /*
+             * Find the latest Salary History effective
+             * on or before this month's ending date.
+             */
+            for (
+              const history of salaryHistory
+            ) {
+              const effectiveDate =
+                toDateOnlyUtc(
+                  history.effective_date
+                );
+
+              if (!effectiveDate) {
+                continue;
+              }
+
+              if (
+                effectiveDate <= monthEnd
+              ) {
+                applicableHistory =
+                  history;
+              } else {
+                break;
+              }
+            }
+
+            /*
+             * Salary History is the preferred source.
+             *
+             * If there is no Salary History yet,
+             * use current staff Salary + ECOLA.
+             */
+            if (applicableHistory) {
+              totalCompensation =
+                toNum(
+                  applicableHistory.salary
+                ) +
+                toNum(
+                  applicableHistory.ecola
+                );
+            } else {
+              totalCompensation =
+                toNum(staff.salary) +
+                toNum(staff.ecola);
+            }
+          }
+
+          /*
+           * Each month's share.
+           *
+           * Example:
+           * ₱20,000 / 12
+           * = ₱1,666.666...
+           *
+           * The yearly SUM becomes ₱20,000.
+           */
+          const monthlyBonusShare =
+            totalCompensation / 12;
+
+          /* ===============================================
+             UPSERT BONUS COMPUTATION
+
+             IMPORTANT:
+             Existing deductions are NOT overwritten.
+          =============================================== */
+
+          await client.query(
+            `
+              INSERT INTO public.bonus_computations
+              (
+                staff_id,
+                computation_year,
+                computation_month,
+                total_compensation,
+                deductions,
+                month_13,
+                month_14,
+                month_15,
+                created_by,
+                updated_by,
+                created_at,
+                updated_at
+              )
+              VALUES
+              (
+                $1,
+                $2,
+                $3,
+                $4,
+                0,
+                $5,
+                $5,
+                $5,
+                $6,
+                $6,
+                NOW(),
+                NOW()
+              )
+
+              ON CONFLICT
+              (
+                staff_id,
+                computation_year,
+                computation_month
+              )
+
+              DO UPDATE SET
+                total_compensation =
+                  EXCLUDED.total_compensation,
+
+                month_13 =
+                  EXCLUDED.month_13,
+
+                month_14 =
+                  EXCLUDED.month_14,
+
+                month_15 =
+                  EXCLUDED.month_15,
+
+                updated_by =
+                  EXCLUDED.updated_by,
+
+                updated_at =
+                  NOW();
+            `,
+            [
+              staffId,
+              year,
+              month,
+              totalCompensation,
+              monthlyBonusShare,
+              req.user?.id ?? null,
+            ]
+          );
+
+          processedMonths += 1;
+        }
+
+        processedStaff += 1;
+      }
+
+      await client.query("COMMIT");
+
+      return res.json({
+        message:
+          `Bonus computations for ${year} generated successfully.`,
+
+        year,
+
+        staff_processed:
+          processedStaff,
+
+        months_processed:
+          processedMonths,
+      });
+    } catch (err) {
+      try {
+        await client.query(
+          "ROLLBACK"
+        );
+      } catch {
+        // Ignore rollback error.
+      }
+
+      console.error(
+        "POST /bonus-computations/recalculate ERROR:",
+        err?.message
+      );
+
+      return res.status(500).json({
+        message:
+          err?.message ||
+          "Failed to generate bonus computations.",
+      });
+    } finally {
+      client.release();
+    }
+  }
+);
+
+/* =========================================================
    SAVE JANUARY - DECEMBER
    PUT /api/bonus-computations/staff/:staffId
 
