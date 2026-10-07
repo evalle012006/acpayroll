@@ -91,11 +91,4 @@ CHECK (
 
 DROP INDEX IF EXISTS public.idx_bonus_runs_branch_month;
 
-CREATE UNIQUE INDEX idx_bonus_runs_branch_month_type
-ON public.bonus_runs (
-  branch_id,
-  bonus_month,
-  bonus_type
-);
-
 COMMIT;

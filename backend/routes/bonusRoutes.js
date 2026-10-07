@@ -238,6 +238,34 @@ router.post(
       });
     }
 
+    const bonusMonthNumber =
+      Number(
+        String(bonus_month).slice(5, 7)
+      );
+
+    if (
+      (
+        bonus_type === "13th Month" ||
+        bonus_type === "14th Month"
+      ) &&
+      bonusMonthNumber !== 12
+    ) {
+      return res.status(400).json({
+        message:
+          `${bonus_type} Pay can only have a December bonus month.`,
+      });
+    }
+
+    if (
+      bonus_type === "15th Month" &&
+      bonusMonthNumber !== 4
+    ) {
+      return res.status(400).json({
+        message:
+          "15th Month Pay can only have an April bonus month.",
+      });
+    }
+
     const client =
       await pool.connect();
 
@@ -546,6 +574,37 @@ router.post(
 
         if (!employee_id)
           continue;
+        
+        const existingLineRes =
+          await client.query(
+            `
+              SELECT
+                id,
+                is_released
+              FROM public.bonus_lines
+              WHERE bonus_run_id = $1
+                AND employee_id = $2
+              LIMIT 1
+            `,
+            [
+              runId,
+              employee_id,
+            ]
+          );
+
+        if (
+          existingLineRes.rowCount > 0 &&
+          existingLineRes.rows[0].is_released
+        ) {
+          await client.query(
+            "ROLLBACK"
+          );
+
+          return res.status(400).json({
+            message:
+              "This bonus has already been released and can no longer be edited.",
+          });
+        }
 
         const computationRes =
           await client.query(
@@ -677,6 +736,7 @@ router.post(
               percentage = EXCLUDED.percentage,
               result = EXCLUDED.result,
               updated_at = NOW()
+            WHERE public.bonus_lines.is_released = false
 
             RETURNING *;
             `,
@@ -691,6 +751,17 @@ router.post(
               payableResult,
             ]
           );
+
+        if (result.rowCount === 0) {
+          await client.query(
+            "ROLLBACK"
+          );
+
+          return res.status(409).json({
+            message:
+              "This bonus has already been released and can no longer be edited.",
+          });
+        }
 
         upserted.push(
           result.rows[0]
@@ -788,16 +859,155 @@ router.put(
         });
       }
 
+      const existingRes =
+        await client.query(
+          `
+            SELECT
+              bl.*,
+              br.bonus_month,
+              br.bonus_type
+            FROM public.bonus_lines bl
+            INNER JOIN public.bonus_runs br
+              ON br.id = bl.bonus_run_id
+            WHERE bl.id = $1
+            LIMIT 1
+          `,
+          [lineId]
+        );
+
+      if (existingRes.rowCount === 0) {
+        await client.query("ROLLBACK");
+
+        return res.status(404).json({
+          message: "Bonus line not found.",
+        });
+      }
+
+      const existingLine = existingRes.rows[0];
+
+      if (existingLine.is_released) {
+        await client.query("ROLLBACK");
+
+        return res.status(400).json({
+          message: "This bonus has already been released.",
+        });
+      }
+
+      const bonusType =
+        String(existingLine.bonus_type ?? "").trim();
+
+      const bonusMonth =
+        normalizeDate(existingLine.bonus_month);
+
+      const releaseMonth =
+        Number(
+          String(release_date).slice(5, 7)
+        );
+
+      const releaseYear =
+        Number(
+          String(release_date).slice(0, 4)
+        );
+
+      const bonusYear =
+        bonusMonth
+          ? Number(
+              String(bonusMonth).slice(0, 4)
+            )
+          : null;
+
+      /* ================= 13TH MONTH ================= */
+
+      if (
+        bonusType === "13th Month" &&
+        releaseMonth !== 12
+      ) {
+        await client.query("ROLLBACK");
+
+        return res.status(400).json({
+          message:
+            "13th Month Pay can only be released in December.",
+        });
+      }
+
+      if (
+        bonusType === "13th Month" &&
+        bonusYear &&
+        releaseYear !== bonusYear
+      ) {
+        await client.query("ROLLBACK");
+
+        return res.status(400).json({
+          message:
+            "13th Month release date must be in the same year as the bonus run.",
+        });
+      }
+
+      /* ================= 14TH MONTH ================= */
+
+      if (
+        bonusType === "14th Month" &&
+        releaseMonth !== 12
+      ) {
+        await client.query("ROLLBACK");
+
+        return res.status(400).json({
+          message:
+            "14th Month Pay can only be released in December.",
+        });
+      }
+
+      if (
+        bonusType === "14th Month" &&
+        bonusYear &&
+        releaseYear !== bonusYear
+      ) {
+        await client.query("ROLLBACK");
+
+        return res.status(400).json({
+          message:
+            "14th Month release date must be in the same year as the bonus run.",
+        });
+      }
+
+      /* ================= 15TH MONTH ================= */
+
+      if (
+        bonusType === "15th Month" &&
+        releaseMonth !== 4
+      ) {
+        await client.query("ROLLBACK");
+
+        return res.status(400).json({
+          message:
+            "15th Month Pay can only be released in April.",
+        });
+      }
+
+      if (
+        bonusType === "15th Month" &&
+        bonusYear &&
+        releaseYear !== bonusYear
+      ) {
+        await client.query("ROLLBACK");
+
+        return res.status(400).json({
+          message:
+            "15th Month release date must be in the same release year as the bonus run.",
+        });
+      }
+
       const result =
         await client.query(
           `
-          UPDATE public.bonus_lines
-          SET
-            is_released = true,
-            release_date = $1::date,
-            updated_at = NOW()
-          WHERE id = $2
-          RETURNING *;
+            UPDATE public.bonus_lines
+            SET
+              is_released = true,
+              release_date = $1::date,
+              updated_at = NOW()
+            WHERE id = $2
+              AND is_released = false
+            RETURNING *;
           `,
           [
             release_date,
@@ -805,17 +1015,12 @@ router.put(
           ]
         );
 
-      if (
-        result.rowCount ===
-        0
-      ) {
-        await client.query(
-          "ROLLBACK"
-        );
+      if (result.rowCount === 0) {
+        await client.query("ROLLBACK");
 
-        return res.status(404).json({
+        return res.status(409).json({
           message:
-            "Bonus line not found.",
+            "This bonus has already been released or was updated by another request.",
         });
       }
 
@@ -860,11 +1065,6 @@ router.put(
         const detail =
           detailRes.rows[0];
 
-        const bonusType =
-          String(
-            detail.bonus_type ?? ""
-          ).trim();
-
         if (
           ![
             "13th Month",
@@ -884,32 +1084,37 @@ router.put(
 
         await client.query(
           `
-          INSERT INTO public.staff_bonus_history
-          (
-            staff_id,
-            employee_no,
-            bonus_type,
-            bonus_month,
-            amount,
-            release_date,
-            remarks,
-            created_by,
-            created_at
-          )
-          VALUES
-          (
-            $1,$2,$3,$4::date,
-            $5,$6::date,$7,$8,
-            NOW()
-          )
+            INSERT INTO public.staff_bonus_history
+            (
+              staff_id,
+              employee_no,
+              bonus_type,
+              bonus_month,
+              amount,
+              release_date,
+              remarks,
+              created_by,
+              created_at
+            )
+            VALUES
+            (
+              $1,$2,$3,$4::date,
+              $5,$6::date,$7,$8,
+              NOW()
+            )
+
+            ON CONFLICT
+              (staff_id, bonus_type, bonus_month)
+            WHERE staff_id IS NOT NULL
+              AND bonus_type IS NOT NULL
+              AND bonus_month IS NOT NULL
+            DO NOTHING
           `,
           [
             detail.employee_id,
-            detail.employee_no ||
-              null,
+            detail.employee_no || null,
             bonusType,
-            detail.bonus_month ||
-              null,
+            detail.bonus_month || null,
             toNum(
               detail.result
             ),

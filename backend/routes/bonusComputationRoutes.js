@@ -329,6 +329,274 @@ router.get(
   and 15th Month Base are calculated by the backend.
 ========================================================= */
 
+/* =========================================================
+   GENERATE / RECALCULATE ALL STAFF FOR YEAR
+
+   POST /api/bonus-computations/recalculate
+
+   Body:
+   {
+     "year": 2026
+   }
+
+   Rules:
+   - Reads Salary History for every staff
+   - Uses latest salary effective on/before each month-end
+   - Months before deployment = 0
+   - Salary + ECOLA / 12 = monthly bonus share
+   - 13th = monthly share
+   - 14th = monthly share
+   - 15th = monthly base before HR evaluation
+   - Existing deductions are preserved
+========================================================= */
+
+router.post(
+  "/recalculate",
+  requireAuth,
+  async (req, res) => {
+    const client = await pool.connect();
+
+    try {
+      const year = validYear(req.body?.year);
+
+      if (!year) {
+        return res.status(400).json({
+          message: "Valid year is required.",
+        });
+      }
+
+      await client.query("BEGIN");
+
+      /* ---------------------------------------------------------
+         LOAD STAFF
+      --------------------------------------------------------- */
+
+      const staffResult = await client.query(
+        `
+          SELECT
+            id,
+            TRIM(COALESCE(employee_no, '')) AS employee_no,
+            start_date
+          FROM public.staff
+          ORDER BY id ASC;
+        `
+      );
+
+      let processedStaff = 0;
+      let skippedStaff = 0;
+      let processedMonths = 0;
+
+      for (const staff of staffResult.rows) {
+        if (!staff.employee_no) {
+          skippedStaff += 1;
+          continue;
+        }
+
+        /* -------------------------------------------------------
+           LOAD SALARY HISTORY FOR THIS EMPLOYEE
+        ------------------------------------------------------- */
+
+        const salaryHistoryResult =
+          await client.query(
+            `
+              SELECT
+                id,
+                TRIM(employee_no) AS employee_no,
+                effective_date,
+                COALESCE(salary, 0)::numeric AS salary,
+                COALESCE(ecola, 0)::numeric AS ecola,
+                created_at
+              FROM public.salary_history
+              WHERE TRIM(employee_no) = $1
+                AND effective_date <= make_date($2, 12, 31)
+              ORDER BY
+                effective_date ASC,
+                created_at ASC,
+                id ASC;
+            `,
+            [staff.employee_no, year]
+          );
+
+        const salaryHistory =
+          salaryHistoryResult.rows;
+
+        const startDate =
+          toDateOnlyUtc(staff.start_date);
+
+        /* -------------------------------------------------------
+           JANUARY - DECEMBER
+        ------------------------------------------------------- */
+
+        for (
+          let month = 1;
+          month <= 12;
+          month += 1
+        ) {
+          const monthEnd = new Date(
+            Date.UTC(year, month, 0)
+          )
+            .toISOString()
+            .slice(0, 10);
+
+          let totalCompensation = 0;
+
+          /*
+           * Employee has not yet started.
+           */
+          if (
+            !startDate ||
+            startDate <= monthEnd
+          ) {
+            let applicableHistory = null;
+
+            for (const history of salaryHistory) {
+              if (!history.effective_date) {
+                continue;
+              }
+
+              const effectiveDate =
+                toDateOnlyUtc(
+                  history.effective_date
+                );
+
+              if (!effectiveDate) {
+                continue;
+              }
+
+              if (effectiveDate <= monthEnd) {
+                applicableHistory = history;
+              } else {
+                break;
+              }
+            }
+
+            if (applicableHistory) {
+              totalCompensation =
+                toNum(applicableHistory.salary) +
+                toNum(applicableHistory.ecola);
+            }
+          }
+
+          const monthlyBonusShare =
+            totalCompensation / 12;
+
+          /* -----------------------------------------------------
+             PRESERVE EXISTING DEDUCTIONS
+
+             On INSERT:
+             deductions = 0
+
+             On UPDATE:
+             deductions is intentionally NOT overwritten.
+          ----------------------------------------------------- */
+
+          await client.query(
+            `
+              INSERT INTO public.bonus_computations
+              (
+                staff_id,
+                computation_year,
+                computation_month,
+                total_compensation,
+                deductions,
+                month_13,
+                month_14,
+                month_15,
+                created_by,
+                updated_by,
+                created_at,
+                updated_at
+              )
+              VALUES
+              (
+                $1,
+                $2,
+                $3,
+                $4,
+                0,
+                $5,
+                $5,
+                $5,
+                $6,
+                $6,
+                NOW(),
+                NOW()
+              )
+
+              ON CONFLICT
+              (
+                staff_id,
+                computation_year,
+                computation_month
+              )
+
+              DO UPDATE SET
+                total_compensation =
+                  EXCLUDED.total_compensation,
+
+                month_13 =
+                  EXCLUDED.month_13,
+
+                month_14 =
+                  EXCLUDED.month_14,
+
+                month_15 =
+                  EXCLUDED.month_15,
+
+                updated_by =
+                  EXCLUDED.updated_by,
+
+                updated_at = NOW();
+            `,
+            [
+              staff.id,
+              year,
+              month,
+              totalCompensation,
+              monthlyBonusShare,
+              req.user?.id ?? null,
+            ]
+          );
+
+          processedMonths += 1;
+        }
+
+        processedStaff += 1;
+      }
+
+      await client.query("COMMIT");
+
+      return res.json({
+        message:
+          `Bonus computations for ${year} generated successfully.`,
+        year,
+        processed_staff: processedStaff,
+        skipped_staff: skippedStaff,
+        processed_months: processedMonths,
+      });
+    } catch (err) {
+      try {
+        await client.query("ROLLBACK");
+      } catch {
+        // Ignore rollback error.
+      }
+
+      console.error(
+        "POST /bonus-computations/recalculate ERROR:",
+        err?.message
+      );
+
+      return res.status(500).json({
+        message:
+          err?.message ||
+          "Failed to recalculate bonus computations.",
+      });
+    } finally {
+      client.release();
+    }
+  }
+);
+
 router.put(
   "/staff/:staffId",
   requireAuth,
@@ -523,53 +791,44 @@ router.put(
         }
       }
 
-      // Whole-year eligible Salary + ECOLA.
-      const annualCompensation = normalizedMonths.reduce(
-        (sum, item) =>
-          sum + toNum(item.total_compensation),
-        0
-      );
-
       // ---------------------------------------------------------
-      // 13TH, 14TH, AND 15TH MONTH BASE COMPUTATION
+      // MONTHLY BONUS EARNING
       //
       // Rule:
-      // Annual eligible Salary + ECOLA / 12
+      // Each eligible month's Salary + ECOLA contributes
+      // 1/12 of that month's compensation.
       //
-      // 13th Month = annual base
-      // 14th Month = same as 13th Month
-      // 15th Month = base before HR evaluation
+      // Example:
+      // Salary + ECOLA = 20,000
+      // Monthly bonus earning = 20,000 / 12
+      //                       = 1,666.67
+      //
+      // 12 eligible months:
+      // 1,666.67 x 12 = 20,000
+      //
+      // 6 eligible months:
+      // 1,666.67 x 6 = 10,000
+      //
+      // 13th Month = yearly SUM of monthly 13th shares
+      // 14th Month = same yearly base
+      // 15th Month = same yearly base before HR evaluation
       // ---------------------------------------------------------
 
-      const annualBonusBase =
-        annualCompensation / 12;
-
-      const annual13thMonth =
-        annualBonusBase;
-
-      const annual14thMonth =
-        annualBonusBase;
-
-      const annual15thBase =
-        annualBonusBase;
-
-      // bonus_computations contains 12 monthly rows.
-      // The yearly GET uses SUM(), so distribute each
-      // annual benefit across the 12 stored rows.
-
-      const monthly13thShare =
-        annual13thMonth / 12;
-
-      const monthly14thShare =
-        annual14thMonth / 12;
-
-      const monthly15thShare =
-        annual15thBase / 12;
-
       normalizedMonths.forEach((item) => {
-        item.month_13 = monthly13thShare;
-        item.month_14 = monthly14thShare;
-        item.month_15 = monthly15thShare;
+        const monthlyCompensation =
+          toNum(item.total_compensation);
+
+        const monthlyBonusShare =
+          monthlyCompensation / 12;
+
+        item.month_13 =
+          monthlyBonusShare;
+
+        item.month_14 =
+          monthlyBonusShare;
+
+        item.month_15 =
+          monthlyBonusShare;
       });
 
       await client.query("BEGIN");

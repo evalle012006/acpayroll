@@ -75,6 +75,7 @@ export default function BonusComputation() {
 
   const [modalLoading, setModalLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [recalculating, setRecalculating] = useState(false);
 
   /* =========================================================
      LOAD MAIN TABLE
@@ -109,6 +110,52 @@ export default function BonusComputation() {
       setRows([]);
     } finally {
       setLoading(false);
+    }
+  };
+
+  /* =========================================================
+    GENERATE / RECALCULATE YEAR
+  ========================================================= */
+
+  const recalculateYear = async () => {
+    const confirmed = window.confirm(
+      `Generate / recalculate bonus computations for ${year}?\n\n` +
+        "Salary and ECOLA will be recalculated from Salary History.\n" +
+        "Existing deductions will be preserved."
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      setRecalculating(true);
+
+      const res = await api.post(
+        "/bonus-computations/recalculate",
+        {
+          year,
+        }
+      );
+
+      await loadRows();
+
+      alert(
+        res.data?.message ||
+          `Bonus computations for ${year} generated successfully.`
+      );
+    } catch (err) {
+      console.error(
+        "Failed to recalculate bonus computations:",
+        err
+      );
+
+      alert(
+        err?.response?.data?.message ||
+          "Failed to recalculate bonus computations."
+      );
+    } finally {
+      setRecalculating(false);
     }
   };
 
@@ -347,15 +394,6 @@ export default function BonusComputation() {
           return item;
         }
 
-        if (field === "month_13") {
-          return {
-            ...item,
-            month_13: value,
-            month_14: value,
-            month_15: value,
-          };
-        }
-
         return {
           ...item,
           [field]: value,
@@ -392,10 +430,9 @@ export default function BonusComputation() {
         );
 
         const totalBonus =
-          totalCompensation -
-          deductions +
           month13 +
-          month14;
+          month14 +
+          month15;
 
         acc.total_compensation +=
           totalCompensation;
@@ -420,17 +457,12 @@ export default function BonusComputation() {
   }, [months]);
 
   const totalBenefits = useMemo(() => {
-    const totalGross = Number(
-      selectedStaff?.total_gross || 0
-    );
-
     return (
-      totalGross +
       Number(totals.month_13 || 0) +
-      Number(totals.month_14 || 0) -
-      Number(totals.deductions || 0)
+      Number(totals.month_14 || 0) +
+      Number(totals.month_15 || 0)
     );
-  }, [selectedStaff, totals]);
+  }, [totals]);
 
   /* =========================================================
      SAVE MONTHLY VALUES
@@ -451,24 +483,8 @@ export default function BonusComputation() {
           months: months.map((item) => ({
             month: item.month,
 
-            total_compensation: Number(
-              item.total_compensation || 0
-            ),
-
             deductions: Number(
               item.deductions || 0
-            ),
-
-            month_13: Number(
-              item.month_13 || 0
-            ),
-
-            month_14: Number(
-              item.month_14 || 0
-            ),
-
-            month_15: Number(
-              item.month_15 || 0
             ),
           })),
         }
@@ -507,6 +523,17 @@ export default function BonusComputation() {
             15th month bonus computations.
           </p>
         </div>
+
+        <button
+          type="button"
+          className="bonus-btn primary"
+          onClick={recalculateYear}
+          disabled={recalculating || loading}
+        >
+          {recalculating
+            ? `Recalculating ${year}...`
+            : `Generate / Recalculate ${year}`}
+        </button>
       </div>
 
       {/* FILTERS */}
@@ -607,7 +634,7 @@ export default function BonusComputation() {
               <th className="num">Salary</th>
               <th className="num">ECOLA</th>
               <th className="num">Total Gross</th>
-              <th className="num">Total Bonus {year}</th>
+              <th className="num">Total Bonus Base {year}</th>
               <th>Action</th>
             </tr>
           </thead>
@@ -668,10 +695,9 @@ export default function BonusComputation() {
 
                   <td className="num">
                     {money(
-                      Number(row.total_compensation || 0) -
-                        Number(row.deductions || 0) +
-                        Number(row.month_13 || 0) +
-                        Number(row.month_14 || 0)
+                      Number(row.month_13 || 0) +
+                        Number(row.month_14 || 0) +
+                        Number(row.month_15 || 0)
                     )}
                   </td>
 
@@ -887,7 +913,7 @@ export default function BonusComputation() {
                 </div>
 
                 <div>
-                  <span>15th Month Total</span>
+                  <span>15th Month Base</span>
                   <strong>
                     ₱ {money(totals.month_15)}
                   </strong>
@@ -901,7 +927,7 @@ export default function BonusComputation() {
                 </div>
 
                 <div className="bonus-benefit-highlight">
-                  <span>Total Benefits</span>
+                  <span>Total Bonus Base</span>
                   <strong>
                     ₱ {money(totalBenefits)}
                   </strong>
@@ -923,8 +949,8 @@ export default function BonusComputation() {
                       <th>Deductions</th>
                       <th>13th Month</th>
                       <th>14th Month</th>
-                      <th>15th Month</th>
-                      <th>Total Bonus</th>
+                      <th>15th Month Base</th>
+                      <th>Total Bonus Base</th>
                     </tr>
                   </thead>
 
@@ -937,23 +963,7 @@ export default function BonusComputation() {
                           </td>
 
                           <td>
-                            {modalMode === "edit" ? (
-                              <input
-                                type="number"
-                                min="0"
-                                step="0.01"
-                                value={item.total_compensation}
-                                onChange={(e) =>
-                                  updateMonth(
-                                    index,
-                                    "total_compensation",
-                                    e.target.value
-                                  )
-                                }
-                              />
-                            ) : (
-                              money(item.total_compensation)
-                            )}
+                            {money(item.total_compensation)}
                           </td>
 
                           <td>
@@ -976,39 +986,14 @@ export default function BonusComputation() {
                             )}
                           </td>
 
-                          <td>
-                            {modalMode ===
-                            "edit" ? (
-                              <input
-                                type="number"
-                                min="0"
-                                step="0.01"
-                                value={
-                                  item.month_13
-                                }
-                                onChange={(e) =>
-                                  updateMonth(
-                                    index,
-                                    "month_13",
-                                    e.target
-                                      .value
-                                  )
-                                }
-                              />
-                            ) : (
-                              money(
-                                item.month_13
-                              )
-                            )}
-                          </td>
+                          <td>{money(item.month_13)}</td>
                           <td>{money(item.month_14)}</td>
                           <td>{money(item.month_15)}</td>
                           <td>
                             {money(
-                              Number(item.total_compensation || 0) -
-                                Number(item.deductions || 0) +
-                                Number(item.month_13 || 0) +
-                                Number(item.month_14 || 0)
+                              Number(item.month_13 || 0) +
+                                Number(item.month_14 || 0) +
+                                Number(item.month_15 || 0)
                             )}
                           </td>
                         </tr>

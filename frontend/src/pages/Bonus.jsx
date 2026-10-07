@@ -58,9 +58,20 @@ const getYearFromBonusMonth = (bonusMonth) => {
   return d ? d.getFullYear() : new Date().getFullYear();
 };
 
-const getMonthIndexFromBonusMonth = (bonusMonth) => {
-  const d = parseDate(bonusMonth);
-  return d ? d.getMonth() : new Date().getMonth();
+const getDefaultReleaseDate = (
+  bonusType,
+  bonusMonth
+) => {
+  const year =
+    getYearFromBonusMonth(
+      bonusMonth
+    );
+
+  if (bonusType === "15th Month") {
+    return `${year}-04-01`;
+  }
+
+  return `${year}-12-01`;
 };
 
 const formatMonthYearLabel = (value) => {
@@ -96,119 +107,6 @@ const buildMonthYearOptions = (staffRows = []) => {
   return options;
 };
 
-const computeProratedBonusFromHistory = ({
-  employeeNo,
-  historyRows,
-  statusRows,
-  fallbackSalary,
-  fallbackEcola,
-  startDate,
-  bonusMonth,
-}) => {
-  const cleanHistory = Array.isArray(historyRows)
-    ? historyRows
-        .map((row) => ({
-          employee_no: toStr(row.employee_no || employeeNo),
-          effective_date: toStr(row.effective_date),
-          salary: toNum(row.salary),
-          ecola: toNum(row.ecola),
-        }))
-        .filter((row) => row.effective_date)
-        .sort((a, b) => monthKey(a.effective_date) - monthKey(b.effective_date))
-    : [];
-
-  const cleanStatuses = Array.isArray(statusRows)
-    ? statusRows
-        .map((row) => ({
-          employee_no: toStr(row.employee_no || employeeNo),
-          effective_date: toStr(row.effective_date),
-          status: toStr(row.status || "Active"),
-        }))
-        .filter((row) => row.effective_date && row.status)
-        .sort((a, b) => monthKey(a.effective_date) - monthKey(b.effective_date))
-    : [];
-
-  const year = getYearFromBonusMonth(bonusMonth);
-  const lastMonthIndex = getMonthIndexFromBonusMonth(bonusMonth);
-
-  const staffStart = parseDate(startDate);
-  const staffStartKey = staffStart ? monthKey(staffStart) : null;
-
-  let totalCompensation = 0;
-  let countedMonths = 0;
-
-  for (let m = 0; m <= lastMonthIndex; m++) {
-    const currentMonth = new Date(year, m, 1);
-    const currentMonthKey = monthKey(currentMonth);
-
-    if (staffStartKey !== null && currentMonthKey < staffStartKey) {
-      continue;
-    }
-
-    let applicableSalary = null;
-    for (let i = 0; i < cleanHistory.length; i++) {
-      const rowMonthKey = monthKey(cleanHistory[i].effective_date);
-      if (rowMonthKey !== null && currentMonthKey >= rowMonthKey) {
-        applicableSalary = cleanHistory[i];
-      } else {
-        break;
-      }
-    }
-
-    let applicableStatus = "Active";
-    for (let i = 0; i < cleanStatuses.length; i++) {
-      const rowMonthKey = monthKey(cleanStatuses[i].effective_date);
-      if (rowMonthKey !== null && currentMonthKey >= rowMonthKey) {
-        applicableStatus = cleanStatuses[i].status;
-      } else {
-        break;
-      }
-    }
-
-    if (norm(applicableStatus) !== "active") {
-      continue;
-    }
-
-    const salary = applicableSalary ? toNum(applicableSalary.salary) : toNum(fallbackSalary);
-    const ecola = applicableSalary ? toNum(applicableSalary.ecola) : toNum(fallbackEcola);
-    const monthlyCompensation = salary + ecola;
-
-    totalCompensation += monthlyCompensation;
-    countedMonths += 1;
-  }
-
-  const equivalent = totalCompensation / 12;
-
-  return {
-    total_compensation: totalCompensation,
-    counted_months: countedMonths,
-    month_13: equivalent,
-    month_14: equivalent,
-    month_15: equivalent,
-  };
-};
-
-const getPreviousYear13thMonthRecord = (rows = [], selectedBonusMonth) => {
-  const selectedDate = parseDate(selectedBonusMonth);
-  if (!selectedDate) return null;
-
-  const previousYear = selectedDate.getFullYear() - 1;
-
-  const candidates = (Array.isArray(rows) ? rows : [])
-    .filter((row) => {
-      const type = norm(row?.bonus_type);
-      const d = parseDate(row?.bonus_month || row?.release_date || row?.created_at);
-      return type === "13th month" && d && d.getFullYear() === previousYear;
-    })
-    .sort((a, b) => {
-      const ad = parseDate(a?.bonus_month || a?.release_date || a?.created_at)?.getTime() || 0;
-      const bd = parseDate(b?.bonus_month || b?.release_date || b?.created_at)?.getTime() || 0;
-      return bd - ad;
-    });
-
-  return candidates.length ? candidates[0] : null;
-};
-
 export default function Bonus() {
   const params = useParams();
   const branchParam = toStr(params.branchId ?? params.id);
@@ -235,22 +133,26 @@ export default function Bonus() {
 
   const [showCalcModal, setShowCalcModal] = useState(false);
   const [showReleaseModal, setShowReleaseModal] = useState(false);
-  const [showEdit13Modal, setShowEdit13Modal] = useState(false);
 
   const [selectedRow, setSelectedRow] = useState(null);
   const [percentage, setPercentage] = useState("");
   const [releaseDate, setReleaseDate] = useState(todayDate());
-
-  const [edit13Id, setEdit13Id] = useState(null);
-  const [edit13Amount, setEdit13Amount] = useState("");
-  const [edit13ReleaseDate, setEdit13ReleaseDate] = useState(todayDate());
-  const [edit13Remarks, setEdit13Remarks] = useState("");
 
   const [saving, setSaving] = useState(false);
   const [bonusMonth, setBonusMonth] = useState(currentBonusMonth());
   const [bonusType, setBonusType] = useState("13th Month");
   const [runId, setRunId] = useState(null);
   const [savedResults, setSavedResults] = useState({});
+
+  const [bonusComputationMap, setBonusComputationMap] = useState({});
+  const [loadingBonusComputations, setLoadingBonusComputations] = useState(false);
+
+  const selectedBonusYear = getYearFromBonusMonth(bonusMonth);
+
+  const computationYear =
+    bonusType === "15th Month"
+      ? selectedBonusYear - 1
+      : selectedBonusYear;
 
   const readUser = () => {
     try {
@@ -338,9 +240,6 @@ export default function Bonus() {
 
         const allStaff = Array.isArray(staffRes.data) ? staffRes.data : [];
 
-        const byBranch = allStaff.filter((s) => Number(s.branch_id) === Number(found.id));
-        const byBranchCode = allStaff.filter((s) => norm(s.branch_code) === norm(found.code));
-
         const searchParams = new URLSearchParams(window.location.search);
         const departmentId = searchParams.get("department_id");
         const departmentName = searchParams.get("department");
@@ -422,6 +321,47 @@ export default function Bonus() {
 
     loadSavedForBranch();
   }, [branch, bonusMonth, bonusType]);
+
+  useEffect(() => {
+    const loadBonusComputations = async () => {
+      try {
+        setLoadingBonusComputations(true);
+
+        const res = await api.get("/bonus-computations", {
+          params: {
+            year: computationYear,
+          },
+        });
+
+        const rows = Array.isArray(res.data?.rows)
+          ? res.data.rows
+          : [];
+
+        const mapped = {};
+
+        rows.forEach((row) => {
+          const staffId = String(row.staff_id ?? row.id ?? "");
+
+          if (!staffId) return;
+
+          mapped[staffId] = row;
+        });
+
+        setBonusComputationMap(mapped);
+      } catch (err) {
+        console.error(
+          "Failed to load bonus computations:",
+          err
+        );
+
+        setBonusComputationMap({});
+      } finally {
+        setLoadingBonusComputations(false);
+      }
+    };
+
+    loadBonusComputations();
+  }, [computationYear]);
 
   useEffect(() => {
     const loadStatusHistory = async () => {
@@ -526,7 +466,6 @@ export default function Bonus() {
         setOpenMenuId(null);
         setShowCalcModal(false);
         setShowReleaseModal(false);
-        setShowEdit13Modal(false);
       }
     };
 
@@ -540,86 +479,144 @@ export default function Bonus() {
   }, []);
 
   useEffect(() => {
-    const anyOpen = showCalcModal || showReleaseModal || showEdit13Modal;
+    const anyOpen = showCalcModal || showReleaseModal;
     if (!anyOpen) return;
     document.body.style.overflow = "hidden";
     return () => {
       document.body.style.overflow = "";
     };
-  }, [showCalcModal, showReleaseModal, showEdit13Modal]);
+  }, [showCalcModal, showReleaseModal]);
 
-  const monthYearOptions = useMemo(() => buildMonthYearOptions(staff), [staff]);
+  const monthYearOptions = useMemo(() => {
+    const options = buildMonthYearOptions(staff);
+
+    if (
+      bonusType === "13th Month" ||
+      bonusType === "14th Month"
+    ) {
+      return options.filter(
+        (opt) =>
+          String(opt.value).slice(5, 7) === "12"
+      );
+    }
+
+    if (bonusType === "15th Month") {
+      return options.filter(
+        (opt) =>
+          String(opt.value).slice(5, 7) === "04"
+      );
+    }
+
+    return options;
+  }, [staff, bonusType]);
+
+  useEffect(() => {
+    if (!monthYearOptions.length) return;
+
+    const currentIsValid =
+      monthYearOptions.some(
+        (opt) => opt.value === bonusMonth
+      );
+
+    if (!currentIsValid) {
+      setBonusMonth(
+        monthYearOptions[0].value
+      );
+
+      setRunId(null);
+      setSavedResults({});
+      setOpenMenuId(null);
+    }
+  }, [
+    bonusType,
+    bonusMonth,
+    monthYearOptions,
+  ]);
 
   const computed = useMemo(() => {
     return staff.map((s) => {
-      const employeeNo = toStr(s.employee_no);
-      const historyRows = salaryHistoryMap[employeeNo] || [];
-      const statusRows = statusHistoryMap[employeeNo] || [];
-      const bonusHistoryRows = bonusHistoryMap[String(s.id)] || [];
+      const computation =
+        bonusComputationMap[String(s.id)] || null;
 
-      const bonus = computeProratedBonusFromHistory({
-        employeeNo,
-        historyRows,
-        statusRows,
-        fallbackSalary: s.salary,
-        fallbackEcola: s.ecola,
-        startDate: s.start_date,
-        bonusMonth,
-      });
-
-      const previousYearRecord = getPreviousYear13thMonthRecord(
-        bonusHistoryRows,
-        bonusMonth
+      const salary = toNum(
+        computation?.salary ?? s.salary
       );
 
-      const previousYear13thMonth = previousYearRecord
-        ? toNum(previousYearRecord.amount)
-        : 0;
+      const ecola = toNum(
+        computation?.ecola ?? s.ecola
+      );
 
-      const salary = toNum(s.salary);
-      const releaseBase15th = previousYear13thMonth > 0 ? previousYear13thMonth : bonus.month_15;
+      const totalCompensation = toNum(
+        computation?.total_compensation
+      );
 
-      const saved = savedResults[String(s.id)] || {
-        percentage: 0,
-        result: 0,
-        line_id: null,
-        bonus_run_id: null,
-        is_released: false,
-        release_date: null,
-      };
+      const deductions = toNum(
+        computation?.deductions
+      );
+
+      const month13 = toNum(
+        computation?.month_13
+      );
+
+      const month14 = toNum(
+        computation?.month_14
+      );
+
+      const month15 = toNum(
+        computation?.month_15
+      );
+
+      const saved =
+        savedResults[String(s.id)] || {
+          percentage: 0,
+          result: 0,
+          line_id: null,
+          bonus_run_id: null,
+          is_released: false,
+          release_date: null,
+        };
 
       return {
         ...s,
+
         employee_id: s.id,
+
         salary,
-        previous_year_13th_month: previousYear13thMonth,
-        previous_year_13th_record: previousYearRecord,
-        total_compensation: bonus.total_compensation,
-        counted_months: bonus.counted_months,
-        month_13: bonus.month_13,
-        month_14: bonus.month_14,
-        month_15: bonus.month_15,
-        release_base_15th: releaseBase15th,
+        ecola,
+
+        total_compensation: totalCompensation,
+        deductions,
+
+        month_13: month13,
+        month_14: month14,
+        month_15: month15,
+
+        // Actual 15th Month evaluation base.
+        // For a 2027 release, computationYear already points to 2026.
+        release_base_15th: month15,
+
         saved_percentage: toNum(saved.percentage),
         saved_result: toNum(saved.result),
-        saved_line_id: saved.line_id ?? null,
-        saved_bonus_run_id: saved.bonus_run_id ?? null,
-        saved_is_released: !!saved.is_released,
-        saved_release_date: saved.release_date || null,
+
+        saved_line_id:
+          saved.line_id ?? null,
+
+        saved_bonus_run_id:
+          saved.bonus_run_id ?? null,
+
+        saved_is_released:
+          !!saved.is_released,
+
+        saved_release_date:
+          saved.release_date || null,
       };
     });
-  }, [staff, salaryHistoryMap, statusHistoryMap, bonusHistoryMap, savedResults, bonusMonth]);
+  }, [
+    staff,
+    bonusComputationMap,
+    savedResults,
+  ]);
 
-  const previousYearLabel = useMemo(() => {
-    const d = parseDate(bonusMonth);
-    const year = d ? d.getFullYear() - 1 : new Date().getFullYear() - 1;
-    return `${year} 13th Month`;
-  }, [bonusMonth]);
-
-  const totalPreviousYear13th = computed.reduce(
-    (sum, s) => sum + toNum(s.previous_year_13th_month),
-    0
-  );
   const total13 = computed.reduce((sum, s) => sum + toNum(s.month_13), 0);
   const total14 = computed.reduce((sum, s) => sum + toNum(s.month_14), 0);
   const total15 = computed.reduce((sum, s) => sum + toNum(s.month_15), 0);
@@ -678,7 +675,7 @@ export default function Bonus() {
     const historyRows = salaryHistoryMap[employeeNo] || [];
     const statusRows = statusHistoryMap[employeeNo] || [];
 
-    const year = getYearFromBonusMonth(bonusMonth);
+    const year = computationYear;
 
     const staffStart = parseDate(row.start_date);
     const staffStartKey = staffStart ? monthKey(staffStart) : null;
@@ -789,7 +786,7 @@ export default function Bonus() {
       : printType === "14th"
       ? total14
       : printType === "15th"
-      ? total15
+      ? totalResult
       : totalPrintBonus;
 
   const handlePrintReport = (type) => {
@@ -808,6 +805,7 @@ export default function Bonus() {
     const res = await api.post("/bonus/run", {
       branch_id: Number(branch.id),
       bonus_month: bonusMonth,
+      bonus_type: bonusType,
       notes: null,
     });
 
@@ -835,55 +833,179 @@ export default function Bonus() {
     setPercentage("");
   };
 
-  const openReleaseModal = (row) => {
+  const openReleaseModal = async (row) => {
     setOpenMenuId(null);
 
-    if (!row?.saved_result || toNum(row.saved_result) <= 0) {
-      alert("Save the calculation first before releasing.");
-      return;
-    }
+    try {
+      let releaseRow = row;
 
-    setSelectedRow(row);
-    setReleaseDate(row.saved_release_date || todayDate());
-    setShowReleaseModal(true);
+      /*
+      * 13th / 14th:
+      * automatically create the bonus line at 100%.
+      *
+      * 15th:
+      * line must already exist because HR must
+      * calculate the 0-100% evaluation first.
+      */
+      if (
+        bonusType !== "15th Month" &&
+        !row?.saved_line_id
+      ) {
+        setSaving(true);
+
+        const currentRunId =
+          await ensureRun();
+
+        await api.post(
+          `/bonus/run/${currentRunId}/lines`,
+          {
+            lines: [
+              {
+                employee_id:
+                  row.employee_id,
+              },
+            ],
+          }
+        );
+
+        const lineRefresh =
+          await api.get(
+            `/bonus/branch/${branch.id}`,
+            {
+              params: {
+                bonus_month:
+                  bonusMonth,
+                bonus_type:
+                  bonusType,
+              },
+            }
+          );
+
+        const lines =
+          Array.isArray(
+            lineRefresh.data
+          )
+            ? lineRefresh.data
+            : [];
+
+        const mapped = {};
+
+        lines.forEach((line) => {
+          const key =
+            String(
+              line.employee_id ?? ""
+            );
+
+          if (!key) return;
+
+          mapped[key] = {
+            line_id:
+              line.id,
+
+            bonus_run_id:
+              line.bonus_run_id,
+
+            percentage:
+              toNum(
+                line.percentage
+              ),
+
+            result:
+              toNum(
+                line.result
+              ),
+
+            is_released:
+              !!line.is_released,
+
+            release_date:
+              line.release_date ||
+              null,
+          };
+        });
+
+        setSavedResults(mapped);
+
+        const saved =
+          mapped[
+            String(
+              row.employee_id
+            )
+          ];
+
+        if (!saved?.line_id) {
+          throw new Error(
+            "Failed to prepare bonus for release."
+          );
+        }
+
+        releaseRow = {
+          ...row,
+
+          saved_line_id:
+            saved.line_id,
+
+          saved_bonus_run_id:
+            saved.bonus_run_id,
+
+          saved_percentage:
+            saved.percentage,
+
+          saved_result:
+            saved.result,
+
+          saved_is_released:
+            saved.is_released,
+
+          saved_release_date:
+            saved.release_date,
+        };
+      }
+
+      if (
+        bonusType === "15th Month" &&
+        !releaseRow?.saved_line_id
+      ) {
+        alert(
+          "Calculate the 15th Month result first before releasing."
+        );
+        return;
+      }
+
+      setSelectedRow(
+        releaseRow
+      );
+
+      setReleaseDate(
+        releaseRow.saved_release_date ||
+          getDefaultReleaseDate(
+            bonusType,
+            bonusMonth
+          )
+      );
+
+      setShowReleaseModal(true);
+    } catch (err) {
+      alert(
+        err?.response?.data?.message ||
+          err?.message ||
+          "Failed to prepare bonus for release."
+      );
+    } finally {
+      setSaving(false);
+    }
   };
 
   const closeReleaseModal = () => {
     setShowReleaseModal(false);
     setSelectedRow(null);
-    setReleaseDate(todayDate());
-  };
 
-  const handleOpen13Month = (row) => {
-    setOpenMenuId(null);
-    setSelectedRow(row);
-
-    const record = row?.previous_year_13th_record;
-
-    if (record?.id) {
-      setEdit13Id(record.id);
-      setEdit13Amount(String(toNum(record.amount)));
-      setEdit13ReleaseDate(
-        record.release_date ? String(record.release_date).slice(0, 10) : todayDate()
-      );
-      setEdit13Remarks(toStr(record.remarks));
-    } else {
-      setEdit13Id(null);
-      setEdit13Amount("");
-      setEdit13ReleaseDate(todayDate());
-      setEdit13Remarks("");
-    }
-
-    setShowEdit13Modal(true);
-  };
-
-  const closeEdit13Modal = () => {
-    setShowEdit13Modal(false);
-    setSelectedRow(null);
-    setEdit13Id(null);
-    setEdit13Amount("");
-    setEdit13ReleaseDate(todayDate());
-    setEdit13Remarks("");
+    setReleaseDate(
+      getDefaultReleaseDate(
+        bonusType,
+        bonusMonth
+      )
+    );
   };
 
   const percentageValue = toNum(percentage);
@@ -894,6 +1016,16 @@ export default function Bonus() {
   const handleSaveCalculation = async () => {
     if (!selectedRow) return;
 
+    if (
+      percentage === "" ||
+      !Number.isFinite(Number(percentage)) ||
+      Number(percentage) < 0 ||
+      Number(percentage) > 100
+    ) {
+      alert("Percentage must be from 0% to 100%.");
+      return;
+    }
+
     try {
       setSaving(true);
 
@@ -903,12 +1035,7 @@ export default function Bonus() {
         lines: [
           {
             employee_id: selectedRow.employee_id,
-            salary: toNum(selectedRow.salary),
-            month_13: toNum(selectedRow.month_13),
-            month_14: toNum(selectedRow.month_14),
-            month_15: toNum(selectedRow.release_base_15th),
             percentage: percentageValue,
-            result: toNum(result),
           },
         ],
       };
@@ -916,8 +1043,12 @@ export default function Bonus() {
       await api.post(`/bonus/run/${currentRunId}/lines`, payload);
 
       const lineRefresh = await api.get(`/bonus/branch/${branch.id}`, {
-        params: { bonus_month: bonusMonth },
+        params: {
+          bonus_month: bonusMonth,
+          bonus_type: bonusType,
+        },
       });
+
       const lines = Array.isArray(lineRefresh.data) ? lineRefresh.data : [];
 
       const mapped = {};
@@ -950,13 +1081,60 @@ export default function Bonus() {
     if (!selectedRow) return;
 
     try {
-      if (!selectedRow.saved_line_id) {
+      if (!selectedRow?.saved_line_id) {
         alert("Save the calculation first before releasing.");
         return;
       }
 
       if (!isValidDate(releaseDate)) {
-        alert("Please select a valid release date.");
+        alert(
+          "Please select a valid release date."
+        );
+        return;
+      }
+
+      const releaseMonth =
+        Number(
+          String(releaseDate).slice(5, 7)
+        );
+
+      const releaseYear =
+        Number(
+          String(releaseDate).slice(0, 4)
+        );
+
+      const bonusYear =
+        getYearFromBonusMonth(
+          bonusMonth
+        );
+
+      if (
+        (
+          bonusType === "13th Month" ||
+          bonusType === "14th Month"
+        ) &&
+        releaseMonth !== 12
+      ) {
+        alert(
+          `${bonusType} Pay can only be released in December.`
+        );
+        return;
+      }
+
+      if (
+        bonusType === "15th Month" &&
+        releaseMonth !== 4
+      ) {
+        alert(
+          "15th Month Pay can only be released in April."
+        );
+        return;
+      }
+
+      if (releaseYear !== bonusYear) {
+        alert(
+          `Release date must be within ${bonusYear}.`
+        );
         return;
       }
 
@@ -978,56 +1156,12 @@ export default function Bonus() {
       await refreshBonusHistory(staff);
 
       closeReleaseModal();
-      alert("15th month pay released.");
+
+      alert(
+        `${bonusType} Pay released successfully.` 
+      );
     } catch (err) {
       alert(err?.response?.data?.message || err?.message || "Failed to release bonus.");
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleSave13thMonth = async () => {
-    try {
-      if (!selectedRow) return;
-
-      if (toNum(edit13Amount) <= 0) {
-        alert("Enter valid amount");
-        return;
-      }
-
-      if (!isValidDate(edit13ReleaseDate)) {
-        alert("Please select a valid release date.");
-        return;
-      }
-
-      setSaving(true);
-
-      if (edit13Id) {
-        await api.put(`/staff-bonus-history/${edit13Id}`, {
-          amount: toNum(edit13Amount),
-          release_date: edit13ReleaseDate,
-          remarks: edit13Remarks,
-        });
-      } else {
-        const previousYear = getYearFromBonusMonth(bonusMonth) - 1;
-
-        await api.post(`/staff-bonus-history`, {
-          staff_id: selectedRow.id,
-          employee_no: selectedRow.employee_no,
-          bonus_type: "13th Month",
-          bonus_month: `${previousYear}-12-01`,
-          amount: toNum(edit13Amount),
-          release_date: edit13ReleaseDate,
-          remarks: edit13Remarks,
-        });
-      }
-
-      await refreshBonusHistory(staff);
-
-      closeEdit13Modal();
-      alert(edit13Id ? "Updated successfully" : "Added successfully");
-    } catch (err) {
-      alert(err?.response?.data?.message || err?.message || "Save failed");
     } finally {
       setSaving(false);
     }
@@ -1048,18 +1182,39 @@ export default function Bonus() {
           </p>
           <small>
             Bonus & Benefits Summary • {getYearFromBonusMonth(bonusMonth)}
-            {loadingHistory || loadingStatusHistory || loadingBonusHistory
-              ? " • Loading data..."
-              : ""}
+            {loadingHistory ||
+              loadingStatusHistory ||
+              loadingBonusHistory ||
+              loadingBonusComputations
+                ? " • Loading data..."
+                : ""}
           </small>
         </div>
 
         <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
           <select
             className="input"
+            value={bonusType}
+            onChange={(e) => {
+              setBonusType(e.target.value);
+              setRunId(null);
+              setSavedResults({});
+              setOpenMenuId(null);
+            }}
+            style={{ width: 170 }}
+          >
+            <option value="13th Month">13th Month</option>
+            <option value="14th Month">14th Month</option>
+            <option value="15th Month">15th Month</option>
+          </select>
+
+          <select
+            className="input"
             value={bonusMonth}
             onChange={(e) => {
               setBonusMonth(e.target.value);
+              setRunId(null);
+              setSavedResults({});
               setOpenMenuId(null);
             }}
             style={{ width: 220 }}
@@ -1245,34 +1400,30 @@ export default function Bonus() {
                                 : ""
                             }`}
                           >
-                            <button
-                              type="button"
-                              className="bonus-menu-item"
-                              onClick={() => openCalculateModal(s)}
-                            >
-                              Calculate
-                            </button>
+                            {bonusType === "15th Month" && (
+                              <button
+                                type="button"
+                                className="bonus-menu-item"
+                                onClick={() => openCalculateModal(s)}
+                                disabled={s.saved_is_released}
+                              >
+                                {s.saved_is_released
+                                  ? "Calculation Locked"
+                                  : "Calculate"}
+                              </button>
+                            )}
 
                             <button
                               type="button"
                               className="bonus-menu-item"
                               onClick={() => openReleaseModal(s)}
+                              disabled={s.saved_is_released || saving}
                             >
                               {s.saved_is_released
                                 ? "Released"
                                 : "Release"}
                             </button>
 
-                            <button
-                              type="button"
-                              className="bonus-menu-item"
-                              onClick={() => handleOpen13Month(s)}
-                            >
-                              {s.previous_year_13th_month > 0
-                                ? "Edit"
-                                : "Add"}{" "}
-                              {previousYearLabel}
-                            </button>
                           </div>
                         )}
                       </div>
@@ -1341,7 +1492,7 @@ export default function Bonus() {
               <div>
                 <h3 className="modal-title">Calculate 15th Month Result</h3>
                 <p className="modal-subtitle">
-                  {selectedRow.fullname} • {previousYearLabel} base, released as 15th month pay:{" "}
+                  {selectedRow.fullname} • {computationYear} 15th Month Base:{" "}
                   <b>₱ {fmtMoney(selectedRow.release_base_15th)}</b>
                 </p>
               </div>
@@ -1405,19 +1556,42 @@ export default function Bonus() {
         <div
           className="modal-overlay"
           onMouseDown={(e) =>
-            e.target.classList.contains("modal-overlay") && closeReleaseModal()
+            e.target.classList.contains(
+              "modal-overlay"
+            ) &&  
+            closeReleaseModal()
           }
         >
-          <div className="modal bonus-calc-modal" onMouseDown={(e) => e.stopPropagation()}>
+          <div
+            className="modal bonus-calc-modal"
+            onMouseDown={(e) =>
+              e.stopPropagation()
+            }
+          >
             <div className="modal-head">
               <div>
-                <h3 className="modal-title">Release {previousYearLabel} as 15th Month Pay</h3>
+                <h3 className="modal-title">
+                  Release {bonusType} Pay
+                </h3>
+
                 <p className="modal-subtitle">
-                  {selectedRow.fullname} • Release Amount: <b>₱ {fmtMoney(selectedRow.saved_result)}</b>
+                  {selectedRow.fullname}
+                  {" • "}
+                  Release Amount:{" "}
+                  <b>
+                    ₱{" "}
+                    {fmtMoney(
+                      selectedRow.saved_result
+                    )}
+                  </b>
                 </p>
               </div>
 
-              <button className="modal-x" type="button" onClick={closeReleaseModal}>
+              <button
+                className="modal-x"
+                type="button"
+                onClick={closeReleaseModal}
+              >
                 ✕
               </button>
             </div>
@@ -1425,23 +1599,63 @@ export default function Bonus() {
             <div className="modal-form">
               <div className="grid">
                 <div className="field full">
-                  <label>Employee</label>
-                  <div className="bonus-result-box">{selectedRow.fullname}</div>
+                  <label>
+                    Employee
+                  </label>
+
+                  <div className="bonus-result-box">
+                    {selectedRow.fullname}
+                  </div>
                 </div>
 
                 <div className="field full">
-                  <label>Release Date</label>
+                  <label>
+                    Release Date
+                  </label>
+
                   <input
                     className="input"
                     type="date"
                     value={releaseDate}
-                    onChange={(e) => setReleaseDate(e.target.value)}
+                    min={
+                      bonusType ===
+                      "15th Month"
+                        ? `${getYearFromBonusMonth(
+                            bonusMonth
+                          )}-04-01`
+                        : `${getYearFromBonusMonth(
+                            bonusMonth
+                          )}-12-01`
+                    }
+                    max={
+                      bonusType ===
+                      "15th Month"
+                        ? `${getYearFromBonusMonth(
+                            bonusMonth
+                          )}-04-30`
+                        : `${getYearFromBonusMonth(
+                            bonusMonth
+                          )}-12-31`
+                    }
+                    onChange={(e) =>
+                      setReleaseDate(
+                        e.target.value
+                      )
+                    }
                   />
                 </div>
 
                 <div className="field full">
-                  <label>Released Amount</label>
-                  <div className="bonus-result-final">₱ {fmtMoney(selectedRow.saved_result)}</div>
+                  <label>
+                    Released Amount
+                  </label>
+
+                  <div className="bonus-result-final">
+                    ₱{" "}
+                    {fmtMoney(
+                      selectedRow.saved_result
+                    )}
+                  </div>
                 </div>
               </div>
 
@@ -1454,99 +1668,16 @@ export default function Bonus() {
                 >
                   Cancel
                 </button>
+
                 <button
                   className="btn-primary"
                   type="button"
                   onClick={handleReleaseBonus}
                   disabled={saving}
                 >
-                  {saving ? "Releasing..." : "Release"}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {showEdit13Modal && selectedRow && (
-        <div
-          className="modal-overlay"
-          onMouseDown={(e) =>
-            e.target.classList.contains("modal-overlay") && closeEdit13Modal()
-          }
-        >
-          <div className="modal bonus-calc-modal" onMouseDown={(e) => e.stopPropagation()}>
-            <div className="modal-head">
-              <div>
-                <h3 className="modal-title">
-                  {edit13Id ? "Edit" : "Add"} {previousYearLabel}
-                </h3>
-                <p className="modal-subtitle">{selectedRow.fullname}</p>
-              </div>
-
-              <button className="modal-x" type="button" onClick={closeEdit13Modal}>
-                ✕
-              </button>
-            </div>
-
-            <div className="modal-form">
-              <div className="grid">
-                <div className="field full">
-                  <label>Employee</label>
-                  <div className="bonus-result-box">{selectedRow.fullname}</div>
-                </div>
-
-                <div className="field full">
-                  <label>{previousYearLabel} Amount</label>
-                  <input
-                    className="input"
-                    type="number"
-                    value={edit13Amount}
-                    onChange={(e) => setEdit13Amount(e.target.value)}
-                    placeholder="Enter amount"
-                  />
-                </div>
-
-                <div className="field full">
-                  <label>Release Date</label>
-                  <input
-                    className="input"
-                    type="date"
-                    value={edit13ReleaseDate}
-                    onChange={(e) => setEdit13ReleaseDate(e.target.value)}
-                  />
-                </div>
-
-                <div className="field full">
-                  <label>Remarks</label>
-                  <textarea
-                    className="input"
-                    value={edit13Remarks}
-                    onChange={(e) => setEdit13Remarks(e.target.value)}
-                    placeholder="Remarks"
-                  />
-                </div>
-              </div>
-
-              <div className="modal-actions">
-                <button
-                  className="btn-secondary"
-                  type="button"
-                  onClick={closeEdit13Modal}
-                  disabled={saving}
-                >
-                  Cancel
-                </button>
-
-                <button
-                  className="btn-primary"
-                  type="button"
-                  onClick={handleSave13thMonth}
-                  disabled={saving}
-                >
                   {saving
-                    ? "Saving..."
-                    : `${edit13Id ? "Save" : "Add"} ${previousYearLabel}`}
+                    ? "Releasing..."
+                    : `Release ${bonusType}`}
                 </button>
               </div>
             </div>
@@ -1713,7 +1844,7 @@ export default function Bonus() {
                       : printType === "14th"
                       ? toNum(row.month_14)
                       : printType === "15th"
-                      ? toNum(row.month_15)
+                      ? toNum(row.saved_result)
                       : bonus;
 
                   return (
@@ -1755,7 +1886,7 @@ export default function Bonus() {
                       </td>
 
                       <td>
-                        {row.counted_months || 0}
+                        12
                       </td>
 
                       <td className="print-money bonus-value">
@@ -1845,7 +1976,6 @@ export default function Bonus() {
                   President / CEO
                 </div>
               </div>
-
             </div>
           </div>
         </div>
