@@ -394,6 +394,15 @@ export default function BonusComputation() {
           return item;
         }
 
+        if (field === "month_13") {
+          return {
+            ...item,
+            month_13: value,
+            month_14: value,
+            month_15: value,
+          };
+        }
+
         return {
           ...item,
           [field]: value,
@@ -432,7 +441,9 @@ export default function BonusComputation() {
         const totalBonus =
           month13 +
           month14 +
-          month15;
+          month15 -
+          deductions;
+
 
         acc.total_compensation +=
           totalCompensation;
@@ -460,7 +471,8 @@ export default function BonusComputation() {
     return (
       Number(totals.month_13 || 0) +
       Number(totals.month_14 || 0) +
-      Number(totals.month_15 || 0)
+      Number(totals.month_15 || 0) -
+      Number(totals.deductions || 0)
     );
   }, [totals]);
 
@@ -480,13 +492,21 @@ export default function BonusComputation() {
         `/bonus-computations/staff/${selectedStaff.staff_id}`,
         {
           year,
-          months: months.map((item) => ({
-            month: item.month,
+            months: months.map((item) => ({
+              month: item.month,
 
-            deductions: Number(
-              item.deductions || 0
-            ),
-          })),
+              total_compensation: Number(
+                item.total_compensation || 0
+              ),
+
+              deductions: Number(
+                item.deductions || 0
+              ),
+
+              month_13: Number(
+                item.month_13 || 0
+              ),
+            })),
         }
       );
 
@@ -697,7 +717,8 @@ export default function BonusComputation() {
                     {money(
                       Number(row.month_13 || 0) +
                         Number(row.month_14 || 0) +
-                        Number(row.month_15 || 0)
+                        Number(row.month_15 || 0) -
+                        Number(row.deductions || 0)
                     )}
                   </td>
 
@@ -963,7 +984,13 @@ export default function BonusComputation() {
                           </td>
 
                           <td>
-                            {money(item.total_compensation)}
+                            {modalMode === "edit" ? (
+                              <input type="number" min="0" step="0.01" value={item.total_compensation}
+                                onChange={(e) => updateMonth( index, "total_compensation", e.target.value)}
+                              />
+                            ) : (
+                              money(item.total_compensation)
+                            )}
                           </td>
 
                           <td>
@@ -986,14 +1013,33 @@ export default function BonusComputation() {
                             )}
                           </td>
 
-                          <td>{money(item.month_13)}</td>
+                          <td>
+                            {modalMode === "edit" ? (
+                              <input
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                value={item.month_13}
+                                onChange={(e) =>
+                                  updateMonth(
+                                    index,
+                                    "month_13",
+                                    e.target.value
+                                  )
+                                }
+                              />
+                            ) : (
+                              money(item.month_13)
+                            )}
+                          </td>
                           <td>{money(item.month_14)}</td>
                           <td>{money(item.month_15)}</td>
                           <td>
                             {money(
                               Number(item.month_13 || 0) +
                                 Number(item.month_14 || 0) +
-                                Number(item.month_15 || 0)
+                                Number(item.month_15 || 0) -
+                                Number(item.deductions || 0)
                             )}
                           </td>
                         </tr>
