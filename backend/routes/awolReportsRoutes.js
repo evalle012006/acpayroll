@@ -27,6 +27,7 @@ const STATUS_AREA = "Waiting Area Manager Approval";
 const STATUS_REGIONAL = "Waiting Regional Manager Approval";
 const STATUS_AVP = "Waiting Assistant Vice President Approval";
 const STATUS_VP = "Waiting Vice President Approval";
+const STATUS_HR = "Waiting HR Department Approval";
 const STATUS_WAITING_FINAL = "Waiting Final File Upload";
 const STATUS_APPROVED = "Approved";
 const STATUS_REJECTED = "Rejected";
@@ -34,8 +35,7 @@ const STATUS_VOID = "Voided";
 
 const REPORT_TYPES = [
   "AWOL Report",
-  "Notice to Explain",
-  "Termination of Contract",
+  "Incident Report",
 ];
 
 const toStr = (v) => String(v ?? "").trim();
@@ -56,15 +56,16 @@ const toDateOrNull = (v) => {
 
 const normalizeReportType = (v) => {
   const input = toStr(v);
-  const found = REPORT_TYPES.find((x) => norm(x) === norm(input));
-  return found || "AWOL Report";
+
+  return REPORT_TYPES.find(
+    (type) => norm(type) === norm(input)
+  ) || null;
 };
 
 const prefixByReportType = (reportType) => {
   const t = norm(reportType);
 
-  if (t === "notice to explain") return "NTE";
-  if (t === "termination of contract") return "TOC";
+  if (t === "incident report") return "INC";
 
   return "AWOL";
 };
@@ -72,11 +73,19 @@ const prefixByReportType = (reportType) => {
 const dateLabelByReportType = (reportType) => {
   const t = norm(reportType);
 
-  if (t === "notice to explain") return "Notice Date";
-  if (t === "termination of contract") return "Termination Date";
+  if (t === "incident report") return "Incident Date";
 
   return "AWOL Date";
 };
+
+const getUserDepartment = (req) =>
+  norm(
+    req.user?.department ||
+      req.user?.department_name ||
+      req.user?.departmentName ||
+      req.user?.user_department ||
+      req.user?.dept
+  );
 
 const isHRDepartmentUser = (req) =>
   isHr(req) ||
@@ -85,7 +94,14 @@ const isHRDepartmentUser = (req) =>
     "hr department",
     "human resources",
     "human resources department",
-  ].includes(norm(req.user?.department));
+  ].includes(getUserDepartment(req));
+
+const isAccountingDepartmentUser = (req) =>
+  isAccounting(req) ||
+  [
+    "accounting",
+    "accounting department",
+  ].includes(getUserDepartment(req));
 
 const isAuditDepartmentUser = (req) =>
   ["audit", "audit department"].includes(
@@ -98,24 +114,42 @@ const isAuditDepartmentUser = (req) =>
     )
   );
 
-const canCreateReport = (req) =>
-  isBranchManager(req) ||
-  isAreaManager(req) ||
-  isRegionalManager(req) ||
-  isAssistantVicePresident(req) ||
-  isVicePresident(req) ||
-  isSeniorVicePresident(req) ||
-  isHRDepartmentUser(req) ||
-  isAuditDepartmentUser(req) ||
-  isAdmin(req) ||
-  isIT(req);
+const isOperationDepartmentUser = (req) =>
+  ["operation", "operation department"].includes(
+    getUserDepartment(req)
+  );
+
+const canCreateReport = (req) => {
+  if (isOperationDepartmentUser(req)) {
+    return (
+      isAreaManager(req) ||
+      isRegionalManager(req) ||
+      isAssistantVicePresident(req) ||
+      isVicePresident(req)
+    );
+  }
+
+  return (
+    isBranchManager(req) ||
+    isAreaManager(req) ||
+    isRegionalManager(req) ||
+    isAssistantVicePresident(req) ||
+    isVicePresident(req) ||
+    isSeniorVicePresident(req) ||
+    isHRDepartmentUser(req) ||
+    isAccountingDepartmentUser(req) ||
+    isAuditDepartmentUser(req) ||
+    isAdmin(req) ||
+    isIT(req)
+  );
+};
 
 const canViewAll = (req) =>
   isAdmin(req) ||
   isIT(req) ||
   isHRDepartmentUser(req) ||
+  isAccountingDepartmentUser(req) ||
   isAuditDepartmentUser(req) ||
-  isAccounting(req) ||
   isTread(req) ||
   isVicePresident(req) ||
   isSeniorVicePresident(req) ||
@@ -123,20 +157,22 @@ const canViewAll = (req) =>
 
 const canUploadFinalFile = (req) =>
   isHRDepartmentUser(req) ||
+  isAccountingDepartmentUser(req) ||
   isAuditDepartmentUser(req) ||
-  isAccounting(req) ||
   isAdmin(req) ||
   isIT(req);
 
 const canBypassApprove = (req) =>
   isAdmin(req) ||
   isIT(req) ||
+  isHRDepartmentUser(req) ||
+  isAccountingDepartmentUser(req) ||
   isAuditDepartmentUser(req);
 
 const canVoidReport = (req) =>
   isHRDepartmentUser(req) ||
+  isAccountingDepartmentUser(req) ||
   isAuditDepartmentUser(req) ||
-  isAccounting(req) ||
   isAdmin(req) ||
   isIT(req);
 
@@ -146,8 +182,8 @@ const canRejectReport = (req) =>
   isAssistantVicePresident(req) ||
   isVicePresident(req) ||
   isHRDepartmentUser(req) ||
+  isAccountingDepartmentUser(req) ||
   isAuditDepartmentUser(req) ||
-  isAccounting(req) ||
   isAdmin(req) ||
   isIT(req);
 
@@ -166,26 +202,143 @@ const displayName = (s) => {
 };
 
 const getInitialStatus = (req) => {
-  if (isBranchManager(req)) return STATUS_AREA;
-  if (isAreaManager(req)) return STATUS_REGIONAL;
-  if (isRegionalManager(req)) return STATUS_AVP;
-  if (isAssistantVicePresident(req)) return STATUS_VP;
-  if (isVicePresident(req)) return STATUS_WAITING_FINAL;
+  return STATUS_HR;
+};
 
-  if (isSeniorVicePresident(req)) return STATUS_WAITING_FINAL;
+// =====================================================
+// STAFF REPORT APPROVAL HISTORY
+// =====================================================
 
-  if (
-    isHRDepartmentUser(req) ||
-    isAuditDepartmentUser(req)
-  ) {
-    return STATUS_WAITING_FINAL;
+const getHistoryActor = (req) => {
+  const user = req.user || {};
+
+  const fullname =
+    user.fullname ||
+    user.full_name ||
+    user.name ||
+    [user.first_name, user.last_name]
+      .filter(Boolean)
+      .join(" ") ||
+    user.email ||
+    `User #${user.id || "Unknown"}`;
+
+  return {
+    id: user.id || null,
+    name: String(fullname).trim(),
+    role: String(user.role || "").trim(),
+    department: String(
+      user.department ||
+      user.department_name ||
+      user.departmentName ||
+      user.user_department ||
+      user.dept ||
+      ""
+    ).trim(),
+  };
+};
+
+
+// =====================================================
+// INSERT APPROVAL HISTORY
+// =====================================================
+
+const insertApprovalHistory = async (
+  client,
+  reportId,
+  req,
+  action,
+  previousStatus,
+  newStatus,
+  notes = null
+) => {
+  const actor = getHistoryActor(req);
+
+  await client.query(
+    `
+      INSERT INTO public.awol_report_approval_history
+      (
+        report_id,
+        actor_id,
+        actor_name,
+        actor_role,
+        actor_department,
+        action,
+        previous_status,
+        new_status,
+        notes,
+        performed_at
+      )
+      VALUES
+      (
+        $1, $2, $3, $4, $5,
+        $6, $7, $8, $9, NOW()
+      )
+    `,
+    [
+      reportId,
+      actor.id,
+      actor.name,
+      actor.role,
+      actor.department,
+      action,
+      previousStatus,
+      newStatus,
+      notes,
+    ]
+  );
+};
+
+
+// =====================================================
+// UPDATE REPORT AND SAVE HISTORY TOGETHER
+// =====================================================
+
+const updateReportWithHistory = async (
+  req,
+  reportId,
+  sql,
+  params,
+  action,
+  notes = null
+) => {
+  const client = await pool.connect();
+
+  try {
+    await client.query("BEGIN");
+
+    const before = await client.query(
+      `
+        SELECT status
+        FROM public.awol_reports
+        WHERE id = $1
+        FOR UPDATE
+      `,
+      [reportId]
+    );
+
+    const updated = await client.query(sql, params);
+
+    if (updated.rowCount > 0) {
+      await insertApprovalHistory(
+        client,
+        reportId,
+        req,
+        action,
+        before.rows[0]?.status || null,
+        updated.rows[0].status,
+        notes
+      );
+    }
+
+    await client.query("COMMIT");
+
+    return updated;
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
   }
-
-  if (isAdmin(req) || isIT(req)) {
-    return STATUS_WAITING_FINAL;
-  }
-
-  return STATUS_AREA;
 };
 
 const canAccessRow = (req, row) => {
@@ -227,45 +380,32 @@ const canAccessRow = (req, row) => {
 };
 
 const canApproveCurrentStage = (req, row) => {
+  if (!row) {
+    return {
+      allowed: false,
+      nextStatus: null,
+    };
+  }
+
+  if (
+    [
+      STATUS_APPROVED,
+      STATUS_REJECTED,
+      STATUS_VOID,
+      STATUS_WAITING_FINAL,
+      STATUS_HR,
+    ].includes(row.status)
+  ) {
+    return {
+      allowed: false,
+      nextStatus: null,
+    };
+  }
+
   if (canBypassApprove(req)) {
     return {
       allowed: true,
-      nextStatus: STATUS_WAITING_FINAL,
-    };
-  }
-
-  if (isHRDepartmentUser(req)) {
-    return {
-      allowed: true,
-      nextStatus: STATUS_WAITING_FINAL,
-    };
-  }
-
-  if (row.status === STATUS_AREA && isAreaManager(req)) {
-    return {
-      allowed: true,
-      nextStatus: STATUS_REGIONAL,
-    };
-  }
-
-  if (row.status === STATUS_REGIONAL && isRegionalManager(req)) {
-    return {
-      allowed: true,
-      nextStatus: STATUS_AVP,
-    };
-  }
-
-  if (row.status === STATUS_AVP && isAssistantVicePresident(req)) {
-    return {
-      allowed: true,
-      nextStatus: STATUS_VP,
-    };
-  }
-
-  if (row.status === STATUS_VP && isVicePresident(req)) {
-    return {
-      allowed: true,
-      nextStatus: STATUS_WAITING_FINAL,
+      nextStatus: STATUS_HR,
     };
   }
 
@@ -339,6 +479,83 @@ async function generateReportNo(client, reportType) {
     nextVal
   ).padStart(4, "0")}`;
 }
+
+// =====================================================
+// GET STAFF REPORT APPROVAL HISTORY
+// =====================================================
+
+router.get(
+  "/awol-reports/:id/approval-history",
+  requireAuth,
+  requirePermission("staff_report", "view"),
+  async (req, res) => {
+    try {
+      const id = toInt(req.params.id);
+
+      if (!id) {
+        return res.status(400).json({
+          message: "Invalid report id",
+        });
+      }
+
+      const reportResult = await pool.query(
+        `
+          SELECT *
+          FROM public.awol_reports
+          WHERE id = $1
+        `,
+        [id]
+      );
+
+      if (reportResult.rowCount === 0) {
+        return res.status(404).json({
+          message: "Staff report not found",
+        });
+      }
+
+      const report = reportResult.rows[0];
+
+      if (!canAccessRow(req, report)) {
+        return res.status(403).json({
+          message: "Access denied",
+        });
+      }
+
+      const historyResult = await pool.query(
+        `
+          SELECT
+            id,
+            report_id,
+            actor_id,
+            actor_name,
+            actor_role,
+            actor_department,
+            action,
+            previous_status,
+            new_status,
+            notes,
+            performed_at
+          FROM public.awol_report_approval_history
+          WHERE report_id = $1
+          ORDER BY performed_at ASC, id ASC
+        `,
+        [id]
+      );
+
+      return res.json(historyResult.rows);
+
+    } catch (error) {
+      console.error(
+        "GET STAFF REPORT APPROVAL HISTORY ERROR:",
+        error
+      );
+
+      return res.status(500).json({
+        message: "Failed to load approval history",
+      });
+    }
+  }
+);
 
 router.get(
   "/awol-reports",
@@ -443,7 +660,23 @@ router.post(
       const row = current.rows[0];
 
       if (!canAccessRow(req, row)) {
-        return res.status(403).json({ message: "Access denied" });
+        return res.status(403).json({
+          message: "Access denied",
+        });
+      }
+
+      // Prevent approval of completed reports
+      if (
+        [
+          STATUS_WAITING_FINAL,
+          STATUS_APPROVED,
+          STATUS_REJECTED,
+          STATUS_VOID,
+        ].includes(row.status)
+      ) {
+        return res.status(400).json({
+          message: `Report cannot be approved with upload. Current status: ${row.status}`,
+        });
       }
 
       const approval = canApproveCurrentStage(req, row);
@@ -454,8 +687,7 @@ router.post(
         });
       }
 
-      const previousFile =
-        row.approved_attachment_path || row.request_attachment_path;
+      const previousFile = row.approved_attachment_path;
 
       const r = await pool.query(
         `
@@ -518,6 +750,15 @@ router.post(
       await client.query("BEGIN");
 
       const reportType = normalizeReportType(req.body?.report_type);
+
+      if (!reportType) {
+        await client.query("ROLLBACK");
+
+        return res.status(400).json({
+          message: "Invalid report type. Only AWOL Report and Incident Report are allowed.",
+        });
+      }
+
       const employeeId = toInt(req.body?.employee_id);
       const dateCreated = toDateOrNull(req.body?.date_created);
       const awolDate = toDateOrNull(req.body?.awol_date);
@@ -565,6 +806,7 @@ router.post(
 
       if (
         !isHRDepartmentUser(req) &&
+        !isAccountingDepartmentUser(req) &&
         !isAuditDepartmentUser(req) &&
         isBranchManager(req)
       ) {
@@ -588,6 +830,7 @@ router.post(
 
       if (
         !isHRDepartmentUser(req) &&
+        !isAccountingDepartmentUser(req) &&
         !isAuditDepartmentUser(req) &&
         isAreaManager(req) &&
         norm(req.user?.area) !== norm(s.area)
@@ -598,6 +841,7 @@ router.post(
 
       if (
         !isHRDepartmentUser(req) &&
+        !isAccountingDepartmentUser(req) &&
         !isAuditDepartmentUser(req) &&
         isRegionalManager(req) &&
         norm(req.user?.region) !== norm(s.region)
@@ -608,6 +852,7 @@ router.post(
 
       if (
         !isHRDepartmentUser(req) &&
+        !isAccountingDepartmentUser(req) &&
         !isAuditDepartmentUser(req) &&
         isAssistantVicePresident(req) &&
         norm(req.user?.division) !== norm(s.division)
@@ -674,7 +919,18 @@ router.post(
         ]
       );
 
+      // SAVE CREATED HISTORY
+      await insertApprovalHistory(
+        client,
+        ins.rows[0].id,
+        req,
+        "Created",
+        null,
+        initialStatus
+      );
+
       await client.query("COMMIT");
+
       return res.json(ins.rows[0]);
     } catch (e) {
       await client.query("ROLLBACK");
@@ -832,19 +1088,32 @@ router.put(
         }
       }
 
-      const r = await pool.query(
+      const r = await updateReportWithHistory(
+        req,
+        id,
         `
-        UPDATE public.awol_reports
-        SET
-          status = $2,
-          rejected_by = $3,
-          rejected_at = NOW(),
-          rejection_reason = $4,
-          updated_at = NOW()
-        WHERE id = $1
-        RETURNING *
+          UPDATE public.awol_reports
+          SET
+            status = $2,
+            rejected_by = $3,
+            rejected_at = NOW(),
+            rejection_reason = $4,
+            updated_at = NOW()
+          WHERE id = $1
+            AND status NOT IN ($5, $6, $7)
+          RETURNING *
         `,
-        [id, STATUS_REJECTED, req.user?.id ?? null, reason]
+        [
+          id,
+          STATUS_REJECTED,
+          req.user?.id ?? null,
+          reason,
+          STATUS_APPROVED,
+          STATUS_REJECTED,
+          STATUS_VOID,
+        ],
+        "Rejected",
+        reason
       );
 
       return res.json(r.rows[0]);
@@ -872,20 +1141,29 @@ router.put(
         return res.status(400).json({ message: "Invalid report id" });
       }
 
-      const r = await pool.query(
+      const r = await updateReportWithHistory(
+        req,
+        id,
         `
-        UPDATE public.awol_reports
-        SET
-          status = $2,
-          rejected_by = NULL,
-          rejected_at = NULL,
-          rejection_reason = COALESCE($3, rejection_reason),
-          updated_at = NOW()
-        WHERE id = $1
-          AND status = $4
-        RETURNING *
+          UPDATE public.awol_reports
+          SET
+            status = $2,
+            rejected_by = NULL,
+            rejected_at = NULL,
+            rejection_reason = COALESCE($3, rejection_reason),
+            updated_at = NOW()
+          WHERE id = $1
+            AND status = $4
+          RETURNING *
         `,
-        [id, STATUS_VOID, reason || null, STATUS_APPROVED]
+        [
+          id,
+          STATUS_VOID,
+          reason || null,
+          STATUS_APPROVED,
+        ],
+        "Voided",
+        reason || null
       );
 
       if (r.rowCount === 0) {
@@ -907,7 +1185,10 @@ router.put(
   async (req, res) => {
     try {
       if (!canBypassApprove(req)) {
-        return res.status(403).json({ message: "Admin/IT/Audit Department only" });
+        return res.status(403).json({
+          message:
+            "Only Admin, IT, HR, Accounting, and Audit Department can bypass approval",
+        });
       }
 
       const id = toInt(req.params.id);
@@ -916,31 +1197,36 @@ router.put(
         return res.status(400).json({ message: "Invalid report id" });
       }
 
-      const r = await pool.query(
+      const r = await updateReportWithHistory(
+        req,
+        id,
         `
-        UPDATE public.awol_reports
-        SET
-          status = $2,
-          approved_by = $3,
-          approved_at = NOW(),
-          hr_uploaded_by = NULL,
-          hr_uploaded_at = NULL,
-          rejected_by = NULL,
-          rejected_at = NULL,
-          rejection_reason = NULL,
-          updated_at = NOW()
-        WHERE id = $1
-          AND status NOT IN ($4, $5, $6)
-        RETURNING *
+          UPDATE public.awol_reports
+          SET
+            status = $2,
+            approved_by = $3,
+            approved_at = NOW(),
+            hr_uploaded_by = NULL,
+            hr_uploaded_at = NULL,
+            rejected_by = NULL,
+            rejected_at = NULL,
+            rejection_reason = NULL,
+            updated_at = NOW()
+          WHERE id = $1
+            AND status NOT IN ($4, $5, $6, $7)
+          RETURNING *
         `,
         [
           id,
-          STATUS_WAITING_FINAL,
+          STATUS_HR,
           req.user?.id ?? null,
           STATUS_APPROVED,
           STATUS_REJECTED,
           STATUS_VOID,
-        ]
+          STATUS_HR,
+        ],
+        "Bypassed approval",
+        null
       );
 
       if (r.rowCount === 0) {
@@ -980,7 +1266,9 @@ router.post(
         return res.status(400).json({ message: "Final file required" });
       }
 
-      const r = await pool.query(
+      const r = await updateReportWithHistory(
+        req,
+        id,
         `
         UPDATE public.awol_reports
         SET
@@ -997,7 +1285,7 @@ router.post(
           rejection_reason = NULL,
           updated_at = NOW()
         WHERE id = $1
-          AND status = $7
+          AND status IN ($7, $8)
         RETURNING *
         `,
         [
@@ -1008,8 +1296,11 @@ router.post(
           req.file.originalname,
           req.file.mimetype,
           STATUS_WAITING_FINAL,
-        ]
-      );
+          STATUS_HR,
+          ],
+        "Final file uploaded and approved",
+        null
+      );  
 
       if (r.rowCount === 0) {
         return res.status(400).json({

@@ -491,3 +491,140 @@
     width: 100%;
   }
 }
+
+/* ==========================================
+   STAFF REPORT APPROVAL HISTORY
+========================================== */
+
+.staff-report-approval-history {
+  margin-top: 24px;
+  margin-bottom: 24px;
+  padding-top: 18px;
+  border-top: 1px solid rgba(148, 163, 184, 0.15);
+}
+
+.staff-report-history-title {
+  font-size: 14px;
+  font-weight: 700;
+  margin-bottom: 16px;
+  color: inherit;
+}
+
+.staff-report-history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.staff-report-history-item {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+
+  padding: 14px;
+
+  border-radius: 10px;
+
+  border: 1px solid rgba(148, 163, 184, 0.15);
+
+  background: rgba(148, 163, 184, 0.04);
+}
+
+.staff-report-history-number {
+  width: 32px;
+  height: 32px;
+
+  min-width: 32px;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  border-radius: 50%;
+
+  background: #16a34a;
+  color: white;
+
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.staff-report-history-number.history-red {
+  background: #dc2626;
+}
+
+.staff-report-history-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.staff-report-history-content strong {
+  display: block;
+  font-size: 13px;
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+
+.staff-report-history-person {
+  font-size: 12px;
+  margin-bottom: 3px;
+}
+
+.staff-report-history-department {
+  font-size: 11px;
+  opacity: 0.75;
+  margin-bottom: 3px;
+}
+
+.staff-report-history-date {
+  font-size: 11px;
+  opacity: 0.7;
+}
+
+.staff-report-history-notes {
+  margin-top: 6px;
+  font-size: 12px;
+  color: #ef4444;
+}
+
+.staff-report-history-status {
+  padding: 6px 12px;
+  border-radius: 20px;
+
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.history-status-green {
+  background: rgba(22, 163, 74, 0.15);
+  color: #16a34a;
+}
+
+.history-status-red {
+  background: rgba(220, 38, 38, 0.15);
+  color: #ef4444;
+}
+
+.staff-report-history-empty {
+  padding: 18px;
+  text-align: center;
+
+  font-size: 13px;
+  opacity: 0.7;
+
+  border: 1px dashed rgba(148, 163, 184, 0.25);
+  border-radius: 10px;
+}
+
+@media (max-width: 600px) {
+  .staff-report-history-item {
+    gap: 10px;
+    padding: 12px;
+  }
+
+  .staff-report-history-status {
+    font-size: 10px;
+    padding: 5px 8px;
+  }
+}

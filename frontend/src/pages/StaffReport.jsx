@@ -7,6 +7,7 @@ const STATUS_AREA = "Waiting Area Manager Approval";
 const STATUS_REGIONAL = "Waiting Regional Manager Approval";
 const STATUS_AVP = "Waiting Assistant Vice President Approval";
 const STATUS_VP = "Waiting Vice President Approval";
+const STATUS_HR = "Waiting HR Department Approval";
 const STATUS_WAITING_FINAL = "Waiting Final File Upload";
 const STATUS_APPROVED = "Approved";
 const STATUS_REJECTED = "Rejected";
@@ -88,24 +89,69 @@ export default function StaffReport() {
 
   const isOfficeOfThePresidentDept = dept === "office of the president";
 
-  const isHRDepartment = dept === "hr department";
+  const isHRDepartment =
+    isHR ||
+    [
+      "hr",
+      "hr department",
+      "human resources",
+      "human resources department",
+    ].includes(dept);
 
-  const canCreate =
-    isAdmin ||
-    isIT ||
-    isHRDepartment ||
-    isBM ||
-    isAM ||
-    isRM ||
-    isAVP ||
-    isVP ||
-    isSVP ||
-    isPresident ||
-    isOfficeOfThePresidentDept;
+  const isAccountingDepartment =
+    isAccounting ||
+    [
+      "accounting",
+      "accounting department",
+    ].includes(dept);
 
-  const canBypassApprove = isAdmin || isIT;
-  const canFinalUpload = isAdmin || isIT || isHR || isAccounting;
-  const canVoid = isAdmin || isIT || isHR || isAccounting;
+  const isAuditDepartment =
+    ["audit", "audit department"].includes(dept);
+
+  const isOperationDepartment =
+    ["operation", "operation department"].includes(dept);
+
+  const canCreate = isOperationDepartment
+    ? (
+        isAM ||
+        isRM ||
+        isAVP ||
+        isVP
+      )
+    : (
+        isAdmin ||
+        isIT ||
+        isHRDepartment ||
+        isAccountingDepartment ||
+        isAuditDepartment ||
+        isBM ||
+        isAM ||
+        isRM ||
+        isAVP ||
+        isVP ||
+        isSVP
+      );
+
+  const canBypassApprove =
+  isAdmin ||
+  isIT ||
+  isHRDepartment ||
+  isAccountingDepartment ||
+  isAuditDepartment;
+
+const canFinalUpload =
+  isAdmin ||
+  isIT ||
+  isHRDepartment ||
+  isAccountingDepartment ||
+  isAuditDepartment;
+
+const canVoid =
+  isAdmin ||
+  isIT ||
+  isHRDepartment ||
+  isAccountingDepartment ||
+  isAuditDepartment;
 
   const employeePickerRef = useRef(null);
 
@@ -125,6 +171,9 @@ export default function StaffReport() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showViewModal, setShowViewModal] = useState(false);
   const [selectedReport, setSelectedReport] = useState(null);
+  const [approvalHistory, setApprovalHistory] = useState([]);
+
+  const [historyLoading, setHistoryLoading] = useState(false);
 
   const [employeeSearch, setEmployeeSearch] = useState("");
   const [showEmployeeDropdown, setShowEmployeeDropdown] = useState(false);
@@ -263,17 +312,58 @@ export default function StaffReport() {
     resetForm();
   };
 
+  // =====================================================
+  // LOAD APPROVAL HISTORY
+  // =====================================================
+
+  const loadApprovalHistory = async (reportId) => {
+    try {
+      setHistoryLoading(true);
+
+      const response = await api.get(
+        `/awol-reports/${reportId}/approval-history`
+      );
+
+      setApprovalHistory(
+        Array.isArray(response.data)
+          ? response.data
+          : []
+      );
+
+    } catch (error) {
+      console.error(
+        "Failed to load approval history:",
+        error
+      );
+
+      setApprovalHistory([]);
+
+    } finally {
+      setHistoryLoading(false);
+    }
+  };
+
   const openViewModal = (report) => {
     setSelectedReport(report);
+
+    setApprovalHistory([]);
+
     setApprovalFile(null);
     setFinalFile(null);
+
     setShowViewModal(true);
+
+    loadApprovalHistory(report.id);
   };
 
   const closeViewModal = () => {
     setSelectedReport(null);
+
+    setApprovalHistory([]);
+
     setApprovalFile(null);
     setFinalFile(null);
+
     setShowViewModal(false);
   };
 
@@ -298,9 +388,16 @@ export default function StaffReport() {
 
   const updateReportInState = (updated) => {
     setReports((prev) =>
-      prev.map((r) => (Number(r.id) === Number(updated.id) ? updated : r))
+      prev.map((r) =>
+        Number(r.id) === Number(updated.id)
+          ? updated
+          : r
+      )
     );
+
     setSelectedReport(updated);
+
+    loadApprovalHistory(updated.id);
   };
 
   const createReport = async (e) => {
@@ -483,6 +580,7 @@ export default function StaffReport() {
       STATUS_REGIONAL,
       STATUS_AVP,
       STATUS_VP,
+      STATUS_HR,
       STATUS_WAITING_FINAL,
     ].includes(status);
 
@@ -510,6 +608,7 @@ export default function StaffReport() {
 
   const canShowApprovalUpload = (report) =>
     canApproveSelected(report) &&
+    report.status !== STATUS_HR &&
     report.status !== STATUS_WAITING_FINAL &&
     report.status !== STATUS_APPROVED &&
     report.status !== STATUS_REJECTED &&
@@ -628,7 +727,7 @@ export default function StaffReport() {
             <div className="staff-report-flow">
               <span>APPROVAL FLOW</span>
               <b>
-                BM → AM → RM → AVP → VP → Final File Upload
+                AM / RM / AVP / VP → HR Department Approval
               </b>
             </div>
           </div>
@@ -1290,6 +1389,123 @@ export default function StaffReport() {
               </div>
             </div>
 
+            {/* =====================================================
+                APPROVAL HISTORY
+            ===================================================== */}
+
+            <div className="staff-report-approval-history">
+
+              <h4 className="staff-report-history-title">
+                Approval History
+              </h4>
+
+              {historyLoading ? (
+
+                <div className="staff-report-history-empty">
+                  Loading approval history...
+                </div>
+
+              ) : approvalHistory.length === 0 ? (
+
+                <div className="staff-report-history-empty">
+                  No approval history recorded yet.
+                </div>
+
+              ) : (
+
+                <div className="staff-report-history-list">
+
+                  {approvalHistory.map((history, index) => {
+
+                    const action = history.action || "-";
+
+                    const isRejected =
+                      action.toLowerCase().includes("reject");
+
+                    const isVoided =
+                      action.toLowerCase().includes("void");
+
+                    const isApproved =
+                      action.toLowerCase().includes("approv");
+
+                    const statusLabel = isRejected
+                      ? "Rejected"
+                      : isVoided
+                      ? "Voided"
+                      : isApproved
+                      ? "Approved"
+                      : action;
+
+                    const formattedDate = history.performed_at
+                      ? new Intl.DateTimeFormat("en-PH", {
+                          timeZone: "Asia/Manila",
+                          year: "numeric",
+                          month: "short",
+                          day: "numeric",
+                          hour: "2-digit",
+                          minute: "2-digit",
+                          hour12: true,
+                        }).format(new Date(history.performed_at))
+                      : "-";
+
+                    return (
+
+                      <div
+                        key={history.id}
+                        className="staff-report-history-item"
+                      >
+
+                        <div
+                          className={`staff-report-history-number ${
+                            isRejected || isVoided ? "history-red" : ""
+                          }`}
+                        >
+                          {index + 1}
+                        </div>
+
+                        <div className="staff-report-history-content">
+
+                          <strong>
+                            {action}
+                          </strong>
+
+                          <div className="staff-report-history-person">
+                            Performed by:{" "}
+                            <b>{history.actor_name || "-"}</b>
+                          </div>
+
+                          <div className="staff-report-history-department">
+                            {history.actor_department || history.actor_role || "-"}
+                          </div>
+
+                          <small className="staff-report-history-date">
+                            {formattedDate}
+                          </small>
+
+                          {history.notes && (
+                            <div className="staff-report-history-notes">
+                              Reason: {history.notes}
+                            </div>
+                          )}
+
+                        </div>
+
+                        <span
+                          className={`staff-report-history-status ${
+                            isRejected || isVoided
+                              ? "history-status-red"
+                              : "history-status-green"
+                          }`}
+                        >
+                          {statusLabel}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
             {canShowApprovalUpload(selectedReport) && (
               <div className="staff-report-upload-box">
                 <div className="form-group">
@@ -1323,7 +1539,8 @@ export default function StaffReport() {
               </div>
             )}
 
-            {selectedReport.status === STATUS_WAITING_FINAL &&
+            {(selectedReport.status === STATUS_WAITING_FINAL ||
+              selectedReport.status === STATUS_HR) &&
               canFinalUpload && (
                 <div className="staff-report-upload-box">
                   <div className="form-group">
@@ -1386,7 +1603,7 @@ export default function StaffReport() {
                       bypassApprove(selectedReport)
                     }
                   >
-                    Admin/IT Bypass
+                    Bypass Approval
                   </button>
                 )}
 
