@@ -55,6 +55,19 @@ const isHRDepartment = (req) =>
 const isAccountingDepartment = (req) =>
   departmentLower(req) === "accounting department";
 
+// HR and Accounting Department can bypass any pending stage.
+const canBypassResignation = (req) =>
+  isAdmin(req) ||
+  isHRDepartment(req) ||
+  isAccountingDepartment(req);
+
+// HR and Accounting Department can upload documents.
+const canUploadResignation = (req) =>
+  isAdmin(req) ||
+  isIT(req) ||
+  isHRDepartment(req) ||
+  isAccountingDepartment(req);
+
 const isHRorAccountingManager = (req) =>
   (isHRDepartment(req) || isAccountingDepartment(req)) &&
   (
@@ -1017,10 +1030,25 @@ router.put(
 
       const row = requestRes.rows[0];
 
-      if (!canActOnCurrentStage(req, row)) {
+      if (
+        !canUploadResignation(req) &&
+        !canActOnCurrentStage(req, row)
+      ) {
         return res.status(403).json({
           message:
-            "You cannot upload file for this current approval stage",
+            "You cannot upload a file for this approval stage",
+        });
+      }
+
+      if (
+        [
+          STATUS_APPROVED,
+          STATUS_REJECTED,
+          STATUS_REVOKED,
+        ].includes(clean(row.status))
+      ) {
+        return res.status(400).json({
+          message: "Cannot upload files to a completed resignation request",
         });
       }
 
@@ -1064,6 +1092,7 @@ router.put(
           UPDATE public.resignation_requests
           SET
             attachment_path = $2,
+            approved_attachment_path = $2,
             approved_attachment_name = $3,
             approved_attachment_mime = $4
             ${stageSet}
@@ -1359,11 +1388,12 @@ router.put(
       // =====================================================
       // ADMIN BYPASS VALIDATION
       // =====================================================
-      if (bypass && !isAdmin(req)) {
+      if (bypass && !canBypassResignation(req)) {
         await client.query("ROLLBACK");
 
         return res.status(403).json({
-          message: "Only Admin can bypass approval.",
+          message:
+            "Only Admin, HR Department, and Accounting Department can bypass approval.",
         });
       }
 

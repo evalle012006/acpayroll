@@ -36,6 +36,7 @@ const STATUS_VOID = "Voided";
 const REPORT_TYPES = [
   "AWOL Report",
   "Incident Report",
+  "Notice to Explain",
 ];
 
 const toStr = (v) => String(v ?? "").trim();
@@ -67,6 +68,8 @@ const prefixByReportType = (reportType) => {
 
   if (t === "incident report") return "INC";
 
+  if (t === "notice to explain") return "NTE";
+
   return "AWOL";
 };
 
@@ -74,6 +77,8 @@ const dateLabelByReportType = (reportType) => {
   const t = norm(reportType);
 
   if (t === "incident report") return "Incident Date";
+
+  if (t === "notice to explain") return "Notice Date";
 
   return "AWOL Date";
 };
@@ -689,7 +694,9 @@ router.post(
 
       const previousFile = row.approved_attachment_path;
 
-      const r = await pool.query(
+      const r = await updateReportWithHistory(
+        req,
+        id,
         `
         UPDATE public.awol_reports
         SET
@@ -713,7 +720,9 @@ router.post(
           req.file.path,
           req.file.originalname,
           req.file.mimetype,
-        ]
+        ],
+        "Approved With File",
+        `Approved file uploaded: ${req.file.originalname}`
       );
 
       if (
@@ -755,7 +764,7 @@ router.post(
         await client.query("ROLLBACK");
 
         return res.status(400).json({
-          message: "Invalid report type. Only AWOL Report and Incident Report are allowed.",
+          message: `Invalid report type. Allowed types: ${REPORT_TYPES.join(", ")}.`,
         });
       }
 
@@ -997,21 +1006,25 @@ router.put(
         });
       }
 
-      const r = await pool.query(
+      const r = await updateReportWithHistory(
+        req,
+        id,
         `
-        UPDATE public.awol_reports
-        SET
-          status = $2,
-          approved_by = $3,
-          approved_at = NOW(),
-          rejected_by = NULL,
-          rejected_at = NULL,
-          rejection_reason = NULL,
-          updated_at = NOW()
-        WHERE id = $1
-        RETURNING *
+          UPDATE public.awol_reports
+          SET
+            status = $2,
+            approved_by = $3,
+            approved_at = NOW(),
+            rejected_by = NULL,
+            rejected_at = NULL,
+            rejection_reason = NULL,
+            updated_at = NOW()
+          WHERE id = $1
+          RETURNING *
         `,
-        [id, approval.nextStatus, req.user?.id ?? null]
+        [id, approval.nextStatus, req.user?.id ?? null],
+        "Approved",
+        "Report approved"
       );
 
       return res.json(r.rows[0]);
@@ -1316,6 +1329,106 @@ router.post(
   }
 );
 
+// =====================================================
+// UPLOAD ANSWER LETTER - NOTICE TO EXPLAIN
+// =====================================================
+
+router.post(
+  "/awol-reports/:id/answer-letter",
+  requireAuth,
+  requirePermission("staff_report", "view"),
+  upload.single("attachment"),
+  async (req, res) => {
+    try {
+      const id = toInt(req.params.id);
+
+      if (!id) {
+        return res.status(400).json({
+          message: "Invalid report ID",
+        });
+      }
+
+      if (!req.file) {
+        return res.status(400).json({
+          message: "Please select an Answer Letter file",
+        });
+      }
+
+      // Only authorized departments can upload
+      const canUpload =
+        isAdmin(req) ||
+        isIT(req) ||
+        isHRDepartmentUser(req) ||
+        isAccountingDepartmentUser(req);
+
+      if (!canUpload) {
+        return res.status(403).json({
+          message: "You are not authorized to upload Answer Letters",
+        });
+      }
+
+      const reportResult = await pool.query(
+        `
+          SELECT *
+          FROM public.awol_reports
+          WHERE id = $1
+        `,
+        [id]
+      );
+
+      if (reportResult.rowCount === 0) {
+        return res.status(404).json({
+          message: "NTE report not found",
+        });
+      }
+
+      const report = reportResult.rows[0];
+
+      if (norm(report.report_type) !== "notice to explain") {
+        return res.status(400).json({
+          message: "Answer Letters are only available for Notice to Explain",
+        });
+      }
+
+      if (!canAccessRow(req, report)) {
+        return res.status(403).json({
+          message: "Access denied",
+        });
+      }
+
+      const result = await pool.query(
+        `
+          UPDATE public.awol_reports
+          SET
+            answer_letter_path = $2,
+            answer_letter_name = $3,
+            answer_letter_mime = $4,
+            answer_letter_uploaded_at = NOW(),
+            answer_letter_uploaded_by = $5,
+            updated_at = NOW()
+          WHERE id = $1
+          RETURNING *
+        `,
+        [
+          id,
+          req.file.path,
+          req.file.originalname,
+          req.file.mimetype,
+          req.user?.id || null,
+        ]
+      );
+
+      return res.json(result.rows[0]);
+    } catch (error) {
+      console.error("UPLOAD ANSWER LETTER ERROR:", error);
+
+      return res.status(500).json({
+        message: "Failed to upload Answer Letter",
+      });
+    }
+  }
+);
+
 router.get(
   "/awol-reports/:id/download/:type",
   requireAuth,
@@ -1348,15 +1461,29 @@ router.get(
         return res.status(403).json({ message: "Access denied" });
       }
 
-      const filePath =
-        type === "approved"
-          ? row.approved_attachment_path
-          : row.request_attachment_path;
+      let filePath = null;
+      let fileName = null;
 
-      const fileName =
-        type === "approved"
-          ? row.approved_attachment_name
-          : row.request_attachment_name;
+      if (type === "approved") {
+        filePath = row.approved_attachment_path;
+        fileName = row.approved_attachment_name;
+      } else if (type === "request") {
+        filePath = row.request_attachment_path;
+        fileName = row.request_attachment_name;
+      } else if (type === "answer-letter") {
+        if (norm(row.report_type) !== "notice to explain") {
+          return res.status(400).json({
+            message: "Answer Letter is only available for NTE reports",
+          });
+        }
+
+        filePath = row.answer_letter_path;
+        fileName = row.answer_letter_name;
+      } else {
+        return res.status(400).json({
+          message: "Invalid file type",
+        });
+      }
 
       if (!filePath || !fs.existsSync(filePath)) {
         return res.status(404).json({ message: "File not found" });

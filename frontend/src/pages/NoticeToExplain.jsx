@@ -7,6 +7,7 @@ const STATUS_AREA = "Waiting Area Manager Approval";
 const STATUS_REGIONAL = "Waiting Regional Manager Approval";
 const STATUS_AVP = "Waiting Assistant Vice President Approval";
 const STATUS_VP = "Waiting Vice President Approval";
+const STATUS_HR = "Waiting HR Department Approval";
 const STATUS_WAITING_FINAL = "Waiting Final File Upload";
 const STATUS_APPROVED = "Approved";
 const STATUS_REJECTED = "Rejected";
@@ -15,6 +16,7 @@ const STATUS_VOID = "Voided";
 const REPORT_TYPES = [
   "Notice to Explain",
 ];
+
 const readUser = () => {
   try {
     return JSON.parse(localStorage.getItem("user") || "null");
@@ -88,10 +90,19 @@ export default function NoticeToExplain() {
   const isSVP = role === "senior vice president";
   const isPresident = role === "president";
 
-  const isOfficeOfThePresidentDept = dept === "office of the president";
+  const isOfficeOfThePresidentDept = 
+    dept === "office of the president";
 
-  const isHRDepartment = dept === "hr department";
-  const isAuditDepartment = dept === "audit department";
+  const isHRDepartment =
+    dept === "hr department" ||
+    dept === "hr";
+
+  const isAccountingDepartment =
+    dept === "accounting department" ||
+    dept === "accounting";
+
+  const isAuditDepartment =
+    dept === "audit department";
 
   const canCreate =
     isAdmin ||
@@ -107,9 +118,21 @@ export default function NoticeToExplain() {
     isPresident ||
     isOfficeOfThePresidentDept;
 
+  const canUploadAnswerLetter =
+    isAdmin ||
+    isIT ||
+    isHR ||
+    isAccounting ||
+    isHRDepartment ||
+    isAccountingDepartment;
+
   const canBypassApprove =
     isAdmin ||
     isIT ||
+    isHR ||
+    isAccounting ||
+    isHRDepartment ||
+    isAccountingDepartment ||
     isAuditDepartment;
     
   const canFinalUpload =
@@ -147,12 +170,19 @@ export default function NoticeToExplain() {
   const [showViewModal, setShowViewModal] = useState(false);
   const [selectedReport, setSelectedReport] = useState(null);
 
+  const [approvalHistory, setApprovalHistory] = useState([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+
   const [employeeSearch, setEmployeeSearch] = useState("");
   const [showEmployeeDropdown, setShowEmployeeDropdown] = useState(false);
 
   const [attachmentFile, setAttachmentFile] = useState(null);
   const [approvalFile, setApprovalFile] = useState(null);
   const [finalFile, setFinalFile] = useState(null);
+
+  // Answer Letter
+  const [answerLetterFile, setAnswerLetterFile] = useState(null);
+  const [uploadingAnswerLetter, setUploadingAnswerLetter] = useState(false);
 
   const [form, setForm] = useState({
     report_type: "Notice to Explain",
@@ -284,11 +314,36 @@ export default function NoticeToExplain() {
     resetForm();
   };
 
+  const fetchApprovalHistory = async (reportId) => {
+    if (!reportId) return;
+
+    try {
+      setHistoryLoading(true);
+
+      const res = await api.get(
+        `/awol-reports/${reportId}/approval-history`
+      );
+
+      setApprovalHistory(
+        Array.isArray(res.data) ? res.data : []
+      );
+    } catch (error) {
+      console.error("Failed to load approval history:", error);
+      setApprovalHistory([]);
+    } finally {
+      setHistoryLoading(false);
+    }
+  };
+
   const openViewModal = (report) => {
     setSelectedReport(report);
     setApprovalFile(null);
     setFinalFile(null);
+    setApprovalHistory([]);
     setShowViewModal(true);
+    setAnswerLetterFile(null);
+
+    fetchApprovalHistory(report.id);
   };
 
   const closeViewModal = () => {
@@ -296,6 +351,7 @@ export default function NoticeToExplain() {
     setApprovalFile(null);
     setFinalFile(null);
     setShowViewModal(false);
+    setAnswerLetterFile(null);
   };
 
   const handleChooseEmployee = (s) => {
@@ -319,9 +375,16 @@ export default function NoticeToExplain() {
 
   const updateReportInState = (updated) => {
     setReports((prev) =>
-      prev.map((r) => (Number(r.id) === Number(updated.id) ? updated : r))
+      prev.map((r) =>
+        Number(r.id) === Number(updated.id) ? updated : r
+      )
     );
+
     setSelectedReport(updated);
+
+    if (updated?.id) {
+      fetchApprovalHistory(updated.id);
+    }
   };
 
   const createReport = async (e) => {
@@ -445,6 +508,63 @@ export default function NoticeToExplain() {
     }
   };
 
+  // =====================================================
+  // UPLOAD ANSWER LETTER
+  // =====================================================
+
+  const uploadAnswerLetter = async () => {
+    if (!selectedReport?.id) return;
+
+    if (!answerLetterFile) {
+      alert("Please select an Answer Letter.");
+      return;
+    }
+
+    if (
+      selectedReport.answer_letter_path &&
+      !window.confirm(
+        "An Answer Letter already exists. Do you want to replace it?"
+      )
+    ) {
+      return;
+    }
+
+    try {
+      setUploadingAnswerLetter(true);
+
+      const formData = new FormData();
+      formData.append("attachment", answerLetterFile);
+
+      const res = await api.post(
+        `/awol-reports/${selectedReport.id}/answer-letter`,
+        formData,
+        {
+          headers: {
+            "Content-Type": "multipart/form-data",
+          },
+        }
+      );
+
+      updateReportInState(res.data);
+      setAnswerLetterFile(null);
+
+      alert("Answer Letter uploaded successfully.");
+    } catch (error) {
+      if (error?.response?.status === 401) {
+        return logout();
+      }
+
+      console.error("Answer Letter upload error:", error);
+
+      alert(
+        error?.response?.data?.message ||
+          "Failed to upload Answer Letter."
+      );
+    } finally {
+      setUploadingAnswerLetter(false);
+    }
+  };
+
   const uploadFinalFile = async () => {
     if (!selectedReport?.id) return;
     if (!finalFile) return alert("Choose final file first.");
@@ -483,6 +603,8 @@ export default function NoticeToExplain() {
       const name =
         type === "approved"
           ? report.approved_attachment_name
+          : type === "answer-letter"
+          ? report.answer_letter_name
           : report.request_attachment_name;
 
       const a = document.createElement("a");
@@ -504,6 +626,7 @@ export default function NoticeToExplain() {
       STATUS_REGIONAL,
       STATUS_AVP,
       STATUS_VP,
+      STATUS_HR,
       STATUS_WAITING_FINAL,
     ].includes(status);
 
@@ -1124,9 +1247,9 @@ export default function NoticeToExplain() {
               </div>
             </div>
 
-            <div className="table-card" style={{ marginTop: 14 }}>
-              <div className="table-wrap" style={{ maxHeight: "unset" }}>
-                <table className="table">
+            <div className="table-card nte-file-card" style={{ marginTop: 14 }}>
+              <div className="nte-file-table-wrap">
+                <table className="table nte-file-table">
                   <thead>
                     <tr>
                       <th>File Type</th>
@@ -1171,10 +1294,166 @@ export default function NoticeToExplain() {
                         )}
                       </td>
                     </tr>
+
+                    <tr>
+                      <td>Answer Letter</td>
+
+                      <td>
+                        {selectedReport.answer_letter_name || "-"}
+                      </td>
+
+                      <td>
+                        {selectedReport.answer_letter_path ? (
+                          <button
+                            className="btn-secondary"
+                            type="button"
+                            onClick={() =>
+                              downloadFile(selectedReport, "answer-letter")
+                            }
+                          >
+                            Download
+                          </button>
+                        ) : (
+                          <span className="nte-file-pending">
+                            Not uploaded
+                          </span>
+                        )}
+                      </td>
+                    </tr>
                   </tbody>
                 </table>
               </div>
             </div>
+
+            {/* ========================================= */}
+            {/* APPROVAL HISTORY - VERTICAL TIMELINE */}
+            {/* ========================================= */}
+
+            <div className="nte-approval-section">
+              <div className="nte-approval-heading">
+                Approval History
+              </div>
+
+              <div className="nte-approval-container">
+                {historyLoading ? (
+                  <div className="nte-approval-empty">
+                    Loading approval history...
+                  </div>
+                ) : approvalHistory.length === 0 ? (
+                  <div className="nte-approval-empty">
+                    No approval history available.
+                  </div>
+                ) : (
+                  <div className="nte-approval-timeline">
+                    {approvalHistory.map((history, index) => {
+                      const action = String(history.action || "").toLowerCase();
+                      const status = String(history.new_status || "").toLowerCase();
+
+                      const isRejected =
+                        action.includes("reject") ||
+                        status.includes("reject");
+
+                      const isVoided =
+                        action.includes("void") ||
+                        status.includes("void");
+
+                      const isApproved =
+                        action.includes("approv") ||
+                        action.includes("bypass") ||
+                        action.includes("upload") ||
+                        status === "approved";
+
+                      const stateClass = isRejected || isVoided
+                        ? "rejected"
+                        : isApproved
+                        ? "approved"
+                        : "pending";
+
+                      const isBypassed = action.includes("bypass");
+
+                      const statusLabel = isRejected
+                        ? "REJECTED"
+                        : isVoided
+                        ? "VOIDED"
+                        : isBypassed
+                        ? "BYPASSED"
+                        : isApproved
+                        ? "APPROVED"
+                        : "RECORDED";
+
+                      const title =
+                        history.actor_role ||
+                        history.actor_department ||
+                        history.action ||
+                        "Approval Action";
+
+                      const date = history.performed_at
+                        ? new Date(history.performed_at).toLocaleString(
+                            "en-PH",
+                            {
+                              timeZone: "Asia/Manila",
+                              month: "short",
+                              day: "numeric",
+                              year: "numeric",
+                              hour: "numeric",
+                              minute: "2-digit",
+                              hour12: true,
+                            }
+                          )
+                        : "-";
+
+                      return (
+                        <div
+                          key={history.id || index}
+                          className={`nte-approval-step ${stateClass}`}
+                        >
+                          <div className="nte-approval-marker">
+                            {isRejected || isVoided ? "✕" : isApproved ? "✓" : "•"}
+                          </div>
+
+                          <div className="nte-approval-content">
+                            <div className="nte-approval-title">
+                              {title}
+                            </div>
+
+                            <div className="nte-approval-date">
+                              {isRejected
+                                ? "Rejected"
+                                : isVoided
+                                ? "Voided"
+                                : isApproved
+                                ? "Approved"
+                                : "Recorded"}{" "}
+                              on {date}
+                            </div>
+
+                            {history.actor_name && (
+                              <div className="nte-approval-actor">
+                                By: {history.actor_name}
+                              </div>
+                            )}
+
+                            {history.notes && (
+                              <div className="nte-approval-notes">
+                                {history.notes}
+                              </div>
+                            )}
+                          </div>
+
+                          <span
+                            className={`nte-approval-status ${stateClass}`}
+                          >
+                            {statusLabel}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* END APPROVAL HISTORY */}
 
             {canShowApprovalUpload(selectedReport) ? (
               <div style={{ marginTop: 14 }}>
@@ -1198,6 +1477,44 @@ export default function NoticeToExplain() {
                 </button>
               </div>
             ) : null}
+
+            {/* ========================================= */}
+            {/* ANSWER LETTER UPLOAD */}
+            {/* ========================================= */}
+
+            {canUploadAnswerLetter && (
+              <div className="nte-answer-upload">
+                <div className="form-group">
+                  <label>Upload Answer Letter</label>
+
+                  <input
+                    type="file"
+                    accept=".pdf,.doc,.docx,.png,.jpg,.jpeg"
+                    onChange={(e) =>
+                      setAnswerLetterFile(e.target.files?.[0] || null)
+                    }
+                  />
+
+                  <small className="nte-answer-hint">
+                    Upload the employee's written explanation.
+                    This will not change the NTE approval status.
+                  </small>
+                </div>
+
+                <button
+                  className="btn-success"
+                  type="button"
+                  onClick={uploadAnswerLetter}
+                  disabled={uploadingAnswerLetter}
+                >
+                  {uploadingAnswerLetter
+                    ? "Uploading..."
+                    : selectedReport.answer_letter_path
+                    ? "Replace Answer Letter"
+                    : "Upload Answer Letter"}
+                </button>
+              </div>
+            )}
 
             {selectedReport.status === STATUS_WAITING_FINAL && canFinalUpload ? (
               <div style={{ marginTop: 14 }}>

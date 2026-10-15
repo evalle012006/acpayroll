@@ -96,6 +96,16 @@ const isHRDeptManager =
   const isAdmin = ["admin", "it"].includes(role);
   const isSystemAdmin = role === "admin";
 
+  const canBypassResignation =
+    isSystemAdmin ||
+    isHRDepartment ||
+    isAccountingDepartment;
+
+  const canUploadResignation =
+    isAdmin ||
+    isHRDepartment ||
+    isAccountingDepartment;
+
   const isBranchManager = role === "branch manager";
   const isAreaManager = role === "area manager";
   const isRegionalManager = role === "regional manager";
@@ -122,7 +132,8 @@ const isHRDeptManager =
 
   const canFinalAction =
     isSystemAdmin ||
-    isHRDepartment;
+    isHRDepartment ||
+    isAccountingDepartment;
 
     const canManageResignationReturn =
       isSystemAdmin ||
@@ -498,13 +509,61 @@ const isHRDeptManager =
     }));
   };
 
+  const uploadResignationFile = async (row) => {
+    const file = uploadFiles[row.id];
+
+    if (!file) {
+      return alert("Please choose a file to upload.");
+    }
+
+    if (!window.confirm("Upload this resignation document?")) {
+      return;
+    }
+
+    try {
+      setProcessingId(`upload-${row.id}`);
+
+      const fd = new FormData();
+      fd.append("attachment", file);
+
+      await api.put(
+        `/resignation-requests/${row.id}/upload`,
+        fd,
+        {
+          headers: {
+            "Content-Type": "multipart/form-data",
+          },
+        }
+      );
+
+      alert("Resignation document uploaded successfully.");
+
+      setUploadFiles((prev) => {
+        const copy = { ...prev };
+        delete copy[row.id];
+        return copy;
+      });
+
+      await fetchAll();
+    } catch (err) {
+      console.error("Upload resignation error:", err);
+
+      alert(
+        err?.response?.data?.message ||
+        "Failed to upload resignation document."
+      );
+    } finally {
+      setProcessingId("");
+    }
+  };
+
   const approveRequest = async (row) => {
     const file = uploadFiles[row.id];
 
     const status = toStr(row.status);
 
     const requiresFile =
-      isSystemAdmin ||
+      canBypassResignation ||
       status === STATUS_HR ||
       status === STATUS_AVP_SIGNATURE;
 
@@ -523,7 +582,7 @@ const isHRDeptManager =
 
       // System Admin uses backend bypass for ANY pending stage.
       const shouldBypass =
-        isSystemAdmin &&
+        canBypassResignation &&
         ![
           STATUS_APPROVED,
           STATUS_REJECTED,
@@ -576,11 +635,9 @@ const isHRDeptManager =
   const isFinalApprovalRow = (row) => {
     if (!row) return false;
 
-    const status = toStr(row.status);
-
     return (
-      status === STATUS_HR_FINAL &&
-      (isSystemAdmin || isHRDepartment)
+      toStr(row.status) === STATUS_HR_FINAL &&
+      canBypassResignation
     );
   };
 
@@ -606,7 +663,7 @@ const isHRDeptManager =
 
     // Admin bypass requires a file.
     // Normal HR Final Approval may reuse the AVP signed file.
-    if (isSystemAdmin && !finalApproveForm.attachment) {
+    if (canBypassResignation && !finalApproveForm.attachment) {
       return alert(
         "Attachment file is required for Admin final approval."
       );
@@ -641,7 +698,7 @@ const isHRDeptManager =
 
       // IMPORTANT:
       // Admin must enter the backend ADMIN BYPASS handler.
-      if (isSystemAdmin) {
+      if (canBypassResignation) {
         fd.append("bypass", "true");
       }
 
@@ -852,7 +909,7 @@ const submitReapplyRequest = async (e) => {
 
     // SYSTEM ADMIN:
     // can bypass approve the CURRENT pending stage.
-    if (isSystemAdmin) {
+    if (canBypassResignation) {
       return true;
     }
 
@@ -1397,6 +1454,19 @@ const submitReapplyRequest = async (e) => {
                                   }
                                 />
                               </label>
+
+                              {canUploadResignation && selectedFile && (
+                                <button
+                                  className="reg-action-btn reg-action-upload"
+                                  type="button"
+                                  onClick={() => uploadResignationFile(row)}
+                                  disabled={processingId === `upload-${row.id}`}
+                                >
+                                  {processingId === `upload-${row.id}`
+                                    ? "Uploading..."
+                                    : "Upload File"}
+                                </button>
+                              )}
 
                               <button
                                 className="reg-action-btn reg-action-approve"
