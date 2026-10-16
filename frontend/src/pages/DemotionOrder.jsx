@@ -7,6 +7,31 @@ const clean = (v) => String(v ?? "").trim();
 const norm = (v) => clean(v).toLowerCase();
 const toDate10 = (v) => (v ? String(v).slice(0, 10) : "");
 
+// =====================================================
+// APPROVAL HISTORY DATE FORMATTER
+// Asia/Manila timezone
+// =====================================================
+
+const formatDemotionHistoryDate = (value) => {
+  if (!value) return "-";
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return "-";
+  }
+
+  return new Intl.DateTimeFormat("en-PH", {
+    timeZone: "Asia/Manila",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: true,
+  }).format(date);
+};
+
 const displayNameParts = (s) => {
   const ln = clean(s?.last_name);
   const fn = clean(s?.first_name);
@@ -210,7 +235,8 @@ export default function DemotionOrder() {
 
   const canHrWorkflow =
     isAdmin ||
-    isHRDepartment;
+    isHRDepartment ||
+    isAccountingDepartment;
 
   const canVoidOrDelete =
     isAdmin ||
@@ -323,6 +349,75 @@ export default function DemotionOrder() {
   const [showModal, setShowModal] = useState(false);
   const [viewOrder, setViewOrder] = useState(null);
   const [editingOrder, setEditingOrder] = useState(null);
+
+  // =====================================================
+  // DEMOTION APPROVAL HISTORY
+  // =====================================================
+
+  const [approvalHistory, setApprovalHistory] = useState([]);
+  const [approvalHistoryLoading, setApprovalHistoryLoading] =
+    useState(false);
+
+  const [approvalHistoryError, setApprovalHistoryError] =
+    useState("");
+
+  // =====================================================
+  // LOAD DEMOTION APPROVAL HISTORY
+  // =====================================================
+
+  useEffect(() => {
+    if (!viewOrder?.id) {
+      setApprovalHistory([]);
+      setApprovalHistoryError("");
+      setApprovalHistoryLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadApprovalHistory = async () => {
+      setApprovalHistory([]);
+      setApprovalHistoryError("");
+      setApprovalHistoryLoading(true);
+
+      try {
+        const response = await api.get(
+          `/demotion-orders/${viewOrder.id}/approval-history`
+        );
+
+        if (cancelled) return;
+
+        const records = Array.isArray(response.data)
+          ? response.data
+          : Array.isArray(response.data?.history)
+          ? response.data.history
+          : Array.isArray(response.data?.rows)
+          ? response.data.rows
+          : [];
+
+        setApprovalHistory(records);
+      } catch (error) {
+        if (cancelled) return;
+
+        console.error("Approval history error:", error);
+
+        setApprovalHistoryError(
+          error?.response?.data?.message ||
+            "Failed to load approval history."
+        );
+      } finally {
+        if (!cancelled) {
+          setApprovalHistoryLoading(false);
+        }
+      }
+    };
+
+    loadApprovalHistory();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [viewOrder?.id]);
 
   const [rejecting, setRejecting] = useState(null);
   const [rejectReason, setRejectReason] = useState("");
@@ -2357,15 +2452,6 @@ export default function DemotionOrder() {
                 </div>
 
                 <div className="demotion-field demotion-field-full">
-                  <label>Approval Chain</label>
-                  <textarea
-                    value={renderChainSummary(viewOrder)}
-                    readOnly
-                    rows={3}
-                  />
-                </div>
-
-                <div className="demotion-field demotion-field-full">
                   <label>Details / Remarks</label>
                   <textarea
                     value={viewOrder.details || "-"}
@@ -2386,6 +2472,134 @@ export default function DemotionOrder() {
                 )}
               </div>
 
+              {/* =========================================
+                  APPROVAL HISTORY TIMELINE
+              ========================================= */}
+
+              <div className="demotion-history-section">
+                <div className="demotion-history-header">
+                  <div>
+                    <h4>Approval History</h4>
+                    <p>
+                      Chronological record of approvals,
+                      bypasses, uploads, and other actions.
+                    </p>
+                  </div>
+
+                  <span className="demotion-history-count">
+                    {approvalHistory.length} Records
+                  </span>
+                </div>
+
+                {approvalHistoryLoading ? (
+                  <div className="demotion-history-empty">
+                    Loading approval history...
+                  </div>
+                ) : approvalHistoryError ? (
+                  <div className="demotion-history-error">
+                    {approvalHistoryError}
+                  </div>
+                ) : approvalHistory.length === 0 ? (
+                  <div className="demotion-history-empty">
+                    No approval history recorded yet.
+                  </div>
+                ) : (
+                  <div className="demotion-history-timeline">
+                    {approvalHistory.map((history) => {
+                      const action = clean(history.action);
+                      const actionLower = norm(action);
+
+                      let type = "default";
+
+                      if (
+                        actionLower.includes("reject") ||
+                        actionLower.includes("void")
+                      ) {
+                        type = "danger";
+                      } else if (
+                        actionLower.includes("bypass")
+                      ) {
+                        type = "bypass";
+                      } else if (
+                        actionLower.includes("approv")
+                      ) {
+                        type = "approved";
+                      } else if (
+                        actionLower.includes("upload")
+                      ) {
+                        type = "uploaded";
+                      }
+
+                      const stageKey = norm(
+                        history.approval_stage
+                      );
+
+                      const stageLabel =
+                        STAGE_LABELS[stageKey] ||
+                        clean(history.approval_stage) ||
+                        "-";
+
+                      return (
+                        <div
+                          key={history.id}
+                          className={`demotion-history-item demotion-history-${type}`}
+                        >
+                          <div className="demotion-history-marker">
+                            <span className="demotion-history-dot" />
+                          </div>
+
+                          <div className="demotion-history-card">
+                            <div className="demotion-history-card-top">
+                              <strong>
+                                {action || "Action"}
+                              </strong>
+
+                              <time>
+                                {formatDemotionHistoryDate(
+                                  history.created_at
+                                )}
+                              </time>
+                            </div>
+
+                            <div className="demotion-history-person">
+                              <strong>
+                                {history.performed_by_name ||
+                                  "Unknown User"}
+                              </strong>
+
+                              <span>
+                                {history.performed_by_role ||
+                                  "-"}
+
+                                {history.performed_by_department
+                                  ? ` • ${history.performed_by_department}`
+                                  : ""}
+                              </span>
+                            </div>
+
+                            <div className="demotion-history-stage">
+                              <span>Approval Stage:</span>
+
+                              <strong>
+                                {stageLabel}
+                              </strong>
+                            </div>
+
+                            {history.remarks && (
+                              <div className="demotion-history-remarks">
+                                <span>Remarks</span>
+
+                                <p>{history.remarks}</p>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
               <div className="demotion-modal-actions">
                 <button
                   className="demotion-btn demotion-btn-secondary"
@@ -2399,17 +2613,6 @@ export default function DemotionOrder() {
           </div>
         </div>
       )}
-
-      {pagedOrders.map((order) => {
-        <button
-          type="button"
-          className="demotion-action-btn demotion-action-edit"
-          onClick={() => openEdit(order)}
-          disabled={!!processingId}
-        >
-          Edit
-        </button>
-      })}
 
       {rejecting && (
         <div

@@ -10,6 +10,7 @@ const toNum = (v) => {
 };
 
 const toStr = (v) => String(v ?? "").trim();
+
 const norm = (v) => toStr(v).toLowerCase();
 const fmt = (n) => toNum(n).toLocaleString();
 const fmtDate = (d) => (d ? String(d).split("T")[0] : "-");
@@ -509,14 +510,49 @@ function Payroll() {
         days_of_suspension: 0,
       };
 
-      const baseSalary = hist ? toNum(hist.salary) : toNum(s.salary);
-      const baseEcola = hist ? toNum(hist.ecola) : toNum(s.ecola);
+      // =====================================================
+      // SALARY AND ECOLA
+      // Priority:
+      // 1. Effective Salary History (when amount is positive)
+      // 2. Staff Information
+      // =====================================================
 
-      const suspensionSalary = toNum(suspension.prorated_salary);
-      const suspensionEcola = toNum(suspension.prorated_ecola);
+      const staffSalary = toNum(s.salary);
+      const staffEcola = toNum(s.ecola);
 
-      const salary = Math.max(0, baseSalary - suspensionSalary);
-      const ecola = Math.max(0, baseEcola - suspensionEcola);
+      const historySalary = toNum(hist?.salary);
+      const historyEcola = toNum(hist?.ecola);
+
+      const baseSalary =
+        hist && historySalary > 0
+          ? historySalary
+          : staffSalary;
+
+      const baseEcola =
+        hist && historyEcola > 0
+          ? historyEcola
+          : staffEcola;
+
+      // Suspension deductions
+      const suspensionSalary = toNum(
+        suspension.prorated_salary
+      );
+
+      const suspensionEcola = toNum(
+        suspension.prorated_ecola
+      );
+
+      // Final Salary and ECOLA
+      const salary = Math.max(
+        0,
+        baseSalary - suspensionSalary
+      );
+
+      const ecola = Math.max(
+        0,
+        baseEcola - suspensionEcola
+      );
+
       const totalComp = salary + ecola;
 
       const total_er = toNum(s.hdmf_er) + toNum(s.sss_er) + toNum(s.ph_er);

@@ -207,6 +207,30 @@ const displayName = (s) => {
 };
 
 const getInitialStatus = (req) => {
+  if (isOperationDepartmentUser(req)) {
+    if (isBranchManager(req)) {
+      return STATUS_AREA;
+    }
+
+    if (isAreaManager(req)) {
+      return STATUS_REGIONAL;
+    }
+
+    if (isRegionalManager(req)) {
+      return STATUS_AVP;
+    }
+
+    if (isAssistantVicePresident(req)) {
+      return STATUS_VP;
+    }
+
+    if (isVicePresident(req)) {
+      return STATUS_HR;
+    }
+
+    return STATUS_AREA;
+  }
+
   return STATUS_HR;
 };
 

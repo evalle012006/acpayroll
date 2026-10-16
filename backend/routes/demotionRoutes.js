@@ -38,6 +38,87 @@ const toDateOrNull = (v) => {
 const toStr = (v) => String(v ?? "").trim();
 const norm = (v) => toStr(v).toLowerCase();
 
+// =====================================================
+// DEMOTION ORDER APPROVAL HISTORY
+// =====================================================
+
+const saveDemotionApprovalHistory = async (
+  client,
+  req,
+  {
+    demotionOrderId,
+    action,
+    approvalStage = null,
+    remarks = null,
+  }
+) => {
+  const orderId = toInt(demotionOrderId);
+
+  if (!orderId) {
+    throw new Error("Invalid demotion order ID for approval history");
+  }
+
+  const user = req.user || {};
+
+  const performedBy = toInt(user.id);
+
+  const performedByName =
+    toStr(user.fullname) ||
+    toStr(user.full_name) ||
+    toStr(user.name) ||
+    [
+      toStr(user.first_name),
+      toStr(user.last_name),
+    ]
+      .filter(Boolean)
+      .join(" ") ||
+    toStr(user.username) ||
+    "Unknown User";
+
+  await client.query(
+    `
+    INSERT INTO public.demotion_order_approval_history
+    (
+      demotion_order_id,
+      action,
+      approval_stage,
+      performed_by,
+      performed_by_name,
+      performed_by_role,
+      performed_by_department,
+      remarks,
+      created_at
+    )
+    VALUES
+    (
+      $1,
+      $2,
+      $3,
+      $4,
+      $5,
+      $6,
+      $7,
+      $8,
+      NOW()
+    )
+    `,
+    [
+      orderId,
+      toStr(action),
+      approvalStage
+        ? toStr(approvalStage)
+        : null,
+      performedBy,
+      performedByName,
+      toStr(user.role) || null,
+      toStr(user.department) || null,
+      remarks
+        ? toStr(remarks)
+        : null,
+    ]
+  );
+};
+
 const uploadDir = path.join(__dirname, "../uploads/demotions");
 
 if (!fs.existsSync(uploadDir)) {
@@ -121,10 +202,13 @@ const isHRWorkflowUser = (req) => {
   return (
     isAdmin(req) ||
     isHr(req) ||
+    isAccounting(req) ||
     dept === "hr" ||
     dept === "hr department" ||
     dept === "human resources" ||
-    dept === "human resources department"
+    dept === "human resources department" ||
+    dept === "accounting" ||
+    dept === "accounting department"
   );
 };
 
@@ -716,6 +800,110 @@ const demotionSelect = `
   b.name AS staff_branch_name
 `;
 
+// =====================================================
+// GET DEMOTION ORDER APPROVAL HISTORY
+// =====================================================
+
+router.get(
+  "/demotion-orders/:id/approval-history",
+  requireAuth,
+  requirePermission("demotion_order", "view"),
+  async (req, res) => {
+    const client = await pool.connect();
+
+    try {
+      const id = toInt(req.params.id);
+
+      if (!id) {
+        return res.status(400).json({
+          message: "Invalid demotion order ID",
+        });
+      }
+
+      // Find the demotion order.
+      const orderResult = await client.query(
+        `
+        SELECT
+          id,
+          employee_id
+        FROM public.demotion_orders
+        WHERE id = $1
+        LIMIT 1
+        `,
+        [id]
+      );
+
+      if (orderResult.rowCount === 0) {
+        return res.status(404).json({
+          message: "Demotion order not found",
+        });
+      }
+
+      const order = orderResult.rows[0];
+
+      // Apply the existing staff visibility rules.
+      const staffRow = await getStaffScope(
+        client,
+        order.employee_id
+      );
+
+      if (!staffRow) {
+        return res.status(404).json({
+          message: "Employee not found",
+        });
+      }
+
+      const allowed = await canAccessStaff(
+        client,
+        req,
+        staffRow
+      );
+
+      if (!allowed) {
+        return res.status(403).json({
+          message:
+            "You are not allowed to view this demotion order",
+        });
+      }
+
+      const historyResult = await client.query(
+        `
+        SELECT
+          id,
+          demotion_order_id,
+          action,
+          approval_stage,
+          performed_by,
+          performed_by_name,
+          performed_by_role,
+          performed_by_department,
+          remarks,
+          created_at
+        FROM public.demotion_order_approval_history
+        WHERE demotion_order_id = $1
+        ORDER BY created_at ASC, id ASC
+        `,
+        [id]
+      );
+
+      return res.json(historyResult.rows);
+    } catch (error) {
+      console.error(
+        "GET Demotion Approval History ERROR:",
+        error
+      );
+
+      return res.status(500).json({
+        message:
+          error.message ||
+          "Failed to load approval history",
+      });
+    } finally {
+      client.release();
+    }
+  }
+);
+
 /*
 |--------------------------------------------------------------------------
 | GET STAFF DEMOTION ORDERS
@@ -1159,7 +1347,21 @@ router.post(
         ]
       );
 
+      await saveDemotionApprovalHistory(
+        client,
+        req,
+        {
+          demotionOrderId: ins.rows[0].id,
+          action: "Created",
+          approvalStage: initialStage,
+          remarks:
+            `Demotion order ${orderNo} created. ` +
+            `Initial approval stage: ${initialStage}.`,
+        }
+      );
+
       await client.query("COMMIT");
+
       return res.json(ins.rows[0]);
     } catch (e) {
       await client.query("ROLLBACK");
@@ -1645,8 +1847,22 @@ router.put(
           [id, req.user?.id ?? null, reason]
         );
 
+        await saveDemotionApprovalHistory(
+          client,
+          req,
+          {
+            demotionOrderId: id,
+            action: "Rejected",
+            approvalStage: currentStage,
+            remarks: reason,
+          }
+        );
+
         await client.query("COMMIT");
-        return res.json({ message: "Rejected successfully" });
+
+        return res.json({
+          message: "Rejected successfully",
+        });
       }
 
       const latestPath = `/uploads/demotions/${req.file.filename}`;
@@ -1688,6 +1904,19 @@ router.put(
           latestName,
           latestMime,
         ]
+      );
+
+      await saveDemotionApprovalHistory(
+        client,
+        req,
+        {
+          demotionOrderId: id,
+          action: "Approved",
+          approvalStage: currentStage,
+          remarks: waitingAdmin
+            ? "Management approval completed. Forwarded to HR Admin Order."
+            : `Approved. Forwarded to ${nextStage}.`,
+        }
       );
 
       await client.query("COMMIT");
@@ -1858,6 +2087,17 @@ router.put(
           ]
         );
 
+        await saveDemotionApprovalHistory(
+          client,
+          req,
+          {
+            demotionOrderId: id,
+            action: "Bypass Rejected",
+            approvalStage: currentStage,
+            remarks: reason,
+          }
+        );
+
         await client.query("COMMIT");
 
         return res.json({
@@ -1926,6 +2166,19 @@ router.put(
           latestName,
           latestMime,
         ]
+      );
+
+      await saveDemotionApprovalHistory(
+        client,
+        req,
+        {
+          demotionOrderId: id,
+          action: "Bypass Approved",
+          approvalStage: currentStage,
+          remarks:
+            "Remaining management approvals bypassed. " +
+            "Forwarded to HR Admin Order.",
+        }
       );
 
       await client.query("COMMIT");
@@ -2083,6 +2336,18 @@ router.post(
           fileName,
           fileMime,
         ]
+      );
+
+      await saveDemotionApprovalHistory(
+        client,
+        req,
+        {
+          demotionOrderId: id,
+          action: "Admin Order Uploaded",
+          approvalStage: "admin",
+          remarks:
+            `Admin Order uploaded: ${fileName || "Attachment"}.`,
+        }
       );
 
       await client.query("COMMIT");
@@ -2247,6 +2512,18 @@ router.post(
           fileName,
           fileMime,
         ]
+      );
+
+      await saveDemotionApprovalHistory(
+        client,
+        req,
+        {
+          demotionOrderId: id,
+          action: "Staff-Signed Order Uploaded",
+          approvalStage: "avp signed order",
+          remarks:
+            `Staff-signed Admin Order uploaded: ${fileName || "Attachment"}.`,
+        }
       );
 
       await client.query("COMMIT");
@@ -2470,6 +2747,18 @@ router.post(
         );
       }
 
+      await saveDemotionApprovalHistory(
+        client,
+        req,
+        {
+          demotionOrderId: id,
+          action: "Final Approved",
+          approvalStage: "hr final",
+          remarks:
+            "Final approval completed. Employee information updated.",
+        }
+      );
+
       await client.query("COMMIT");
 
       return res.json({
@@ -2655,6 +2944,17 @@ router.put(
           req.user?.id ?? null,
           reason,
         ]
+      );
+
+      await saveDemotionApprovalHistory(
+        client,
+        req,
+        {
+          demotionOrderId: id,
+          action: "Voided",
+          approvalStage: "voided",
+          remarks: reason,
+        }
       );
 
       await client.query("COMMIT");

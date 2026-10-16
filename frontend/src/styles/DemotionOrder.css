@@ -843,3 +843,321 @@
     width: 100%;
   }
 }
+
+/* =====================================================
+   DEMOTION ORDER APPROVAL HISTORY
+===================================================== */
+
+.demotion-history-section {
+  margin-top: 24px;
+  padding: 20px;
+
+  border: 1px solid var(--border);
+  border-radius: 16px;
+
+  background: var(--panel-2);
+}
+
+.demotion-history-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+
+  gap: 16px;
+  margin-bottom: 22px;
+}
+
+.demotion-history-header h4 {
+  margin: 0;
+
+  font-size: 16px;
+  font-weight: 900;
+
+  color: var(--text);
+}
+
+.demotion-history-header p {
+  margin: 6px 0 0;
+
+  font-size: 12px;
+  line-height: 1.6;
+
+  color: var(--muted);
+}
+
+.demotion-history-count {
+  flex-shrink: 0;
+
+  padding: 6px 11px;
+
+  border: 1px solid var(--border);
+  border-radius: 999px;
+
+  background: var(--panel);
+
+  color: var(--text);
+
+  font-size: 11px;
+  font-weight: 850;
+}
+
+/* TIMELINE */
+
+.demotion-history-timeline {
+  display: flex;
+  flex-direction: column;
+
+  gap: 0;
+}
+
+.demotion-history-item {
+  position: relative;
+
+  display: grid;
+  grid-template-columns: 26px minmax(0, 1fr);
+
+  gap: 12px;
+  padding-bottom: 20px;
+}
+
+.demotion-history-item:last-child {
+  padding-bottom: 0;
+}
+
+/* TIMELINE LINE */
+
+.demotion-history-marker {
+  position: relative;
+
+  display: flex;
+  justify-content: center;
+}
+
+.demotion-history-marker::after {
+  content: "";
+
+  position: absolute;
+
+  top: 20px;
+  bottom: -20px;
+
+  width: 2px;
+
+  background: var(--border);
+}
+
+.demotion-history-item:last-child
+.demotion-history-marker::after {
+  display: none;
+}
+
+/* TIMELINE DOT */
+
+.demotion-history-dot {
+  position: relative;
+  z-index: 2;
+
+  width: 13px;
+  height: 13px;
+
+  margin-top: 13px;
+
+  border-radius: 50%;
+
+  background: #64748b;
+
+  border: 3px solid var(--panel-2);
+
+  box-shadow: 0 0 0 2px var(--border);
+}
+
+/* ACTION COLORS */
+
+.demotion-history-approved .demotion-history-dot {
+  background: #10b981;
+}
+
+.demotion-history-bypass .demotion-history-dot {
+  background: #3b82f6;
+}
+
+.demotion-history-uploaded .demotion-history-dot {
+  background: #8b5cf6;
+}
+
+.demotion-history-danger .demotion-history-dot {
+  background: #ef4444;
+}
+
+/* HISTORY CARD */
+
+.demotion-history-card {
+  min-width: 0;
+
+  padding: 15px 16px;
+
+  border: 1px solid var(--border);
+  border-radius: 13px;
+
+  background: var(--panel);
+}
+
+.demotion-history-card-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.demotion-history-card-top > strong {
+  color: var(--text);
+
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.demotion-history-card-top time {
+  color: var(--muted);
+
+  font-size: 11px;
+  font-weight: 700;
+}
+
+/* APPROVER */
+
+.demotion-history-person {
+  display: flex;
+  flex-direction: column;
+
+  gap: 4px;
+  margin-top: 12px;
+}
+
+.demotion-history-person strong {
+  color: var(--text);
+
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.demotion-history-person span {
+  color: var(--muted);
+
+  font-size: 11px;
+  font-weight: 650;
+}
+
+/* APPROVAL STAGE */
+
+.demotion-history-stage {
+  display: flex;
+  align-items: center;
+
+  gap: 8px;
+  flex-wrap: wrap;
+
+  margin-top: 12px;
+}
+
+.demotion-history-stage span {
+  color: var(--muted);
+
+  font-size: 11px;
+}
+
+.demotion-history-stage strong {
+  color: var(--primary);
+
+  font-size: 11px;
+  font-weight: 850;
+}
+
+/* REMARKS */
+
+.demotion-history-remarks {
+  margin-top: 12px;
+  padding: 11px 12px;
+
+  border-radius: 10px;
+
+  background: var(--panel-2);
+}
+
+.demotion-history-remarks span {
+  display: block;
+
+  margin-bottom: 5px;
+
+  color: var(--muted);
+
+  font-size: 10px;
+  font-weight: 850;
+
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.demotion-history-remarks p {
+  margin: 0;
+
+  color: var(--text);
+
+  font-size: 12px;
+  line-height: 1.6;
+
+  overflow-wrap: anywhere;
+}
+
+/* EMPTY AND ERROR */
+
+.demotion-history-empty {
+  padding: 24px;
+
+  border: 1px dashed var(--border);
+  border-radius: 12px;
+
+  color: var(--muted);
+
+  text-align: center;
+
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.demotion-history-error {
+  padding: 14px;
+
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  border-radius: 12px;
+
+  background: rgba(239, 68, 68, 0.10);
+
+  color: #ef4444;
+
+  font-size: 12px;
+  font-weight: 800;
+}
+
+/* RESPONSIVE */
+
+@media (max-width: 640px) {
+  .demotion-history-section {
+    padding: 14px;
+  }
+
+  .demotion-history-header {
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .demotion-history-card {
+    padding: 12px;
+  }
+
+  .demotion-history-card-top {
+    flex-direction: column;
+    gap: 5px;
+  }
+}
