@@ -156,6 +156,19 @@ export default function NoticeToExplain() {
   const [staffList, setStaffList] = useState([]);
   const [reports, setReports] = useState([]);
 
+  const [selectedIds, setSelectedIds] = useState([]);
+  const [bulkDeleting, setBulkDeleting] = useState(false);
+  const [selectionMode, setSelectionMode] = useState("");
+
+  const canBulkDelete =
+    isAdmin ||
+    isIT ||
+    isHRDepartment ||
+    isAccountingDepartment;
+
+  const isDeletableReport = (report) =>
+    [STATUS_REJECTED, STATUS_VOID].includes(report.status);
+
   const [loadingList, setLoadingList] = useState(false);
   const [loadingCreate, setLoadingCreate] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
@@ -384,6 +397,88 @@ export default function NoticeToExplain() {
 
     if (updated?.id) {
       fetchApprovalHistory(updated.id);
+    }
+  };
+
+  const deleteSelectedReports = async () => {
+    if (bulkDeleting || !canBulkDelete) return;
+
+    const eligibleIds = new Set(
+      reports
+        .filter(
+          (report) =>
+            norm(report.report_type) === "notice to explain" &&
+            isDeletableReport(report)
+        )
+        .map((report) => Number(report.id))
+    );
+
+    const idsToDelete = [
+      ...new Set(
+        selectedIds
+          .map(Number)
+          .filter((id) => eligibleIds.has(id))
+      ),
+    ];
+
+    if (!idsToDelete.length) {
+      alert("Please select Rejected or Voided reports.");
+      return;
+    }
+
+    const rejectedCount = reports.filter(
+      (report) =>
+        idsToDelete.includes(Number(report.id)) &&
+        report.status === STATUS_REJECTED
+    ).length;
+
+    const voidedCount = reports.filter(
+      (report) =>
+        idsToDelete.includes(Number(report.id)) &&
+        report.status === STATUS_VOID
+    ).length;
+
+    const confirmed = window.confirm(
+      `Permanently delete ${idsToDelete.length} Notice to Explain report(s)?\n\n` +
+        `Rejected: ${rejectedCount}\n` +
+        `Voided: ${voidedCount}\n\n` +
+        `This action cannot be undone.`
+    );
+
+    if (!confirmed) return;
+
+    try {
+      setBulkDeleting(true);
+
+      const res = await api.delete(
+        "/awol-reports/bulk-delete",
+        {
+          data: {
+            ids: idsToDelete,
+          },
+        }
+      );
+
+      alert(
+        res.data?.message ||
+          `${idsToDelete.length} report(s) deleted successfully.`
+      );
+
+      setSelectedIds([]);
+      setSelectionMode("");
+
+      await fetchReports();
+    } catch (error) {
+      if (error?.response?.status === 401) {
+        return logout();
+      }
+
+      alert(
+        error?.response?.data?.message ||
+          "Failed to delete selected reports."
+      );
+    } finally {
+      setBulkDeleting(false);
     }
   };
 
@@ -708,6 +803,79 @@ export default function NoticeToExplain() {
     return filteredReports.slice(start, start + pageSize);
   }, [filteredReports, page, pageSize]);
 
+  // =====================================================
+  // SELECT REPORTS BY STATUS
+  // =====================================================
+
+  const handleSelectionMode = (mode) => {
+    setSelectionMode(mode);
+
+    if (mode === "clear") {
+      setSelectedIds([]);
+      setSelectionMode("");
+      return;
+    }
+
+    // Select from ALL NTE reports, not only the current page.
+    const eligibleReports = filteredReports.filter(isDeletableReport);
+
+    let selected = [];
+
+    if (mode === "rejected") {
+      selected = eligibleReports.filter(
+        (report) => report.status === STATUS_REJECTED
+      );
+    }
+
+    if (mode === "voided") {
+      selected = eligibleReports.filter(
+        (report) => report.status === STATUS_VOID
+      );
+    }
+
+    if (mode === "all") {
+      selected = eligibleReports;
+    }
+
+    setSelectedIds(selected.map((report) => Number(report.id)));
+  };
+
+  const selectableReports = pagedReports.filter(isDeletableReport);
+
+  const allSelected =
+    selectableReports.length > 0 &&
+    selectableReports.every((report) =>
+      selectedIds.includes(Number(report.id))
+    );
+
+  const toggleSelectAll = () => {
+    const pageIds = selectableReports.map((report) =>
+      Number(report.id)
+    );
+
+    setSelectedIds((prev) => {
+      if (allSelected) {
+        return prev.filter((id) => !pageIds.includes(id));
+      }
+
+      return [...new Set([...prev, ...pageIds])];
+    });
+
+    setSelectionMode("");
+  };
+
+  const toggleSelectReport = (id) => {
+    const reportId = Number(id);
+
+    setSelectedIds((prev) =>
+      prev.includes(reportId)
+        ? prev.filter((selectedId) => selectedId !== reportId)
+        : [...prev, reportId]
+    );
+
+    setSelectionMode("");
+  };
+
   useEffect(() => {
     setPage(1);
   }, [search, pageSize]);
@@ -874,6 +1042,50 @@ export default function NoticeToExplain() {
             >
               Clear
             </button>
+
+            {/* ========================================= */}
+            {/* BULK SELECTION DROPDOWN */}
+            {/* ========================================= */}
+
+            {canBulkDelete && (
+              <select
+                className="notice-bulk-select"
+                value={selectionMode}
+                onChange={(e) => handleSelectionMode(e.target.value)}
+                disabled={bulkDeleting}
+              >
+                <option value="">Select Reports</option>
+
+                <option value="rejected">
+                  Select All Rejected
+                </option>
+
+                <option value="voided">
+                  Select All Voided
+                </option>
+
+                <option value="all">
+                  Select All Rejected & Voided
+                </option>
+
+                <option value="clear">
+                  Clear Selection
+                </option>
+              </select>
+            )}
+
+            {canBulkDelete && selectedIds.length > 0 && (
+              <button
+                type="button"
+                className="notice-btn notice-btn-danger"
+                onClick={deleteSelectedReports}
+                disabled={bulkDeleting}
+              >
+                {bulkDeleting
+                  ? "Deleting..."
+                  : `Delete Selected (${selectedIds.length})`}
+              </button>
+            )}
           </div>
 
           <span className="notice-result-count">
@@ -885,6 +1097,18 @@ export default function NoticeToExplain() {
           <table className="notice-table">
             <thead>
               <tr>
+                {canBulkDelete && (
+                  <th className="notice-checkbox-column">
+                    <input
+                      type="checkbox"
+                      checked={allSelected}
+                      onChange={toggleSelectAll}
+                      disabled={selectableReports.length === 0}
+                      title="Select all Rejected and Voided reports on this page"
+                    />
+                  </th>
+                )}
+
                 <th>Report No</th>
                 <th>Type</th>
                 <th>Employee</th>
@@ -901,19 +1125,36 @@ export default function NoticeToExplain() {
             <tbody>
               {loadingList ? (
                 <tr>
-                  <td colSpan={10} className="notice-empty-state">
+                  <td
+                    colSpan={canBulkDelete ? 11 : 10}
+                    className="notice-empty-state"
+                  >
                     Loading reports...
                   </td>
                 </tr>
               ) : filteredReports.length === 0 ? (
                 <tr>
-                  <td colSpan={10} className="notice-empty-state">
+                  <td
+                    colSpan={canBulkDelete ? 11 : 10}
+                    className="notice-empty-state"
+                  >
                     No Notice to Explain reports found.
                   </td>
                 </tr>
               ) : (
                 pagedReports.map((report) => (
                   <tr key={report.id}>
+                    {canBulkDelete && (
+                      <td className="notice-checkbox-column">
+                        <input
+                          type="checkbox"
+                          checked={selectedIds.includes(Number(report.id))}
+                          disabled={!isDeletableReport(report)}
+                          onChange={() => toggleSelectReport(report.id)}
+                        />
+                      </td>
+                    )}
+
                     <td className="notice-report-no">{report.report_no}</td>
                     <td>{getReportType(report)}</td>
                     <td className="notice-employee-cell">{report.employee_name}</td>

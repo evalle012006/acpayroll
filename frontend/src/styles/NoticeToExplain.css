@@ -827,3 +827,76 @@
   font-size: 11px;
   font-weight: 700;
 }
+
+/* ========================================= */
+/* NTE BULK DELETE                           */
+/* ========================================= */
+
+.notice-checkbox-column {
+  width: 48px;
+  min-width: 48px;
+  text-align: center !important;
+}
+
+.notice-checkbox-column input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+  accent-color: #6366f1;
+}
+
+.notice-checkbox-column input[type="checkbox"]:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.notice-btn-danger {
+  background: linear-gradient(135deg, #dc2626, #ef4444);
+  color: #fff;
+  border-color: rgba(239, 68, 68, 0.45);
+  box-shadow: 0 8px 20px rgba(220, 38, 38, 0.18);
+}
+
+.notice-btn-danger:hover:not(:disabled) {
+  background: linear-gradient(135deg, #b91c1c, #dc2626);
+}
+
+/* ========================================= */
+/* NTE BULK SELECTION DROPDOWN               */
+/* ========================================= */
+
+.notice-bulk-select {
+  height: 40px;
+  min-width: 220px;
+  padding: 0 35px 0 13px;
+
+  border: 1px solid var(--border);
+  border-radius: 11px;
+
+  background: var(--panel-2);
+  color: var(--text);
+
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 800;
+
+  cursor: pointer;
+  outline: none;
+}
+
+.notice-bulk-select:focus {
+  border-color: #6366f1;
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
+}
+
+.notice-bulk-select:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+@media (max-width: 700px) {
+  .notice-bulk-select {
+    width: 100%;
+    min-width: 0;
+  }
+}

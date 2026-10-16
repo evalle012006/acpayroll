@@ -1250,6 +1250,123 @@ router.put(
   }
 );
 
+// =====================================================
+// BULK DELETE REJECTED / VOIDED NTE REPORTS
+// =====================================================
+
+router.delete(
+  "/awol-reports/bulk-delete",
+  requireAuth,
+  requirePermission("staff_report", "delete"),
+  async (req, res) => {
+    // Admin, IT, HR Department, and Accounting Department
+    // can bulk delete Rejected and Voided NTE reports.
+
+    const canBulkDeleteReport =
+      isAdmin(req) ||
+      isIT(req) ||
+      isHRDepartmentUser(req) ||
+      isAccountingDepartmentUser(req);
+
+    if (!canBulkDeleteReport) {
+      return res.status(403).json({
+        message:
+          "Only Admin, IT, HR Department, and Accounting Department can bulk delete reports.",
+      });
+    }
+
+    const client = await pool.connect();
+
+    try {
+
+      const ids = [
+        ...new Set(
+          (Array.isArray(req.body?.ids) ? req.body.ids : [])
+            .map(toInt)
+            .filter((id) => Number.isInteger(id) && id > 0)
+        ),
+      ];
+
+      if (!ids.length) {
+        return res.status(400).json({
+          message: "Select at least one report.",
+        });
+      }
+
+      await client.query("BEGIN");
+
+      const result = await client.query(
+        `
+        SELECT id, report_no, report_type, status
+        FROM public.awol_reports
+        WHERE id = ANY($1::int[])
+        FOR UPDATE
+        `,
+        [ids]
+      );
+
+      if (result.rowCount !== ids.length) {
+        await client.query("ROLLBACK");
+
+        return res.status(400).json({
+          message: "Some selected reports no longer exist.",
+        });
+      }
+
+      const invalid = result.rows.filter(
+        (row) =>
+          norm(row.report_type) !== "notice to explain" ||
+          ![STATUS_REJECTED, STATUS_VOID].includes(row.status)
+      );
+
+      if (invalid.length) {
+        await client.query("ROLLBACK");
+
+        return res.status(400).json({
+          message:
+            "Only Rejected or Voided Notice to Explain reports can be deleted.",
+        });
+      }
+
+      // Delete approval history first
+      await client.query(
+        `
+        DELETE FROM public.awol_report_approval_history
+        WHERE report_id = ANY($1::int[])
+        `,
+        [ids]
+      );
+
+      const deleted = await client.query(
+        `
+        DELETE FROM public.awol_reports
+        WHERE id = ANY($1::int[])
+        RETURNING id, report_no
+        `,
+        [ids]
+      );
+
+      await client.query("COMMIT");
+
+      return res.json({
+        message: `${deleted.rowCount} report(s) deleted successfully.`,
+        deleted_count: deleted.rowCount,
+        deleted_ids: deleted.rows.map((row) => row.id),
+      });
+    } catch (error) {
+      await client.query("ROLLBACK");
+
+      console.error("BULK DELETE NTE ERROR:", error);
+
+      return res.status(500).json({
+        message: "Failed to delete selected reports.",
+      });
+    } finally {
+      client.release();
+    }
+  }
+);
+
 router.put(
   "/awol-reports/:id/void",
   requireAuth,
