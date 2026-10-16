@@ -206,28 +206,58 @@ const displayName = (s) => {
   );
 };
 
-const getInitialStatus = (req) => {
-  if (isOperationDepartmentUser(req)) {
-    if (isBranchManager(req)) {
-      return STATUS_AREA;
-    }
+// =====================================================
+// INITIAL APPROVAL STATUS BY REPORT TYPE
+// =====================================================
 
-    if (isAreaManager(req)) {
-      return STATUS_REGIONAL;
-    }
+const getInitialStatus = (reportType, employee) => {
 
-    if (isRegionalManager(req)) {
-      return STATUS_AVP;
-    }
+  // AWOL and Incident Reports go directly to HR
+  if (
+    reportType === "AWOL Report" ||
+    reportType === "Incident Report"
+  ) {
+    return STATUS_HR;
+  }
 
-    if (isAssistantVicePresident(req)) {
-      return STATUS_VP;
-    }
+  // Notice to Explain follows line supervisor approval
+  if (reportType === "Notice to Explain") {
 
-    if (isVicePresident(req)) {
+    const position = norm(employee?.position);
+
+    // VP employee → HR
+    if (
+      position === "vice president" ||
+      position === "vp"
+    ) {
       return STATUS_HR;
     }
 
+    // AVP employee → VP
+    if (
+      position === "assistant vice president" ||
+      position === "avp"
+    ) {
+      return STATUS_VP;
+    }
+
+    // RM employee → AVP
+    if (
+      position === "regional manager" ||
+      position === "rm"
+    ) {
+      return STATUS_AVP;
+    }
+
+    // AM employee → RM
+    if (
+      position === "area manager" ||
+      position === "am"
+    ) {
+      return STATUS_REGIONAL;
+    }
+
+    // Loan Officer / Branch Manager / other employees → AM
     return STATUS_AREA;
   }
 
@@ -416,6 +446,8 @@ const canApproveCurrentStage = (req, row) => {
     };
   }
 
+  const status = row.status;
+
   if (
     [
       STATUS_APPROVED,
@@ -423,7 +455,7 @@ const canApproveCurrentStage = (req, row) => {
       STATUS_VOID,
       STATUS_WAITING_FINAL,
       STATUS_HR,
-    ].includes(row.status)
+    ].includes(status)
   ) {
     return {
       allowed: false,
@@ -431,7 +463,55 @@ const canApproveCurrentStage = (req, row) => {
     };
   }
 
+  // Admin / IT / HR / Accounting / Audit bypass
   if (canBypassApprove(req)) {
+    return {
+      allowed: true,
+      nextStatus: STATUS_HR,
+    };
+  }
+
+  // Area Manager Approval
+  if (
+    status === STATUS_AREA &&
+    isAreaManager(req) &&
+    norm(req.user?.area) === norm(row.area)
+  ) {
+    return {
+      allowed: true,
+      nextStatus: STATUS_REGIONAL,
+    };
+  }
+
+  // Regional Manager Approval
+  if (
+    status === STATUS_REGIONAL &&
+    isRegionalManager(req) &&
+    norm(req.user?.region) === norm(row.region)
+  ) {
+    return {
+      allowed: true,
+      nextStatus: STATUS_AVP,
+    };
+  }
+
+  // Assistant Vice President Approval
+  if (
+    status === STATUS_AVP &&
+    isAssistantVicePresident(req) &&
+    norm(req.user?.division) === norm(row.division)
+  ) {
+    return {
+      allowed: true,
+      nextStatus: STATUS_VP,
+    };
+  }
+
+  // Vice President Approval
+  if (
+    status === STATUS_VP &&
+    isVicePresident(req)
+  ) {
     return {
       allowed: true,
       nextStatus: STATUS_HR,
@@ -817,6 +897,8 @@ router.post(
           s.last_name,
           s.first_name,
           s.middle_name,
+          s.position,
+          s.department,
           s.branch_id,
           s.area,
           s.region,
@@ -894,8 +976,15 @@ router.post(
         return res.status(403).json({ message: "Access denied" });
       }
 
-      const reportNo = await generateReportNo(client, reportType);
-      const initialStatus = getInitialStatus(req);
+      const reportNo = await generateReportNo(
+        client,
+        reportType
+      );
+
+      const initialStatus = getInitialStatus(
+        reportType,
+        s
+      );
 
       const ins = await client.query(
         `

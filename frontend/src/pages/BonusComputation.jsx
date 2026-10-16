@@ -681,38 +681,14 @@ export default function BonusComputation() {
             ) : (
               paginatedRows.map((row) => (
                 <tr key={row.staff_id}>
-                  <td>
-                    {row.employee_no || "-"}
-                  </td>
-
-                  <td className="employee-name">
-                    {row.fullname || "-"}
-                  </td>
-
-                  <td>
-                    {row.position || "-"}
-                  </td>
-
-                  <td>
-                    {formatDate(row.start_date)}
-                  </td>
-
-                  <td>
-                    {formatDate(row.regularization_date)}
-                  </td>
-
-                  <td className="num">
-                    {money(row.salary)}
-                  </td>
-
-                  <td className="num">
-                    {money(row.ecola)}
-                  </td>
-
-                  <td className="num">
-                    {money(row.total_gross)}
-                  </td>
-
+                  <td>{row.employee_no || "-"}</td>
+                  <td className="employee-name">{row.fullname || "-"}</td>
+                  <td>{row.position || "-"}</td>
+                  <td>{formatDate(row.start_date)}</td>
+                  <td>{formatDate(row.regularization_date)}</td>
+                  <td className="num">{money(row.salary)}</td>
+                  <td className="num">{money(row.ecola)}</td>
+                  <td className="num">{money(row.total_gross)}</td>
                   <td className="num">
                     {money(
                       Number(row.month_13 || 0) +
@@ -867,9 +843,7 @@ export default function BonusComputation() {
                 <div>
                   <span>Date of Regularization</span>
                   <strong>
-                    {formatDate(
-                      selectedStaff.regularization_date
-                    )}
+                    {formatDate(selectedStaff.regularization_date)}
                   </strong>
                 </div>
 
@@ -877,9 +851,7 @@ export default function BonusComputation() {
                   <span>Salary</span>
                   <strong>
                     ₱{" "}
-                    {money(
-                      selectedStaff.salary
-                    )}
+                    {money(selectedStaff.salary)}
                   </strong>
                 </div>
 
@@ -887,9 +859,7 @@ export default function BonusComputation() {
                   <span>ECOLA</span>
                   <strong>
                     ₱{" "}
-                    {money(
-                      selectedStaff.ecola
-                    )}
+                    {money(selectedStaff.ecola)}
                   </strong>
                 </div>
 
@@ -897,9 +867,7 @@ export default function BonusComputation() {
                   <span>Total Gross</span>
                   <strong>
                     ₱{" "}
-                    {money(
-                      selectedStaff.total_gross
-                    )}
+                    {money(selectedStaff.total_gross)}
                   </strong>
                 </div>
 
@@ -979,9 +947,7 @@ export default function BonusComputation() {
                     {months.map(
                       (item, index) => (
                         <tr key={item.month}>
-                          <td>
-                            {MONTHS[index]}
-                          </td>
+                          <td>{MONTHS[index]}</td>
 
                           <td>
                             {modalMode === "edit" ? (
@@ -1000,13 +966,7 @@ export default function BonusComputation() {
                                 min="0"
                                 step="0.01"
                                 value={item.deductions}
-                                onChange={(e) =>
-                                  updateMonth(
-                                    index,
-                                    "deductions",
-                                    e.target.value
-                                  )
-                                }
+                                onChange={(e) => updateMonth(index, "deductions", e.target.value)}
                               />
                             ) : (
                               money(item.deductions)
@@ -1020,13 +980,7 @@ export default function BonusComputation() {
                                 min="0"
                                 step="0.01"
                                 value={item.month_13}
-                                onChange={(e) =>
-                                  updateMonth(
-                                    index,
-                                    "month_13",
-                                    e.target.value
-                                  )
-                                }
+                                onChange={(e) => updateMonth(index, "month_13", e.target.value)}
                               />
                             ) : (
                               money(item.month_13)
@@ -1050,30 +1004,12 @@ export default function BonusComputation() {
                   <tfoot>
                     <tr>
                       <th>Total</th>
-
-                      <th>
-                        {money(totals.total_compensation)}
-                      </th>
-
-                      <th>
-                        {money(totals.deductions)}
-                      </th>
-
-                      <th>
-                        {money(totals.month_13)}
-                      </th>
-
-                      <th>
-                        {money(totals.month_14)}
-                      </th>
-
-                      <th>
-                        {money(totals.month_15)}
-                      </th>
-
-                      <th>
-                        {money(totals.total_bonus)}
-                      </th>
+                      <th>{money(totals.total_compensation)}</th>
+                      <th>{money(totals.deductions)}</th>
+                      <th>{money(totals.month_13)}</th>
+                      <th>{money(totals.month_14)}</th>
+                      <th>{money(totals.month_15)}</th>
+                      <th>{money(totals.total_bonus)}</th>
                     </tr>
                   </tfoot>
                 </table>
