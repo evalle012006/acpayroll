@@ -1,3 +1,5 @@
+//NoticeToExplain.jsx
+
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import api from "../api/axiosClient";
@@ -102,12 +104,14 @@ export default function NoticeToExplain() {
     dept === "accounting";
 
   const isAuditDepartment =
-    dept === "audit department";
+    dept === "audit department" ||
+    dept === "audit";
 
   const canCreate =
     isAdmin ||
     isIT ||
     isHRDepartment ||
+    isAccountingDepartment ||
     isAuditDepartment ||
     isBM ||
     isAM ||
@@ -139,16 +143,18 @@ export default function NoticeToExplain() {
     isAdmin ||
     isIT ||
     isHR ||
-    isHRDepartment ||
     isAccounting ||
+    isHRDepartment ||
+    isAccountingDepartment ||
     isAuditDepartment;
 
   const canVoid =
     isAdmin ||
     isIT ||
     isHR ||
-    isHRDepartment ||
     isAccounting ||
+    isHRDepartment ||
+    isAccountingDepartment ||
     isAuditDepartment;
 
   const employeePickerRef = useRef(null);
@@ -568,7 +574,13 @@ export default function NoticeToExplain() {
   };
 
   const bypassApprove = async (report) => {
-    if (!window.confirm("Bypass approval and send this report to final file upload?")) return;
+  if (
+    !window.confirm(
+      "Bypass approval for the current stage and proceed to the next approval stage?"
+    )
+  ) {
+    return;
+  }
 
     try {
       setActionLoading(true);
@@ -727,12 +739,38 @@ export default function NoticeToExplain() {
 
   const canApproveSelected = (report) => {
     if (!report) return false;
-    if (canBypassApprove) return true;
 
-    if (report.status === STATUS_AREA && isAM) return true;
-    if (report.status === STATUS_REGIONAL && isRM) return true;
-    if (report.status === STATUS_AVP && isAVP) return true;
-    if (report.status === STATUS_VP && isVP) return true;
+    const validStages = [
+      STATUS_AREA,
+      STATUS_REGIONAL,
+      STATUS_AVP,
+      STATUS_VP,
+      STATUS_HR,
+    ];
+
+    if (!validStages.includes(report.status)) {
+      return false;
+    }
+
+    if (canBypassApprove) {
+      return true;
+    }
+
+    if (report.status === STATUS_AREA && isAM) {
+      return true;
+    }
+
+    if (report.status === STATUS_REGIONAL && isRM) {
+      return true;
+    }
+
+    if (report.status === STATUS_AVP && isAVP) {
+      return true;
+    }
+
+    if (report.status === STATUS_VP && isVP) {
+      return true;
+    }
 
     return false;
   };
@@ -936,7 +974,7 @@ export default function NoticeToExplain() {
 
             <div className="notice-approval-flow">
               <span>APPROVAL FLOW</span>
-              <b>AM → RM → AVP → VP → Final File Upload</b>
+              <b>AM → RM → AVP → VP → HR → Final File Upload</b>
             </div>
           </div>
 
@@ -1796,20 +1834,17 @@ export default function NoticeToExplain() {
                 </button>
               ) : null}
 
-              {canBypassApprove &&
-              selectedReport.status !== STATUS_WAITING_FINAL &&
-              selectedReport.status !== STATUS_APPROVED &&
-              selectedReport.status !== STATUS_REJECTED &&
-              selectedReport.status !== STATUS_VOID ? (
-                <button
-                  className="btn-success"
-                  type="button"
-                  disabled={actionLoading}
-                  onClick={() => bypassApprove(selectedReport)}
-                >
-                  Admin/IT Bypass
-                </button>
-              ) : null}
+                {canBypassApprove &&
+                  [STATUS_AREA, STATUS_REGIONAL, STATUS_AVP, STATUS_VP, STATUS_HR,].includes(selectedReport.status) && (
+                    <button
+                      className="btn-success"
+                      type="button"
+                      disabled={actionLoading}
+                      onClick={() => bypassApprove(selectedReport)}
+                    >
+                      {actionLoading ? "Processing..." : "Bypass Approval"}
+                    </button>
+                  )}
 
               {selectedReport.status === STATUS_APPROVED && canVoid ? (
                 <button

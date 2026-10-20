@@ -1,3 +1,5 @@
+//awolReportsRoutes.js
+
 const express = require("express");
 const router = express.Router();
 const pool = require("../db");
@@ -265,6 +267,32 @@ const getInitialStatus = (reportType, employee) => {
 };
 
 // =====================================================
+// NTE - NEXT APPROVAL STAGE
+// =====================================================
+
+const getNextNTEApprovalStatus = (status) => {
+  switch (status) {
+    case STATUS_AREA:
+      return STATUS_REGIONAL;
+
+    case STATUS_REGIONAL:
+      return STATUS_AVP;
+
+    case STATUS_AVP:
+      return STATUS_VP;
+
+    case STATUS_VP:
+      return STATUS_HR;
+
+    case STATUS_HR:
+      return STATUS_WAITING_FINAL;
+
+    default:
+      return null;
+  }
+};
+
+// =====================================================
 // STAFF REPORT APPROVAL HISTORY
 // =====================================================
 
@@ -454,7 +482,6 @@ const canApproveCurrentStage = (req, row) => {
       STATUS_REJECTED,
       STATUS_VOID,
       STATUS_WAITING_FINAL,
-      STATUS_HR,
     ].includes(status)
   ) {
     return {
@@ -463,15 +490,25 @@ const canApproveCurrentStage = (req, row) => {
     };
   }
 
-  // Admin / IT / HR / Accounting / Audit bypass
   if (canBypassApprove(req)) {
+    const isNTE =
+      norm(row.report_type) === "notice to explain";
+
+    if (isNTE) {
+      const nextStatus = getNextNTEApprovalStatus(status);
+
+      return {
+        allowed: Boolean(nextStatus),
+        nextStatus,
+      };
+    }
+
     return {
-      allowed: true,
-      nextStatus: STATUS_HR,
+      allowed: false,
+      nextStatus: null,
     };
   }
 
-  // Area Manager Approval
   if (
     status === STATUS_AREA &&
     isAreaManager(req) &&
@@ -483,7 +520,6 @@ const canApproveCurrentStage = (req, row) => {
     };
   }
 
-  // Regional Manager Approval
   if (
     status === STATUS_REGIONAL &&
     isRegionalManager(req) &&
@@ -495,7 +531,6 @@ const canApproveCurrentStage = (req, row) => {
     };
   }
 
-  // Assistant Vice President Approval
   if (
     status === STATUS_AVP &&
     isAssistantVicePresident(req) &&
@@ -507,7 +542,6 @@ const canApproveCurrentStage = (req, row) => {
     };
   }
 
-  // Vice President Approval
   if (
     status === STATUS_VP &&
     isVicePresident(req)
@@ -543,6 +577,22 @@ const upload = multer({
   storage,
   limits: { fileSize: 20 * 1024 * 1024 },
 });
+
+// =====================================================
+// REMOVE UPLOADED FILE WHEN REQUEST FAILS
+// =====================================================
+
+const removeUploadedFile = (file) => {
+  if (!file?.path) return;
+
+  try {
+    if (fs.existsSync(file.path)) {
+      fs.unlinkSync(file.path);
+    }
+  } catch (error) {
+    console.error("Failed to remove uploaded file:", error);
+  }
+};
 
 async function generateReportNo(client, reportType) {
   const now = new Date();
@@ -802,20 +852,27 @@ router.post(
         req,
         id,
         `
-        UPDATE public.awol_reports
-        SET
-          status = $2,
-          approved_by = $3,
-          approved_at = NOW(),
-          approved_attachment_path = $4,
-          approved_attachment_name = $5,
-          approved_attachment_mime = $6,
-          rejected_by = NULL,
-          rejected_at = NULL,
-          rejection_reason = NULL,
-          updated_at = NOW()
-        WHERE id = $1
-        RETURNING *
+          UPDATE public.awol_reports
+          SET
+            status = $2,
+
+            approved_by = $3,
+            approved_at = NOW(),
+
+            approved_attachment_path = $4,
+            approved_attachment_name = $5,
+            approved_attachment_mime = $6,
+
+            rejected_by = NULL,
+            rejected_at = NULL,
+            rejection_reason = NULL,
+
+            updated_at = NOW()
+
+          WHERE id = $1
+            AND status = $7
+
+          RETURNING *
         `,
         [
           id,
@@ -824,10 +881,20 @@ router.post(
           req.file.path,
           req.file.originalname,
           req.file.mimetype,
+          row.status,
         ],
         "Approved With File",
-        `Approved file uploaded: ${req.file.originalname}`
+        `Approved current stage: ${row.status}. Next stage: ${approval.nextStatus}. File: ${req.file.originalname}`
       );
+
+      if (r.rowCount === 0) {
+        removeUploadedFile(req.file);
+
+        return res.status(409).json({
+          message:
+            "Approval stage has changed. Please refresh and try again.",
+        });
+      }
 
       if (
         previousFile &&
@@ -841,8 +908,13 @@ router.post(
 
       return res.json(r.rows[0]);
     } catch (e) {
-      console.error("POST /api/awol-reports/:id/approve-upload ERROR:", e.message);
-      return res.status(500).json({ message: e.message || "Server error" });
+      removeUploadedFile(req.file);
+
+      console.error("POST /api/awol-reports/:id/approve-upload ERROR:", e);
+
+      return res.status(500).json({
+        message: e.message || "Server error",
+      });
     }
   }
 );
@@ -1128,17 +1200,34 @@ router.put(
             status = $2,
             approved_by = $3,
             approved_at = NOW(),
+
             rejected_by = NULL,
             rejected_at = NULL,
             rejection_reason = NULL,
+
             updated_at = NOW()
+
           WHERE id = $1
+            AND status = $4
+
           RETURNING *
         `,
-        [id, approval.nextStatus, req.user?.id ?? null],
+        [
+          id,
+          approval.nextStatus,
+          req.user?.id ?? null,
+          row.status,
+        ],
         "Approved",
-        "Report approved"
+        `Approved current stage: ${row.status}. Next stage: ${approval.nextStatus}`
       );
+
+      if (r.rowCount === 0) {
+        return res.status(409).json({
+          message:
+            "Approval stage has changed. Please refresh and try again.",
+        });
+      }
 
       return res.json(r.rows[0]);
     } catch (e) {
@@ -1226,7 +1315,7 @@ router.put(
             rejection_reason = $4,
             updated_at = NOW()
           WHERE id = $1
-            AND status NOT IN ($5, $6, $7)
+            AND status = $5
           RETURNING *
         `,
         [
@@ -1234,13 +1323,18 @@ router.put(
           STATUS_REJECTED,
           req.user?.id ?? null,
           reason,
-          STATUS_APPROVED,
-          STATUS_REJECTED,
-          STATUS_VOID,
+          row.status,
         ],
         "Rejected",
         reason
       );
+
+      if (r.rowCount === 0) {
+        return res.status(409).json({
+          message:
+            "Report status has changed. Please refresh and try again.",
+        });
+      }
 
       return res.json(r.rows[0]);
     } catch (e) {
@@ -1427,6 +1521,7 @@ router.put(
   requirePermission("staff_report", "approve"),
   async (req, res) => {
     try {
+
       if (!canBypassApprove(req)) {
         return res.status(403).json({
           message:
@@ -1437,10 +1532,71 @@ router.put(
       const id = toInt(req.params.id);
 
       if (!id) {
-        return res.status(400).json({ message: "Invalid report id" });
+        return res.status(400).json({
+          message: "Invalid report id",
+        });
       }
 
-      const r = await updateReportWithHistory(
+      const current = await pool.query(
+        `
+          SELECT *
+          FROM public.awol_reports
+          WHERE id = $1
+        `,
+        [id]
+      );
+
+      if (current.rowCount === 0) {
+        removeUploadedFile(req.file);
+
+        return res.status(404).json({
+          message: "Report not found",
+        });
+      }
+
+      const row = current.rows[0];
+
+      if (!canAccessRow(req, row)) {
+        return res.status(403).json({
+          message: "Access denied",
+        });
+      }
+
+      if (
+        [STATUS_APPROVED, STATUS_REJECTED, STATUS_VOID, STATUS_WAITING_FINAL,].includes(row.status)
+      ) {
+        return res.status(400).json({
+          message: `Report cannot be bypass-approved. Current status: ${row.status}`,
+        });
+      }
+
+      let nextStatus = null;
+
+      if (
+        norm(row.report_type) === "notice to explain"
+      ) {
+        nextStatus = getNextNTEApprovalStatus(
+          row.status
+        );
+      } else {
+        if (row.status === STATUS_HR) {
+          return res.status(400).json({
+            message:
+              "Report is already waiting for HR approval",
+          });
+        }
+
+        nextStatus = STATUS_HR;
+      }
+
+      if (!nextStatus) {
+        return res.status(400).json({
+          message:
+            `Invalid approval stage: ${row.status}`,
+        });
+      }
+
+      const result = await updateReportWithHistory(
         req,
         id,
         `
@@ -1449,39 +1605,42 @@ router.put(
             status = $2,
             approved_by = $3,
             approved_at = NOW(),
-            hr_uploaded_by = NULL,
-            hr_uploaded_at = NULL,
+
             rejected_by = NULL,
             rejected_at = NULL,
             rejection_reason = NULL,
+
             updated_at = NOW()
+
           WHERE id = $1
-            AND status NOT IN ($4, $5, $6, $7)
+            AND status = $4
+
           RETURNING *
         `,
-        [
-          id,
-          STATUS_HR,
-          req.user?.id ?? null,
-          STATUS_APPROVED,
-          STATUS_REJECTED,
-          STATUS_VOID,
-          STATUS_HR,
-        ],
+        [id, nextStatus, req.user?.id ?? null, row.status,],
         "Bypassed approval",
-        null
+        `Bypassed current stage: ${row.status}. Next stage: ${nextStatus}`
       );
 
-      if (r.rowCount === 0) {
-        return res.status(400).json({
-          message: "Report cannot be bypass-approved",
+      if (result.rowCount === 0) {
+        return res.status(409).json({
+          message: "Report approval stage has changed. Please refresh.",
         });
       }
 
-      return res.json(r.rows[0]);
-    } catch (e) {
-      console.error("PUT /api/awol-reports/:id/admin-bypass-approve ERROR:", e.message);
-      return res.status(500).json({ message: e.message || "Server error" });
+      return res.json(result.rows[0]);
+
+    } catch (error) {
+      console.error(
+        "PUT /api/awol-reports/:id/admin-bypass-approve ERROR:",
+        error
+      );
+
+      return res.status(500).json({
+        message:
+          error.message ||
+          "Failed to bypass approve report",
+      });
     }
   }
 );
@@ -1495,41 +1654,103 @@ router.post(
     try {
       if (!canUploadFinalFile(req)) {
         return res.status(403).json({
-          message:"Only HR/Audit/Accounting/Admin/IT can upload final file",
+          message:
+            "Only HR, Audit, Accounting, Admin, and IT can upload the final file",
         });
       }
 
       const id = toInt(req.params.id);
 
       if (!id) {
-        return res.status(400).json({ message: "Invalid report id" });
+        return res.status(400).json({
+          message: "Invalid report id",
+        });
       }
 
       if (!req.file) {
-        return res.status(400).json({ message: "Final file required" });
+        return res.status(400).json({
+          message: "Final file is required",
+        });
       }
 
-      const r = await updateReportWithHistory(
+      const current = await pool.query(
+        `
+          SELECT *
+          FROM public.awol_reports
+          WHERE id = $1
+        `,
+        [id]
+      );
+
+      if (current.rowCount === 0) {
+        removeUploadedFile(req.file);
+
+        return res.status(404).json({
+          message: "Report not found",
+        });
+      }
+
+      const row = current.rows[0];
+
+      if (!canAccessRow(req, row)) {
+        removeUploadedFile(req.file); 
+
+        return res.status(403).json({
+          message: "Access denied",
+        });
+      }
+
+      const isNTE =
+        norm(row.report_type) === "notice to explain";
+
+      if (isNTE && row.status !== STATUS_WAITING_FINAL) {
+        removeUploadedFile(req.file);
+
+        return res.status(400).json({
+          message:
+            "Notice to Explain must complete HR approval before final file upload",
+        });
+      }
+
+      // Preserve AWOL and Incident Report behavior.
+      if (
+        !isNTE &&
+        ![STATUS_HR, STATUS_WAITING_FINAL].includes(row.status)
+      ) {
+        return res.status(400).json({
+          message:
+            `Report cannot proceed to final upload. Current status: ${row.status}`,
+        });
+      }
+
+      const result = await updateReportWithHistory(
         req,
         id,
         `
-        UPDATE public.awol_reports
-        SET
-          status = $2,
-          hr_uploaded_by = $3,
-          hr_uploaded_at = NOW(),
-          approved_by = $3,
-          approved_at = NOW(),
-          approved_attachment_path = $4,
-          approved_attachment_name = $5,
-          approved_attachment_mime = $6,
-          rejected_by = NULL,
-          rejected_at = NULL,
-          rejection_reason = NULL,
-          updated_at = NOW()
-        WHERE id = $1
-          AND status IN ($7, $8)
-        RETURNING *
+          UPDATE public.awol_reports
+          SET
+            status = $2,
+
+            hr_uploaded_by = $3,
+            hr_uploaded_at = NOW(),
+
+            approved_by = $3,
+            approved_at = NOW(),
+
+            approved_attachment_path = $4,
+            approved_attachment_name = $5,
+            approved_attachment_mime = $6,
+
+            rejected_by = NULL,
+            rejected_at = NULL,
+            rejection_reason = NULL,
+
+            updated_at = NOW()
+
+          WHERE id = $1
+            AND status = $7
+
+          RETURNING *
         `,
         [
           id,
@@ -1538,23 +1759,34 @@ router.post(
           req.file.path,
           req.file.originalname,
           req.file.mimetype,
-          STATUS_WAITING_FINAL,
-          STATUS_HR,
-          ],
+          row.status,
+        ],
         "Final file uploaded and approved",
-        null
-      );  
+        `Final file uploaded: ${req.file.originalname}`
+      );
 
-      if (r.rowCount === 0) {
-        return res.status(400).json({
-          message: "Report must be waiting final file upload",
+      if (result.rowCount === 0) {
+        removeUploadedFile(req.file);
+
+        return res.status(409).json({
+          message:
+            "Report status has changed. Please refresh and try again.",
         });
       }
 
-      return res.json(r.rows[0]);
-    } catch (e) {
-      console.error("POST /api/awol-reports/:id/hr-final-file ERROR:", e.message);
-      return res.status(500).json({ message: e.message || "Server error" });
+      return res.json(result.rows[0]);
+    } catch (error) {
+      removeUploadedFile(req.file);
+
+      console.error(
+        "POST /api/awol-reports/:id/hr-final-file ERROR:",
+        error
+      );
+
+      return res.status(500).json({
+        message:
+          error.message || "Failed to upload final file",
+      });
     }
   }
 );
@@ -1592,6 +1824,8 @@ router.post(
         isAccountingDepartmentUser(req);
 
       if (!canUpload) {
+        removeUploadedFile(req.file);
+
         return res.status(403).json({
           message: "You are not authorized to upload Answer Letters",
         });
@@ -1613,6 +1847,7 @@ router.post(
       }
 
       const report = reportResult.rows[0];
+      const previousAnswerLetterPath = report.answer_letter_path;
 
       if (norm(report.report_type) !== "notice to explain") {
         return res.status(400).json({
@@ -1648,8 +1883,34 @@ router.post(
         ]
       );
 
+      if (result.rowCount === 0) {
+        removeUploadedFile(req.file);
+
+        return res.status(409).json({
+          message:
+            "Answer Letter could not be saved. Please refresh and try again.",
+        });
+      }
+
+      if (
+        previousAnswerLetterPath &&
+        previousAnswerLetterPath !== req.file.path &&
+        fs.existsSync(previousAnswerLetterPath)
+      ) {
+        try {
+          fs.unlinkSync(previousAnswerLetterPath);
+        } catch (error) {
+          console.error(
+            "Failed to remove previous Answer Letter:",
+            error
+          );
+        }
+      }
+
       return res.json(result.rows[0]);
     } catch (error) {
+      removeUploadedFile(req.file);
+
       console.error("UPLOAD ANSWER LETTER ERROR:", error);
 
       return res.status(500).json({

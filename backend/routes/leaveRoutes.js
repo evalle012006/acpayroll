@@ -109,6 +109,14 @@ const usesFullLeaveDepartmentChain = (department) =>
     norm(department)
   );
 
+const usesTreadITLeaveChain = (department) =>
+  [
+    "tread",
+    "tread department",
+    "it",
+    "it department",
+  ].includes(norm(department));
+
 const isHrDepartmentUser = (req) => {
   const department = norm(
     req.user?.department
@@ -537,27 +545,6 @@ const getNextStatusByDepartmentChain = async (department, roleKeys) => {
   return "Pending HR";
 };
 
-/*
-  Initial status depends on the creator role.
-
-  Branch Manager / lower:
-    Area Manager -> Regional Manager -> AVP -> VP -> HR
-
-  Area Manager:
-    Regional Manager -> AVP -> VP -> HR
-
-  Regional Manager:
-    AVP -> VP -> HR
-
-  AVP:
-    VP -> HR
-
-  VP:
-    SVP -> HR
-
-  SVP:
-    HR
-*/
 const getInitialStatusByDepartment = async (req, staff) => {
   const department = toStr(
     staff?.department
@@ -567,41 +554,34 @@ const getInitialStatusByDepartment = async (req, staff) => {
     staff?.position
   );
 
-  /*
-    =====================================================
-    NEW FULL DEPARTMENT CHAIN
-    =====================================================
+    if (usesTreadITLeaveChain(department)) {
 
-    Applies only to:
+      if (isSeniorVicePresidentPosition(position)) {
+        return "Pending HR";
+      }
 
-    - Audit Department
-    - TREAD Department
-    - Office of the President
-    - IT Department
-    - Accounting Department
-    - HR Department
+      if (
+        isAssistantVicePresidentPosition(position) ||
+        isVicePresidentPosition(position)
+      ) {
+        return await getNextStatusByDepartmentChain(
+          department,
+          ["senior_vice_president"]
+        );
+      }
 
-    Chain:
+      return await getNextStatusByDepartmentChain(
+        department,
+        ["assistant_vice_president"]
+      );
+    }
 
-    Branch Manager
-    -> Area Manager
-    -> Regional Manager
-    -> Assistant Vice President
-    -> Vice President
-    -> Senior Vice President
-    -> HR Department
-
-    Missing approver positions are skipped.
-  */
   if (
     usesFullLeaveDepartmentChain(
       department
     )
   ) {
-    /*
-      Senior Vice President applicant:
-      HR Department is the final approver.
-    */
+
     if (
       isSeniorVicePresidentPosition(
         position
@@ -610,10 +590,6 @@ const getInitialStatusByDepartment = async (req, staff) => {
       return "Pending HR";
     }
 
-    /*
-      Vice President applicant:
-      Senior Vice President, then HR.
-    */
     if (
       isVicePresidentPosition(
         position
@@ -627,10 +603,6 @@ const getInitialStatusByDepartment = async (req, staff) => {
       );
     }
 
-    /*
-      Assistant Vice President applicant:
-      Vice President -> SVP -> HR.
-    */
     if (
       isAssistantVicePresidentPosition(
         position
@@ -645,10 +617,6 @@ const getInitialStatusByDepartment = async (req, staff) => {
       );
     }
 
-    /*
-      Regional Manager applicant:
-      AVP -> VP -> SVP -> HR.
-    */
     if (
       isRegionalManagerPosition(
         position
@@ -664,10 +632,6 @@ const getInitialStatusByDepartment = async (req, staff) => {
       );
     }
 
-    /*
-      Area Manager applicant:
-      RM -> AVP -> VP -> SVP -> HR.
-    */
     if (
       isAreaManagerPosition(
         position
@@ -684,10 +648,6 @@ const getInitialStatusByDepartment = async (req, staff) => {
       );
     }
 
-    /*
-      Branch Manager applicant:
-      AM -> RM -> AVP -> VP -> SVP -> HR.
-    */
     if (
       isBranchManagerPosition(
         position
@@ -705,10 +665,6 @@ const getInitialStatusByDepartment = async (req, staff) => {
       );
     }
 
-    /*
-      Staff below Branch Manager:
-      BM -> AM -> RM -> AVP -> VP -> SVP -> HR.
-    */
     return await getNextStatusByDepartmentChain(
       department,
       [
@@ -721,15 +677,6 @@ const getInitialStatusByDepartment = async (req, staff) => {
       ]
     );
   }
-
-  /*
-    =====================================================
-    EXISTING FLOW FOR OTHER DEPARTMENTS
-    =====================================================
-
-    Operation Department and any department not listed
-    above keep the old approval flow.
-  */
 
   if (
     isSeniorVicePresident(req) ||
@@ -809,21 +756,47 @@ const getNextStatusAfterApproval = async (
     row.department
   );
 
-  /*
-    =====================================================
-    FULL CHAIN FOR SELECTED DEPARTMENTS
-    =====================================================
+    if (usesTreadITLeaveChain(department)) {
 
-    Branch Manager
-    -> Area Manager
-    -> Regional Manager
-    -> Assistant Vice President
-    -> Vice President
-    -> Senior Vice President
-    -> HR Department
+      if (
+        currentStatus ===
+        "Pending Assistant Vice President"
+      ) {
+        return "Pending HR";
+      }
 
-    Missing positions are skipped.
-  */
+      if (
+        currentStatus ===
+        "Pending Senior Vice President"
+      ) {
+        return "Pending HR";
+      }
+
+      if (
+        [
+          "Pending Branch Manager",
+          "Pending Area Manager",
+          "Pending Regional Manager",
+        ].includes(currentStatus)
+      ) {
+        return await getNextStatusByDepartmentChain(
+          department,
+          ["assistant_vice_president"]
+        );
+      }
+
+      if (
+        currentStatus === "Pending Vice President"
+      ) {
+        return await getNextStatusByDepartmentChain(
+          department,
+          ["senior_vice_president"]
+        );
+      }
+
+      return "Pending HR";
+    }
+
   if (
     usesFullLeaveDepartmentChain(
       department
@@ -908,12 +881,6 @@ const getNextStatusAfterApproval = async (
 
     return "Pending HR";
   }
-
-  /*
-    =====================================================
-    EXISTING FLOW FOR OPERATION AND OTHER DEPARTMENTS
-    =====================================================
-  */
 
   if (
     currentStatus ===
