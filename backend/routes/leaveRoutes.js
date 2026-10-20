@@ -39,10 +39,13 @@ const isRegionalManager = (req) =>
   ].includes(roleLower(req));
 
 const isAssistantVicePresident = (req) =>
-  roleLower(req) === "assistant vice president";
-const isVicePresident = (req) => roleLower(req) === "vice president";
+  ["assistant vice president", "avp"].includes(roleLower(req));
+
+const isVicePresident = (req) =>
+  ["vice president", "vp"].includes(roleLower(req));
+
 const isSeniorVicePresident = (req) =>
-  roleLower(req) === "senior vice president";
+  ["senior vice president", "svp"].includes(roleLower(req));
 const isPresident = (req) => roleLower(req) === "president";
 
 const getUserBranchCode = (req) => toStr(req.user?.branch_id);
@@ -556,25 +559,58 @@ const getInitialStatusByDepartment = async (req, staff) => {
 
     if (usesTreadITLeaveChain(department)) {
 
-      if (isSeniorVicePresidentPosition(position)) {
-        return "Pending HR";
-      }
+    if (isSeniorVicePresidentPosition(position)) {
+      return "Pending HR";
+    }
 
-      if (
-        isAssistantVicePresidentPosition(position) ||
-        isVicePresidentPosition(position)
-      ) {
-        return await getNextStatusByDepartmentChain(
-          department,
-          ["senior_vice_president"]
-        );
-      }
+    if (
+      isAssistantVicePresidentPosition(position) ||
+      isVicePresidentPosition(position)
+    ) {
+      return await getNextStatusByDepartmentChain(
+        department,
+        ["senior_vice_president"]
+      );
+    }
 
+    if (isRegionalManagerPosition(position)) {
       return await getNextStatusByDepartmentChain(
         department,
         ["assistant_vice_president"]
       );
     }
+
+    if (isAreaManagerPosition(position)) {
+      return await getNextStatusByDepartmentChain(
+        department,
+        [
+          "regional_manager",
+          "assistant_vice_president",
+        ]
+      );
+    }
+
+    if (isBranchManagerPosition(position)) {
+      return await getNextStatusByDepartmentChain(
+        department,
+        [
+          "area_manager",
+          "regional_manager",
+          "assistant_vice_president",
+        ]
+      );
+    }
+
+    return await getNextStatusByDepartmentChain(
+      department,
+      [
+        "branch_manager",
+        "area_manager",
+        "regional_manager",
+        "assistant_vice_president",
+      ]
+    );
+  }
 
   if (
     usesFullLeaveDepartmentChain(
@@ -758,44 +794,51 @@ const getNextStatusAfterApproval = async (
 
     if (usesTreadITLeaveChain(department)) {
 
-      if (
-        currentStatus ===
-        "Pending Assistant Vice President"
-      ) {
-        return "Pending HR";
-      }
-
-      if (
-        currentStatus ===
-        "Pending Senior Vice President"
-      ) {
-        return "Pending HR";
-      }
-
-      if (
+    if (currentStatus === "Pending Branch Manager") {
+      return await getNextStatusByDepartmentChain(
+        department,
         [
-          "Pending Branch Manager",
-          "Pending Area Manager",
-          "Pending Regional Manager",
-        ].includes(currentStatus)
-      ) {
-        return await getNextStatusByDepartmentChain(
-          department,
-          ["assistant_vice_president"]
-        );
-      }
+          "area_manager",
+          "regional_manager",
+          "assistant_vice_president",
+        ]
+      );
+    }
 
-      if (
-        currentStatus === "Pending Vice President"
-      ) {
-        return await getNextStatusByDepartmentChain(
-          department,
-          ["senior_vice_president"]
-        );
-      }
+    if (currentStatus === "Pending Area Manager") {
+      return await getNextStatusByDepartmentChain(
+        department,
+        [
+          "regional_manager",
+          "assistant_vice_president",
+        ]
+      );
+    }
 
+    if (currentStatus === "Pending Regional Manager") {
+      return await getNextStatusByDepartmentChain(
+        department,
+        ["assistant_vice_president"]
+      );
+    }
+
+    if (currentStatus === "Pending Assistant Vice President") {
       return "Pending HR";
     }
+
+    if (currentStatus === "Pending Vice President") {
+      return await getNextStatusByDepartmentChain(
+        department,
+        ["senior_vice_president"]
+      );
+    }
+
+    if (currentStatus === "Pending Senior Vice President") {
+      return "Pending HR";
+    }
+
+    return "Pending HR";
+  }
 
   if (
     usesFullLeaveDepartmentChain(

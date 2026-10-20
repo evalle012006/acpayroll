@@ -2,7 +2,48 @@ const jwt = require("jsonwebtoken");
 const pool = require("../db");
 
 const normalizeRole=(role)=>String(role||"").trim().toLowerCase();
-const normalizeDepartment=(v)=>String(v||"").trim().toLowerCase();
+const normalizeDepartment = (value) => {
+  const department = String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ");
+
+  const aliases = {
+    "it": "it",
+    "it department": "it",
+    "information technology": "it",
+    "information technology department": "it",
+
+    "tread": "tread",
+    "tread department": "tread",
+
+    "hr": "hr",
+    "hr department": "hr",
+    "human resources": "hr",
+    "human resources department": "hr",
+
+    "accounting": "accounting",
+    "accounting department": "accounting",
+
+    "operation": "operation",
+    "operations": "operation",
+    "operation department": "operation",
+    "operations department": "operation",
+
+    "audit": "audit",
+    "audit department": "audit",
+
+    "production & logistic": "production & logistic",
+    "production & logistic department": "production & logistic",
+    "production and logistic": "production & logistic",
+    "production and logistic department": "production & logistic",
+
+    "office of the president": "office of the president",
+    "office of the president department": "office of the president",
+  };
+
+  return aliases[department] || department;
+};
 
 const getBearerToken=(req)=>{
   const header=req.headers.authorization||req.headers.Authorization||"";

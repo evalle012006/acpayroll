@@ -107,9 +107,21 @@ export default function LeaveTransactions() {
     "acting regional manager",
   ].includes(role);
   
-  const isAssistantVicePresident = role === "assistant vice president";
-  const isVicePresident = role === "vice president";
-  const isSeniorVicePresident = role === "senior vice president";
+  const isAssistantVicePresident = [
+    "assistant vice president",
+    "avp",
+  ].includes(role);
+
+  const isVicePresident = [
+    "vice president",
+    "vp",
+  ].includes(role);
+
+  const isSeniorVicePresident = [
+    "senior vice president",
+    "svp",
+  ].includes(role);
+  
   const isPresident = role === "president";
 
   const canManageLeaveAdministration =
@@ -1310,7 +1322,8 @@ export default function LeaveTransactions() {
               <span>Approval Flow</span>
 
               <strong>
-                BM → AM → RM → AVP → VP → HR Final
+                Approval stages depend on department and applicant position.
+                Unavailable approvers are skipped. HR Final.
               </strong>
             </div>
           </div>
