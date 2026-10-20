@@ -1,29 +1,26 @@
+//bonusComputationRoutes.js
+
 const express = require("express");
 const router = express.Router();
 const pool = require("../db");
-
 const { requireAuth } = require("../middlewares/authMiddleware");
 
 /* =========================================================
    HELPERS
 ========================================================= */
 
-const toInt = (v) => {
-  const n = Number(v);
+const toInt = (v) => {const n = Number(v);
   return Number.isFinite(n) ? Math.trunc(n) : null;
 };
 
-const toNum = (v) => {
-  const n = Number(v ?? 0);
+const toNum = (v) => { const n = Number(v ?? 0);
   return Number.isFinite(n) ? n : 0;
 };
 
 const validYear = (v) => {
   const year = toInt(v);
 
-  if (!year || year < 2000 || year > 2100) {
-    return null;
-  }
+  if (!year || year < 2000 || year > 2100) {return null;}
 
   return year;
 };
@@ -50,18 +47,150 @@ const toDateOnlyUtc = (value) => {
 };
 
 /* =========================================================
-   GET BONUS COMPUTATION EMPLOYEE LIST
-   GET /api/bonus-computations?year=2026
-
-   Returns:
-   - Employee information
-   - Salary
-   - ECOLA
-   - Total Gross
-   - Yearly 13th Month total
-   - Yearly 14th Month total
-   - Yearly 15th Month total
+   BONUS COMPUTATION HELPERS
 ========================================================= */
+
+const normalizeText = (value) => String(value ?? "").trim().toLowerCase();
+const getDaysInMonth = (year, month) => new Date(Date.UTC(year, month, 0)).getUTCDate();
+const getDateString = (year, month, day) => [year, String(month).padStart(2, "0"), String(day).padStart(2, "0"),].join("-");
+const roundMoney = (value) => Math.round((Number(value) + Number.EPSILON) * 100) / 100;
+const canManageBonus = (req) => {
+  const role = normalizeText(req.user?.role);
+  const department = normalizeText(req.user?.department || req.user?.department_name);
+
+  return (
+    role === "admin" ||
+    role === "it" ||
+    department === "hr" ||
+    department === "hr department" ||
+    department === "accounting" ||
+    department === "accounting department"
+  );
+};
+
+const requireBonusManager = (req, res, next) => {
+  if (!canManageBonus(req)) {
+    return res.status(403).json({message: "You do not have permission to manage bonus computations.",});
+  }
+
+  next();
+};
+
+const computeMonthlyCompensation = ({
+  year, month, startDate, exitDate, salaryHistory,
+}) => {
+  const daysInMonth = getDaysInMonth(year, month);
+
+  let totalCompensation = 0;
+
+  for (let day = 1; day <= daysInMonth; day += 1) {
+    const currentDate = getDateString(year, month, day);
+
+    if (currentDate < startDate) {continue;}
+    if (exitDate && currentDate > exitDate) {continue;}
+
+    let applicableSalary = null;
+
+    for (const history of salaryHistory) {
+      const effectiveDate = toDateOnlyUtc(
+        history.effective_date
+      );
+
+      if (effectiveDate <= currentDate) {
+        applicableSalary = history;
+      } else {
+        break;
+      }
+    }
+
+    if (!applicableSalary) {
+      return {
+        valid: false,
+        reason: `Missing applicable Salary History for ${currentDate}.`,
+      };
+    }
+
+    const basicSalary = toNum(applicableSalary.salary);
+    const ecola = toNum(applicableSalary.ecola);
+
+    totalCompensation +=
+      (basicSalary + ecola) / daysInMonth;
+  }
+
+  return {
+    valid: true,
+    totalCompensation: roundMoney(totalCompensation),
+  };
+};
+
+const loadSuspensionDeductions = async (client, staffId, year) => {
+  const result = await client.query(
+    `
+      SELECT
+        EXTRACT(
+          MONTH FROM so.end_date
+        )::integer AS month,
+
+        COALESCE(
+          SUM(
+            COALESCE(so.prorated_salary, 0)
+          ),
+          0
+        )::numeric AS salary_deduction,
+
+        COALESCE(
+          SUM(
+            COALESCE(so.prorated_ecola, 0)
+          ),
+          0
+        )::numeric AS ecola_deduction
+
+      FROM public.suspension_orders so
+
+      WHERE so.employee_id = $1
+
+        AND LOWER(
+          TRIM(COALESCE(so.status, ''))
+        ) = 'received'
+
+        AND so.end_date >= make_date($2, 1, 1)
+
+        AND so.end_date < make_date($2 + 1, 1, 1)
+
+      GROUP BY
+        EXTRACT(MONTH FROM so.end_date)
+
+      ORDER BY
+        month ASC;
+    `,
+    [staffId, year]
+  );
+
+  const deductionsByMonth = new Map();
+
+  for (const row of result.rows) {
+    const month = Number(row.month);
+
+    const salaryDeduction = roundMoney(
+      row.salary_deduction
+    );
+
+    const ecolaDeduction = roundMoney(
+      row.ecola_deduction
+    );
+
+    deductionsByMonth.set(month, {
+      salaryDeduction,
+      ecolaDeduction,
+
+      totalDeduction: roundMoney(
+        salaryDeduction + ecolaDeduction
+      ),
+    });
+  }
+
+  return deductionsByMonth;
+};
 
 router.get("/", requireAuth, async (req, res) => {
   try {
@@ -170,30 +299,15 @@ router.get("/", requireAuth, async (req, res) => {
       rows: result.rows,
     });
   } catch (err) {
-    console.error(
-      "GET /bonus-computations ERROR:",
-      err?.message
-    );
+    console.error("GET /bonus-computations ERROR:", err?.message);
 
     return res.status(500).json({
-      message:
-        err?.message ||
-        "Failed to load bonus computations.",
+      message: err?.message || "Failed to load bonus computations.",
     });
   }
 });
 
-/* =========================================================
-   GET ONE EMPLOYEE MONTHLY BONUS
-   GET /api/bonus-computations/staff/:staffId?year=2026
-
-   Always returns January - December.
-========================================================= */
-
-router.get(
-  "/staff/:staffId",
-  requireAuth,
-  async (req, res) => {
+router.get("/staff/:staffId", requireAuth, async (req, res) => {
     try {
       const staffId = toInt(req.params.staffId);
       const year = validYear(req.query?.year);
@@ -257,7 +371,8 @@ router.get(
           deductions,
           month_13,
           month_14,
-          month_15
+          month_15,
+          is_manual_override
         FROM public.bonus_computations
         WHERE staff_id = $1
           AND computation_year = $2
@@ -280,20 +395,22 @@ router.get(
 
         months.push({
           month,
+          exists: Boolean(saved),
           total_compensation: toNum(
             saved?.total_compensation
           ),
+
           deductions: toNum(saved?.deductions),
           month_13: toNum(saved?.month_13),
           month_14: toNum(saved?.month_14),
           month_15: toNum(saved?.month_15),
+          is_manual_override:
+            saved?.is_manual_override === true,
         });
       }
 
       return res.json({
-        year,
-        staff: staffResult.rows[0],
-        months,
+        year, staff: staffResult.rows[0], months,
       });
     } catch (err) {
       console.error(
@@ -310,25 +427,8 @@ router.get(
   }
 );
 
-/* =========================================================
-   GENERATE / RECALCULATE YEAR
-   POST /api/bonus-computations/recalculate
-
-   Rules:
-   - Uses Salary History as source of Salary + ECOLA
-   - Respects employee deployment date
-   - Creates January - December rows
-   - Preserves existing deductions
-   - 13th Month = monthly eligible compensation / 12
-   - 14th Month = same as 13th Month
-   - 15th Month Base = same as 13th Month
-========================================================= */
-
-router.post(
-  "/recalculate",
-  requireAuth,
-  async (req, res) => {
-    const client = await pool.connect();
+router.post("/recalculate", requireAuth, requireBonusManager, async (req, res) => {
+    let client;
 
     try {
       const year = validYear(req.body?.year);
@@ -339,220 +439,187 @@ router.post(
         });
       }
 
+      client = await pool.connect();
+
       await client.query("BEGIN");
 
-      /* =====================================================
-         LOAD STAFF
-      ===================================================== */
-
-      const staffResult = await client.query(
-        `
-          SELECT
-            s.id AS staff_id,
-
-            TRIM(
-              COALESCE(s.employee_no, '')
-            ) AS employee_no,
-
-            s.start_date,
-
-            COALESCE(
-              s.salary,
-              0
-            )::numeric AS salary,
-
-            COALESCE(
-              s.ecola,
-              0
-            )::numeric AS ecola
-
-          FROM public.staff s
-
-          WHERE TRIM(
-            COALESCE(s.employee_no, '')
-          ) <> ''
-
-          ORDER BY s.id ASC;
-        `
-      );
+      const staffResult = await client.query(`
+        SELECT
+          s.id AS staff_id,
+          TRIM(COALESCE(s.employee_no, '')) AS employee_no,
+          s.fullname,
+          s.status,
+          s.start_date,
+          s.exit_date
+        FROM public.staff s
+        WHERE TRIM(COALESCE(s.employee_no, '')) <> ''
+        ORDER BY s.id ASC;
+      `);
 
       let processedStaff = 0;
       let processedMonths = 0;
+      let protectedMonths = 0;
 
-      /* =====================================================
-         PROCESS EACH STAFF
-      ===================================================== */
+      const skippedStaff = [];
 
       for (const staff of staffResult.rows) {
-        const staffId =
-          toInt(staff.staff_id);
+        const staffId = toInt(staff.staff_id);
 
-        const employeeNo =
-          String(
-            staff.employee_no || ""
-          ).trim();
+        await client.query(
+          `
+            SELECT pg_advisory_xact_lock(
+              hashtext('bonus_computation'),
+              hashtext($1::text || ':' || $2::text)
+            );
+          `,
+          [staffId, year]
+        );
 
-        if (!staffId || !employeeNo) {
+        const employeeNo = String(
+          staff.employee_no || ""
+        ).trim();
+
+        const startDate = toDateOnlyUtc(staff.start_date);
+        const exitDate = toDateOnlyUtc(staff.exit_date);
+        const status = normalizeText(staff.status);
+
+        /* ===============================================
+           VALIDATE EMPLOYMENT DATES
+        =============================================== */
+
+        if (!startDate) {
+          skippedStaff.push({
+            staff_id: staffId,
+            employee_no: employeeNo,
+            fullname: staff.fullname,
+            reason: "Missing employment start date.",
+          });
+
           continue;
         }
 
-        const startDate =
-          toDateOnlyUtc(
-            staff.start_date
-          );
+        if (
+          status === "inactive" &&
+          !exitDate
+        ) {
+          skippedStaff.push({
+            staff_id: staffId,
+            employee_no: employeeNo,
+            fullname: staff.fullname,
+            reason:
+              "Inactive employee has no exit date.",
+          });
 
-        /* ===================================================
+          continue;
+        }
+
+        if (
+          status === "active" &&
+          exitDate
+        ) {
+          skippedStaff.push({
+            staff_id: staffId,
+            employee_no: employeeNo,
+            fullname: staff.fullname,
+            reason:
+              "Active employee has an exit date. Please verify.",
+          });
+
+          continue;
+        }
+
+        if (
+          exitDate &&
+          exitDate < startDate
+        ) {
+          skippedStaff.push({
+            staff_id: staffId,
+            employee_no: employeeNo,
+            fullname: staff.fullname,
+            reason:
+              "Exit date is earlier than start date.",
+          });
+
+          continue;
+        }
+
+        /* ===============================================
            LOAD SALARY HISTORY
+        =============================================== */
 
-           We include history before the selected year because
-           the latest previous salary remains effective until
-           another Salary History record replaces it.
-        =================================================== */
+        const historyResult = await client.query(
+          `
+          SELECT
+            id,
+            effective_date,
+            COALESCE(salary, 0)::numeric AS salary,
+            COALESCE(ecola, 0)::numeric AS ecola,
+            created_at
+          FROM public.salary_history
+          WHERE TRIM(employee_no) = $1
+            AND effective_date <= make_date($2, 12, 31)
+          ORDER BY
+            effective_date ASC,
+            created_at ASC,
+            id ASC;
+          `,
+          [employeeNo, year]
+        );
 
-        const historyResult =
-          await client.query(
-            `
-              SELECT
-                id,
+        const salaryHistory = historyResult.rows;
 
-                TRIM(employee_no)
-                  AS employee_no,
+        if (salaryHistory.length === 0) {
+          skippedStaff.push({
+            staff_id: staffId,
+            employee_no: employeeNo,
+            fullname: staff.fullname,
+            reason:
+              "No Salary History available.",
+          });
 
-                effective_date,
+          continue;
+        }
 
-                COALESCE(
-                  salary,
-                  0
-                )::numeric AS salary,
-
-                COALESCE(
-                  ecola,
-                  0
-                )::numeric AS ecola,
-
-                created_at
-
-              FROM public.salary_history
-
-              WHERE TRIM(employee_no) = $1
-
-                AND effective_date <=
-                  make_date($2, 12, 31)
-
-              ORDER BY
-                effective_date ASC,
-                created_at ASC,
-                id ASC;
-            `,
-            [
-              employeeNo,
-              year,
-            ]
-          );
-
-        const salaryHistory =
-          historyResult.rows;
-
-        /* ===================================================
-           JANUARY - DECEMBER
-        =================================================== */
+        const suspensionDeductions = await loadSuspensionDeductions(client, staffId, year);
+        const computedMonths = [];
+        let computationError = null;
 
         for (
           let month = 1;
           month <= 12;
           month += 1
         ) {
-          const monthEnd =
-            new Date(
-              Date.UTC(
-                year,
-                month,
-                0
-              )
-            )
-              .toISOString()
-              .slice(0, 10);
+          const result = computeMonthlyCompensation({
+            year, month, startDate, exitDate, salaryHistory,
+          });
 
-          let totalCompensation = 0;
-
-          /* ===============================================
-             EMPLOYEE MUST ALREADY BE DEPLOYED
-          =============================================== */
-
-          const isDeployed =
-            !startDate ||
-            startDate <= monthEnd;
-
-          if (isDeployed) {
-            let applicableHistory = null;
-
-            /*
-             * Find the latest Salary History effective
-             * on or before this month's ending date.
-             */
-            for (
-              const history of salaryHistory
-            ) {
-              const effectiveDate =
-                toDateOnlyUtc(
-                  history.effective_date
-                );
-
-              if (!effectiveDate) {
-                continue;
-              }
-
-              if (
-                effectiveDate <= monthEnd
-              ) {
-                applicableHistory =
-                  history;
-              } else {
-                break;
-              }
-            }
-
-            /*
-             * Salary History is the preferred source.
-             *
-             * If there is no Salary History yet,
-             * use current staff Salary + ECOLA.
-             */
-            if (applicableHistory) {
-              totalCompensation =
-                toNum(
-                  applicableHistory.salary
-                ) +
-                toNum(
-                  applicableHistory.ecola
-                );
-            } else {
-              totalCompensation =
-                toNum(staff.salary) +
-                toNum(staff.ecola);
-            }
+          if (!result.valid) {
+            computationError = result.reason;
+            break;
           }
 
-          /*
-           * Each month's share.
-           *
-           * Example:
-           * ₱20,000 / 12
-           * = ₱1,666.666...
-           *
-           * The yearly SUM becomes ₱20,000.
-           */
-          const monthlyBonusShare =
-            totalCompensation / 12;
+          const totalCompensation = result.totalCompensation;
+          const suspension = suspensionDeductions.get(month);
+          const deductions = roundMoney(suspension?.totalDeduction ?? 0);
+          const adjustedCompensation = roundMoney(Math.max(0, totalCompensation - deductions));
+          const monthlyBonusShare = roundMoney(adjustedCompensation / 12);
 
-          /* ===============================================
-             UPSERT BONUS COMPUTATION
+          computedMonths.push({month, totalCompensation, deductions, monthlyBonusShare,});
+        }
 
-             IMPORTANT:
-             Existing deductions are NOT overwritten.
-          =============================================== */
+        if (computationError) {
+          skippedStaff.push({
+            staff_id: staffId,
+            employee_no: employeeNo,
+            fullname: staff.fullname,
+            reason: computationError,
+          });
 
-          await client.query(
+          continue;
+        }
+
+        for (const item of computedMonths) {
+          const result = await client.query(
             `
               INSERT INTO public.bonus_computations
               (
@@ -564,6 +631,10 @@ router.post(
                 month_13,
                 month_14,
                 month_15,
+                manual_base_month_13,
+                manual_base_month_14,
+                manual_base_month_15,
+                is_manual_override,
                 created_by,
                 updated_by,
                 created_at,
@@ -571,57 +642,110 @@ router.post(
               )
               VALUES
               (
-                $1,
-                $2,
-                $3,
-                $4,
-                0,
+                $1, $2, $3, $4,
                 $5,
-                $5,
-                $5,
-                $6,
-                $6,
-                NOW(),
-                NOW()
+                $6, $6, $6,
+                NULL, NULL, NULL,
+                FALSE,
+                $7, $7,
+                NOW(), NOW()
               )
 
               ON CONFLICT
-              (
-                staff_id,
-                computation_year,
-                computation_month
-              )
+                (staff_id, computation_year, computation_month)
 
               DO UPDATE SET
+
                 total_compensation =
-                  EXCLUDED.total_compensation,
+                  CASE
+                    WHEN bonus_computations.is_manual_override = TRUE
+                    THEN bonus_computations.total_compensation
+                    ELSE EXCLUDED.total_compensation
+                  END,
+
+                deductions = EXCLUDED.deductions,
 
                 month_13 =
-                  EXCLUDED.month_13,
+                  CASE
+                    WHEN bonus_computations.is_manual_override = TRUE
+                    THEN GREATEST(
+                      0,
+                      COALESCE(
+                        bonus_computations.manual_base_month_13,
+                        bonus_computations.month_13
+                      ) - ROUND(EXCLUDED.deductions / 12.0, 2)
+                    )
+                    ELSE EXCLUDED.month_13
+                  END,
 
                 month_14 =
-                  EXCLUDED.month_14,
+                  CASE
+                    WHEN bonus_computations.is_manual_override = TRUE
+                    THEN GREATEST(
+                      0,
+                      COALESCE(
+                        bonus_computations.manual_base_month_14,
+                        bonus_computations.month_14
+                      ) - ROUND(EXCLUDED.deductions / 12.0, 2)
+                    )
+                    ELSE EXCLUDED.month_14
+                  END,
 
                 month_15 =
-                  EXCLUDED.month_15,
+                  CASE
+                    WHEN bonus_computations.is_manual_override = TRUE
+                    THEN GREATEST(
+                      0,
+                      COALESCE(
+                        bonus_computations.manual_base_month_15,
+                        bonus_computations.month_15
+                      ) - ROUND(EXCLUDED.deductions / 12.0, 2)
+                    )
+                    ELSE EXCLUDED.month_15
+                  END,
 
-                updated_by =
-                  EXCLUDED.updated_by,
+                manual_base_month_13 =
+                  CASE
+                    WHEN bonus_computations.is_manual_override = TRUE
+                    THEN bonus_computations.manual_base_month_13
+                    ELSE NULL
+                  END,
 
-                updated_at =
-                  NOW();
+                manual_base_month_14 =
+                  CASE
+                    WHEN bonus_computations.is_manual_override = TRUE
+                    THEN bonus_computations.manual_base_month_14
+                    ELSE NULL
+                  END,
+
+                manual_base_month_15 =
+                  CASE
+                    WHEN bonus_computations.is_manual_override = TRUE
+                    THEN bonus_computations.manual_base_month_15
+                    ELSE NULL
+                  END,
+
+                updated_by = EXCLUDED.updated_by,
+                updated_at = NOW()
+
+              RETURNING id;
             `,
             [
               staffId,
               year,
-              month,
-              totalCompensation,
-              monthlyBonusShare,
+              item.month,
+              item.totalCompensation,
+              item.deductions,
+              item.monthlyBonusShare,
               req.user?.id ?? null,
             ]
           );
 
-          processedMonths += 1;
+          if (result.rowCount > 0) {
+            processedMonths += 1;
+          } else {
+            protectedMonths += 1;
+          }
         }
 
         processedStaff += 1;
@@ -630,66 +754,41 @@ router.post(
       await client.query("COMMIT");
 
       return res.json({
-        message:
-          `Bonus computations for ${year} generated successfully.`,
-
+        message: `Bonus computations for ${year} processed successfully.`,
         year,
-
-        staff_processed:
-          processedStaff,
-
-        months_processed:
-          processedMonths,
+        staff_processed: processedStaff,
+        months_processed: processedMonths,
+        protected_months: protectedMonths,
+        skipped_staff_count: skippedStaff.length,
+        skipped_staff: skippedStaff,
       });
     } catch (err) {
-      try {
-        await client.query(
-          "ROLLBACK"
-        );
-      } catch {
-        // Ignore rollback error.
+      if (client) {
+        try {
+          await client.query("ROLLBACK");
+        } catch (rollbackError) {
+          console.error(
+            "Bonus computation rollback error:",
+            rollbackError
+          );
+        }
       }
 
-      console.error(
-        "POST /bonus-computations/recalculate ERROR:",
-        err?.message
-      );
+      console.error("POST /bonus-computations/recalculate ERROR:", err);
 
       return res.status(500).json({
-        message:
-          err?.message ||
-          "Failed to generate bonus computations.",
+        message: err?.message || "Failed to generate bonus computations.",
       });
     } finally {
-      client.release();
+      if (client) {
+        client.release();
+      }
     }
   }
 );
 
-/* =========================================================
-   SAVE JANUARY - DECEMBER
-   PUT /api/bonus-computations/staff/:staffId
-
-   Body:
-    {
-      "year": 2026,
-      "months": [
-        {
-          "month": 1,
-          "deductions": 0
-        }
-      ]
-    }
-
-  Salary + ECOLA, 13th Month, 14th Month,
-  and 15th Month Base are calculated by the backend.
-========================================================= */
-
-router.put(
-  "/staff/:staffId",
-  requireAuth,
-  async (req, res) => {
-    const client = await pool.connect();
+router.put("/staff/:staffId", requireAuth, requireBonusManager, async (req, res) => {
+    let client;
 
     try {
       const staffId = toInt(req.params.staffId);
@@ -699,7 +798,7 @@ router.put(
         ? req.body.months
         : [];
 
-      if (!staffId) {
+      if (!staffId || staffId <= 0) {
         return res.status(400).json({
           message: "Invalid staff id.",
         });
@@ -711,155 +810,278 @@ router.put(
         });
       }
 
-      if (months.length !== 12) {
+      if (months.length < 1 || months.length > 12) {
         return res.status(400).json({
-          message:
-            "January through December are required.",
+          message: "Provide between 1 and 12 edited months.",
         });
       }
-
-      /* =====================================================
-         NORMALIZE MANUAL VALUES
-
-         Editable:
-         - Total Compensation
-         - Deductions
-         - 13th Month
-
-         Read only:
-         - 14th Month = 13th Month
-         - 15th Month = 13th Month
-      ===================================================== */
 
       const normalizedMonths = [];
 
       for (const item of months) {
-        const month = toInt(item?.month);
-
-        const totalCompensation = toNum(
-          item?.total_compensation
-        );
-
-        const deductions = toNum(
-          item?.deductions
-        );
-
-        const month13 = toNum(
-          item?.month_13
-        );
+        const month = Number(item?.month);
+        const totalCompensation = Number(item?.total_compensation);
+        const month13 = Number(item?.month_13);
+        const original = item?.original;
 
         if (
-          !month ||
+          !Number.isInteger(month) ||
           month < 1 ||
           month > 12
         ) {
           return res.status(400).json({
-            message:
-              "Invalid computation month.",
+            message: "Invalid computation month.",
           });
         }
 
         if (
+          !Number.isFinite(totalCompensation) ||
+          !Number.isFinite(month13) ||
           totalCompensation < 0 ||
-          deductions < 0 ||
           month13 < 0
         ) {
           return res.status(400).json({
+            message: `Invalid amounts for month ${month}.`,
+          });
+        }
+
+        if (
+          !original ||
+          typeof original !== "object" ||
+          typeof original.exists !== "boolean" ||
+          typeof original.is_manual_override !== "boolean"
+        ) {
+          return res.status(400).json({
             message:
-              "Computation amounts cannot be negative.",
+              `Original computation snapshot is required ` +
+              `for month ${month}.`,
+          });
+        }
+
+        const originalValues = {
+          exists: original.exists,
+          total_compensation: Number(
+            original.total_compensation
+          ),
+          deductions: Number(original.deductions),
+          month_13: Number(original.month_13),
+          month_14: Number(original.month_14),
+          month_15: Number(original.month_15),
+          is_manual_override: original.is_manual_override,
+        };
+
+        if (
+          ![
+            originalValues.total_compensation,
+            originalValues.deductions,
+            originalValues.month_13,
+            originalValues.month_14,
+            originalValues.month_15,
+          ].every(
+            (value) =>
+              Number.isFinite(value) && value >= 0
+          )
+        ) {
+          return res.status(400).json({
+            message:
+              `Invalid original computation values ` +
+              `for month ${month}.`,
           });
         }
 
         normalizedMonths.push({
           month,
 
-          total_compensation:
-            totalCompensation,
-
-          deductions,
-
-          month_13: month13,
-
-          // 14th and 15th always follow 13th.
-          month_14: month13,
-          month_15: month13,
+          total_compensation: roundMoney(totalCompensation),
+          month_13: roundMoney(month13),
+          original: 
+            {
+              exists: originalValues.exists,
+              total_compensation: roundMoney(originalValues.total_compensation),
+              deductions: roundMoney(originalValues.deductions),
+              month_13: roundMoney(originalValues.month_13),
+              month_14: roundMoney(originalValues.month_14),
+              month_15: roundMoney(originalValues.month_15),
+              is_manual_override:originalValues.is_manual_override,
+            },
         });
       }
 
       const uniqueMonths = new Set(
-        normalizedMonths.map(
-          (item) => item.month
-        )
+        normalizedMonths.map((item) => item.month)
       );
 
-      if (uniqueMonths.size !== 12) {
+      if (uniqueMonths.size !== normalizedMonths.length) {
         return res.status(400).json({
-          message:
-            "Each month from January to December must appear exactly once.",
+          message: "Duplicate computation months are not allowed.",
         });
       }
 
-      /* =====================================================
-         LOAD STAFF
-      ===================================================== */
+      client = await pool.connect();
+
+      await client.query("BEGIN");
+      await client.query(
+        `
+          SELECT pg_advisory_xact_lock(
+            hashtext('bonus_computation'),
+            hashtext($1::text || ':' || $2::text)
+          );
+        `,
+        [staffId, year]
+      );
 
       const staffCheck = await client.query(
         `
-          SELECT
-            id,
-            TRIM(
-              COALESCE(employee_no, '')
-            ) AS employee_no,
-            start_date,
-            regularization_date,
-            COALESCE(salary, 0)::numeric
-              AS salary,
-            COALESCE(ecola, 0)::numeric
-              AS ecola
-
+          SELECT id
           FROM public.staff
-
           WHERE id = $1
-
           LIMIT 1;
         `,
         [staffId]
       );
 
       if (staffCheck.rowCount === 0) {
+        await client.query("ROLLBACK");
+
         return res.status(404).json({
           message: "Staff not found.",
         });
       }
 
-      const staff = staffCheck.rows[0];
+      const suspensionDeductions =
+        await loadSuspensionDeductions(
+          client,
+          staffId,
+          year
+        );
 
-      if (!staff.employee_no) {
-        return res.status(400).json({
+      const requestedMonthNumbers = normalizedMonths.map((item) => item.month);
+      const existingResult = await client.query(
+        `
+          SELECT
+            computation_month,
+            total_compensation,
+            deductions,
+            month_13,
+            month_14,
+            month_15,
+            is_manual_override
+          FROM public.bonus_computations
+          WHERE staff_id = $1
+            AND computation_year = $2
+            AND computation_month = ANY($3::int[])
+          ORDER BY computation_month
+          FOR UPDATE;
+        `,
+        [staffId, year, requestedMonthNumbers]
+      );
+
+      const existingMap = new Map(
+        existingResult.rows.map((row) => [
+          Number(row.computation_month),
+          row,
+        ])
+      );
+
+      const conflicts = [];
+
+      for (const item of normalizedMonths) {
+        const existing = existingMap.get(item.month);
+        const original = item.original;
+
+        if (!existing) {
+          if (original.exists) {
+            conflicts.push(item.month);
+          }
+
+          continue;
+        }
+
+        if (!original.exists) {
+          conflicts.push(item.month);
+          continue;
+        }
+
+        const changedSinceLoaded =
+          roundMoney(existing.total_compensation) !==
+            original.total_compensation ||
+          roundMoney(existing.deductions) !==
+            original.deductions ||
+          roundMoney(existing.month_13) !==
+            original.month_13 ||
+          roundMoney(existing.month_14) !==
+            original.month_14 ||
+          roundMoney(existing.month_15) !==
+            original.month_15 ||
+          existing.is_manual_override !==
+            original.is_manual_override;
+
+        if (changedSinceLoaded) {
+          conflicts.push(item.month);
+        }
+      }
+
+      if (conflicts.length > 0) {
+        await client.query("ROLLBACK");
+
+        return res.status(409).json({
           message:
-            "Staff employee number is required for bonus computation.",
+            "Another user has modified one or more selected " +
+            "months. Reload the employee computation before saving.",
+          conflict_months: conflicts,
         });
       }
 
-      await client.query("BEGIN");
+      let updatedMonths = 0;
+      let unchangedMonths = 0;
 
-      /* =====================================================
-         SAVE BONUS COMPUTATION
+      for (const item of normalizedMonths) {
+        const existing = existingMap.get(item.month);
 
-         IMPORTANT:
-         We save exactly the manually submitted:
-         - Total Compensation
-         - Deductions
-         - 13th Month
+        const deductions = roundMoney(
+          suspensionDeductions.get(item.month)?.totalDeduction ?? 0
+        );
 
-         Then:
-         - 14th = 13th
-         - 15th = 13th
-      ===================================================== */
+        const originalDeductions = roundMoney(
+          item.original.deductions
+        );
 
-      for (
-        const item of normalizedMonths
-      ) {
+        if (deductions !== originalDeductions) {
+          await client.query("ROLLBACK");
+
+          return res.status(409).json({
+            message:
+              `Suspension deductions for month ${item.month} ` +
+              `have changed. Please reload the employee's ` +
+              `bonus computation before saving.`,
+
+            conflict_months: [item.month],
+          });
+        }
+
+        const changed =
+          !existing ||
+          roundMoney(existing.total_compensation) !==
+            item.total_compensation ||
+          roundMoney(existing.deductions) !==
+            deductions ||
+          roundMoney(existing.month_13) !==
+            item.month_13 ||
+          roundMoney(existing.month_14) !==
+            item.month_13 ||
+          roundMoney(existing.month_15) !==
+            item.month_13;
+
+        if (!changed) {
+          unchangedMonths += 1;
+          continue;
+        }
+
+        const suspensionAdjustment = roundMoney(deductions / 12);
+        const manualBase13 = roundMoney(item.month_13 + suspensionAdjustment);
+        const manualBase14 = roundMoney(item.month_13 + suspensionAdjustment);
+        const manualBase15 = roundMoney(item.month_13 + suspensionAdjustment);
+
         await client.query(
           `
             INSERT INTO public.bonus_computations
@@ -872,6 +1094,10 @@ router.put(
               month_13,
               month_14,
               month_15,
+              manual_base_month_13,
+              manual_base_month_14,
+              manual_base_month_15,
+              is_manual_override,
               created_by,
               updated_by,
               created_at,
@@ -879,46 +1105,31 @@ router.put(
             )
             VALUES
             (
-              $1,
-              $2,
-              $3,
-              $4,
-              $5,
-              $6,
-              $7,
-              $8,
-              $9,
-              $9,
-              NOW(),
-              NOW()
+              $1, $2, $3, $4, $5,
+              $6, $6, $6,
+              $7, $8, $9,
+              TRUE,
+              $10, $10,
+              NOW(), NOW()
             )
 
             ON CONFLICT
-            (
-              staff_id,
-              computation_year,
-              computation_month
-            )
+              (staff_id, computation_year, computation_month)
 
             DO UPDATE SET
-              total_compensation =
-                EXCLUDED.total_compensation,
+              total_compensation = EXCLUDED.total_compensation,
+              deductions = EXCLUDED.deductions,
 
-              deductions =
-                EXCLUDED.deductions,
+              month_13 = EXCLUDED.month_13,
+              month_14 = EXCLUDED.month_14,
+              month_15 = EXCLUDED.month_15,
 
-              month_13 =
-                EXCLUDED.month_13,
+              manual_base_month_13 = EXCLUDED.manual_base_month_13,
+              manual_base_month_14 = EXCLUDED.manual_base_month_14,
+              manual_base_month_15 = EXCLUDED.manual_base_month_15,
 
-              month_14 =
-                EXCLUDED.month_14,
-
-              month_15 =
-                EXCLUDED.month_15,
-
-              updated_by =
-                EXCLUDED.updated_by,
-
+              is_manual_override = TRUE,
+              updated_by = EXCLUDED.updated_by,
               updated_at = NOW();
           `,
           [
@@ -926,36 +1137,40 @@ router.put(
             year,
             item.month,
             item.total_compensation,
-            item.deductions,
+            deductions,
             item.month_13,
-            item.month_14,
-            item.month_15,
+            manualBase13,
+            manualBase14,
+            manualBase15,
             req.user?.id ?? null,
           ]
         );
+
+        updatedMonths += 1;
       }
 
       await client.query("COMMIT");
 
       return res.json({
-        message:
-          "Bonus computation saved successfully.",
+        message: "Bonus computation saved successfully.",
         staff_id: staffId,
         year,
+        updated_months: updatedMonths,
+        unchanged_months: unchangedMonths,
       });
     } catch (err) {
-      try {
-        await client.query(
-          "ROLLBACK"
-        );
-      } catch {
-        // Ignore rollback error.
+      if (client) {
+        try {
+          await client.query("ROLLBACK");
+        } catch (rollbackError) {
+          console.error(
+            "Bonus manual edit rollback error:",
+            rollbackError
+          );
+        }
       }
 
-      console.error(
-        "PUT /bonus-computations/staff/:staffId ERROR:",
-        err?.message
-      );
+      console.error("PUT /bonus-computations/staff/:staffId ERROR:", err);
 
       return res.status(500).json({
         message:
@@ -963,7 +1178,235 @@ router.put(
           "Failed to save bonus computation.",
       });
     } finally {
-      client.release();
+      if (client) {
+        client.release();
+      }
+    }
+  }
+);
+
+router.post("/staff/:staffId/reset-automatic", requireAuth, requireBonusManager, async (req, res) => {
+    let client;
+
+    try {
+      const staffId = toInt(req.params.staffId);
+      const year = validYear(req.body?.year);
+      const month = Number(req.body?.month);
+
+      if (!staffId || staffId <= 0) {
+        return res.status(400).json({
+          message: "Invalid staff id.",
+        });
+      }
+
+      if (!year) {
+        return res.status(400).json({
+          message: "Valid year is required.",
+        });
+      }
+
+      if (!Number.isInteger(month) || month < 1 || month > 12)
+      {return res.status(400).json({message: "Valid month from 1 to 12 is required.",});}
+
+      client = await pool.connect();
+      await client.query("BEGIN");
+
+      await client.query(
+        `
+          SELECT pg_advisory_xact_lock(
+            hashtext('bonus_computation'),
+            hashtext($1::text || ':' || $2::text)
+          );
+        `,
+        [staffId, year]
+      );
+
+      const staffResult = await client.query(
+        `
+        SELECT
+          id AS staff_id,
+          TRIM(COALESCE(employee_no, '')) AS employee_no,
+          fullname,
+          status,
+          start_date,
+          exit_date
+        FROM public.staff
+        WHERE id = $1
+        LIMIT 1;
+        `,
+        [staffId]
+      );
+
+      if (staffResult.rowCount === 0) {
+        await client.query("ROLLBACK");
+
+        return res.status(404).json({
+          message: "Staff not found.",
+        });
+      }
+
+      const staff = staffResult.rows[0];
+      const employeeNo = String(staff.employee_no || "").trim();
+      const startDate = toDateOnlyUtc(staff.start_date);
+      const exitDate = toDateOnlyUtc(staff.exit_date);
+      const status = normalizeText(staff.status);
+
+      let validationError = null;
+
+      if (!employeeNo) 
+        { validationError = "Employee number is missing.";} 
+      else if (!startDate) 
+        {validationError ="Employment start date is missing.";} 
+      else if (status === "inactive" &&!exitDate) 
+        {validationError = "Inactive employee has no exit date.";} 
+      else if (status === "active" && exitDate)
+        {validationError = "Active employee has an exit date. Please verify.";}
+      else if (exitDate && exitDate < startDate)
+        {validationError = "Exit date is earlier than start date.";}
+
+      if (validationError) {
+        await client.query("ROLLBACK");
+
+        return res.status(400).json({
+          message: validationError,
+        });
+      }
+
+      const historyResult = await client.query(
+        `
+        SELECT
+          id,
+          effective_date,
+          COALESCE(salary, 0)::numeric AS salary,
+          COALESCE(ecola, 0)::numeric AS ecola,
+          created_at
+        FROM public.salary_history
+        WHERE TRIM(employee_no) = $1
+          AND effective_date <= make_date($2, 12, 31)
+        ORDER BY
+          effective_date ASC, created_at ASC, id ASC;
+        `,
+        [employeeNo, year]
+      );
+
+      if (historyResult.rowCount === 0) {
+        await client.query("ROLLBACK");
+
+        return res.status(400).json({
+          message: "No Salary History available for automatic computation.",
+        });
+      }
+
+      const computation = computeMonthlyCompensation({
+        year, month, startDate, exitDate,
+        salaryHistory: historyResult.rows,
+      });
+
+      if (!computation.valid) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({ message: computation.reason,});
+      }
+
+      const totalCompensation = computation.totalCompensation;
+      const suspensionDeductions = await loadSuspensionDeductions(client, staffId, year);
+      const suspension = suspensionDeductions.get(month);
+      const deductions = roundMoney(suspension?.totalDeduction ?? 0);
+      const adjustedCompensation = roundMoney(Math.max(0, totalCompensation - deductions));
+      const monthlyBonusShare = roundMoney(adjustedCompensation / 12);
+
+      const updateResult = await client.query(
+        `
+        INSERT INTO public.bonus_computations
+        (
+          staff_id,
+          computation_year,
+          computation_month,
+          total_compensation,
+          deductions,
+          month_13,
+          month_14,
+          month_15,
+          is_manual_override,
+          created_by,
+          updated_by,
+          created_at,
+          updated_at
+        )
+        VALUES
+        (
+          $1, $2, $3, $4,
+          $5,
+          $6, $6, $6,
+          FALSE,
+          $7, $7,
+          NOW(),
+          NOW()
+        )
+
+        ON CONFLICT
+          (staff_id, computation_year, computation_month)
+
+        DO UPDATE SET
+          total_compensation = EXCLUDED.total_compensation,
+
+          deductions = EXCLUDED.deductions,
+
+          month_13 = EXCLUDED.month_13,
+          month_14 = EXCLUDED.month_14,
+          month_15 = EXCLUDED.month_15,
+
+          manual_base_month_13 = NULL,
+          manual_base_month_14 = NULL,
+          manual_base_month_15 = NULL,
+
+          is_manual_override = FALSE,
+
+          updated_by = EXCLUDED.updated_by,
+          updated_at = NOW()
+
+        RETURNING
+          id,
+          staff_id,
+          computation_year,
+          computation_month,
+          total_compensation,
+          deductions,
+          month_13,
+          month_14,
+          month_15,
+          is_manual_override;
+        `,
+        [staffId, year, month, totalCompensation, deductions, monthlyBonusShare, req.user?.id ?? null,]
+      );
+
+      await client.query("COMMIT");
+
+      return res.json({
+        message: "Bonus computation reset to automatic successfully.",
+        staff_id: staffId, year, month,
+        computation: updateResult.rows[0],
+      });
+    } catch (err) {
+      if (client) {
+        try {
+          await client.query("ROLLBACK");
+        } catch (rollbackError) {
+          console.error(
+            "Reset automatic rollback error:",
+            rollbackError
+          );
+        }
+      }
+
+      console.error("POST /bonus-computations/staff/:staffId/reset-automatic ERROR:", err);
+
+      return res.status(500).json({
+        message: err?.message || "Failed to reset bonus computation.",
+      });
+    } finally {
+      if (client) {
+        client.release();
+      }
     }
   }
 );

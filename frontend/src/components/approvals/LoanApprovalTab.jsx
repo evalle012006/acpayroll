@@ -259,14 +259,65 @@ const getDynamicApprovalChain = (item) => {
   }
 
     // =====================================================
-    // IT DEPARTMENT LOAN APPROVAL CHAIN
-    //
-    // Loan Officer:
-    // BM -> AM -> RM -> AVP -> Accounting
-    //
-    // AVP applicant:
-    // SVP -> Accounting
+    // AUDIT DEPARTMENT APPROVAL CHAIN
     // =====================================================
+
+    const auditDept = norm(department);
+
+    if (
+      auditDept === "audit" ||
+      auditDept === "audit department"
+    ) {
+      if (isSvpPos(position)) {
+        return [ACCOUNTING_FINAL];
+      }
+
+      if (isVpPos(position)) {
+        return [
+          "senior vice president",
+          ACCOUNTING_FINAL,
+        ];
+      }
+
+      if (isAvpPos(position)) {
+        return [
+          "senior vice president",
+          ACCOUNTING_FINAL,
+        ];
+      }
+
+      if (isRegionalManagerPos(position)) {
+        return [
+          "assistant vice president",
+          ACCOUNTING_FINAL,
+        ];
+      }
+
+      if (isAreaManagerPos(position)) {
+        return [
+          "regional manager",
+          "assistant vice president",
+          ACCOUNTING_FINAL,
+        ];
+      }
+
+      if (isBranchManagerPos(position)) {
+        return [
+          "area manager",
+          "regional manager",
+          "assistant vice president",
+          ACCOUNTING_FINAL,
+        ];
+      }
+
+      return [
+        "branch manager",
+        "area manager",
+        "regional manager",
+        "assistant vice president",
+        ACCOUNTING_FINAL,
+      ];
+    }
 
     const dept = norm(department);
 
@@ -277,8 +328,6 @@ const getDynamicApprovalChain = (item) => {
       dept === "information technology department";
 
     if (isITDepartment) {
-      // SVP applicant
-      // -> Accounting Final
       if (isSvpPos(position)) {
         return [
           ACCOUNTING_FINAL,

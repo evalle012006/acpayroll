@@ -1,3 +1,5 @@
+//BonusComputation.jsx
+
 import { useEffect, useMemo, useState } from "react";
 import api from "../api/axiosClient";
 import "../styles/BonusComputation.css";
@@ -18,6 +20,114 @@ const MONTHS = [
 ];
 
 const currentYear = new Date().getFullYear();
+
+/* =========================================================
+   SAFE SAVING HELPERS
+========================================================= */
+
+const roundBonusMoney = (value) =>
+  Math.round((Number(value) + Number.EPSILON) * 100) / 100;
+
+const normalizeBonusMonth = (item, monthNumber) => ({
+  month: monthNumber,
+
+  exists: item?.exists === true,
+
+  total_compensation: Number(
+    item?.total_compensation ?? 0
+  ),
+
+  deductions: Number(
+    item?.deductions ?? 0
+  ),
+
+  month_13: Number(
+    item?.month_13 ?? 0
+  ),
+
+  month_14: Number(
+    item?.month_14 ?? 0
+  ),
+
+  month_15: Number(
+    item?.month_15 ?? 0
+  ),
+
+  is_manual_override:
+    item?.is_manual_override === true,
+});
+
+const bonusMonthChanged = (current, original) => {
+  if (!original) return false;
+
+  const fields = [
+    "total_compensation",
+    "month_13",
+  ];
+
+  return fields.some((field) => {
+    const currentValue = current[field];
+    const originalValue = original[field];
+
+    // An empty input is always considered a change.
+    if (
+      currentValue === "" ||
+      currentValue === null ||
+      currentValue === undefined
+    ) {
+      return true;
+    }
+
+    return (
+      roundBonusMoney(currentValue) !==
+      roundBonusMoney(originalValue)
+    );
+  });
+};
+
+/* =========================================================
+   BONUS COMPUTATION PERMISSIONS
+========================================================= */
+
+const norm = (value) =>
+  String(value ?? "").trim().toLowerCase();
+
+const readUser = () => {
+  try {
+    return JSON.parse(
+      localStorage.getItem("user") || "null"
+    );
+  } catch {
+    return null;
+  }
+};
+
+const canManageBonus = (user) => {
+  if (!user) return false;
+
+  const role = norm(user.role);
+
+  const department = norm(
+    user.department ||
+    user.department_name ||
+    user.user_department ||
+    user.departmentName ||
+    user.dept
+  );
+
+  // System administrators
+  if (role === "admin" || role === "it") {
+    return true;
+  }
+
+  // HR and Accounting Departments
+  return [
+    "hr",
+    "hr department",
+    "accounting",
+    "accounting department",
+  ].includes(department);
+};
 
 const money = (value) => {
   const amount = Number(value ?? 0);
@@ -47,11 +157,17 @@ const formatDate = (value) => {
 const emptyMonths = () =>
   MONTHS.map((_, index) => ({
     month: index + 1,
+
+    exists: false,
+
     total_compensation: 0,
     deductions: 0,
+
     month_13: 0,
     month_14: 0,
     month_15: 0,
+
+    is_manual_override: false,
   }));
 
 export default function BonusComputation() {
@@ -72,10 +188,37 @@ export default function BonusComputation() {
 
   const [selectedStaff, setSelectedStaff] = useState(null);
   const [months, setMonths] = useState(emptyMonths());
+  const [originalMonths, setOriginalMonths] = useState(emptyMonths());
 
   const [modalLoading, setModalLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [recalculating, setRecalculating] = useState(false);
+
+  const [resettingMonth, setResettingMonth] = useState(null);
+
+  const [currentUser, setCurrentUser] = useState(readUser);
+
+  useEffect(() => {
+    const refreshUser = () => {
+      setCurrentUser(readUser());
+    };
+
+    window.addEventListener("auth-changed", refreshUser);
+    window.addEventListener("storage", refreshUser);
+
+    return () => {
+      window.removeEventListener("auth-changed", refreshUser);
+      window.removeEventListener("storage", refreshUser);
+    };
+  }, []);
+
+  const canManage = canManageBonus(currentUser);
+
+  useEffect(() => {
+    if (!canManage && modalMode === "edit") {
+      setModalMode("view");
+    }
+  }, [canManage, modalMode]);
 
   /* =========================================================
      LOAD MAIN TABLE
@@ -118,10 +261,16 @@ export default function BonusComputation() {
   ========================================================= */
 
   const recalculateYear = async () => {
+    if (!canManage) {
+      alert("You do not have permission to generate bonus computations.");
+      return;
+    }
+
     const confirmed = window.confirm(
       `Generate / recalculate bonus computations for ${year}?\n\n` +
-        "Salary and ECOLA will be recalculated from Salary History.\n" +
-        "Existing deductions will be preserved."
+        "Basic Salary and De Minimis will be recalculated from Salary History.\n" +
+        "Suspension deductions will be recalculated from Received Suspension Orders.\n" +
+        "Manually adjusted months will not be overwritten."
     );
 
     if (!confirmed) {
@@ -299,17 +448,19 @@ export default function BonusComputation() {
   const openEmployee = async (row, mode) => {
     try {
       setModalMode(mode);
+
       setSelectedStaff(row);
+
       setMonths(emptyMonths());
+      setOriginalMonths(emptyMonths());
+
       setModalOpen(true);
       setModalLoading(true);
 
       const res = await api.get(
         `/bonus-computations/staff/${row.staff_id}`,
         {
-          params: {
-            year,
-          },
+          params: { year },
         }
       );
 
@@ -318,39 +469,25 @@ export default function BonusComputation() {
       }
 
       if (Array.isArray(res.data?.months)) {
-        setMonths(
-          MONTHS.map((_, index) => {
-            const monthNumber = index + 1;
+        const loadedMonths = MONTHS.map((_, index) => {
+          const monthNumber = index + 1;
 
-            const saved = res.data.months.find(
-              (item) =>
-                Number(item.month) === monthNumber
-            );
+          const saved = res.data.months.find(
+            (item) =>
+              Number(item.month) === monthNumber
+          );
 
-            return {
-              month: monthNumber,
+          return normalizeBonusMonth(
+            saved,
+            monthNumber
+          );
+        });
 
-              total_compensation: Number(
-                saved?.total_compensation ?? 0
-              ),
+        setMonths(loadedMonths);
 
-              deductions: Number(
-                saved?.deductions ?? 0
-              ),
-
-              month_13: Number(
-                saved?.month_13 ?? 0
-              ),
-
-              month_14: Number(
-                saved?.month_14 ?? 0
-              ),
-
-              month_15: Number(
-                saved?.month_15 ?? 0
-              ),
-            };
-          })
+        // Keep a separate snapshot of database values.
+        setOriginalMonths(
+          loadedMonths.map((item) => ({ ...item }))
         );
       }
     } catch (err) {
@@ -375,11 +512,15 @@ export default function BonusComputation() {
   ========================================================= */
 
   const closeModal = () => {
-    if (saving) return;
+    if (saving || resettingMonth !== null) return;
 
     setModalOpen(false);
+
     setSelectedStaff(null);
+
     setMonths(emptyMonths());
+    setOriginalMonths(emptyMonths());
+
     setModalMode("view");
   };
 
@@ -412,6 +553,106 @@ export default function BonusComputation() {
   };
 
   /* =========================================================
+    RESET SELECTED MONTH TO AUTOMATIC
+  ========================================================= */
+
+  const resetMonthToAutomatic = async (monthNumber) => {
+    if (!selectedStaff?.staff_id) {
+      return;
+    }
+
+    if (!canManage) {
+      alert("You do not have permission to reset bonus computations.");
+      return;
+    }
+
+    if (saving || resettingMonth !== null) {
+      return;
+    }
+
+    if (modalMode === "edit") {
+      alert(
+        "Please save or cancel your edits before resetting a month."
+      );
+      return;
+    }
+
+    const monthName = MONTHS[monthNumber - 1];
+
+    const confirmed = window.confirm(
+      `Reset ${monthName} ${year} to Automatic?\n\n` +
+        "The manually adjusted compensation and bonus amounts " +
+        "for this month will be replaced using Salary History.\n\n" +
+        "Suspension deductions will be recalculated from Received Suspension Orders.\n\n" +
+        "This action cannot be undone automatically."
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      setResettingMonth(monthNumber);
+
+      const res = await api.post(
+        `/bonus-computations/staff/${selectedStaff.staff_id}/reset-automatic`,
+        {
+          year,
+          month: monthNumber,
+        }
+      );
+
+      const updated = res.data?.computation;
+
+      if (updated) {
+        const normalizedUpdated = normalizeBonusMonth(
+          {
+            ...updated,
+            exists: true,
+            is_manual_override: false,
+          },
+          monthNumber
+        );
+
+        setMonths((prev) =>
+          prev.map((item) =>
+            Number(item.month) === monthNumber
+              ? { ...normalizedUpdated }
+              : item
+          )
+        );
+
+        setOriginalMonths((prev) =>
+          prev.map((item) =>
+            Number(item.month) === monthNumber
+              ? { ...normalizedUpdated }
+              : item
+          )
+        );
+      }
+
+      await loadRows();
+
+      alert(
+        res.data?.message ||
+          `${monthName} reset to automatic successfully.`
+      );
+    } catch (err) {
+      console.error(
+        "Failed to reset bonus computation:",
+        err
+      );
+
+      alert(
+        err?.response?.data?.message ||
+          "Failed to reset bonus computation."
+      );
+    } finally {
+      setResettingMonth(null);
+    }
+  };
+
+  /* =========================================================
      TOTALS
   ========================================================= */
 
@@ -441,8 +682,7 @@ export default function BonusComputation() {
         const totalBonus =
           month13 +
           month14 +
-          month15 -
-          deductions;
+          month15;
 
 
         acc.total_compensation +=
@@ -471,55 +711,253 @@ export default function BonusComputation() {
     return (
       Number(totals.month_13 || 0) +
       Number(totals.month_14 || 0) +
-      Number(totals.month_15 || 0) -
-      Number(totals.deductions || 0)
+      Number(totals.month_15 || 0)
     );
   }, [totals]);
-
-  /* =========================================================
-     SAVE MONTHLY VALUES
-  ========================================================= */
 
   const saveBonus = async () => {
     if (!selectedStaff?.staff_id) {
       return;
     }
 
+    if (!canManage) {
+      alert("You do not have permission to edit bonus computations.");
+      return;
+    }
+
+    if (saving || modalLoading) {
+      return;
+    }
+
+    const changedMonths = months.filter((item) => {
+      const original = originalMonths.find(
+        (saved) =>
+          Number(saved.month) === Number(item.month)
+      );
+
+      return bonusMonthChanged(item, original);
+    });
+
+    if (changedMonths.length === 0) {
+      alert("No changes were made.");
+
+      setModalMode("view");
+      return;
+    }
+
+    /* =====================================================
+      VALIDATE BLANK INPUTS
+    ===================================================== */
+
+    const blankMonth = changedMonths.find(
+      (item) =>
+        String(item.total_compensation).trim() === "" ||
+        String(item.month_13).trim() === ""
+    );
+
+    if (blankMonth) {
+      alert(
+        `Please complete all amounts for ${
+          MONTHS[blankMonth.month - 1]
+        }.`
+      );
+
+      return;
+    }
+
+    /* =====================================================
+      VALIDATE RAW NUMERIC VALUES
+    ===================================================== */
+
+    const invalidRawMonth = changedMonths.find((item) => {
+      const values = [
+        item.total_compensation,
+        item.month_13,
+      ];
+
+      return values.some((value) => {
+        const amount = Number(value);
+
+        return (
+          !Number.isFinite(amount) ||
+          amount < 0
+        );
+      });
+    });
+
+    if (invalidRawMonth) {
+      alert(
+        `Invalid amounts for ${
+          MONTHS[invalidRawMonth.month - 1]
+        }. Please enter valid non-negative values.`
+      );
+
+      return;
+    }
+
+    /* =====================================================
+      PREPARE REQUEST PAYLOAD
+    ===================================================== */
+
+    const payloadMonths = changedMonths.map((item) => {
+      const original = originalMonths.find(
+        (saved) =>
+          Number(saved.month) === Number(item.month)
+      );
+
+      return {
+        month: Number(item.month),
+
+        total_compensation: roundBonusMoney(
+          item.total_compensation
+        ),
+
+        month_13: roundBonusMoney(
+          item.month_13
+        ),
+
+        original: {
+          exists: original.exists,
+
+          total_compensation: roundBonusMoney(
+            original.total_compensation
+          ),
+
+          deductions: roundBonusMoney(
+            original.deductions
+          ),
+
+          month_13: roundBonusMoney(
+            original.month_13
+          ),
+
+          month_14: roundBonusMoney(
+            original.month_14
+          ),
+
+          month_15: roundBonusMoney(
+            original.month_15
+          ),
+
+          is_manual_override:
+            original.is_manual_override === true,
+        },
+      };
+    });
+
+    /* =====================================================
+      VALIDATE AMOUNTS
+    ===================================================== */
+
+    const invalidMonth = payloadMonths.find((item) => {
+      return (
+        !Number.isFinite(item.total_compensation) ||
+        !Number.isFinite(item.month_13) ||
+        item.total_compensation < 0 ||
+        item.month_13 < 0
+      );
+    });
+
+    if (invalidMonth) {
+      alert(
+        `Invalid amounts for ${
+          MONTHS[invalidMonth.month - 1]
+        }. Please enter valid non-negative values.`
+      );
+
+      return;
+    }
+
     try {
       setSaving(true);
 
-      await api.put(
+      const res = await api.put(
         `/bonus-computations/staff/${selectedStaff.staff_id}`,
         {
           year,
-            months: months.map((item) => ({
-              month: item.month,
-
-              total_compensation: Number(
-                item.total_compensation || 0
-              ),
-
-              deductions: Number(
-                item.deductions || 0
-              ),
-
-              month_13: Number(
-                item.month_13 || 0
-              ),
-            })),
+          months: payloadMonths,
         }
       );
 
-      alert("Bonus computation saved successfully.");
+      /* =====================================================
+        RELOAD UPDATED DATA
+      ===================================================== */
+
+      const refreshed = await api.get(
+        `/bonus-computations/staff/${selectedStaff.staff_id}`,
+        {
+          params: { year },
+        }
+      );
+
+      if (Array.isArray(refreshed.data?.months)) {
+        const refreshedMonths = MONTHS.map(
+          (_, index) => {
+            const monthNumber = index + 1;
+
+            const saved = refreshed.data.months.find(
+              (item) =>
+                Number(item.month) === monthNumber
+            );
+
+            return normalizeBonusMonth(
+              saved,
+              monthNumber
+            );
+          }
+        );
+
+        setMonths(refreshedMonths);
+
+        setOriginalMonths(
+          refreshedMonths.map((item) => ({
+            ...item,
+          }))
+        );
+      }
 
       await loadRows();
 
       setModalMode("view");
+
+      alert(
+        res.data?.message ||
+          "Bonus computation saved successfully."
+      );
     } catch (err) {
       console.error(
         "Failed to save bonus computation:",
         err
       );
+
+      /* =====================================================
+        CONCURRENT EDITING CONFLICT
+      ===================================================== */
+
+      if (err?.response?.status === 409) {
+        const conflictMonths =
+          err.response.data?.conflict_months || [];
+
+        const monthNames = conflictMonths
+          .map(
+            (month) =>
+              MONTHS[Number(month) - 1] ||
+              `Month ${month}`
+          )
+          .join(", ");
+
+        alert(
+          "Another user modified the bonus computation " +
+            "while you were editing.\n\n" +
+            (monthNames
+              ? `Affected months: ${monthNames}\n\n`
+              : "") +
+            "Your changes were not saved.\n\n" +
+            "Click Cancel to reload the latest values."
+        );
+
+        return;
+      }
 
       alert(
         err?.response?.data?.message ||
@@ -544,16 +982,18 @@ export default function BonusComputation() {
           </p>
         </div>
 
-        <button
-          type="button"
-          className="bonus-btn primary"
-          onClick={recalculateYear}
-          disabled={recalculating || loading}
-        >
-          {recalculating
-            ? `Recalculating ${year}...`
-            : `Generate / Recalculate ${year}`}
-        </button>
+        {canManage && (
+          <button
+            type="button"
+            className="bonus-btn primary"
+            onClick={recalculateYear}
+            disabled={recalculating || loading}
+          >
+            {recalculating
+              ? `Recalculating ${year}...`
+              : `Generate / Recalculate ${year}`}
+          </button>
+        )}
       </div>
 
       {/* FILTERS */}
@@ -564,17 +1004,14 @@ export default function BonusComputation() {
 
           <select
             value={year}
-            onChange={(e) =>
-              setYear(Number(e.target.value))
-            }
+            onChange={(e) => setYear(Number(e.target.value))}
+            disabled={modalOpen || saving || resettingMonth !== null}
           >
             {Array.from(
               { length: 11 },
               (_, index) => currentYear - 5 + index
             ).map((item) => (
-              <option key={item} value={item}>
-                {item}
-              </option>
+              <option key={item} value={item}>{item}</option>
             ))}
           </select>
         </div>
@@ -582,20 +1019,11 @@ export default function BonusComputation() {
         <div className="bonus-filter">
           <label>Department</label>
 
-          <select
-            value={department}
-            onChange={(e) =>
-              setDepartment(e.target.value)
-            }
-          >
-            <option value="ALL">
-              All Departments
-            </option>
+          <select value={department} onChange={(e) => setDepartment(e.target.value)}>
+            <option value="ALL">All Departments</option>
 
             {departments.map((item) => (
-              <option key={item} value={item}>
-                {item}
-              </option>
+              <option key={item} value={item}>{item}</option>
             ))}
           </select>
         </div>
@@ -603,21 +1031,11 @@ export default function BonusComputation() {
         <div className="bonus-filter">
           <label>Branch</label>
 
-          <select
-            value={branch}
-            onChange={(e) =>
-              setBranch(e.target.value)
-            }
-          >
-            <option value="ALL">
-              All Branches
-            </option>
+          <select value={branch} onChange={(e) => setBranch(e.target.value)}>
+            <option value="ALL">All Branches</option>
 
             {branches.map((item) => (
-              <option
-                key={item.id}
-                value={item.id}
-              >
+              <option key={item.id} value={item.id}>
                 {item.code
                   ? `${item.code} - ${item.name}`
                   : item.name}
@@ -629,12 +1047,7 @@ export default function BonusComputation() {
         <div className="bonus-filter bonus-search">
           <label>Search Employee</label>
 
-          <input
-            type="text"
-            value={search}
-            onChange={(e) =>
-              setSearch(e.target.value)
-            }
+          <input type="text" value={search} onChange={(e) => setSearch(e.target.value)}
             placeholder="Employee no., name or position..."
           />
         </div>
@@ -652,7 +1065,7 @@ export default function BonusComputation() {
               <th>Date of Deployment</th>
               <th>Date of Regularization</th>
               <th className="num">Salary</th>
-              <th className="num">ECOLA</th>
+              <th className="num">De Minimis</th>
               <th className="num">Total Gross</th>
               <th className="num">Total Bonus Base {year}</th>
               <th>Action</th>
@@ -693,23 +1106,13 @@ export default function BonusComputation() {
                     {money(
                       Number(row.month_13 || 0) +
                         Number(row.month_14 || 0) +
-                        Number(row.month_15 || 0) -
-                        Number(row.deductions || 0)
+                        Number(row.month_15 || 0)
                     )}
                   </td>
 
                   <td>
                     <div className="bonus-actions">
-                      <button
-                        type="button"
-                        className="bonus-btn view"
-                        onClick={() =>
-                          openEmployee(
-                            row,
-                            "view"
-                          )
-                        }
-                      >
+                      <button type="button" className="bonus-btn view" onClick={() => openEmployee(row,"view")}>
                         View
                       </button>
                     </div>
@@ -729,13 +1132,8 @@ export default function BonusComputation() {
           </div>
 
           <div className="bonus-pagination-actions">
-            <button
-              type="button"
-              className="bonus-page-btn"
-              disabled={page <= 1}
-              onClick={() =>
-                setPage((prev) => Math.max(1, prev - 1))
-              }
+            <button type="button" className="bonus-page-btn" disabled={page <= 1} onClick={() =>
+                setPage((prev) => Math.max(1, prev - 1))}
             >
               Previous
             </button>
@@ -744,15 +1142,8 @@ export default function BonusComputation() {
               Page {page} of {totalPages}
             </span>
 
-            <button
-              type="button"
-              className="bonus-page-btn"
-              disabled={page >= totalPages}
-              onClick={() =>
-                setPage((prev) =>
-                  Math.min(totalPages, prev + 1)
-                )
-              }
+            <button type="button" className="bonus-page-btn" disabled={page >= totalPages} onClick={() =>
+                setPage((prev) => Math.min(totalPages, prev + 1))}
             >
               Next
             </button>
@@ -768,7 +1159,8 @@ export default function BonusComputation() {
           onMouseDown={(e) => {
             if (
               e.target === e.currentTarget &&
-              !saving
+              !saving &&
+              resettingMonth === null
             ) {
               closeModal();
             }
@@ -783,18 +1175,10 @@ export default function BonusComputation() {
                     : "View Bonus Computation"}
                 </h2>
 
-                <p>
-                  Monthly bonus computation for{" "}
-                  {year}
-                </p>
+                <p>Monthly bonus computation for{" "}{year}</p>
               </div>
 
-              <button
-                type="button"
-                className="bonus-modal-close"
-                onClick={closeModal}
-                disabled={saving}
-              >
+              <button type="button" className="bonus-modal-close" onClick={closeModal} disabled={saving || resettingMonth !== null}>
                 ×
               </button>
             </div>
@@ -856,7 +1240,7 @@ export default function BonusComputation() {
                 </div>
 
                 <div>
-                  <span>ECOLA</span>
+                  <span>De Minimis</span>
                   <strong>
                     ₱{" "}
                     {money(selectedStaff.ecola)}
@@ -935,11 +1319,13 @@ export default function BonusComputation() {
                     <tr>
                       <th>Month</th>
                       <th>Total Compensation</th>
-                      <th>Deductions</th>
+                      <th>Suspension Deductions</th>
                       <th>13th Month</th>
                       <th>14th Month</th>
                       <th>15th Month Base</th>
                       <th>Total Bonus Base</th>
+                      <th>Status</th>
+                      <th>Action</th>
                     </tr>
                   </thead>
 
@@ -960,40 +1346,61 @@ export default function BonusComputation() {
                           </td>
 
                           <td>
-                            {modalMode === "edit" ? (
-                              <input
-                                type="number"
-                                min="0"
-                                step="0.01"
-                                value={item.deductions}
-                                onChange={(e) => updateMonth(index, "deductions", e.target.value)}
-                              />
-                            ) : (
-                              money(item.deductions)
-                            )}
+                            {money(item.deductions)}
                           </td>
 
                           <td>
                             {modalMode === "edit" ? (
-                              <input
-                                type="number"
-                                min="0"
-                                step="0.01"
-                                value={item.month_13}
-                                onChange={(e) => updateMonth(index, "month_13", e.target.value)}
-                              />
-                            ) : (
-                              money(item.month_13)
-                            )}
+                              <input type="number" min="0" step="0.01" value={item.month_13}
+                                onChange={(e) => updateMonth(index, "month_13", e.target.value)}/>
+                            ) : ( money(item.month_13))}
                           </td>
+
                           <td>{money(item.month_14)}</td>
                           <td>{money(item.month_15)}</td>
                           <td>
                             {money(
                               Number(item.month_13 || 0) +
-                                Number(item.month_14 || 0) +
-                                Number(item.month_15 || 0) -
-                                Number(item.deductions || 0)
+                              Number(item.month_14 || 0) +
+                              Number(item.month_15 || 0)
+                            )}
+                          </td>
+                          <td>
+                            <span
+                              className={
+                                item.is_manual_override
+                                  ? "bonus-status manual"
+                                  : "bonus-status automatic"
+                              }
+                            >
+                              {item.is_manual_override
+                                ? "Manually Adjusted"
+                                : "Automatic"}
+                            </span>
+                          </td>
+
+                          <td>
+                            {canManage &&
+                              item.is_manual_override &&
+                              modalMode === "view" ? (
+                                <button
+                                  type="button"
+                                  className="bonus-btn secondary"
+                                  onClick={() =>
+                                    resetMonthToAutomatic(item.month)
+                                  }
+                                  disabled={
+                                    resettingMonth !== null ||
+                                    saving ||
+                                    modalLoading
+                                  }
+                                >
+                                {resettingMonth === item.month
+                                  ? "Resetting..."
+                                  : "Reset to Automatic"}
+                              </button>
+                            ) : (
+                              <span>-</span>
                             )}
                           </td>
                         </tr>
@@ -1010,6 +1417,7 @@ export default function BonusComputation() {
                       <th>{money(totals.month_14)}</th>
                       <th>{money(totals.month_15)}</th>
                       <th>{money(totals.total_bonus)}</th>
+                      <th colSpan={2}>-</th>
                     </tr>
                   </tfoot>
                 </table>
@@ -1020,44 +1428,32 @@ export default function BonusComputation() {
               {modalMode === "view" ? (
                 <>
                   <button
-                    type="button"
-                    className="bonus-btn secondary"
-                    onClick={closeModal}
-                  >
+                    type="button" className="bonus-btn secondary" onClick={closeModal} disabled={saving || resettingMonth !== null}>
                     Close
                   </button>
 
-                  <button
-                    type="button"
-                    className="bonus-btn primary"
-                    onClick={() =>
-                      setModalMode("edit")
-                    }
-                    disabled={modalLoading}
-                  >
-                    Edit
-                  </button>
+                  {canManage && (
+                    <button
+                      type="button"
+                      className="bonus-btn primary"
+                      onClick={() => {
+                        if (!canManage || modalLoading) return;
+
+                        setModalMode("edit");
+                      }}
+                      disabled={modalLoading || resettingMonth !== null}
+                    >
+                      Edit
+                    </button>
+                  )}
                 </>
               ) : (
                 <>
-                  <button
-                    type="button"
-                    className="bonus-btn secondary"
-                    onClick={closeModal}
-                    disabled={saving}
-                  >
+                  <button type="button" className="bonus-btn secondary" onClick={() => openEmployee(selectedStaff, "view")} disabled={saving}>
                     Cancel
                   </button>
 
-                  <button
-                    type="button"
-                    className="bonus-btn primary"
-                    onClick={saveBonus}
-                    disabled={
-                      saving ||
-                      modalLoading
-                    }
-                  >
+                  <button type="button" className="bonus-btn primary" onClick={saveBonus} disabled={saving || modalLoading}>
                     {saving
                       ? "Saving..."
                       : "Save"}
@@ -1071,3 +1467,4 @@ export default function BonusComputation() {
     </div>
   );
 }
+

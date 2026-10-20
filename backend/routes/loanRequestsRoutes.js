@@ -1,3 +1,5 @@
+//loanRequestsRoutes.js
+
 const express = require("express");
 const router = express.Router();
 const pool = require("../db");
@@ -223,6 +225,62 @@ const getRawApprovalChain = (staff) => {
   const dept = norm(staff?.department);
   const isOperation = isOperationDept(dept);
 
+    const isAuditDepartment =
+      dept === "audit" ||
+      dept === "audit department";
+
+    if (isAuditDepartment) {
+      if (isSvpPos(pos)) {
+        return [ACCOUNTING_FINAL];
+      }
+
+      if (isVpPos(pos)) {
+        return [
+          "senior vice president",
+          ACCOUNTING_FINAL,
+        ];
+      }
+
+      if (isAvpPos(pos)) {
+        return [
+          "senior vice president",
+          ACCOUNTING_FINAL,
+        ];
+      }
+
+      if (isRegionalManagerPos(pos)) {
+        return [
+          "assistant vice president",
+          ACCOUNTING_FINAL,
+        ];
+      }
+
+      if (isAreaManagerPos(pos)) {
+        return [
+          "regional manager",
+          "assistant vice president",
+          ACCOUNTING_FINAL,
+        ];
+      }
+
+      if (isBranchManagerPos(pos)) {
+        return [
+          "area manager",
+          "regional manager",
+          "assistant vice president",
+          ACCOUNTING_FINAL,
+        ];
+      }
+
+      return [
+        "branch manager",
+        "area manager",
+        "regional manager",
+        "assistant vice president",
+        ACCOUNTING_FINAL,
+      ];
+    }
+
   if (isOperation) {
     if (isSvpPos(pos)) return [ACCOUNTING_FINAL];
     if (isVpPos(pos)) return ["senior vice president", ACCOUNTING_FINAL];
@@ -254,16 +312,6 @@ const getRawApprovalChain = (staff) => {
     ];
   }
 
-  // =====================================================
-  // IT DEPARTMENT LOAN APPROVAL CHAIN
-  //
-  // Loan Officer:
-  // BM -> AM -> RM -> AVP -> Accounting
-  //
-  // AVP applicant:
-  // SVP -> Accounting
-  // =====================================================
-
   const isITDepartment =
     dept === "it" ||
     dept === "it department" ||
@@ -271,16 +319,12 @@ const getRawApprovalChain = (staff) => {
     dept === "information technology department";
 
   if (isITDepartment) {
-    // SVP applicant
-    // -> Accounting Final
     if (isSvpPos(pos)) {
       return [
         ACCOUNTING_FINAL,
       ];
     }
 
-    // AVP applicant
-    // -> SVP -> Accounting Final
     if (isAvpPos(pos)) {
       return [
         "senior vice president",
@@ -288,8 +332,6 @@ const getRawApprovalChain = (staff) => {
       ];
     }
 
-    // RM applicant
-    // -> AVP -> Accounting Final
     if (isRegionalManagerPos(pos)) {
       return [
         "assistant vice president",
@@ -297,8 +339,6 @@ const getRawApprovalChain = (staff) => {
       ];
     }
 
-    // AM applicant
-    // -> RM -> AVP -> Accounting Final
     if (isAreaManagerPos(pos)) {
       return [
         "regional manager",
@@ -307,8 +347,6 @@ const getRawApprovalChain = (staff) => {
       ];
     }
 
-    // BM applicant
-    // -> AM -> RM -> AVP -> Accounting Final
     if (isBranchManagerPos(pos)) {
       return [
         "area manager",
@@ -318,8 +356,6 @@ const getRawApprovalChain = (staff) => {
       ];
     }
 
-    // Loan Officer / regular IT staff
-    // -> BM -> AM -> RM -> AVP -> Accounting Final
     return [
       "branch manager",
       "area manager",
@@ -328,20 +364,6 @@ const getRawApprovalChain = (staff) => {
       ACCOUNTING_FINAL,
     ];
   }
-
-  // BACK OFFICE APPROVAL CHAIN
-  //
-  // Regular staff / below BM:
-  // BM → VP → SVP → Accounting
-  //
-  // BM applicant:
-  // VP → SVP → Accounting
-  //
-  // VP applicant:
-  // SVP → Accounting
-  //
-  // SVP applicant:
-  // Accounting only
 
   if (isSvpPos(pos)) {
     return [ACCOUNTING_FINAL];
@@ -362,7 +384,6 @@ const getRawApprovalChain = (staff) => {
     ];
   }
 
-  // Any other Back Office applicant
   return [
     "branch manager",
     "vice president",

@@ -1,11 +1,6 @@
-import React, {
-  createContext,
-  useCallback,
-  useContext,
-  useEffect,
-  useMemo,
-  useState,
-} from "react";
+//CompRatesContext.jsx
+
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState, } from "react";
 import api from "../api/axiosClient";
 
 const toNum = (v) => {
