@@ -84,7 +84,11 @@ const canEditPromotion = (req) =>
   isHrDepartmentUser(req) ||
   isAccountingDepartmentUser(req);
 
-const canBypassApproval = (req) => isAdmin(req) || isSeniorVicePresident(req);
+const canBypassApproval = (req) =>
+  isAdmin(req) ||
+  isSeniorVicePresident(req) ||
+  isHrDepartmentUser(req) ||
+  isAccountingDepartmentUser(req);
 
 const canDeletePromotion = (req) => isAdmin(req);
 

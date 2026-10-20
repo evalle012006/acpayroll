@@ -386,7 +386,10 @@ export default function PromotionOrder() {
 
     const stage = norm(o.approval_stage);
 
-    if (isAdmin || isSeniorVicePresident) return true;
+    if (isAdmin || isSeniorVicePresident || isHr || isAccounting)
+      {
+        return true;
+      }
 
     if (stage === "branch manager") return isBranchManager;
     if (stage === "area manager") return isAreaManager;
