@@ -311,7 +311,10 @@ export default function DemotionOrder() {
       return false;
     }
 
-    if (!isOperationDepartment(order?.department)) {
+    if (
+      !isOperationDepartment(order?.department) ||
+      !isOperationDepartment(department)
+    ) {
       return false;
     }
 
