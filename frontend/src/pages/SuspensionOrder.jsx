@@ -1,3 +1,5 @@
+//SuspensionOrder.jsx
+
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { FaEdit, FaTrash, FaCheck, FaTimes } from "react-icons/fa";
 import { useNavigate } from "react-router-dom";
@@ -127,6 +129,14 @@ export default function SuspensionOrder() {
     hasSuspensionFullAccess ||
     isSeniorVicePresident ||
     isPresident;
+
+  const canExtendSuspension =
+    isAdmin ||
+    isIt ||
+    isHr ||
+    isAccounting ||
+    isHRDepartment ||
+    department === "accounting department";
 
   const canApproveStage = (order) => {
     const stage = norm(order?.approval_stage);
@@ -288,6 +298,12 @@ export default function SuspensionOrder() {
   const [showModal, setShowModal] = useState(false);
   const [editingOrder, setEditingOrder] = useState(null);
   const [viewOrder, setViewOrder] = useState(null);
+
+  const [extendingOrder, setExtendingOrder] = useState(null);
+  const [extensionEndDate, setExtensionEndDate] = useState("");
+  const [extensionReason, setExtensionReason] = useState("");
+  const [extensionSaving, setExtensionSaving] = useState(false);
+  const [extensionError, setExtensionError] = useState("");
 
   const [rejecting, setRejecting] = useState(null);
   const [rejectReason, setRejectReason] = useState("");
@@ -626,6 +642,131 @@ export default function SuspensionOrder() {
       document.removeEventListener("keydown", onKeyDown);
     };
   }, [showModal, viewOrder, rejecting]);
+
+  // =====================================================
+  // EXTEND SUSPENSION
+  // =====================================================
+
+  const openExtendSuspension = (order) => {
+    if (!canExtendSuspension) return;
+
+    if (
+      !["approved", "received"].includes(
+        norm(order?.status)
+      )
+    ) {
+      return;
+    }
+
+    setExtendingOrder(order);
+    setExtensionEndDate("");
+    setExtensionReason("");
+    setExtensionError("");
+    setViewOrder(null);
+  };
+
+  const closeExtendSuspension = () => {
+    if (extensionSaving) return;
+
+    setExtendingOrder(null);
+    setExtensionEndDate("");
+    setExtensionReason("");
+    setExtensionError("");
+  };
+
+  const submitExtendSuspension = async (e) => {
+    e.preventDefault();
+
+    if (!extendingOrder || extensionSaving) return;
+
+    setExtensionError("");
+
+    const currentEndDate = toDate10(
+      extendingOrder.end_date ||
+      extendingOrder.suspension_end
+    );
+
+    if (!extensionEndDate) {
+      setExtensionError("New end date is required.");
+      return;
+    }
+
+    if (extensionEndDate <= currentEndDate) {
+      setExtensionError(
+        "New end date must be later than the current end date."
+      );
+      return;
+    }
+
+    if (!clean(extensionReason)) {
+      setExtensionError("Extension reason is required.");
+      return;
+    }
+
+    if (
+      !window.confirm(
+        "Confirm suspension extension? The suspension end date will be updated."
+      )
+    ) {
+      return;
+    }
+
+    setExtensionSaving(true);
+
+    try {
+      await api.put(
+        `/suspension-orders/${extendingOrder.id}/extend`,
+        {
+          new_end_date: extensionEndDate,
+          extension_reason: clean(extensionReason),
+        }
+      );
+
+      setExtendingOrder(null);
+      setExtensionEndDate("");
+      setExtensionReason("");
+      setExtensionError("");
+
+      await loadData();
+
+      alert("Suspension extended successfully.");
+    } catch (error) {
+      setExtensionError(
+        error?.response?.data?.message ||
+        "Failed to extend suspension."
+      );
+    } finally {
+      setExtensionSaving(false);
+    }
+  };
+
+  const additionalExtensionDays = useMemo(() => {
+    if (!extendingOrder || !extensionEndDate) return 0;
+
+    const currentEndDate = toDate10(
+      extendingOrder.end_date ||
+      extendingOrder.suspension_end
+    );
+
+    if (!currentEndDate) return 0;
+
+    const current = Date.parse(
+      `${currentEndDate}T00:00:00Z`
+    );
+
+    const next = Date.parse(
+      `${extensionEndDate}T00:00:00Z`
+    );
+
+    if (!Number.isFinite(current) || !Number.isFinite(next)) {
+      return 0;
+    }
+
+    return Math.max(
+      0,
+      Math.round((next - current) / 86400000)
+    );
+  }, [extendingOrder, extensionEndDate]);
 
   const openCreate = () => {
     if (!canCreate) return;
@@ -1326,26 +1467,15 @@ export default function SuspensionOrder() {
                             View
                           </button>
 
-                          {canEditDelete&&(
-                            <>
-                              <button
-                                className="po-action-btn po-action-edit"
-                                type="button"
-                                disabled={completed}
-                                onClick={()=>openEdit(o)}
-                              >
-                                Edit
-                              </button>
-
-                              <button
-                                className="po-action-btn po-action-delete"
-                                type="button"
-                                disabled={completed}
-                                onClick={()=>deleteOrder(o)}
-                              >
-                                Delete
-                              </button>
-                            </>
+                          {canEditDelete && (
+                            <button
+                              className="po-action-btn po-action-delete"
+                              type="button"
+                              disabled={completed}
+                              onClick={() => deleteOrder(o)}
+                            >
+                              Delete
+                            </button>
                           )}
 
                           {canApproveStage(o)&&(
@@ -1804,6 +1934,39 @@ export default function SuspensionOrder() {
               </div>
 
               <div className="po-modal-actions">
+
+                {/* EDIT SUSPENSION */}
+                {canEditDelete &&
+                  !["approved", "received"].includes(norm(viewOrder.status)) && (
+                    <button
+                      className="po-action-btn po-action-edit"
+                      type="button"
+                      onClick={() => {
+                        const order = viewOrder;
+                        setViewOrder(null);
+                        openEdit(order);
+                      }}
+                    >
+                      Edit
+                    </button>
+                  )}
+
+                {/* EXTEND SUSPENSION */}
+                {canExtendSuspension &&
+                  ["approved", "received"].includes(
+                    norm(viewOrder.status)
+                  ) && (
+                    <button
+                      className="po-action-btn po-action-approve"
+                      type="button"
+                      onClick={() =>
+                        openExtendSuspension(viewOrder)
+                      }
+                    >
+                      Extend Suspension
+                    </button>
+                  )}
+
                 <button
                   className="po-btn po-btn-outline"
                   type="button"
@@ -1811,8 +1974,180 @@ export default function SuspensionOrder() {
                 >
                   Close
                 </button>
+
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {extendingOrder && (
+        <div
+          className="po-modal-overlay"
+          onMouseDown={(e) => {
+            if (
+              e.target.classList.contains("po-modal-overlay")
+            ) {
+              closeExtendSuspension();
+            }
+          }}
+        >
+          <div
+            className="po-modal po-modal-sm"
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <div className="po-modal-head">
+              <div>
+                <h3 className="po-modal-title">
+                  Extend Suspension
+                </h3>
+
+                <div className="po-modal-sub">
+                  {extendingOrder.employee_name || "-"}
+                </div>
+              </div>
+
+              <button
+                className="po-x"
+                type="button"
+                onClick={closeExtendSuspension}
+                disabled={extensionSaving}
+              >
+                ✕
+              </button>
+            </div>
+
+            <form
+              className="po-form"
+              onSubmit={submitExtendSuspension}
+            >
+              <div className="po-grid">
+
+                <div className="po-field full">
+                  <label>Current End Date</label>
+
+                  <input
+                    type="date"
+                    value={toDate10(
+                      extendingOrder.end_date ||
+                      extendingOrder.suspension_end
+                    )}
+                    readOnly
+                  />
+                </div>
+
+                <div className="po-field full">
+                  <label>New End Date</label>
+
+                  <input
+                    type="date"
+                    value={extensionEndDate}
+                    min={(() => {
+                      const current = toDate10(
+                        extendingOrder.end_date ||
+                        extendingOrder.suspension_end
+                      );
+
+                      if (!current) return undefined;
+
+                      const next = new Date(
+                        `${current}T00:00:00Z`
+                      );
+
+                      next.setUTCDate(
+                        next.getUTCDate() + 1
+                      );
+
+                      return next
+                        .toISOString()
+                        .slice(0, 10);
+                    })()}
+                    onChange={(e) =>
+                      setExtensionEndDate(e.target.value)
+                    }
+                    required
+                    disabled={extensionSaving}
+                  />
+                </div>
+
+                <div className="po-field full">
+                  <label>Additional Suspension Days</label>
+
+                  <input
+                    type="number"
+                    value={additionalExtensionDays}
+                    readOnly
+                  />
+                </div>
+
+                <div className="po-field full">
+                  <label>Total Suspension Days After Extension</label>
+
+                  <input
+                    type="number"
+                    value={
+                      toNum(
+                        extendingOrder.days_of_suspension
+                      ) + additionalExtensionDays
+                    }
+                    readOnly
+                  />
+                </div>
+
+                <div className="po-field full">
+                  <label>Extension Reason</label>
+
+                  <textarea
+                    value={extensionReason}
+                    onChange={(e) =>
+                      setExtensionReason(e.target.value)
+                    }
+                    placeholder="Enter the reason for extending the suspension..."
+                    rows={4}
+                    required
+                    disabled={extensionSaving}
+                  />
+                </div>
+
+              </div>
+
+              {extensionError && (
+                <div
+                  style={{
+                    color: "#dc2626",
+                    marginTop: 12,
+                    fontSize: 13,
+                  }}
+                >
+                  {extensionError}
+                </div>
+              )}
+
+              <div className="po-modal-actions">
+                <button
+                  type="button"
+                  className="po-btn po-btn-outline"
+                  onClick={closeExtendSuspension}
+                  disabled={extensionSaving}
+                >
+                  Cancel
+                </button>
+
+                <button
+                  type="submit"
+                  className="po-action-btn po-action-approve"
+                  disabled={
+                    extensionSaving ||
+                    additionalExtensionDays <= 0 ||
+                    !clean(extensionReason)
+                  }
+                >
+                  {extensionSaving
+                    ? "Saving..."
+                    : "Confirm Extension"}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

@@ -334,8 +334,6 @@ const getDynamicApprovalChain = (item) => {
         ];
       }
 
-      // AVP applicant
-      // -> SVP -> Accounting Final
       if (isAvpPos(position)) {
         return [
           "senior vice president",
@@ -343,8 +341,6 @@ const getDynamicApprovalChain = (item) => {
         ];
       }
 
-      // RM applicant
-      // -> AVP -> Accounting Final
       if (isRegionalManagerPos(position)) {
         return [
           "assistant vice president",
@@ -352,8 +348,6 @@ const getDynamicApprovalChain = (item) => {
         ];
       }
 
-      // AM applicant
-      // -> RM -> AVP -> Accounting Final
       if (isAreaManagerPos(position)) {
         return [
           "regional manager",
@@ -362,8 +356,6 @@ const getDynamicApprovalChain = (item) => {
         ];
       }
 
-      // BM applicant
-      // -> AM -> RM -> AVP -> Accounting Final
       if (isBranchManagerPos(position)) {
         return [
           "area manager",
@@ -373,8 +365,6 @@ const getDynamicApprovalChain = (item) => {
         ];
       }
 
-      // Loan Officer / regular IT staff
-      // -> BM -> AM -> RM -> AVP -> Accounting Final
       return [
         "branch manager",
         "area manager",
@@ -567,7 +557,6 @@ const buildMonthlySchedule = (
     return rows;
   }
 
-  // Use date-only portion to avoid timezone shifting.
   const datePart = String(approvedAt).slice(0, 10);
   const [year, month, day] = datePart
     .split("-")
@@ -576,24 +565,6 @@ const buildMonthlySchedule = (
   if (!year || !month || !day) {
     return rows;
   }
-
-  /*
-    LOAN DEDUCTION RULE
-
-    Approval cycle:
-    10th of previous month through 9th of current month
-    = deduction on the 10th of current month.
-
-    Examples:
-    Aug 10 - Aug 25 -> Sep 10
-    Aug 26 - Sep 09 -> Sep 10
-    Sep 10 - Sep 25 -> Oct 10
-    Sep 26 - Oct 09 -> Oct 10
-
-    Simplified:
-    Approved on 1st-9th  -> 10th SAME month
-    Approved on 10th-end -> 10th NEXT month
-  */
 
   let deductionYear = year;
   let deductionMonth = month;
@@ -607,7 +578,6 @@ const buildMonthlySchedule = (
     }
   }
 
-  // JS month is zero-based.
   const current = new Date(
     deductionYear,
     deductionMonth - 1,

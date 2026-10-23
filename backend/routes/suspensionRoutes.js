@@ -1,3 +1,5 @@
+//suspensionRoutes.js
+
 const express = require("express");
 const router = express.Router();
 const pool = require("../db");
@@ -1368,6 +1370,246 @@ router.put(
     } finally {
       client.release();
     }
+  }
+);
+
+// =====================================================
+// EXTEND APPROVED / RECEIVED SUSPENSION
+// =====================================================
+
+router.put(
+  "/suspension-orders/:id/extend",
+  requireAuth,
+  requirePermission("suspension_order", "edit"),
+  async (req, res) => {
+    let client;
+
+    try {
+      const id = toInt(req.params.id);
+
+      const newEndDate = toDate(
+        req.body?.new_end_date
+      );
+
+      const extensionReason = clean(
+        req.body?.extension_reason
+      );
+
+      if (!id || id <= 0) {
+        return res.status(400).json({
+          message: "Invalid suspension order ID",
+        });
+      }
+
+      // Only authorized administrative departments
+      const canExtend =
+        isAdmin(req) ||
+        isIT(req) ||
+        isHr(req) ||
+        isHrDepartmentUser(req) ||
+        isAccounting(req) ||
+        isAccountingDepartmentUser(req);
+
+      if (!canExtend) {
+        return res.status(403).json({
+          message:
+            "Only Admin, IT, HR, and Accounting can extend suspensions",
+        });
+      }
+
+      if (!newEndDate) {
+        return res.status(400).json({
+          message: "New suspension end date is required",
+        });
+      }
+
+      if (!extensionReason) {
+        return res.status(400).json({
+          message: "Extension reason is required",
+        });
+      }
+
+      client = await pool.connect();
+
+      await client.query("BEGIN");
+
+      const existingRes = await client.query(
+        `
+          SELECT *
+          FROM public.suspension_orders
+          WHERE id = $1
+          FOR UPDATE
+        `,
+        [id]
+      );
+
+      if (existingRes.rowCount === 0) {
+        await client.query("ROLLBACK");
+
+        return res.status(404).json({
+          message: "Suspension order not found",
+        });
+      }
+
+      const existing = existingRes.rows[0];
+
+      const status = clean(
+        existing.status
+      ).toLowerCase();
+
+      if (!["approved", "received"].includes(status)) {
+        await client.query("ROLLBACK");
+
+        return res.status(400).json({
+          message:
+            "Only approved or received suspensions can be extended",
+        });
+      }
+
+      const previousEndDate = toDate(
+        existing.end_date
+      );
+
+      const startDate = toDate(
+        existing.start_date
+      );
+
+      if (!previousEndDate || !startDate) {
+        await client.query("ROLLBACK");
+
+        return res.status(400).json({
+          message: "Suspension dates are invalid",
+        });
+      }
+
+      // Calculate calendar-day difference using UTC.
+      const parseUTC = (value) =>
+        Date.parse(`${value}T00:00:00Z`);
+
+      const millisecondsPerDay = 86400000;
+
+      const additionalDays = Math.round(
+        (
+          parseUTC(newEndDate) -
+          parseUTC(previousEndDate)
+        ) / millisecondsPerDay
+      );
+
+      if (additionalDays <= 0) {
+        await client.query("ROLLBACK");
+
+        return res.status(400).json({
+          message:
+            "New end date must be later than the current end date",
+        });
+      }
+
+      const previousDays = Number(
+        existing.days_of_suspension ?? 0
+      );
+
+      const newDays =
+        previousDays + additionalDays;
+
+      // Update suspension duration.
+      // Financial deductions remain unchanged.
+      const updatedRes = await client.query(
+        `
+          UPDATE public.suspension_orders
+          SET
+            end_date = $2::date,
+            days_of_suspension = $3
+          WHERE id = $1
+          RETURNING *
+        `,
+        [
+          id,
+          newEndDate,
+          newDays,
+        ]
+      );
+
+      // Record extension history.
+      await client.query(
+        `
+          INSERT INTO public.suspension_extension_history
+          (
+            suspension_order_id,
+            previous_end_date,
+            new_end_date,
+            previous_days,
+            new_days,
+            additional_days,
+            extension_reason,
+            extended_by
+          )
+          VALUES
+          (
+            $1,
+            $2::date,
+            $3::date,
+            $4,
+            $5,
+            $6,
+            $7,
+            $8
+          )
+        `,
+        [
+          id,
+          previousEndDate,
+          newEndDate,
+          previousDays,
+          newDays,
+          additionalDays,
+          extensionReason,
+          toInt(req.user?.id),
+        ]
+      );
+
+      await client.query("COMMIT");
+
+      return res.json({
+        success: true,
+        message:
+          "Suspension extended successfully",
+        data: updatedRes.rows[0],
+        extension: {
+          previous_end_date: previousEndDate,
+          new_end_date: newEndDate,
+          additional_days: additionalDays,
+          previous_days: previousDays,
+          new_days: newDays,
+          extension_reason: extensionReason,
+        },
+      });
+
+        } catch (error) {
+          if (client) {
+            try {
+              await client.query("ROLLBACK");
+            } catch (rollbackError) {
+              console.error(
+                "Suspension extension rollback error:",
+                rollbackError
+              );
+            }
+          }
+
+          console.error(
+            "EXTEND SUSPENSION ERROR:",
+            error
+          );
+
+          return res.status(500).json({
+            message: error.message || "Server error",
+          });
+
+        } finally {
+          if (client) {
+            client.release();
+          }
+        }
   }
 );
 

@@ -20,13 +20,39 @@ const Branches = () => {
   const token = useMemo(() => localStorage.getItem("token"), []);
 
   const role = norm(user?.role);
+
+  const department = norm(
+    user?.department ||
+    user?.department_name ||
+    user?.user_department ||
+    user?.departmentName ||
+    user?.dept
+  );
+
   const isAdmin = role === "admin";
-  const isHR = role === "hr";
-  const isAccounting = role === "accounting";
+
+  const isHR =
+    role === "hr" ||
+    department === "hr" ||
+    department === "hr department";
+
+  const isAccounting =
+    role === "accounting" ||
+    department === "accounting" ||
+    department === "accounting department";
+
   const isBranchManager = role === "branch manager";
 
-  const canManageBranches = isAdmin || isHR || isAccounting;
-  const canOpenBonus = isAdmin || isHR || isAccounting || isBranchManager;
+  const canManageBranches =
+    isAdmin ||
+    isHR ||
+    isAccounting;
+
+  const canOpenBonus =
+    isAdmin ||
+    isHR ||
+    isAccounting ||
+    isBranchManager;
 
   const [branches, setBranches] = useState([]);
   const [departments, setDepartments] = useState([]);
