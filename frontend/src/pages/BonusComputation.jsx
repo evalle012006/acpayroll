@@ -137,6 +137,15 @@ const money = (value) => {
   });
 };
 
+const moneyRounded = (value) => {
+  const amount = Number(value ?? 0);
+
+  return Math.round(amount).toLocaleString("en-PH", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  });
+};
+
 const formatDate = (value) => {
   if (!value) return "-";
 
@@ -1048,7 +1057,7 @@ export default function BonusComputation() {
           </div>
 
           <div className="bonus-summary-value">
-            ₱{money(bonusSummary.month13)}
+            ₱{moneyRounded(bonusSummary.month13)}
           </div>
         </div>
 
@@ -1058,7 +1067,7 @@ export default function BonusComputation() {
           </div>
 
           <div className="bonus-summary-value">
-            ₱{money(bonusSummary.month14)}
+            ₱{moneyRounded(bonusSummary.month14)}
           </div>
         </div>
 
@@ -1068,7 +1077,7 @@ export default function BonusComputation() {
           </div>
 
           <div className="bonus-summary-value">
-            ₱{money(bonusSummary.month15)}
+            ₱{moneyRounded(bonusSummary.month15)}
           </div>
         </div>
 
@@ -1181,7 +1190,7 @@ export default function BonusComputation() {
                   <td className="num">{money(row.ecola)}</td>
                   <td className="num">{money(row.total_gross)}</td>
                   <td className="num">
-                    {money(
+                    {moneyRounded(
                       Number(row.month_13 || 0) +
                         Number(row.month_14 || 0) +
                         Number(row.month_15 || 0)
@@ -1352,21 +1361,21 @@ export default function BonusComputation() {
                 <div>
                   <span>13th Month Total</span>
                   <strong>
-                    ₱ {money(totals.month_13)}
+                    ₱ {moneyRounded(totals.month_13)}
                   </strong>
                 </div>
 
                 <div>
                   <span>14th Month Total</span>
                   <strong>
-                    ₱ {money(totals.month_14)}
+                    ₱ {moneyRounded(totals.month_14)}
                   </strong>
                 </div>
 
                 <div>
                   <span>15th Month Base</span>
                   <strong>
-                    ₱ {money(totals.month_15)}
+                    ₱ {moneyRounded(totals.month_15)}
                   </strong>
                 </div>
 
@@ -1380,7 +1389,7 @@ export default function BonusComputation() {
                 <div className="bonus-benefit-highlight">
                   <span>Total Bonus Base</span>
                   <strong>
-                    ₱ {money(totalBenefits)}
+                    ₱ {moneyRounded(totalBenefits)}
                   </strong>
                 </div>
               </div>
@@ -1424,11 +1433,11 @@ export default function BonusComputation() {
                           </td>
 
                           <td>12</td>
-                          <td>{money(item.month_13)}</td>
-                          <td>{money(item.month_14)}</td>
-                          <td>{money(item.month_15)}</td>
+                          <td>{moneyRounded(item.month_13)}</td>
+                          <td>{moneyRounded(item.month_14)}</td>
+                          <td>{moneyRounded(item.month_15)}</td>
                           <td>
-                            {money(
+                            {moneyRounded(
                               Number(item.month_13 || 0) +
                               Number(item.month_14 || 0) +
                               Number(item.month_15 || 0)
@@ -1482,10 +1491,10 @@ export default function BonusComputation() {
                       <th>Total</th>
                       <th>{money(totals.total_compensation)}</th>
                       <th>12</th>
-                      <th>{money(totals.month_13)}</th>
-                      <th>{money(totals.month_14)}</th>
-                      <th>{money(totals.month_15)}</th>
-                      <th>{money(totals.total_bonus)}</th>
+                      <th>{moneyRounded(totals.month_13)}</th>
+                      <th>{moneyRounded(totals.month_14)}</th>
+                      <th>{moneyRounded(totals.month_15)}</th>
+                      <th>{moneyRounded(totals.total_bonus)}</th>
                       <th colSpan={2}>-</th>
                     </tr>
                   </tfoot>
