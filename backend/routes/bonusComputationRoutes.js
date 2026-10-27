@@ -580,7 +580,6 @@ router.post("/recalculate", requireAuth, requireBonusManager, async (req, res) =
           continue;
         }
 
-        const suspensionDeductions = await loadSuspensionDeductions(client, staffId, year);
         const computedMonths = [];
         let computationError = null;
 
@@ -599,12 +598,15 @@ router.post("/recalculate", requireAuth, requireBonusManager, async (req, res) =
           }
 
           const totalCompensation = result.totalCompensation;
-          const suspension = suspensionDeductions.get(month);
-          const deductions = roundMoney(suspension?.totalDeduction ?? 0);
-          const adjustedCompensation = roundMoney(Math.max(0, totalCompensation - deductions));
-          const monthlyBonusShare = roundMoney(adjustedCompensation / 12);
+          const deductions = 0;
+          const monthlyBonusShare = roundMoney(totalCompensation / 12);
 
-          computedMonths.push({month, totalCompensation, deductions, monthlyBonusShare,});
+          computedMonths.push({
+            month,
+            totalCompensation,
+            deductions,
+            monthlyBonusShare,
+          });
         }
 
         if (computationError) {
@@ -663,69 +665,47 @@ router.post("/recalculate", requireAuth, requireBonusManager, async (req, res) =
                     ELSE EXCLUDED.total_compensation
                   END,
 
-                deductions = EXCLUDED.deductions,
+                deductions = 0,
 
                 month_13 =
-                  CASE
-                    WHEN bonus_computations.is_manual_override = TRUE
-                    THEN GREATEST(
-                      0,
-                      COALESCE(
-                        bonus_computations.manual_base_month_13,
-                        bonus_computations.month_13
-                      ) - ROUND(EXCLUDED.deductions / 12.0, 2)
-                    )
-                    ELSE EXCLUDED.month_13
-                  END,
+                  ROUND(
+                    (
+                      CASE
+                        WHEN bonus_computations.is_manual_override = TRUE
+                        THEN bonus_computations.total_compensation
+                        ELSE EXCLUDED.total_compensation
+                      END
+                    ) / 12.0,
+                    2
+                  ),
 
                 month_14 =
-                  CASE
-                    WHEN bonus_computations.is_manual_override = TRUE
-                    THEN GREATEST(
-                      0,
-                      COALESCE(
-                        bonus_computations.manual_base_month_14,
-                        bonus_computations.month_14
-                      ) - ROUND(EXCLUDED.deductions / 12.0, 2)
-                    )
-                    ELSE EXCLUDED.month_14
-                  END,
+                  ROUND(
+                    (
+                      CASE
+                        WHEN bonus_computations.is_manual_override = TRUE
+                        THEN bonus_computations.total_compensation
+                        ELSE EXCLUDED.total_compensation
+                      END
+                    ) / 12.0,
+                    2
+                  ),
 
                 month_15 =
-                  CASE
-                    WHEN bonus_computations.is_manual_override = TRUE
-                    THEN GREATEST(
-                      0,
-                      COALESCE(
-                        bonus_computations.manual_base_month_15,
-                        bonus_computations.month_15
-                      ) - ROUND(EXCLUDED.deductions / 12.0, 2)
-                    )
-                    ELSE EXCLUDED.month_15
-                  END,
+                  ROUND(
+                    (
+                      CASE
+                        WHEN bonus_computations.is_manual_override = TRUE
+                        THEN bonus_computations.total_compensation
+                        ELSE EXCLUDED.total_compensation
+                      END
+                    ) / 12.0,
+                    2
+                  ),
 
-                manual_base_month_13 =
-                  CASE
-                    WHEN bonus_computations.is_manual_override = TRUE
-                    THEN bonus_computations.manual_base_month_13
-                    ELSE NULL
-                  END,
-
-                manual_base_month_14 =
-                  CASE
-                    WHEN bonus_computations.is_manual_override = TRUE
-                    THEN bonus_computations.manual_base_month_14
-                    ELSE NULL
-                  END,
-
-                manual_base_month_15 =
-                  CASE
-                    WHEN bonus_computations.is_manual_override = TRUE
-                    THEN bonus_computations.manual_base_month_15
-                    ELSE NULL
-                  END,
-
-                updated_by = EXCLUDED.updated_by,
+                manual_base_month_13 = NULL,
+                manual_base_month_14 = NULL,
+                manual_base_month_15 = NULL,
                 updated_at = NOW()
 
               RETURNING id;
@@ -948,13 +928,6 @@ router.put("/staff/:staffId", requireAuth, requireBonusManager, async (req, res)
         });
       }
 
-      const suspensionDeductions =
-        await loadSuspensionDeductions(
-          client,
-          staffId,
-          year
-        );
-
       const requestedMonthNumbers = normalizedMonths.map((item) => item.month);
       const existingResult = await client.query(
         `
@@ -1037,50 +1010,31 @@ router.put("/staff/:staffId", requireAuth, requireBonusManager, async (req, res)
 
       for (const item of normalizedMonths) {
         const existing = existingMap.get(item.month);
-
-        const deductions = roundMoney(
-          suspensionDeductions.get(item.month)?.totalDeduction ?? 0
+        const deductions = 0;
+        const monthlyBonusShare = roundMoney(
+          item.total_compensation / 12
         );
-
-        const originalDeductions = roundMoney(
-          item.original.deductions
-        );
-
-        if (deductions !== originalDeductions) {
-          await client.query("ROLLBACK");
-
-          return res.status(409).json({
-            message:
-              `Suspension deductions for month ${item.month} ` +
-              `have changed. Please reload the employee's ` +
-              `bonus computation before saving.`,
-
-            conflict_months: [item.month],
-          });
-        }
 
         const changed =
           !existing ||
           roundMoney(existing.total_compensation) !==
             item.total_compensation ||
-          roundMoney(existing.deductions) !==
-            deductions ||
+          roundMoney(existing.deductions) !== 0 ||
           roundMoney(existing.month_13) !==
-            item.month_13 ||
+            monthlyBonusShare ||
           roundMoney(existing.month_14) !==
-            item.month_13 ||
+            monthlyBonusShare ||
           roundMoney(existing.month_15) !==
-            item.month_13;
+            monthlyBonusShare;
 
         if (!changed) {
           unchangedMonths += 1;
           continue;
         }
 
-        const suspensionAdjustment = roundMoney(deductions / 12);
-        const manualBase13 = roundMoney(item.month_13 + suspensionAdjustment);
-        const manualBase14 = roundMoney(item.month_13 + suspensionAdjustment);
-        const manualBase15 = roundMoney(item.month_13 + suspensionAdjustment);
+        const manualBase13 = monthlyBonusShare;
+        const manualBase14 = monthlyBonusShare;
+        const manualBase15 = monthlyBonusShare;
 
         await client.query(
           `
@@ -1138,7 +1092,7 @@ router.put("/staff/:staffId", requireAuth, requireBonusManager, async (req, res)
             item.month,
             item.total_compensation,
             deductions,
-            item.month_13,
+            monthlyBonusShare,
             manualBase13,
             manualBase14,
             manualBase15,
@@ -1308,11 +1262,8 @@ router.post("/staff/:staffId/reset-automatic", requireAuth, requireBonusManager,
       }
 
       const totalCompensation = computation.totalCompensation;
-      const suspensionDeductions = await loadSuspensionDeductions(client, staffId, year);
-      const suspension = suspensionDeductions.get(month);
-      const deductions = roundMoney(suspension?.totalDeduction ?? 0);
-      const adjustedCompensation = roundMoney(Math.max(0, totalCompensation - deductions));
-      const monthlyBonusShare = roundMoney(adjustedCompensation / 12);
+      const deductions = 0;
+      const monthlyBonusShare = roundMoney(totalCompensation / 12);
 
       const updateResult = await client.query(
         `

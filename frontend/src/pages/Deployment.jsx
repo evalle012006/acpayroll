@@ -7,13 +7,7 @@ import StepTabs from "./Deployment/StepTabs";
 import StaffDetailsStep from "./Deployment/StaffDetailsStep";
 import ContractDetailsStep from "./Deployment/ContractDetailsStep";
 import StaffCreateModal from "./Deployment/StaffCreateModal";
-import {
-  norm,
-  safeJsonArray,
-  toDate10,
-  toNum,
-  toStr,
-} from "./Deployment/deploymentUtils";
+import {norm, safeJsonArray, toDate10, toNum, toStr,} from "./Deployment/deploymentUtils";
 
 export default function Deployment() {
   const navigate = useNavigate();
