@@ -173,6 +173,117 @@ const renderChainSummary = (order) => {
     .join(" | ");
 };
 
+function SearchableDestinationDropdown({
+  label,
+  value,
+  options,
+  onChange,
+}) {
+  const [search, setSearch] = useState("");
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef(null);
+
+  useEffect(() => {
+    const handleOutsideClick = (event) => {
+      if (
+        containerRef.current &&
+        !containerRef.current.contains(event.target)
+      ) {
+        setOpen(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleOutsideClick);
+
+    return () => {
+      document.removeEventListener(
+        "mousedown",
+        handleOutsideClick
+      );
+    };
+  }, []);
+
+  const filteredOptions = options.filter((option) =>
+    norm(option).includes(norm(search))
+  );
+
+  return (
+    <div
+      className="demotion-field"
+      ref={containerRef}
+      style={{ position: "relative" }}
+    >
+      <label>{label}</label>
+
+      <input
+        type="text"
+        value={open ? search : value}
+        placeholder={`Search or select ${label.toLowerCase()}`}
+        autoComplete="off"
+        onFocus={() => {
+          setSearch("");
+          setOpen(true);
+        }}
+        onChange={(event) => {
+          setSearch(event.target.value);
+          setOpen(true);
+        }}
+        onKeyDown={(event) => {
+          if (event.key === "Escape") {
+            setOpen(false);
+          }
+
+          if (event.key === "Enter" && open) {
+            event.preventDefault();
+
+            if (filteredOptions.length === 1) {
+              onChange(filteredOptions[0]);
+              setOpen(false);
+            }
+          }
+        }}
+      />
+
+      {open && (
+        <div
+          className="demotion-search-dropdown"
+          style={{
+            position: "absolute",
+            top: "100%",
+            left: 0,
+            right: 0,
+            zIndex: 1000,
+            maxHeight: 220,
+            overflowY: "auto",
+          }}
+        >
+          {filteredOptions.length === 0 ? (
+            <div className="demotion-search-empty">
+              No matching results.
+            </div>
+          ) : (
+            filteredOptions.map((option) => (
+              <button
+                key={option}
+                type="button"
+                className="demotion-search-item"
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => {
+                  onChange(option);
+                  setSearch("");
+                  setOpen(false);
+                }}
+              >
+                {option}
+              </button>
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function DemotionOrder() {
   const navigate = useNavigate();
   const employeeBoxRef = useRef(null);
@@ -470,6 +581,48 @@ export default function DemotionOrder() {
     return m;
   }, [branches]);
 
+    // =====================================================
+    // SEARCHABLE DESTINATION OPTIONS
+    // =====================================================
+
+    const destinationOptions = useMemo(() => {
+      const uniqueValues = (field) => {
+        const values = new Map();
+
+        branches.forEach((branch) => {
+          const value = clean(branch?.[field]);
+
+          if (value && !values.has(norm(value))) {
+            values.set(norm(value), value);
+          }
+        });
+
+        // Preserve previously saved values only during Edit.
+        if (editingOrder) {
+          const savedValue = clean(
+            editingOrder?.[`to_${field}`]
+          );
+
+          if (
+            savedValue &&
+            !values.has(norm(savedValue))
+          ) {
+            values.set(norm(savedValue), savedValue);
+          }
+        }
+
+        return Array.from(values.values()).sort((a, b) =>
+          a.localeCompare(b)
+        );
+      };
+
+      return {
+        division: uniqueValues("division"),
+        region: uniqueValues("region"),
+        area: uniqueValues("area"),
+      };
+    }, [branches, editingOrder]);
+
   const filteredStaff = useMemo(() => {
     const q = norm(employeeSearch);
 
@@ -729,6 +882,42 @@ export default function DemotionOrder() {
     if (!clean(form.new_position)) return setErr("New position is required.");
     if (!toDate10(form.effective_date)) return setErr("Effective date is required.");
     if (!form.to_branch_id) return setErr("Destination branch is required.");
+    if (!form.to_division) {
+      return setErr("Destination division is required.");
+    }
+
+    if (!form.to_region) {
+      return setErr("Destination region is required.");
+    }
+
+    if (!form.to_area) {
+      return setErr("Destination area is required.");
+    }
+
+    if (
+      !destinationOptions.division.some(
+        (value) => norm(value) === norm(form.to_division)
+      )
+    ) {
+      return setErr("Select a valid destination division.");
+    }
+
+    if (
+      !destinationOptions.region.some(
+        (value) => norm(value) === norm(form.to_region)
+      )
+    ) {
+      return setErr("Select a valid destination region.");
+    }
+
+    if (
+      !destinationOptions.area.some(
+        (value) => norm(value) === norm(form.to_area)
+      )
+    ) {
+      return setErr("Select a valid destination area.");
+    }
+
     if (!form.to_department) { return setErr("Destination department is required.");}
     if (!editingOrder && !form.attachment) {
       return setErr("Demotion request file is required.");
@@ -2136,74 +2325,64 @@ export default function DemotionOrder() {
                   />
                 </div>
 
-                <div className="demotion-field">
-                  <label>Destination Branch</label>
-                  <select
-                    value={form.to_branch_id}
-                    onChange={(event) => {
-                      const branchId = event.target.value;
+                  <div className="demotion-field">
+                    <label>Destination Branch</label>
 
-                      const selectedBranch = branches.find(
-                        (branch) =>
-                          String(branch.id) === String(branchId)
-                      );
+                    <select
+                      value={form.to_branch_id}
+                      onChange={(event) => {
+                        setForm((previous) => ({
+                          ...previous,
+                          to_branch_id: event.target.value,
+                        }));
+                      }}
+                      required
+                    >
+                      <option value="">Select branch</option>
 
+                      {branches.map((branch) => (
+                        <option key={branch.id} value={branch.id}>
+                          {branch.code} - {branch.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <SearchableDestinationDropdown
+                    label="Destination Division"
+                    value={form.to_division}
+                    options={destinationOptions.division}
+                    onChange={(value) =>
                       setForm((previous) => ({
                         ...previous,
-
-                        to_branch_id: branchId,
-
-                        to_division: clean(
-                          selectedBranch?.division
-                        ),
-
-                        to_region: clean(
-                          selectedBranch?.region
-                        ),
-
-                        to_area: clean(
-                          selectedBranch?.area
-                        ),
-                      }));
-                    }}
-                    required={!editingOrder}
-                  >
-                    <option value="">Select branch</option>
-
-                    {branches.map((branch) => (
-                      <option key={branch.id} value={branch.id}>
-                        {branch.code} - {branch.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="demotion-field">
-                  <label>Destination Division</label>
-                  <input
-                    value={form.to_division}
-                    readOnly
-                    placeholder="Auto-filled from branch"
+                        to_division: value,
+                      }))
+                    }
                   />
-                </div>
 
-                <div className="demotion-field">
-                  <label>Destination Region</label>
-                  <input
+                  <SearchableDestinationDropdown
+                    label="Destination Region"
                     value={form.to_region}
-                    readOnly
-                    placeholder="Auto-filled from branch"
+                    options={destinationOptions.region}
+                    onChange={(value) =>
+                      setForm((previous) => ({
+                        ...previous,
+                        to_region: value,
+                      }))
+                    }
                   />
-                </div>
 
-                <div className="demotion-field">
-                  <label>Destination Area</label>
-                  <input
+                  <SearchableDestinationDropdown
+                    label="Destination Area"
                     value={form.to_area}
-                    readOnly
-                    placeholder="Auto-filled from branch"
+                    options={destinationOptions.area}
+                    onChange={(value) =>
+                      setForm((previous) => ({
+                        ...previous,
+                        to_area: value,
+                      }))
+                    }
                   />
-                </div>
 
                 <div className="demotion-field">
                   <label>Destination Department</label>

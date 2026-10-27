@@ -1,3 +1,5 @@
+//resignationRequestsRoutes.js
+
 const express = require("express");
 const path = require("path");
 const fs = require("fs");
@@ -88,7 +90,7 @@ const isFinalApprover = (req) =>
   isHRDepartment(req);
 
 // =====================================================
-// REVOKE / RE-APPLY ACCESS
+// REVOKE RESIGNATION ACCESS
 // Admin / HR Department / Accounting Department
 // =====================================================
 
@@ -633,7 +635,8 @@ router.get(
           avp_signature_user.username AS avp_signature_approved_by_name,
           hr_final_user.username AS hr_final_approved_by_name,
 
-          final_user.username AS approved_by_name
+          final_user.username AS approved_by_name,
+          rejected_user.username AS rejected_by_name
 
         FROM public.resignation_requests rr
 
@@ -673,6 +676,9 @@ router.get(
 
         LEFT JOIN public.users hr_final_user
           ON hr_final_user.id = rr.hr_final_approved_by
+
+        LEFT JOIN public.users rejected_user
+          ON rejected_user.id = rr.rejected_by
 
         WHERE 1=1
       `;
@@ -1125,153 +1131,97 @@ router.put(
 // FINALIZE APPROVED RESIGNATION
 // Called ONLY when resignation reaches final Approved.
 // =====================================================
+const finalizeApprovedResignation = async (
+  client,
+  existing,
+  employeeNo,
+  effectiveDate
+) => {
+  const remarks = clean(existing.remarks) || null;
 
-      const finalizeApprovedResignation = async (
-        client,
-        existing,
+  // =====================================================
+  // GET CURRENT PHILIPPINE DATE
+  // =====================================================
+  const todayRes = await client.query(
+    `
+    SELECT
+      (NOW() AT TIME ZONE 'Asia/Manila')::date::text AS today
+    `
+  );
+
+  const today = todayRes.rows[0].today;
+
+  // =====================================================
+  // UPDATE EMPLOYEE STATUS
+  // =====================================================
+  if (effectiveDate <= today) {
+    // Resignation is effective today or earlier.
+    await client.query(
+      `
+      UPDATE public.staff
+      SET
+        status = 'Inactive',
+        exit_type = 'Resigned',
+        exit_date = $2::date,
+        exit_remarks = $3
+      WHERE employee_no = $1
+      `,
+      [
         employeeNo,
-        effectiveDate
-      ) => {
-        const remarks = clean(existing.remarks) || null;
+        effectiveDate,
+        remarks,
+      ]
+    );
+  } else {
+    // Resignation is effective in the future.
+    await client.query(
+      `
+      UPDATE public.staff
+      SET
+        status = 'Active',
+        exit_type = 'Resigned',
+        exit_date = $2::date,
+        exit_remarks = $3
+      WHERE employee_no = $1
+      `,
+      [
+        employeeNo,
+        effectiveDate,
+        remarks,
+      ]
+    );
+  }
 
-        const isReapplyRequest =
-          Boolean(existing.revoke_effective_date);
-
-        const finalEffectiveDate = isReapplyRequest
-          ? toDate(existing.revoke_effective_date)
-          : effectiveDate;
-
-        const finalRemarks = isReapplyRequest
-          ? clean(existing.revoke_remarks) || remarks
-          : remarks;
-
-        if (isReapplyRequest) {
-          await client.query(
-            `
-              UPDATE public.staff
-              SET
-                status = 'Active',
-                branch_id = $2,
-                area = $3,
-                region = $4,
-                division = $5,
-                position = $6,
-                department = $7,
-                exit_type = NULL,
-                exit_date = NULL,
-                exit_remarks = NULL
-              WHERE employee_no = $1
-            `,
-            [
-              employeeNo,
-              existing.revoke_branch_id,
-              existing.revoke_area,
-              existing.revoke_region,
-              existing.revoke_division,
-              existing.revoke_position,
-              existing.revoke_department,
-            ]
-          );
-        } else {
-          const todayRes = await client.query(
-            `
-              SELECT
-                (NOW() AT TIME ZONE 'Asia/Manila')::date::text
-                AS today
-            `
-          );
-
-          const today = todayRes.rows[0].today;
-
-          if (finalEffectiveDate <= today) {
-            await client.query(
-              `
-                UPDATE public.staff
-                SET
-                  status = 'Inactive',
-                  exit_type = 'Resigned',
-                  exit_date = $2::date,
-                  exit_remarks = $3
-                WHERE employee_no = $1
-              `,
-              [
-                employeeNo,
-                finalEffectiveDate,
-                finalRemarks,
-              ]
-            );
-          } else {
-            await client.query(
-              `
-                UPDATE public.staff
-                SET
-                  status = 'Active',
-                  exit_type = 'Resigned',
-                  exit_date = $2::date,
-                  exit_remarks = $3
-                WHERE employee_no = $1
-              `,
-              [
-                employeeNo,
-                finalEffectiveDate,
-                finalRemarks,
-              ]
-            );
-          }
-        }
-
-        try {
-          if (isReapplyRequest) {
-            await client.query(
-              `
-                INSERT INTO public.status_history
-                  (
-                    employee_no,
-                    effective_date,
-                    status,
-                    reason,
-                    remarks
-                  )
-                VALUES
-                  ($1, $2::date, 'Active', 'Re-Apply', $3)
-                ON CONFLICT DO NOTHING
-              `,
-              [
-                employeeNo,
-                finalEffectiveDate,
-                finalRemarks ||
-                  "Resignation revoked / staff re-applied",
-              ]
-            );
-          } else {
-            await client.query(
-              `
-                INSERT INTO public.status_history
-                  (
-                    employee_no,
-                    effective_date,
-                    status,
-                    reason,
-                    remarks
-                  )
-                VALUES
-                  ($1, $2::date, 'Inactive', 'Resigned', $3)
-                ON CONFLICT DO NOTHING
-              `,
-              [
-                employeeNo,
-                finalEffectiveDate,
-                finalRemarks,
-              ]
-            );
-          }
-        } catch (historyErr) {
-          console.warn(
-            "status_history insert skipped:",
-            historyErr.message
-          );
-        }
-      };
+  // =====================================================
+  // RECORD RESIGNATION STATUS HISTORY
+  // =====================================================
+  await client.query(
+    `
+    INSERT INTO public.status_history
+      (
+        employee_no,
+        effective_date,
+        status,
+        reason,
+        remarks
+      )
+    VALUES
+      (
+        $1,
+        $2::date,
+        'Inactive',
+        'Resigned',
+        $3
+      )
+    ON CONFLICT DO NOTHING
+    `,
+    [
+      employeeNo,
+      effectiveDate,
+      remarks,
+    ]
+  );
+};
 
 // =====================================================
 // APPROVE RESIGNATION REQUEST
@@ -1556,15 +1506,10 @@ router.put(
         if (currentStatus === STATUS_HR_FINAL) {
           const employeeNo = clean(existing.employee_no);
 
-          const isReapplyRequest =
-            Boolean(existing.revoke_effective_date);
-
-          const effectiveDate = isReapplyRequest
-            ? toDate(existing.revoke_effective_date)
-            : toDate(
-                req.body?.effective_date ||
-                existing.effective_date
-              );
+          const effectiveDate = toDate(
+            req.body?.effective_date ||
+            existing.effective_date
+          );
 
           if (!employeeNo) {
             await client.query("ROLLBACK");
@@ -1844,15 +1789,10 @@ router.put(
       ) {
         const employeeNo = clean(existing.employee_no);
 
-        const isReapplyRequest =
-          Boolean(existing.revoke_effective_date);
-
-        const effectiveDate = isReapplyRequest
-          ? toDate(existing.revoke_effective_date)
-          : toDate(
-              req.body?.effective_date ||
-              existing.effective_date
-            );
+        const effectiveDate = toDate(
+          req.body?.effective_date ||
+          existing.effective_date
+        );
 
         if (!employeeNo) {
           await client.query("ROLLBACK");
@@ -2235,6 +2175,8 @@ router.put(
         });
       }
 
+      const rejectedStage = clean(existing.status);
+
       const r = await pool.query(
         `
         UPDATE public.resignation_requests
@@ -2243,13 +2185,28 @@ router.put(
           rejected_by = $3,
           rejected_at = NOW(),
           rejection_reason = $4,
+          rejected_stage = $5,
           approved_by = NULL,
           approved_at = NULL
         WHERE id = $1
+          AND status = $5
         RETURNING *;
         `,
-        [id, STATUS_REJECTED, req.user?.id ?? null, reason]
+        [
+          id,
+          STATUS_REJECTED,
+          req.user?.id ?? null,
+          reason,
+          rejectedStage,
+        ]
       );
+
+      if (r.rowCount === 0) {
+        return res.status(409).json({
+          message:
+            "The resignation stage has changed. Please refresh and try again.",
+        });
+      }
 
       return res.json(r.rows[0]);
     } catch (e) {
@@ -2328,9 +2285,9 @@ router.put(
         });
       }
 
-      // Use PostgreSQL date so the comparison follows database date.
+      // Use Philippine date for resignation revocation.
       const todayRes = await client.query(
-        `SELECT CURRENT_DATE::text AS today`
+        `SELECT (NOW() AT TIME ZONE 'Asia/Manila')::date::text AS today`
       );
 
       const today = todayRes.rows[0].today;
@@ -2338,12 +2295,12 @@ router.put(
       // =====================================================
       // REVOKE ONLY BEFORE THE EFFECTIVE DATE
       // =====================================================
-      if (effectiveDate <= today) {
+      if (effectiveDate < today) {
         await client.query("ROLLBACK");
 
         return res.status(400).json({
           message:
-            "This resignation has already taken effect. Revoke is no longer allowed. Please use Re-Apply.",
+            "This resignation's effective date has passed. Revoke is no longer allowed.",
         });
       }
 
@@ -2410,54 +2367,34 @@ router.put(
       );
 
       // =====================================================
-      // REMOVE THE FUTURE INACTIVE HISTORY ENTRY
-      // It never actually happened because resignation
-      // was revoked before the effective date.
+      // RECORD RESIGNATION REVOCATION HISTORY
+      // Must succeed before the transaction is committed.
       // =====================================================
       await client.query(
         `
-        DELETE FROM public.status_history
-        WHERE employee_no = $1
-          AND effective_date = $2::date
-          AND LOWER(TRIM(COALESCE(status, ''))) = 'inactive'
-          AND LOWER(TRIM(COALESCE(reason, ''))) = 'resigned'
+        INSERT INTO public.status_history
+          (
+            employee_no,
+            effective_date,
+            status,
+            reason,
+            remarks
+          )
+        VALUES
+          (
+            $1,
+            (NOW() AT TIME ZONE 'Asia/Manila')::date,
+            'Active',
+            'Resignation Revoked',
+            $2
+          )
+        ON CONFLICT DO NOTHING
         `,
-        [employeeNo, effectiveDate]
+        [
+          employeeNo,
+          remarks || "Resignation revoked",
+        ]
       );
-
-      // Keep history that resignation was revoked.
-      try {
-        await client.query(
-          `
-          INSERT INTO public.status_history
-            (
-              employee_no,
-              effective_date,
-              status,
-              reason,
-              remarks
-            )
-          VALUES
-            (
-              $1,
-              CURRENT_DATE,
-              'Active',
-              'Resignation Revoked',
-              $2
-            )
-          ON CONFLICT DO NOTHING
-          `,
-          [
-            employeeNo,
-            remarks || "Resignation revoked before effective date",
-          ]
-        );
-      } catch (historyErr) {
-        console.warn(
-          "status_history revoke insert skipped:",
-          historyErr.message
-        );
-      }
 
       await client.query("COMMIT");
 
@@ -2470,318 +2407,6 @@ router.put(
 
       console.error(
         "PUT /resignation-requests/:id/revoke ERROR:",
-        e
-      );
-
-      return res.status(500).json({
-        message: e?.message || "Server error",
-      });
-    } finally {
-      client.release();
-    }
-  }
-);
-
-router.put(
-  "/resignation-requests/:id/reapply",
-  requireAuth,
-  requirePermission("resignation_request", "approve"),
-  upload.single("attachment"),
-  async (req, res) => {
-    const client = await pool.connect();
-
-    try {
-      // Make sure any due resignation is applied first.
-      await applyDueResignations();
-
-      await client.query("BEGIN");
-
-      const id = toInt(req.params.id);
-
-      if (!id) {
-        await client.query("ROLLBACK");
-
-        return res.status(400).json({
-          message: "Invalid id",
-        });
-      }
-
-      if (!canManageResignationReturn(req)) {
-        await client.query("ROLLBACK");
-
-        return res.status(403).json({
-          message:
-            "Only Admin, HR Department, or Accounting Department can submit a Re-Apply request.",
-        });
-      }
-
-      // =====================================================
-      // RE-APPLY FORM
-      // =====================================================
-      const effective_date = toDate(req.body?.effective_date);
-      const branch_id = toInt(req.body?.branch_id);
-      const position = clean(req.body?.position);
-      const department = clean(req.body?.department);
-      const remarks = clean(req.body?.remarks);
-
-      if (!effective_date) {
-        await client.query("ROLLBACK");
-
-        return res.status(400).json({
-          message: "Re-Apply effective date is required",
-        });
-      }
-
-      if (!branch_id) {
-        await client.query("ROLLBACK");
-
-        return res.status(400).json({
-          message: "Resume branch is required",
-        });
-      }
-
-      if (!position) {
-        await client.query("ROLLBACK");
-
-        return res.status(400).json({
-          message: "New position is required",
-        });
-      }
-
-      if (!department) {
-        await client.query("ROLLBACK");
-
-        return res.status(400).json({
-          message: "Department is required",
-        });
-      }
-
-      if (!req.file) {
-        await client.query("ROLLBACK");
-
-        return res.status(400).json({
-          message: "Re-Apply file is required",
-        });
-      }
-
-      const requestRes = await client.query(
-        `
-        SELECT *
-        FROM public.resignation_requests
-        WHERE id = $1
-        FOR UPDATE
-        `,
-        [id]
-      );
-
-      if (requestRes.rowCount === 0) {
-        await client.query("ROLLBACK");
-
-        return res.status(404).json({
-          message: "Resignation request not found",
-        });
-      }
-
-      const existing = requestRes.rows[0];
-
-      // Original resignation must already be completed.
-      if (clean(existing.status) !== STATUS_APPROVED) {
-        await client.query("ROLLBACK");
-
-        return res.status(400).json({
-          message:
-            "Only an approved resignation can be used for Re-Apply.",
-        });
-      }
-
-      const resignationEffectiveDate = toDate(
-        existing.effective_date
-      );
-
-      if (!resignationEffectiveDate) {
-        await client.query("ROLLBACK");
-
-        return res.status(400).json({
-          message: "Resignation has no valid effective date.",
-        });
-      }
-
-      const todayRes = await client.query(
-        `SELECT CURRENT_DATE::text AS today`
-      );
-
-      const today = todayRes.rows[0].today;
-
-      // =====================================================
-      // RE-APPLY ONLY ON/AFTER RESIGNATION EFFECTIVE DATE
-      // =====================================================
-      if (resignationEffectiveDate > today) {
-        await client.query("ROLLBACK");
-
-        return res.status(400).json({
-          message:
-            "The resignation has not taken effect yet. Use Revoke instead of Re-Apply.",
-        });
-      }
-
-      const employeeNo = clean(existing.employee_no);
-
-      if (!employeeNo) {
-        await client.query("ROLLBACK");
-
-        return res.status(400).json({
-          message: "Request has no employee number",
-        });
-      }
-
-      // Employee should now be inactive.
-      const staffRes = await client.query(
-        `
-        SELECT
-          id,
-          status
-        FROM public.staff
-        WHERE employee_no = $1
-        FOR UPDATE
-        `,
-        [employeeNo]
-      );
-
-      if (staffRes.rowCount === 0) {
-        await client.query("ROLLBACK");
-
-        return res.status(404).json({
-          message: "Staff record not found",
-        });
-      }
-
-      if (
-        norm(staffRes.rows[0].status) !== "inactive"
-      ) {
-        await client.query("ROLLBACK");
-
-        return res.status(400).json({
-          message:
-            "Staff is not inactive yet. Re-Apply can only be used after the resignation takes effect.",
-        });
-      }
-
-      const branchRes = await client.query(
-        `
-        SELECT
-          id,
-          code,
-          name,
-          area,
-          region,
-          division
-        FROM public.branches
-        WHERE id = $1
-        LIMIT 1
-        `,
-        [branch_id]
-      );
-
-      if (branchRes.rowCount === 0) {
-        await client.query("ROLLBACK");
-
-        return res.status(404).json({
-          message: "Resume branch not found",
-        });
-      }
-
-      const branch = branchRes.rows[0];
-
-      const attachmentPath =
-        `/uploads/resignation-requests/${req.file.filename}`;
-
-      // =====================================================
-      // SEND RE-APPLY TO HR DEPARTMENT FOR FINAL APPROVAL
-      // Staff remains INACTIVE until approved.
-      // =====================================================
-
-      const updated = await client.query(
-        `
-        UPDATE public.resignation_requests
-        SET
-          status = $2,
-
-          revoke_effective_date = $3::date,
-
-          revoke_branch_id = $4,
-          revoke_branch_code = $5,
-          revoke_branch_name = $6,
-
-          revoke_area = $7,
-          revoke_region = $8,
-          revoke_division = $9,
-
-          revoke_position = $10,
-          revoke_department = $11,
-          revoke_remarks = $12,
-
-          revoke_attachment_path = $13,
-          revoke_attachment_name = $14,
-          revoke_attachment_mime = $15,
-
-          revoke_requested_by = $16,
-          revoke_requested_at = NOW(),
-
-          approved_by = NULL,
-          approved_at = NULL,
-
-          rejected_by = NULL,
-          rejected_at = NULL,
-          rejection_reason = NULL,
-
-          attachment_path = $13,
-
-          approved_attachment_path = NULL,
-          approved_attachment_name = NULL,
-          approved_attachment_mime = NULL
-
-        WHERE id = $1
-
-        RETURNING *
-        `,
-        [
-          id,
-          STATUS_HR,
-
-          effective_date,
-
-          branch.id,
-          clean(branch.code) || null,
-          clean(branch.name) || null,
-
-          clean(branch.area) || null,
-          clean(branch.region) || null,
-          clean(branch.division) || null,
-
-          position,
-          department,
-          remarks || null,
-
-          attachmentPath,
-          req.file.originalname || null,
-          req.file.mimetype || null,
-
-          req.user?.id ?? null,
-        ]
-      );
-
-      await client.query("COMMIT");
-
-      return res.json({
-        message:
-          "Re-Apply request submitted for final approval.",
-        request: updated.rows[0],
-      });
-    } catch (e) {
-      await client.query("ROLLBACK");
-
-      console.error(
-        "PUT /resignation-requests/:id/reapply ERROR:",
         e
       );
 

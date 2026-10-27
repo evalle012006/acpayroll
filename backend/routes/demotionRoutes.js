@@ -1102,7 +1102,21 @@ router.post(
       const effective_date = toDateOrNull(b.effective_date);
       const details = toStr(b.details);
       const to_branch_id = toInt(b.to_branch_id);
+
+      const to_division = toStr(b.to_division);
+      const to_region = toStr(b.to_region);
+      const to_area = toStr(b.to_area);
+
       const to_department = toStr(b.to_department);
+
+      if (!to_division || !to_region || !to_area) {
+        await client.query("ROLLBACK");
+
+        return res.status(400).json({
+          message:
+            "Destination division, region, and area are required.",
+        });
+      }
 
       if (!to_department) {
         await client.query("ROLLBACK");
@@ -1189,14 +1203,9 @@ router.post(
         return res.status(400).json({ message: "Destination branch not found" });
       }
 
-      const destinationDivision =
-        toStr(toBr.rows[0].division);
-
-      const destinationRegion =
-        toStr(toBr.rows[0].region);
-
-      const destinationArea =
-        toStr(toBr.rows[0].area);
+      const destinationDivision = to_division;
+      const destinationRegion = to_region;
+      const destinationArea = to_area;
 
       const employee_name = buildEmployeeName(staffRow);
       const orderNo = await generateOrderNo(client, "DMO");
@@ -1466,7 +1475,19 @@ router.put(
       const effective_date = toDateOrNull(b.effective_date);
       const details = toStr(b.details);
       const to_branch_id = toInt(b.to_branch_id);
+      const to_division = toStr(b.to_division);
+      const to_region = toStr(b.to_region);
+      const to_area = toStr(b.to_area);
       const to_department = toStr(b.to_department);
+
+      if (!to_division || !to_region || !to_area) {
+        await client.query("ROLLBACK");
+
+        return res.status(400).json({
+          message:
+            "Destination division, region, and area are required.",
+        });
+      }
 
       if (!new_position) {
         await client.query("ROLLBACK");
@@ -1556,9 +1577,9 @@ router.put(
           to_branch_id,
           toStr(branch.code),
           toStr(branch.name),
-          toStr(branch.division),
-          toStr(branch.region),
-          toStr(branch.area),
+          to_division,
+          to_region,
+          to_area,
           to_department,
           effective_date,
           details,

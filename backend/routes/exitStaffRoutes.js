@@ -739,8 +739,22 @@ router.put("/exit-staff/:id/reapply",
 
       const branch_id = toInt(req.body?.branch_id);
       const position = clean(req.body?.position);
-      const start_date = toDate(req.body?.start_date) || todayDate();
+      const start_date = toDate(req.body?.start_date);
       const remarks = clean(req.body?.remarks);
+
+      if (!start_date) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({
+          message: "Valid reapplication start date is required",
+        });
+      }
+
+      if (start_date > todayDate()) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({
+          message: "Reapplication date cannot be in the future",
+        });
+      }
 
       if (!branch_id) {
         await client.query("ROLLBACK");
@@ -761,7 +775,8 @@ router.put("/exit-staff/:id/reapply",
           last_name,
           first_name,
           middle_name,
-          status
+          status,
+          exit_date
         FROM public.staff
         WHERE id = $1
         FOR UPDATE
@@ -799,19 +814,49 @@ router.put("/exit-staff/:id/reapply",
       const staff = staffRes.rows[0];
       const employeeNo = clean(staff.employee_no);
 
+      if (norm(staff.status) !== "inactive") {
+        await client.query("ROLLBACK");
+
+        return res.status(400).json({
+          message: "Only inactive staff can be re-applied.",
+        });
+      }
+
+      const previousExitDate = toDate(staff.exit_date);
+
+      if (previousExitDate && start_date <= previousExitDate) {
+        await client.query("ROLLBACK");
+
+        return res.status(400).json({
+          message:
+            `Reapplication date must be after the previous exit date (${previousExitDate}).`,
+        });
+      }
+
+      // ==========================================
+      // UPDATE ONLY THE MOST RECENT EXIT ORDER
+      // ==========================================
+
       await client.query(
-      `
-      UPDATE public.exit_staff_orders
-        SET
-          status = 'Re-Applied',
-          remarks = TRIM(
-            COALESCE(remarks, '') ||
-            E'\nRe-applied on ' ||
-            $2::text
+        `
+          UPDATE public.exit_staff_orders
+          SET
+            status = 'Re-Applied',
+            remarks = TRIM(
+              COALESCE(remarks, '') ||
+              E'\nRe-applied on ' ||
+              $2::text
+            )
+          WHERE id = (
+            SELECT id
+            FROM public.exit_staff_orders
+            WHERE LOWER(TRIM(COALESCE(employee_no, ''))) =
+                  LOWER(TRIM($1))
+              AND LOWER(TRIM(COALESCE(status, ''))) = 'approved'
+              AND effective_date <= $2::date
+            ORDER BY effective_date DESC, id DESC
+            LIMIT 1
           )
-        WHERE LOWER(TRIM(COALESCE(employee_no, ''))) =
-              LOWER(TRIM($1))
-          AND LOWER(TRIM(COALESCE(status, ''))) = 'approved'
         `,
         [employeeNo, start_date]
       );
@@ -845,7 +890,7 @@ router.put("/exit-staff/:id/reapply",
           region = $4,
           division = $5,
           "position" = $6,
-          start_date = $7::date,
+          reapplication_date = $7::date,
           exit_type = NULL,
           exit_date = NULL,
           exit_remarks = NULL
@@ -875,20 +920,35 @@ router.put("/exit-staff/:id/reapply",
         ]
       );
 
-      try {
-        await client.query(
-          `
+      // ==========================================
+      // RECORD REAPPLICATION STATUS HISTORY
+      // ==========================================
+
+      await client.query(
+        `
           INSERT INTO public.status_history
-            (employee_no, effective_date, status, reason, remarks)
+            (
+              employee_no,
+              effective_date,
+              status,
+              reason,
+              remarks
+            )
           VALUES
-            ($1, $2::date, 'Active', 'Re-Apply', $3)
-          ON CONFLICT DO NOTHING
-          `,
-          [employeeNo, start_date, remarks || null]
-        );
-      } catch (historyErr) {
-        console.warn("status_history reapply insert skipped:", historyErr.message);
-      }
+            (
+              $1,
+              $2::date,
+              'Active',
+              'Re-Apply',
+              $3
+            )
+        `,
+        [
+          employeeNo,
+          start_date,
+          remarks || null,
+        ]
+      );
 
       await client.query("COMMIT");
 

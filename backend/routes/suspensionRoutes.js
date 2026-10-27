@@ -37,7 +37,21 @@ const toNum = (v) => {
 
 const toDate = (v) => {
   const s = String(v ?? "").trim().slice(0, 10);
-  return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : null;
+
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+    return null;
+  }
+
+  const date = new Date(`${s}T00:00:00Z`);
+
+  if (
+    !Number.isFinite(date.getTime()) ||
+    date.toISOString().slice(0, 10) !== s
+  ) {
+    return null;
+  }
+
+  return s;
 };
 
 const clean = (v) => String(v ?? "").trim();
@@ -1375,6 +1389,7 @@ router.put(
 
 // =====================================================
 // EXTEND APPROVED / RECEIVED SUSPENSION
+// WITH AUTOMATIC / MANUAL DEDUCTION COMPUTATION
 // =====================================================
 
 router.put(
@@ -1383,25 +1398,17 @@ router.put(
   requirePermission("suspension_order", "edit"),
   async (req, res) => {
     let client;
+    let inTransaction = false;
 
     try {
       const id = toInt(req.params.id);
 
-      const newEndDate = toDate(
-        req.body?.new_end_date
-      );
+      const newEndDate = toDate(req.body?.new_end_date);
 
       const extensionReason = clean(
         req.body?.extension_reason
       );
 
-      if (!id || id <= 0) {
-        return res.status(400).json({
-          message: "Invalid suspension order ID",
-        });
-      }
-
-      // Only authorized administrative departments
       const canExtend =
         isAdmin(req) ||
         isIT(req) ||
@@ -1410,10 +1417,15 @@ router.put(
         isAccounting(req) ||
         isAccountingDepartmentUser(req);
 
+      if (!id || id <= 0) {
+        return res.status(400).json({
+          message: "Invalid suspension order ID",
+        });
+      }
+
       if (!canExtend) {
         return res.status(403).json({
-          message:
-            "Only Admin, IT, HR, and Accounting can extend suspensions",
+          message: "Not authorized to extend suspensions",
         });
       }
 
@@ -1432,6 +1444,7 @@ router.put(
       client = await pool.connect();
 
       await client.query("BEGIN");
+      inTransaction = true;
 
       const existingRes = await client.query(
         `
@@ -1444,8 +1457,6 @@ router.put(
       );
 
       if (existingRes.rowCount === 0) {
-        await client.query("ROLLBACK");
-
         return res.status(404).json({
           message: "Suspension order not found",
         });
@@ -1453,72 +1464,289 @@ router.put(
 
       const existing = existingRes.rows[0];
 
-      const status = clean(
-        existing.status
-      ).toLowerCase();
+      const status = clean(existing.status).toLowerCase();
 
       if (!["approved", "received"].includes(status)) {
-        await client.query("ROLLBACK");
-
         return res.status(400).json({
           message:
             "Only approved or received suspensions can be extended",
         });
       }
 
-      const previousEndDate = toDate(
-        existing.end_date
-      );
-
-      const startDate = toDate(
-        existing.start_date
-      );
+      const previousEndDate = toDate(existing.end_date);
+      const startDate = toDate(existing.start_date);
 
       if (!previousEndDate || !startDate) {
-        await client.query("ROLLBACK");
-
         return res.status(400).json({
-          message: "Suspension dates are invalid",
+          message: "Invalid suspension dates",
         });
       }
 
-      // Calculate calendar-day difference using UTC.
-      const parseUTC = (value) =>
-        Date.parse(`${value}T00:00:00Z`);
+      // =====================================================
+      // VALIDATE SUSPENSION IS CURRENTLY ACTIVE
+      // =====================================================
 
-      const millisecondsPerDay = 86400000;
+      const todayRes = await client.query(`
+        SELECT
+          (NOW() AT TIME ZONE 'Asia/Manila')::date::text
+            AS today
+      `);
 
-      const additionalDays = Math.round(
-        (
-          parseUTC(newEndDate) -
-          parseUTC(previousEndDate)
-        ) / millisecondsPerDay
-      );
+      const today = todayRes.rows[0].today;
 
-      if (additionalDays <= 0) {
-        await client.query("ROLLBACK");
-
+      // Suspension must have started and must not have expired.
+      if (today < startDate) {
         return res.status(400).json({
           message:
-            "New end date must be later than the current end date",
+            "Suspension has not started yet. Extension is not allowed.",
+        });
+      }
+
+      if (today > previousEndDate) {
+        return res.status(400).json({
+          message:
+            "Suspension has already expired. Extension is no longer allowed.",
+        });
+      }
+
+      // =====================================================
+      // VALIDATE EMPLOYEE IS CURRENTLY SUSPENDED
+      // =====================================================
+
+      const staffStatusRes = await client.query(
+        `
+          SELECT
+            s.id,
+            s.status,
+
+            (
+              SELECT LOWER(TRIM(COALESCE(sh.reason, '')))
+              FROM public.status_history sh
+              WHERE LOWER(TRIM(COALESCE(sh.employee_no, ''))) =
+                    LOWER(TRIM(COALESCE(s.employee_no, '')))
+                AND sh.effective_date <=
+                    (NOW() AT TIME ZONE 'Asia/Manila')::date
+              ORDER BY
+                sh.effective_date DESC,
+                sh.id DESC
+              LIMIT 1
+            ) AS latest_status_reason,
+
+            (
+              SELECT LOWER(TRIM(COALESCE(sh.status, '')))
+              FROM public.status_history sh
+              WHERE LOWER(TRIM(COALESCE(sh.employee_no, ''))) =
+                    LOWER(TRIM(COALESCE(s.employee_no, '')))
+                AND sh.effective_date <=
+                    (NOW() AT TIME ZONE 'Asia/Manila')::date
+              ORDER BY
+                sh.effective_date DESC,
+                sh.id DESC
+              LIMIT 1
+            ) AS latest_status
+
+          FROM public.staff s
+          WHERE s.id = $1
+          FOR UPDATE OF s
+        `,
+        [existing.employee_id]
+      );
+
+      if (staffStatusRes.rowCount === 0) {
+        return res.status(404).json({
+          message: "Employee not found",
+        });
+      }
+
+      const staffStatus = staffStatusRes.rows[0];
+
+      if (
+        clean(staffStatus.status).toLowerCase() !== "inactive" ||
+        staffStatus.latest_status !== "inactive" ||
+        staffStatus.latest_status_reason !== "suspension"
+      ) {
+        return res.status(400).json({
+          message:
+            "Extension is only allowed when the employee is currently Inactive due to Suspension.",
+        });
+      }
+
+      // Calculate additional calendar days.
+      const additionalDays = Math.round(
+        (
+          Date.parse(`${newEndDate}T00:00:00Z`) -
+          Date.parse(`${previousEndDate}T00:00:00Z`)
+        ) / 86400000
+      );
+
+      if (
+        !Number.isFinite(additionalDays) ||
+        additionalDays <= 0
+      ) {
+        return res.status(400).json({
+          message:
+            "New end date must be later than current end date",
         });
       }
 
       const previousDays = Number(
-        existing.days_of_suspension ?? 0
+        existing.days_of_suspension
       );
 
-      const newDays =
-        previousDays + additionalDays;
+      if (
+        !Number.isFinite(previousDays) ||
+        previousDays <= 0
+      ) {
+        return res.status(400).json({
+          message:
+            "Original suspension days must be greater than zero",
+        });
+      }
 
-      // Update suspension duration.
-      // Financial deductions remain unchanged.
+      const newDays = previousDays + additionalDays;
+
+      // =====================================================
+      // DEDUCTION COMPONENTS
+      // =====================================================
+
+      const fields = [
+        "prorated_salary",
+        "prorated_ecola",
+        "prorated_transportation",
+        "prorated_repairing",
+        "prorated_allowance",
+        "prorated_postage",
+      ];
+
+      const roundMoney = (n) =>
+        Math.round((n + Number.EPSILON) * 100) / 100;
+
+      const original = {};
+      const updated = {};
+
+      const adjustments = req.body?.adjusted_components;
+
+      if (
+        adjustments !== undefined &&
+        (
+          typeof adjustments !== "object" ||
+          adjustments === null ||
+          Array.isArray(adjustments) ||
+          Object.keys(adjustments).some(
+            (key) => !fields.includes(key)
+          )
+        )
+      ) {
+        return res.status(400).json({
+          message: "Invalid adjusted deduction components",
+        });
+      }
+
+      // =====================================================
+      // AUTOMATIC CALCULATION
+      //
+      // Updated Amount =
+      // Original Amount / Original Days * New Days
+      //
+      // Manual adjustments override automatic amounts.
+      // =====================================================
+
+      for (const field of fields) {
+        const oldAmount = Number(existing[field] ?? 0);
+
+        if (
+          !Number.isFinite(oldAmount) ||
+          oldAmount < 0
+        ) {
+          return res.status(400).json({
+            message: `Invalid original ${field}`,
+          });
+        }
+
+        original[field] = oldAmount;
+
+        const automatic = roundMoney(
+          (oldAmount / previousDays) * newDays
+        );
+
+        const manual =
+          adjustments &&
+          Object.prototype.hasOwnProperty.call(
+            adjustments,
+            field
+          )
+            ? adjustments[field]
+            : undefined;
+
+        if (
+          manual !== undefined &&
+          (
+            manual === null ||
+            manual === "" ||
+            !Number.isFinite(Number(manual)) ||
+            Number(manual) < 0
+          )
+        ) {
+          return res.status(400).json({
+            message: `Invalid adjustment for ${field}`,
+          });
+        }
+
+        updated[field] =
+          manual === undefined
+            ? automatic
+            : roundMoney(Number(manual));
+      }
+
+      // =====================================================
+      // COMPUTE TOTAL DEDUCTIONS
+      // =====================================================
+
+      const previousTotal = roundMoney(
+        fields.reduce(
+          (sum, field) => sum + original[field],
+          0
+        )
+      );
+
+      const newTotal = roundMoney(
+        fields.reduce(
+          (sum, field) => sum + updated[field],
+          0
+        )
+      );
+
+      const additionalDeduction = roundMoney(
+        newTotal - previousTotal
+      );
+
+      if (additionalDeduction < 0) {
+        return res.status(400).json({
+          message:
+            "Updated total deduction cannot be lower than the original total deduction.",
+        });
+      }
+
+      // =====================================================
+      // UPDATE SUSPENSION
+      // =====================================================
+
       const updatedRes = await client.query(
         `
           UPDATE public.suspension_orders
           SET
             end_date = $2::date,
-            days_of_suspension = $3
+            days_of_suspension = $3,
+
+            prorated_salary = $4,
+            prorated_ecola = $5,
+            prorated_transportation = $6,
+            prorated_repairing = $7,
+            prorated_allowance = $8,
+            prorated_postage = $9,
+
+            total_deduction = $10
+
           WHERE id = $1
           RETURNING *
         `,
@@ -1526,10 +1754,22 @@ router.put(
           id,
           newEndDate,
           newDays,
+
+          updated.prorated_salary,
+          updated.prorated_ecola,
+          updated.prorated_transportation,
+          updated.prorated_repairing,
+          updated.prorated_allowance,
+          updated.prorated_postage,
+
+          newTotal,
         ]
       );
 
-      // Record extension history.
+      // =====================================================
+      // SAVE EXTENSION HISTORY
+      // =====================================================
+
       await client.query(
         `
           INSERT INTO public.suspension_extension_history
@@ -1537,79 +1777,114 @@ router.put(
             suspension_order_id,
             previous_end_date,
             new_end_date,
+
             previous_days,
             new_days,
             additional_days,
+
             extension_reason,
-            extended_by
+            extended_by,
+
+            previous_deductions,
+            updated_deductions,
+
+            previous_total_deduction,
+            new_total_deduction
           )
           VALUES
           (
             $1,
             $2::date,
             $3::date,
+
             $4,
             $5,
             $6,
+
             $7,
-            $8
+            $8,
+
+            $9::jsonb,
+            $10::jsonb,
+
+            $11,
+            $12
           )
         `,
         [
           id,
           previousEndDate,
           newEndDate,
+
           previousDays,
           newDays,
           additionalDays,
+
           extensionReason,
           toInt(req.user?.id),
+
+          JSON.stringify(original),
+          JSON.stringify(updated),
+
+          previousTotal,
+          newTotal,
         ]
       );
 
       await client.query("COMMIT");
+      inTransaction = false;
 
       return res.json({
         success: true,
-        message:
-          "Suspension extended successfully",
+        message: "Suspension extended successfully",
+
         data: updatedRes.rows[0],
+
         extension: {
           previous_end_date: previousEndDate,
           new_end_date: newEndDate,
-          additional_days: additionalDays,
+
           previous_days: previousDays,
+          additional_days: additionalDays,
           new_days: newDays,
+
+          previous_total_deduction: previousTotal,
+          additional_deduction: additionalDeduction,
+          new_total_deduction: newTotal,
+
+          previous_deductions: original,
+          updated_deductions: updated,
+
           extension_reason: extensionReason,
         },
       });
 
-        } catch (error) {
-          if (client) {
-            try {
-              await client.query("ROLLBACK");
-            } catch (rollbackError) {
-              console.error(
-                "Suspension extension rollback error:",
-                rollbackError
-              );
-            }
-          }
+    } catch (error) {
+      console.error(
+        "EXTEND SUSPENSION ERROR:",
+        error
+      );
 
-          console.error(
-            "EXTEND SUSPENSION ERROR:",
-            error
-          );
+      return res.status(500).json({
+        message: error.message || "Server error",
+      });
 
-          return res.status(500).json({
-            message: error.message || "Server error",
-          });
-
-        } finally {
-          if (client) {
-            client.release();
+    } finally {
+      if (client) {
+        if (inTransaction) {
+          try {
+            await client.query("ROLLBACK");
+          } catch (rollbackError) {
+            console.error(
+              "EXTEND SUSPENSION ROLLBACK ERROR:",
+              rollbackError
+            );
           }
         }
+
+        client.release();
+      }
+    }
   }
 );
 

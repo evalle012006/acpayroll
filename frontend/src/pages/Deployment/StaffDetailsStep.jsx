@@ -1,7 +1,7 @@
 import React, { useMemo } from "react";
 import EditableCell from "./EditableCell";
 import DividerRow from "./DividerRow";
-import { calcAge, safeJsonArray, toStr } from "./deploymentUtils";
+import { calcAge, safeJsonArray } from "./deploymentUtils";
 
 export default function StaffDetailsStep({ form, setForm }) {
 
@@ -364,7 +364,7 @@ export default function StaffDetailsStep({ form, setForm }) {
                   <td>Fullname</td>
                   <td>
                     <EditableCell
-                      value={toStr(c?.fullname)}
+                      value={String(c?.fullname ?? "")}
                       placeholder="Type child fullname..."
                       onChange={(v) => setChildField(idx, "fullname", v)}
                     />
@@ -375,7 +375,7 @@ export default function StaffDetailsStep({ form, setForm }) {
                   <td>Date of Birth</td>
                   <td>
                     <EditableCell
-                      value={toStr(c?.date_of_birth)}
+                      value={String(c?.date_of_birth ?? "")}
                       placeholder="YYYY-MM-DD"
                       onChange={(v) => setChildField(idx, "date_of_birth", v)}
                     />
@@ -386,7 +386,7 @@ export default function StaffDetailsStep({ form, setForm }) {
                   <td>Place of Birth</td>
                   <td>
                     <EditableCell
-                      value={toStr(c?.place_of_birth)}
+                      value={String(c?.place_of_birth ?? "")}
                       placeholder="Type place of birth..."
                       onChange={(v) => setChildField(idx, "place_of_birth", v)}
                     />
@@ -396,7 +396,7 @@ export default function StaffDetailsStep({ form, setForm }) {
                 <tr>
                   <td>Age</td>
                   <td>
-                    <EditableCell value={toStr(c?.age)} placeholder="Auto" onChange={(v) => setChildField(idx, "age", v)} />
+                    <EditableCell value={String(c?.age ?? "")} placeholder="Auto" onChange={(v) => setChildField(idx, "age", v)} />
                   </td>
                 </tr>
 
@@ -666,7 +666,7 @@ export default function StaffDetailsStep({ form, setForm }) {
                   <td>Company</td>
                   <td>
                     <EditableCell
-                      value={toStr(item?.company)}
+                      value={String(item?.company ?? "")}
                       placeholder="Type company..."
                       onChange={(v) => setEmploymentField(idx, "company", v)}
                     />
@@ -677,7 +677,7 @@ export default function StaffDetailsStep({ form, setForm }) {
                   <td>Position</td>
                   <td>
                     <EditableCell
-                      value={toStr(item?.position)}
+                      value={String(item?.position ?? "")}
                       placeholder="Type position..."
                       onChange={(v) => setEmploymentField(idx, "position", v)}
                     />
@@ -688,7 +688,7 @@ export default function StaffDetailsStep({ form, setForm }) {
                   <td>Year Started</td>
                   <td>
                     <EditableCell
-                      value={toStr(item?.year_started)}
+                      value={String(item?.year_started ?? "")}
                       placeholder="e.g., 2020"
                       onChange={(v) => setEmploymentField(idx, "year_started", v)}
                     />
@@ -699,7 +699,7 @@ export default function StaffDetailsStep({ form, setForm }) {
                   <td>Year Ended</td>
                   <td>
                     <EditableCell
-                      value={toStr(item?.year_ended)}
+                      value={String(item?.year_ended ?? "")}
                       placeholder="e.g., 2023"
                       onChange={(v) => setEmploymentField(idx, "year_ended", v)}
                     />
@@ -710,7 +710,7 @@ export default function StaffDetailsStep({ form, setForm }) {
                   <td>Character Reference</td>
                   <td>
                     <EditableCell
-                      value={toStr(item?.character_reference)}
+                      value={String(item?.character_reference ?? "")}
                       placeholder="Type character reference..."
                       onChange={(v) => setEmploymentField(idx, "character_reference", v)}
                     />
@@ -721,7 +721,7 @@ export default function StaffDetailsStep({ form, setForm }) {
                   <td>Contact Number</td>
                   <td>
                     <EditableCell
-                      value={toStr(item?.contact_number)}
+                      value={String(item?.contact_number ?? "")}
                       placeholder="Type contact number..."
                       onChange={(v) => setEmploymentField(idx, "contact_number", v)}
                     />
@@ -769,7 +769,7 @@ export default function StaffDetailsStep({ form, setForm }) {
                   <td>Name</td>
                   <td>
                     <EditableCell
-                      value={toStr(item?.name)}
+                      value={String(item?.name ?? "")}
                       placeholder="Type beneficiary name..."
                       onChange={(v) => setBeneficiaryField(idx, "name", v)}
                     />
@@ -780,7 +780,7 @@ export default function StaffDetailsStep({ form, setForm }) {
                   <td>Relation</td>
                   <td>
                     <EditableCell
-                      value={toStr(item?.relation)}
+                      value={String(item?.relation ?? "")}
                       placeholder="Type relation..."
                       onChange={(v) => setBeneficiaryField(idx, "relation", v)}
                     />
@@ -791,7 +791,7 @@ export default function StaffDetailsStep({ form, setForm }) {
                   <td>Contact Number</td>
                   <td>
                     <EditableCell
-                      value={toStr(item?.contact_number)}
+                      value={String(item?.contact_number ?? "")}
                       placeholder="Type contact number..."
                       onChange={(v) => setBeneficiaryField(idx, "contact_number", v)}
                     />

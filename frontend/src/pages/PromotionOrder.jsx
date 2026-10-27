@@ -1707,6 +1707,41 @@ export default function PromotionOrder() {
               <span>Department: {getDepartment(viewOrder) || "-"}</span>
             </div>
 
+            {/* ==============================================
+                PROMOTION REJECTION DETAILS
+            ============================================== */}
+
+            {norm(viewOrder.status) === "rejected" && (
+              <div className="po-rejection-details">
+                <div className="po-rejection-header">
+                  <span className="po-rejection-icon">!</span>
+
+                  <div>
+                    <h4>Promotion Rejected</h4>
+                    <p>
+                      This promotion recommendation was rejected.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="po-rejection-content">
+                  <strong>Reason for Rejection</strong>
+
+                  <p>
+                    {viewOrder.rejection_reason ||
+                      "No rejection reason recorded."}
+                  </p>
+                </div>
+
+                {viewOrder.rejected_at && (
+                  <div className="po-rejection-date">
+                    <strong>Rejected On:</strong>{" "}
+                    {fmtDateTime(viewOrder.rejected_at)}
+                  </div>
+                )}
+              </div>
+            )}
+
             <div className="po-record-table">
               <div><strong>Order No</strong><span>{viewOrder.order_no || `PRO-${viewOrder.id}`}</span></div>
               <div><strong>Employee Name</strong><span>{viewOrder.employee_name || "-"}</span></div>

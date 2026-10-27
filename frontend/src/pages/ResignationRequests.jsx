@@ -1,3 +1,5 @@
+//ResignationRequests.jsx
+
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import api from "../api/axiosClient";
@@ -179,16 +181,6 @@ const isHRDeptManager =
 
   const [revokeRow, setRevokeRow] = useState(null);
   const [revokeRemarks, setRevokeRemarks] = useState("");
-
-  const [reapplyRow, setReapplyRow] = useState(null);
-  const [reapplyForm, setReapplyForm] = useState({
-    effective_date: "",
-    branch_id: "",
-    department: "",
-    position: "",
-    remarks: "",
-    attachment: null,
-  });
 
   const [form, setForm] = useState({
     staff_id: "",
@@ -770,7 +762,7 @@ const isHRDeptManager =
 
   if (!revokeRow?.id) return;
 
-  if (!window.confirm("Revoke this resignation before its effective date?")) {
+  if (!window.confirm("Are you sure you want to revoke this resignation?")) {
     return;
   }
 
@@ -789,93 +781,6 @@ const isHRDeptManager =
     alert(
       err?.response?.data?.message ||
         "Failed to revoke resignation request."
-    );
-  } finally {
-    setProcessingId("");
-  }
-};
-
-const openReapplyModal = (row) => {
-  setReapplyRow(row);
-
-  setReapplyForm({
-    effective_date: "",
-    branch_id: "",
-    department: "",
-    position: "",
-    remarks: "",
-    attachment: null,
-  });
-};
-
-const closeReapplyModal = () => {
-  setReapplyRow(null);
-
-  setReapplyForm({
-    effective_date: "",
-    branch_id: "",
-    department: "",
-    position: "",
-    remarks: "",
-    attachment: null,
-  });
-};
-
-const submitReapplyRequest = async (e) => {
-  e.preventDefault();
-
-  if (!reapplyRow?.id) return;
-
-  if (!reapplyForm.effective_date) {
-    return alert("Re-Apply effective date is required.");
-  }
-
-  if (!reapplyForm.branch_id) {
-    return alert("Branch resume is required.");
-  }
-
-  if (!reapplyForm.department) {
-    return alert("Department is required.");
-  }
-
-  if (!reapplyForm.position) {
-    return alert("New position is required.");
-  }
-
-  if (!reapplyForm.attachment) {
-    return alert("Re-Apply file is required.");
-  }
-
-  try {
-    setProcessingId(`reapply-${reapplyRow.id}`);
-
-    const fd = new FormData();
-
-    fd.append("effective_date", reapplyForm.effective_date);
-    fd.append("branch_id", reapplyForm.branch_id);
-    fd.append("department", reapplyForm.department);
-    fd.append("position", reapplyForm.position);
-    fd.append("remarks", reapplyForm.remarks || "");
-    fd.append("attachment", reapplyForm.attachment);
-
-    await api.put(
-      `/resignation-requests/${reapplyRow.id}/reapply`,
-      fd,
-      {
-        headers: {
-          "Content-Type": "multipart/form-data",
-        },
-      }
-    );
-
-    alert("Re-Apply request submitted for approval.");
-
-    closeReapplyModal();
-    await fetchAll();
-  } catch (err) {
-    alert(
-      err?.response?.data?.message ||
-        "Failed to submit Re-Apply request."
     );
   } finally {
     setProcessingId("");
@@ -1060,19 +965,7 @@ const submitReapplyRequest = async (e) => {
       canManageResignationReturn &&
       norm(row.status) === norm(STATUS_APPROVED) &&
       effectiveDate &&
-      effectiveDate > today
-    );
-  };
-
-  const canReapplyRow = (row) => {
-    const effectiveDate = toDate10(row.effective_date);
-    const today = getToday();
-
-    return (
-      canManageResignationReturn &&
-      norm(row.status) === norm(STATUS_APPROVED) &&
-      effectiveDate &&
-      effectiveDate <= today
+      effectiveDate >= today
     );
   };
 
@@ -1186,9 +1079,55 @@ const submitReapplyRequest = async (e) => {
       },
     ];
 
-    return history.filter(
-      (item) => item.approvedBy || item.approvedAt
-    );
+    const filteredHistory = history
+      .filter((item) => item.approvedBy || item.approvedAt)
+      .map((item) => ({
+        ...item,
+        status: "Approved",
+      }));
+
+    if (norm(row.status) === norm(STATUS_REJECTED)) {
+      const stageLabels = {
+        [STATUS_BRANCH]: "Branch Manager",
+        [STATUS_AREA]: "Area Manager",
+        [STATUS_RM]: "Regional Manager",
+        [STATUS_AVP]: "Assistant Vice President",
+        [STATUS_VP]: "Vice President",
+        [STATUS_SVP]: "Senior Vice President",
+        [STATUS_HR]: "HR Department - Initial Approval",
+        [STATUS_AVP_SIGNATURE]: "AVP - Signature Approval",
+        [STATUS_HR_FINAL]: "HR Department - Final Approval",
+      };
+
+      const rejectedStage = toStr(row.rejected_stage);
+
+      filteredHistory.push({
+        role:
+          stageLabels[rejectedStage] ||
+          rejectedStage ||
+          "Resignation Rejection",
+        approvedBy:
+          row.rejected_by_name ||
+          (row.rejected_by
+            ? `User ID: ${row.rejected_by}`
+            : "-"),
+        approvedAt: row.rejected_at,
+        status: "Rejected",
+        reason: row.rejection_reason,
+      });
+    }
+
+    return filteredHistory.sort((a, b) => {
+      const dateA = a.approvedAt
+        ? new Date(a.approvedAt).getTime()
+        : 0;
+
+      const dateB = b.approvedAt
+        ? new Date(b.approvedAt).getTime()
+        : 0;
+
+      return dateA - dateB;
+    });
   };
 
   const totalRequests=filteredRows.length;
@@ -1520,19 +1459,6 @@ const submitReapplyRequest = async (e) => {
                             </button>
                           )}
 
-                          {canReapplyRow(row) && (
-                            <button
-                              className="reg-action-btn reg-action-approve"
-                              type="button"
-                              onClick={() => openReapplyModal(row)}
-                              disabled={processingId === `reapply-${row.id}`}
-                            >
-                              {processingId === `reapply-${row.id}`
-                                ? "Submitting..."
-                                : "Re-Apply"}
-                            </button>
-                          )}
-
                           {canDeleteRow(row)&&(
                             <button
                               className="reg-action-btn reg-action-delete"
@@ -1830,12 +1756,64 @@ const submitReapplyRequest = async (e) => {
                   <textarea value={viewRow.remarks || "No remarks"} readOnly />
                 </div>
 
-                {viewRow.rejection_reason ? (
-                  <div className="form-group full">
-                    <label>Rejection Reason</label>
-                    <textarea value={viewRow.rejection_reason} readOnly />
-                  </div>
-                ) : null}
+                {norm(viewRow.status) === norm(STATUS_REJECTED) && (
+                  <>
+                    <div className="form-group full">
+                      <label
+                        style={{
+                          color: "#f87171",
+                          fontWeight: 700,
+                          fontSize: "14px",
+                        }}
+                      >
+                        Rejection Details
+                      </label>
+                    </div>
+
+                    <div className="form-group full">
+                      <label>Rejected At Stage</label>
+                      <input
+                        value={
+                          viewRow.rejected_stage ||
+                          "Not recorded"
+                        }
+                        readOnly
+                      />
+                    </div>
+
+                    <div className="form-group">
+                      <label>Rejected By</label>
+                      <input
+                        value={
+                          viewRow.rejected_by_name ||
+                          (viewRow.rejected_by
+                            ? `User ID: ${viewRow.rejected_by}`
+                            : "-")
+                        }
+                        readOnly
+                      />
+                    </div>
+
+                    <div className="form-group">
+                      <label>Rejected On</label>
+                      <input
+                        value={fmtDateTime(viewRow.rejected_at)}
+                        readOnly
+                      />
+                    </div>
+
+                    <div className="form-group full">
+                      <label>Rejection Reason</label>
+                      <textarea
+                        value={
+                          viewRow.rejection_reason ||
+                          "No rejection reason provided."
+                        }
+                        readOnly
+                      />
+                    </div>
+                  </>
+                )}
 
                 {viewRow.attachment_path || viewRow.approved_attachment_path ? (
                   <div className="form-group full">
@@ -1878,17 +1856,44 @@ const submitReapplyRequest = async (e) => {
                             <strong>{item.role}</strong>
 
                             <span>
-                              Approved by:{" "}
+                              {item.status === "Rejected"
+                                ? "Rejected by: "
+                                : "Approved by: "}
+
                               <b>{item.approvedBy || "-"}</b>
                             </span>
 
                             <small>
                               {fmtDateTime(item.approvedAt)}
                             </small>
+
+                            {item.status === "Rejected" &&
+                              item.reason && (
+                                <small
+                                  style={{
+                                    color: "#f87171",
+                                    marginTop: "4px",
+                                  }}
+                                >
+                                  Reason: {item.reason}
+                                </small>
+                              )}
                           </div>
 
-                          <div className="reg-approval-history-status">
-                            Approved
+                          <div
+                            className="reg-approval-history-status"
+                            style={
+                              item.status === "Rejected"
+                                ? {
+                                    color: "#f87171",
+                                    background: "rgba(239,68,68,0.12)",
+                                    borderRadius: "20px",
+                                    padding: "5px 10px",
+                                  }
+                                : {}
+                            }
+                          >
+                            {item.status || "Approved"}
                           </div>
                         </div>
                       ))}
@@ -2120,213 +2125,6 @@ const submitReapplyRequest = async (e) => {
                   {processingId === `revoke-${revokeRow.id}`
                     ? "Revoking..."
                     : "Revoke Resignation"}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {reapplyRow && (
-        <div
-          className="modal-overlay"
-          onMouseDown={(e) =>
-            e.target.classList.contains("modal-overlay") &&
-            closeReapplyModal()
-          }
-        >
-          <div
-            className="modal saas-modal"
-            onMouseDown={(e) => e.stopPropagation()}
-          >
-            <div className="modal-head">
-              <div>
-                <h3 className="modal-title">
-                  Re-Apply Staff
-                </h3>
-
-                <p className="modal-subtitle">
-                  {reapplyRow.employee_name || "-"} will return to Active status after final approval.
-                </p>
-              </div>
-
-              <button
-                className="modal-x"
-                type="button"
-                onClick={closeReapplyModal}
-              >
-                ✕
-              </button>
-            </div>
-
-            <form
-              className="modal-form"
-              onSubmit={submitReapplyRequest}
-            >
-              <div className="modal-grid">
-                <div className="form-group">
-                  <label>Employee No</label>
-                  <input
-                    value={reapplyRow.employee_no || "-"}
-                    readOnly
-                  />
-                </div>
-
-                <div className="form-group">
-                  <label>Employee Name</label>
-                  <input
-                    value={reapplyRow.employee_name || "-"}
-                    readOnly
-                  />
-                </div>
-
-                <div className="form-group">
-                  <label>Re-Apply Effective Date</label>
-                  <input
-                    type="date"
-                    value={reapplyForm.effective_date}
-                    onChange={(e) =>
-                      setReapplyForm((p) => ({
-                        ...p,
-                        effective_date: e.target.value,
-                      }))
-                    }
-                    required
-                  />
-                </div>
-
-                <div className="form-group">
-                  <label>Branch Resume</label>
-                  <select
-                    value={reapplyForm.branch_id}
-                    onChange={(e) =>
-                      setReapplyForm((p) => ({
-                        ...p,
-                        branch_id: e.target.value,
-                      }))
-                    }
-                    required
-                  >
-                    <option value="">Select branch</option>
-
-                    {branches.map((b) => (
-                      <option key={b.id} value={b.id}>
-                        {b.code
-                          ? `${b.code} - ${b.name}`
-                          : b.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="form-group">
-                  <label>Department</label>
-
-                  <select
-                    value={reapplyForm.department}
-                    onChange={(e) =>
-                      setReapplyForm((p) => ({
-                        ...p,
-                        department: e.target.value,
-                      }))
-                    }
-                    required
-                  >
-                    <option value="">Select department</option>
-                    <option value="OPERATION DEPARTMENT">
-                      OPERATION DEPARTMENT
-                    </option>
-                    <option value="IT DEPARTMENT">
-                      IT DEPARTMENT
-                    </option>
-                    <option value="HR DEPARTMENT">
-                      HR DEPARTMENT
-                    </option>
-                    <option value="ACCOUNTING DEPARTMENT">
-                      ACCOUNTING DEPARTMENT
-                    </option>
-                    <option value="AUDIT DEPARTMENT">
-                      AUDIT DEPARTMENT
-                    </option>
-                    <option value="TREAD DEPARTMENT">
-                      TREAD DEPARTMENT
-                    </option>
-                    <option value="PRODUCTION & LOGISTIC DEPARTMENT">
-                      PRODUCTION & LOGISTIC DEPARTMENT
-                    </option>
-                    <option value="OFFICE OF THE PRESIDENT">
-                      OFFICE OF THE PRESIDENT
-                    </option>
-                  </select>
-                </div>
-
-                <div className="form-group">
-                  <label>New Position</label>
-
-                  <input
-                    value={reapplyForm.position}
-                    onChange={(e) =>
-                      setReapplyForm((p) => ({
-                        ...p,
-                        position: e.target.value,
-                      }))
-                    }
-                    placeholder="Enter new position"
-                    required
-                  />
-                </div>
-
-                <div className="form-group full">
-                  <label>Re-Apply File</label>
-
-                  <input
-                    type="file"
-                    onChange={(e) =>
-                      setReapplyForm((p) => ({
-                        ...p,
-                        attachment:
-                          e.target.files?.[0] || null,
-                      }))
-                    }
-                    required
-                  />
-                </div>
-
-                <div className="form-group full">
-                  <label>Remarks</label>
-
-                  <textarea
-                    value={reapplyForm.remarks}
-                    onChange={(e) =>
-                      setReapplyForm((p) => ({
-                        ...p,
-                        remarks: e.target.value,
-                      }))
-                    }
-                    placeholder="Optional remarks..."
-                  />
-                </div>
-              </div>
-
-              <div className="modal-buttons">
-                <button
-                  className="btn-secondary"
-                  type="button"
-                  onClick={closeReapplyModal}
-                >
-                  Cancel
-                </button>
-
-                <button
-                  className="btn-primary"
-                  type="submit"
-                  disabled={
-                    processingId === `reapply-${reapplyRow.id}`
-                  }
-                >
-                  {processingId === `reapply-${reapplyRow.id}`
-                    ? "Submitting..."
-                    : "Submit Re-Apply"}
                 </button>
               </div>
             </form>

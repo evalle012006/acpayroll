@@ -1652,3 +1652,83 @@ body.dark .po-approval-history-empty {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* =====================================================
+   PROMOTION ORDER - REJECTION DETAILS
+===================================================== */
+
+.po-rejection-details {
+  margin: 16px 20px;
+  padding: 18px;
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  border-radius: 14px;
+  background: rgba(239, 68, 68, 0.08);
+}
+
+.po-rejection-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.po-rejection-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+  font-size: 20px;
+  font-weight: 900;
+}
+
+.po-rejection-header h4 {
+  margin: 0;
+  color: #ef4444;
+  font-size: 15px;
+  font-weight: 900;
+}
+
+.po-rejection-header p {
+  margin: 4px 0 0;
+  color: var(--po-muted);
+  font-size: 12px;
+}
+
+.po-rejection-content {
+  padding: 14px;
+  border: 1px solid rgba(239, 68, 68, 0.18);
+  border-radius: 10px;
+  background: var(--po-panel);
+}
+
+.po-rejection-content strong {
+  display: block;
+  margin-bottom: 8px;
+  color: #ef4444;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.po-rejection-content p {
+  margin: 0;
+  color: var(--po-text);
+  font-size: 13px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.po-rejection-date {
+  margin-top: 12px;
+  color: var(--po-muted);
+  font-size: 12px;
+}
+
+.po-rejection-date strong {
+  color: var(--po-text);
+}

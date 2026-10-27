@@ -138,6 +138,66 @@ export default function SuspensionOrder() {
     isHRDepartment ||
     department === "accounting department";
 
+  // =====================================================
+  // CHECK IF SUSPENSION IS STILL ACTIVE
+  // =====================================================
+
+  const getManilaToday = () => {
+    const parts = new Intl.DateTimeFormat("en-US", {
+      timeZone: "Asia/Manila",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).formatToParts(new Date());
+
+    const get = (type) =>
+      parts.find((part) => part.type === type)?.value || "";
+
+    return `${get("year")}-${get("month")}-${get("day")}`;
+  };
+
+  const isSuspensionCurrentlyActive = (order) => {
+    if (!order) return false;
+
+    if (
+      !["approved", "received"].includes(
+        norm(order.status)
+      )
+    ) {
+      return false;
+    }
+
+    const today = getManilaToday();
+
+    const startDate = toDate10(
+      order.start_date || order.suspension_start
+    );
+
+    const endDate = toDate10(
+      order.end_date || order.suspension_end
+    );
+
+    if (!startDate || !endDate) return false;
+
+    // Only while suspension dates are still active.
+    if (today < startDate || today > endDate) {
+      return false;
+    }
+
+    const employee = staff.find(
+      (s) =>
+        String(s.id) === String(order.employee_id) ||
+        (
+          order.employee_no &&
+          s.employee_no &&
+          norm(s.employee_no) === norm(order.employee_no)
+        )
+    );
+
+    // Employee must currently be inactive.
+    return norm(employee?.status) === "inactive";
+  };
+
   const canApproveStage = (order) => {
     const stage = norm(order?.approval_stage);
 
@@ -304,6 +364,7 @@ export default function SuspensionOrder() {
   const [extensionReason, setExtensionReason] = useState("");
   const [extensionSaving, setExtensionSaving] = useState(false);
   const [extensionError, setExtensionError] = useState("");
+  const [extensionAdjustments, setExtensionAdjustments] = useState({});
 
   const [rejecting, setRejecting] = useState(null);
   const [rejectReason, setRejectReason] = useState("");
@@ -650,11 +711,10 @@ export default function SuspensionOrder() {
   const openExtendSuspension = (order) => {
     if (!canExtendSuspension) return;
 
-    if (
-      !["approved", "received"].includes(
-        norm(order?.status)
-      )
-    ) {
+    if (!isSuspensionCurrentlyActive(order)) {
+      alert(
+        "Extension is only allowed while the employee is currently suspended and the suspension has not expired."
+      );
       return;
     }
 
@@ -662,6 +722,7 @@ export default function SuspensionOrder() {
     setExtensionEndDate("");
     setExtensionReason("");
     setExtensionError("");
+    setExtensionAdjustments({});
     setViewOrder(null);
   };
 
@@ -704,10 +765,38 @@ export default function SuspensionOrder() {
     }
 
     if (
-      !window.confirm(
-        "Confirm suspension extension? The suspension end date will be updated."
+      Object.values(extensionAdjustments).some(
+        (value) =>
+          value === "" ||
+          !Number.isFinite(Number(value)) ||
+          Number(value) < 0
       )
     ) {
+      setExtensionError(
+        "Updated deductions must be valid non-negative amounts."
+      );
+      return;
+    }
+
+    if (
+      !window.confirm(
+        `Confirm suspension extension?\n\n` +
+        `Additional Days: ${additionalExtensionDays}\n` +
+        `Original Deduction: ₱${money(extensionComputation.oldTotal)}\n` +
+        `Additional Deduction: ₱${money(extensionComputation.additionalTotal)}\n` +
+        `Updated Total Deduction: ₱${money(extensionComputation.newTotal)}`
+      )
+    ) {
+      return;
+    }
+
+    if (
+      extensionComputation.newTotal <
+      extensionComputation.oldTotal
+    ) {
+      setExtensionError(
+        "Updated total deduction cannot be lower than the original total deduction."
+      );
       return;
     }
 
@@ -719,6 +808,8 @@ export default function SuspensionOrder() {
         {
           new_end_date: extensionEndDate,
           extension_reason: clean(extensionReason),
+
+          adjusted_components: extensionAdjustments,
         }
       );
 
@@ -767,6 +858,89 @@ export default function SuspensionOrder() {
       Math.round((next - current) / 86400000)
     );
   }, [extendingOrder, extensionEndDate]);
+
+  // =====================================================
+  // EXTENSION DEDUCTION COMPUTATION
+  // =====================================================
+
+  const extensionFields = [
+    ["prorated_salary", "Salary"],
+    ["prorated_ecola", "ECOLA"],
+    ["prorated_transportation", "Transportation"],
+    ["prorated_repairing", "Repairing"],
+    ["prorated_allowance", "Allowance"],
+    ["prorated_postage", "Postage"],
+  ];
+
+  const roundExtensionMoney = (n) =>
+    Math.round((n + Number.EPSILON) * 100) / 100;
+
+  const extensionComputation = (() => {
+    const oldDays = toNum(
+      extendingOrder?.days_of_suspension
+    );
+
+    const newDays =
+      oldDays + additionalExtensionDays;
+
+    const components = extensionFields.map(
+      ([key, label]) => {
+        const original = toNum(
+          extendingOrder?.[key]
+        );
+
+        const automatic =
+          oldDays > 0
+            ? roundExtensionMoney(
+                (original / oldDays) * newDays
+              )
+            : original;
+
+        const current =
+          Object.prototype.hasOwnProperty.call(
+            extensionAdjustments,
+            key
+          )
+            ? extensionAdjustments[key]
+            : automatic;
+
+        return {
+          key,
+          label,
+          original,
+          automatic,
+          current,
+        };
+      }
+    );
+
+    const oldTotal = roundExtensionMoney(
+      components.reduce(
+        (sum, component) =>
+          sum + component.original,
+        0
+      )
+    );
+
+    const newTotal = roundExtensionMoney(
+      components.reduce(
+        (sum, component) =>
+          sum + toNum(component.current),
+        0
+      )
+    );
+
+    const additionalTotal = roundExtensionMoney(
+      newTotal - oldTotal
+    );
+
+    return {
+      components,
+      oldTotal,
+      newTotal,
+      additionalTotal,
+    };
+  })();
 
   const openCreate = () => {
     if (!canCreate) return;
@@ -1951,11 +2125,9 @@ export default function SuspensionOrder() {
                     </button>
                   )}
 
-                {/* EXTEND SUSPENSION */}
+                {/* EXTEND SUSPENSION - CURRENTLY SUSPENDED ONLY */}
                 {canExtendSuspension &&
-                  ["approved", "received"].includes(
-                    norm(viewOrder.status)
-                  ) && (
+                  isSuspensionCurrentlyActive(viewOrder) && (
                     <button
                       className="po-action-btn po-action-approve"
                       type="button"
@@ -2092,6 +2264,98 @@ export default function SuspensionOrder() {
                     }
                     readOnly
                   />
+                </div>
+
+                {/* ================================================ */}
+                {/* EXTENSION DEDUCTION COMPUTATION */}
+                {/* ================================================ */}
+
+                <div className="po-field full">
+                  <label>
+                    Deduction Computation
+                    (Editable Updated Amounts)
+                  </label>
+
+                  <div style={{ overflowX: "auto" }}>
+                    <table
+                      style={{
+                        width: "100%",
+                        borderCollapse: "collapse",
+                      }}
+                    >
+                      <thead>
+                        <tr>
+                          <th>Component</th>
+                          <th>Original</th>
+                          <th>Updated</th>
+                        </tr>
+                      </thead>
+
+                      <tbody>
+                        {extensionComputation.components.map(
+                          (component) => (
+                            <tr key={component.key}>
+                              <td>{component.label}</td>
+
+                              <td>
+                                ₱{money(component.original)}
+                              </td>
+
+                              <td>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  step="0.01"
+                                  aria-label={`Updated ${component.label}`}
+                                  value={component.current}
+                                  disabled={
+                                    extensionSaving ||
+                                    additionalExtensionDays <= 0
+                                  }
+                                  onChange={(e) =>
+                                    setExtensionAdjustments(
+                                      (prev) => ({
+                                        ...prev,
+                                        [component.key]:
+                                          e.target.value,
+                                      })
+                                    )
+                                  }
+                                />
+                              </td>
+                            </tr>
+                          )
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <div style={{ marginTop: 12 }}>
+                    <strong>Original Total Deduction:</strong>
+                    {" "}₱{money(extensionComputation.oldTotal)}
+                  </div>
+
+                  <div style={{ marginTop: 8 }}>
+                    <strong>Additional Deduction:</strong>
+                    {" "}₱{money(extensionComputation.additionalTotal)}
+                  </div>
+
+                  <div style={{ marginTop: 8 }}>
+                    <strong>Updated Total Deduction:</strong>
+                    {" "}₱{money(extensionComputation.newTotal)}
+                  </div>
+
+                  <button
+                    type="button"
+                    className="po-btn po-btn-outline"
+                    style={{ marginTop: 12 }}
+                    disabled={extensionSaving}
+                    onClick={() =>
+                      setExtensionAdjustments({})
+                    }
+                  >
+                    Reset to Automatic Computation
+                  </button>
                 </div>
 
                 <div className="po-field full">
