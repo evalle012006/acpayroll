@@ -230,56 +230,48 @@ const getRawApprovalChain = (staff) => {
       dept === "audit department";
 
     if (isAuditDepartment) {
-      if (isSvpPos(pos)) {
-        return [ACCOUNTING_FINAL];
-      }
 
-      if (isVpPos(pos)) {
-        return [
-          "senior vice president",
-          ACCOUNTING_FINAL,
-        ];
-      }
+    if (isSvpPos(pos)) {
+      return [ACCOUNTING_FINAL];
+    }
 
-      if (isAvpPos(pos)) {
-        return [
-          "senior vice president",
-          ACCOUNTING_FINAL,
-        ];
-      }
-
-      if (isRegionalManagerPos(pos)) {
-        return [
-          "assistant vice president",
-          ACCOUNTING_FINAL,
-        ];
-      }
-
-      if (isAreaManagerPos(pos)) {
-        return [
-          "regional manager",
-          "assistant vice president",
-          ACCOUNTING_FINAL,
-        ];
-      }
-
-      if (isBranchManagerPos(pos)) {
-        return [
-          "area manager",
-          "regional manager",
-          "assistant vice president",
-          ACCOUNTING_FINAL,
-        ];
-      }
-
+    if (isVpPos(pos)) {
       return [
-        "branch manager",
-        "area manager",
-        "regional manager",
-        "assistant vice president",
+        "senior vice president",
         ACCOUNTING_FINAL,
       ];
     }
+
+    if (isAvpPos(pos)) {
+      return [
+        "senior vice president",
+        ACCOUNTING_FINAL,
+      ];
+    }
+
+    if (
+      isBranchManagerPos(pos) ||
+      isAreaManagerPos(pos) ||
+      isRegionalManagerPos(pos)
+    ) {
+      return [
+        "assistant vice president",
+        "vice president",
+        "senior vice president",
+        ACCOUNTING_FINAL,
+      ];
+    }
+
+    return [
+      "branch manager",
+      "area manager",
+      "regional manager",
+      "assistant vice president",
+      "vice president",
+      "senior vice president",
+      ACCOUNTING_FINAL,
+    ];
+  }
 
   if (isOperation) {
     if (isSvpPos(pos)) return [ACCOUNTING_FINAL];

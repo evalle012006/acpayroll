@@ -268,10 +268,13 @@ const getDynamicApprovalChain = (item) => {
       auditDept === "audit" ||
       auditDept === "audit department"
     ) {
+
+      // Senior Vice President applicant
       if (isSvpPos(position)) {
         return [ACCOUNTING_FINAL];
       }
 
+      // Vice President applicant
       if (isVpPos(position)) {
         return [
           "senior vice president",
@@ -279,6 +282,7 @@ const getDynamicApprovalChain = (item) => {
         ];
       }
 
+      // Assistant Vice President applicant
       if (isAvpPos(position)) {
         return [
           "senior vice president",
@@ -286,35 +290,28 @@ const getDynamicApprovalChain = (item) => {
         ];
       }
 
-      if (isRegionalManagerPos(position)) {
+      // Branch Manager, Area Manager, Regional Manager applicants
+      if (
+        isBranchManagerPos(position) ||
+        isAreaManagerPos(position) ||
+        isRegionalManagerPos(position)
+      ) {
         return [
           "assistant vice president",
+          "vice president",
+          "senior vice president",
           ACCOUNTING_FINAL,
         ];
       }
 
-      if (isAreaManagerPos(position)) {
-        return [
-          "regional manager",
-          "assistant vice president",
-          ACCOUNTING_FINAL,
-        ];
-      }
-
-      if (isBranchManagerPos(position)) {
-        return [
-          "area manager",
-          "regional manager",
-          "assistant vice president",
-          ACCOUNTING_FINAL,
-        ];
-      }
-
+      // Regular Audit Department employees
       return [
         "branch manager",
         "area manager",
         "regional manager",
         "assistant vice president",
+        "vice president",
+        "senior vice president",
         ACCOUNTING_FINAL,
       ];
     }
