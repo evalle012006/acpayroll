@@ -737,6 +737,8 @@ router.post("/recalculate", requireAuth, requireBonusManager, async (req, res) =
         FROM public.staff s
 
         WHERE TRIM(COALESCE(s.employee_no, '')) <> ''
+          AND LOWER(TRIM(COALESCE(s.status, ''))) = 'active'
+          AND s.exit_date IS NULL
 
         ORDER BY s.id ASC;
       `);
