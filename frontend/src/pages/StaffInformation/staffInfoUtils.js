@@ -1,4 +1,4 @@
-
+//StaffInfoUtils.js
 export const safeJsonArray = (v) => {
   try {
     const parsed = typeof v === "string" ? JSON.parse(v) : v;
@@ -230,6 +230,69 @@ export const compute13thMonthBreakdown = (staff, promotionRows = []) => {
     monthlyCompensation: currentBasicSalary + currentEcola,
     basicSalary: currentBasicSalary,
     ecola: currentEcola,
+  };
+};
+
+export const applySavedBonusComputations = (
+  automaticBreakdown,
+  savedMonths = []
+) => {
+  if (!automaticBreakdown) {
+    return null;
+  }
+
+  const savedByMonth = new Map(
+    (Array.isArray(savedMonths) ? savedMonths : [])
+      .filter((item) => item && item.exists)
+      .map((item) => [Number(item.month), item])
+  );
+
+  const rows = automaticBreakdown.rows.map((row, index) => {
+    const monthNumber = index + 1;
+    const saved = savedByMonth.get(monthNumber);
+
+    // Future months must remain blank.
+    if (!row.passed) {
+      return {
+        ...row,
+        amount: null,
+        isManualOverride: false,
+      };
+    }
+
+    // Saved backend computation is authoritative.
+    if (saved) {
+      return {
+        ...row,
+        amount: toNum(saved.total_compensation),
+        isManualOverride:
+          saved.is_manual_override === true,
+      };
+    }
+
+    // No saved computation: retain automatic preview.
+    return {
+      ...row,
+      amount: row.eligible ? row.amount : null,
+      isManualOverride: false,
+    };
+  });
+
+  const totalCompensationEarned = rows.reduce(
+    (sum, row) =>
+      sum + (row.amount == null ? 0 : toNum(row.amount)),
+    0
+  );
+
+  const equivalent = totalCompensationEarned / 12;
+
+  return {
+    ...automaticBreakdown,
+    rows,
+    totalCompensationEarned,
+    thirteenthMonth: equivalent,
+    fourteenthMonth: equivalent,
+    fifteenthMonth: equivalent,
   };
 };
 

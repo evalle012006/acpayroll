@@ -1,5 +1,4 @@
 //BonusComputation.jsx
-
 import { useEffect, useMemo, useState } from "react";
 import api from "../api/axiosClient";
 import "../styles/BonusComputation.css";
@@ -276,7 +275,7 @@ export default function BonusComputation() {
 
     const confirmed = window.confirm(
       `Generate / recalculate bonus computations for ${year}?\n\n` +
-        "Basic Salary and De Minimis will be recalculated from Salary History.\n" +
+        "Monthly compensation will be recalculated using approved promotions and salary history.\n" +
         "Each monthly bonus will be calculated as Total Compensation divided by 12.\n" +
         "Manually adjusted months will not be overwritten."
     );
@@ -625,7 +624,7 @@ export default function BonusComputation() {
     const confirmed = window.confirm(
       `Reset ${monthName} ${year} to Automatic?\n\n` +
         "The manually adjusted compensation and bonus amounts " +
-        "for this month will be replaced using Salary History.\n\n" +
+        "for this month will be replaced using approved promotions and salary history.\n\n" +
         "Bonus amounts will be recalculated as Total Compensation divided by 12.\n\n" +
         "This action cannot be undone automatically."
     );
@@ -700,8 +699,21 @@ export default function BonusComputation() {
   ========================================================= */
 
   const totals = useMemo(() => {
+    const now = new Date();
+
+    const lastEligibleMonth =
+      year < now.getFullYear()
+        ? 12
+        : year > now.getFullYear()
+          ? 0
+          : now.getMonth() + 1;
+
     return months.reduce(
       (acc, item) => {
+        if (Number(item.month) > lastEligibleMonth) {
+          return acc;
+        }
+
         const totalCompensation = Number(
           item.total_compensation || 0
         );
@@ -710,27 +722,13 @@ export default function BonusComputation() {
           item.deductions || 0
         );
 
-        const month13 = Number(
-          item.month_13 || 0
-        );
+        const month13 = Number(item.month_13 || 0);
+        const month14 = Number(item.month_14 || 0);
+        const month15 = Number(item.month_15 || 0);
 
-        const month14 = Number(
-          item.month_14 || 0
-        );
+        const totalBonus = month13 + month14 + month15;
 
-        const month15 = Number(
-          item.month_15 || 0
-        );
-
-        const totalBonus =
-          month13 +
-          month14 +
-          month15;
-
-
-        acc.total_compensation +=
-          totalCompensation;
-
+        acc.total_compensation += totalCompensation;
         acc.deductions += deductions;
         acc.month_13 += month13;
         acc.month_14 += month14;
@@ -748,7 +746,7 @@ export default function BonusComputation() {
         total_bonus: 0,
       }
     );
-  }, [months]);
+  }, [months, year]);
 
   const totalBenefits = useMemo(() => {
     return (
@@ -1424,8 +1422,25 @@ export default function BonusComputation() {
 
                           <td>
                             {modalMode === "edit" ? (
-                              <input type="number" min="0" step="0.01" value={item.total_compensation}
-                                onChange={(e) => updateMonth( index, "total_compensation", e.target.value)}
+                              <input
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                value={item.total_compensation}
+                                disabled={
+                                  year > new Date().getFullYear() ||
+                                  (
+                                    year === new Date().getFullYear() &&
+                                    item.month > new Date().getMonth() + 1
+                                  )
+                                }
+                                onChange={(e) =>
+                                  updateMonth(
+                                    index,
+                                    "total_compensation",
+                                    e.target.value
+                                  )
+                                }
                               />
                             ) : (
                               money(item.total_compensation)

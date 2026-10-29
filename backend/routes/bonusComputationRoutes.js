@@ -1,5 +1,4 @@
 //bonusComputationRoutes.js
-
 const express = require("express");
 const router = express.Router();
 const pool = require("../db");
@@ -54,6 +53,27 @@ const normalizeText = (value) => String(value ?? "").trim().toLowerCase();
 const getDaysInMonth = (year, month) => new Date(Date.UTC(year, month, 0)).getUTCDate();
 const getDateString = (year, month, day) => [year, String(month).padStart(2, "0"), String(day).padStart(2, "0"),].join("-");
 const roundMoney = (value) => Math.round((Number(value) + Number.EPSILON) * 100) / 100;
+const getLastEligibleBonusMonth = (year) => {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Manila",
+    year: "numeric",
+    month: "numeric",
+  }).formatToParts(new Date());
+
+  const currentYear = Number(
+    parts.find((part) => part.type === "year")?.value
+  );
+
+  const currentMonth = Number(
+    parts.find((part) => part.type === "month")?.value
+  );
+
+  if (year < currentYear) return 12;
+  if (year > currentYear) return 0;
+
+  return currentMonth;
+};
+
 const canManageBonus = (req) => {
   const role = normalizeText(req.user?.role);
   const department = normalizeText(req.user?.department || req.user?.department_name);
@@ -77,21 +97,63 @@ const requireBonusManager = (req, res, next) => {
 };
 
 const computeMonthlyCompensation = ({
-  year, month, startDate, exitDate, salaryHistory,
+  year,
+  month,
+  startDate,
+  exitDate,
+  salaryHistory,
 }) => {
-  const daysInMonth = getDaysInMonth(year, month);
+  const daysInMonth = getDaysInMonth(
+    year,
+    month
+  );
 
   let totalCompensation = 0;
 
-  for (let day = 1; day <= daysInMonth; day += 1) {
-    const currentDate = getDateString(year, month, day);
+  const sortedHistory = [...salaryHistory]
+    .filter((row) =>
+      toDateOnlyUtc(row.effective_date)
+    )
+    .sort((a, b) =>
+      toDateOnlyUtc(a.effective_date)
+        .localeCompare(
+          toDateOnlyUtc(b.effective_date)
+        )
+    );
 
-    if (currentDate < startDate) {continue;}
-    if (exitDate && currentDate > exitDate) {continue;}
+  if (sortedHistory.length === 0) {
+    return {
+      valid: false,
+      reason:
+        "No salary or approved promotion data available.",
+    };
+  }
+
+  for (
+    let day = 1;
+    day <= daysInMonth;
+    day += 1
+  ) {
+    const currentDate = getDateString(
+      year,
+      month,
+      day
+    );
+
+    if (currentDate < startDate) {
+      continue;
+    }
+
+    if (
+      exitDate &&
+      currentDate > exitDate
+    ) {
+      continue;
+    }
 
     let applicableSalary = null;
 
-    for (const history of salaryHistory) {
+    for (const history of sortedHistory) {
       const effectiveDate = toDateOnlyUtc(
         history.effective_date
       );
@@ -106,21 +168,223 @@ const computeMonthlyCompensation = ({
     if (!applicableSalary) {
       return {
         valid: false,
-        reason: `Missing applicable Salary History for ${currentDate}.`,
+        reason:
+          `Missing applicable compensation ` +
+          `for ${currentDate}.`,
       };
     }
 
-    const basicSalary = toNum(applicableSalary.salary);
-    const ecola = toNum(applicableSalary.ecola);
+    const basicSalary = toNum(
+      applicableSalary.salary
+    );
+
+    const ecola = toNum(
+      applicableSalary.ecola
+    );
 
     totalCompensation +=
-      (basicSalary + ecola) / daysInMonth;
+      (basicSalary + ecola) /
+      daysInMonth;
   }
 
   return {
     valid: true,
-    totalCompensation: roundMoney(totalCompensation),
+    totalCompensation: roundMoney(
+      totalCompensation
+    ),
   };
+};
+
+const loadBonusSalaryTimeline = async (
+  client,
+  staff,
+  year
+) => {
+  const staffId = toInt(staff.staff_id);
+
+  const employeeNo = String(
+    staff.employee_no || ""
+  ).trim();
+
+  const startDate =
+    toDateOnlyUtc(staff.start_date) ||
+    `${year}-01-01`;
+
+  // ============================================
+  // 1. LOAD SALARY HISTORY
+  // ============================================
+
+  const historyResult = await client.query(
+    `
+      SELECT
+        id,
+        effective_date,
+        COALESCE(salary, 0)::numeric AS salary,
+        COALESCE(ecola, 0)::numeric AS ecola,
+        created_at
+      FROM public.salary_history
+      WHERE TRIM(employee_no) = $1
+        AND effective_date <= make_date($2, 12, 31)
+      ORDER BY
+        effective_date ASC,
+        created_at ASC NULLS LAST,
+        id ASC
+    `,
+    [employeeNo, year]
+  );
+
+  // ============================================
+  // 2. LOAD APPROVED PROMOTIONS
+  // ============================================
+
+  const promotionResult = await client.query(
+    `
+      SELECT
+        id,
+        effective_date,
+        old_salary,
+        old_ecola,
+        new_salary,
+        new_ecola
+      FROM public.promotion_orders
+      WHERE employee_id = $1
+        AND effective_date <= make_date($2, 12, 31)
+        AND LOWER(
+          TRIM(COALESCE(final_status, ''))
+        ) = 'approved'
+        AND LOWER(
+          TRIM(COALESCE(status, ''))
+        ) = 'approved'
+      ORDER BY
+        effective_date ASC,
+        id ASC
+    `,
+    [staffId, year]
+  );
+
+  // ============================================
+  // 3. NORMALIZE SALARY HISTORY
+  // ============================================
+
+  const history = historyResult.rows
+    .map((row) => ({
+      effective_date: toDateOnlyUtc(
+        row.effective_date
+      ),
+      salary: toNum(row.salary),
+      ecola: toNum(row.ecola),
+      source: "salary_history",
+      priority: 1,
+      order: Number(row.id) || 0,
+    }))
+    .filter((row) => row.effective_date);
+
+  // ============================================
+  // 4. NORMALIZE APPROVED PROMOTIONS
+  // ============================================
+
+  const promotions = promotionResult.rows
+    .map((row) => ({
+      effective_date: toDateOnlyUtc(
+        row.effective_date
+      ),
+      old_salary: toNum(row.old_salary),
+      old_ecola: toNum(row.old_ecola),
+      salary: toNum(row.new_salary),
+      ecola: toNum(row.new_ecola),
+      source: "promotion",
+      priority: 2,
+      order: Number(row.id) || 0,
+    }))
+    .filter((row) => row.effective_date);
+
+  // ============================================
+  // 5. MERGE BOTH SOURCES
+  // ============================================
+
+  const timeline = [...history];
+
+  // Add the original salary only when there is
+  // no salary-history record covering the period
+  // before the first approved promotion.
+
+  if (promotions.length > 0) {
+    const firstPromotion = promotions[0];
+
+    const hasEarlierHistory = history.some(
+      (row) =>
+        row.effective_date <
+        firstPromotion.effective_date
+    );
+
+    if (
+      !hasEarlierHistory &&
+      startDate < firstPromotion.effective_date
+    ) {
+      timeline.push({
+        effective_date: startDate,
+        salary: firstPromotion.old_salary,
+        ecola: firstPromotion.old_ecola,
+        source: "promotion_baseline",
+        priority: 0,
+        order: 0,
+      });
+    }
+  }
+
+  // Approved promotions are authoritative on
+  // their effective dates.
+
+  timeline.push(...promotions);
+
+  // ============================================
+  // 6. FALLBACK FOR STAFF WITHOUT HISTORY
+  // ============================================
+
+  if (timeline.length === 0) {
+    timeline.push({
+      effective_date: startDate,
+      salary: toNum(staff.salary),
+      ecola: toNum(staff.ecola),
+      source: "staff_fallback",
+      priority: 0,
+      order: 0,
+    });
+  }
+
+  // ============================================
+  // 7. SORT CHRONOLOGICALLY
+  // ============================================
+
+  timeline.sort((a, b) => {
+    const dateComparison =
+      a.effective_date.localeCompare(
+        b.effective_date
+      );
+
+    if (dateComparison !== 0) {
+      return dateComparison;
+    }
+
+    const priorityComparison =
+      a.priority - b.priority;
+
+    if (priorityComparison !== 0) {
+      return priorityComparison;
+    }
+
+    return a.order - b.order;
+  });
+
+  // ============================================
+  // 8. RETURN EFFECTIVE COMPENSATION TIMELINE
+  // ============================================
+
+  return timeline.map((row) => ({
+    effective_date: row.effective_date,
+    salary: row.salary,
+    ecola: row.ecola,
+  }));
 };
 
 const loadSuspensionDeductions = async (client, staffId, year) => {
@@ -202,6 +466,8 @@ router.get("/", requireAuth, async (req, res) => {
       });
     }
 
+    const lastEligibleMonth = getLastEligibleBonusMonth(year);
+
     const result = await pool.query(
       `
       SELECT
@@ -228,6 +494,7 @@ router.get("/", requireAuth, async (req, res) => {
           SUM(bc.total_compensation)
             FILTER (
               WHERE bc.computation_year = $1
+                AND bc.computation_month <= $2
             ),
           0
         )::numeric AS total_compensation,
@@ -236,6 +503,7 @@ router.get("/", requireAuth, async (req, res) => {
           SUM(bc.deductions)
             FILTER (
               WHERE bc.computation_year = $1
+                AND bc.computation_month <= $2
             ),
           0
         )::numeric AS deductions,
@@ -244,6 +512,7 @@ router.get("/", requireAuth, async (req, res) => {
           SUM(bc.month_13)
             FILTER (
               WHERE bc.computation_year = $1
+                AND bc.computation_month <= $2
             ),
           0
         )::numeric AS month_13,
@@ -252,6 +521,7 @@ router.get("/", requireAuth, async (req, res) => {
           SUM(bc.month_14)
             FILTER (
               WHERE bc.computation_year = $1
+                AND bc.computation_month <= $2
             ),
           0
         )::numeric AS month_14,
@@ -260,6 +530,7 @@ router.get("/", requireAuth, async (req, res) => {
           SUM(bc.month_15)
             FILTER (
               WHERE bc.computation_year = $1
+                AND bc.computation_month <= $2
             ),
           0
         )::numeric AS month_15
@@ -294,7 +565,7 @@ router.get("/", requireAuth, async (req, res) => {
         s.department ASC NULLS LAST,
         s.fullname ASC NULLS LAST;
       `,
-      [year]
+      [year, lastEligibleMonth]
     );
 
     return res.json({
@@ -442,6 +713,15 @@ router.post("/recalculate", requireAuth, requireBonusManager, async (req, res) =
         });
       }
 
+      const lastEligibleMonth = getLastEligibleBonusMonth(year);
+
+      if (lastEligibleMonth === 0) {
+        return res.status(400).json({
+          message:
+            "Cannot generate bonus computations for a future year.",
+        });
+      }
+
       client = await pool.connect();
 
       await client.query("BEGIN");
@@ -453,7 +733,9 @@ router.post("/recalculate", requireAuth, requireBonusManager, async (req, res) =
           s.fullname,
           s.status,
           s.start_date,
-          s.exit_date
+          s.exit_date,
+          COALESCE(s.salary, 0)::numeric AS salary,
+          COALESCE(s.ecola, 0)::numeric AS ecola
 
         FROM public.staff s
 
@@ -555,30 +837,12 @@ router.post("/recalculate", requireAuth, requireBonusManager, async (req, res) =
           continue;
         }
 
-        /* ===============================================
-           LOAD SALARY HISTORY
-        =============================================== */
-
-        const historyResult = await client.query(
-          `
-          SELECT
-            id,
-            effective_date,
-            COALESCE(salary, 0)::numeric AS salary,
-            COALESCE(ecola, 0)::numeric AS ecola,
-            created_at
-          FROM public.salary_history
-          WHERE TRIM(employee_no) = $1
-            AND effective_date <= make_date($2, 12, 31)
-          ORDER BY
-            effective_date ASC,
-            created_at ASC,
-            id ASC;
-          `,
-          [employeeNo, year]
-        );
-
-        const salaryHistory = historyResult.rows;
+        const salaryHistory =
+          await loadBonusSalaryTimeline(
+            client,
+            staff,
+            year
+          );
 
         if (salaryHistory.length === 0) {
           skippedStaff.push({
@@ -586,7 +850,7 @@ router.post("/recalculate", requireAuth, requireBonusManager, async (req, res) =
             employee_no: employeeNo,
             fullname: staff.fullname,
             reason:
-              "No Salary History available.",
+              "No automatic compensation data available.",
           });
 
           continue;
@@ -597,7 +861,7 @@ router.post("/recalculate", requireAuth, requireBonusManager, async (req, res) =
 
         for (
           let month = 1;
-          month <= 12;
+          month <= lastEligibleMonth;
           month += 1
         ) {
           const result = computeMonthlyCompensation({
@@ -633,6 +897,24 @@ router.post("/recalculate", requireAuth, requireBonusManager, async (req, res) =
         }
 
         for (const item of computedMonths) {
+          const existingMonth = await client.query(
+            `
+              SELECT is_manual_override
+              FROM public.bonus_computations
+              WHERE staff_id = $1
+                AND computation_year = $2
+                AND computation_month = $3
+            `,
+            [staffId, year, item.month]
+          );
+
+          if (
+            existingMonth.rows[0]
+              ?.is_manual_override === true
+          ) {
+            protectedMonths += 1;
+          }
+
           const result = await client.query(
             `
               INSERT INTO public.bonus_computations
@@ -735,8 +1017,6 @@ router.post("/recalculate", requireAuth, requireBonusManager, async (req, res) =
 
           if (result.rowCount > 0) {
             processedMonths += 1;
-          } else {
-            protectedMonths += 1;
           }
         }
 
@@ -808,6 +1088,15 @@ router.put("/staff/:staffId", requireAuth, requireBonusManager, async (req, res)
         });
       }
 
+      const lastEligibleMonth = getLastEligibleBonusMonth(year);
+
+      if (lastEligibleMonth === 0) {
+        return res.status(400).json({
+          message:
+            "Cannot manually adjust bonus computations for a future year.",
+        });
+      }
+
       const normalizedMonths = [];
 
       for (const item of months) {
@@ -823,6 +1112,13 @@ router.put("/staff/:staffId", requireAuth, requireBonusManager, async (req, res)
         ) {
           return res.status(400).json({
             message: "Invalid computation month.",
+          });
+        }
+        
+        if (month > lastEligibleMonth) {
+          return res.status(400).json({
+            message:
+              `Month ${month} is a future month and cannot be manually adjusted.`,
           });
         }
 
@@ -1029,15 +1325,22 @@ router.put("/staff/:staffId", requireAuth, requireBonusManager, async (req, res)
 
         const changed =
           !existing ||
-          roundMoney(existing.total_compensation) !==
-            item.total_compensation ||
-          roundMoney(existing.deductions) !== 0 ||
-          roundMoney(existing.month_13) !==
-            monthlyBonusShare ||
-          roundMoney(existing.month_14) !==
-            monthlyBonusShare ||
-          roundMoney(existing.month_15) !==
-            monthlyBonusShare;
+          existing.is_manual_override !== true ||
+          roundMoney(
+            existing.total_compensation
+          ) !== item.total_compensation ||
+          roundMoney(
+            existing.deductions
+          ) !== 0 ||
+          roundMoney(
+            existing.month_13
+          ) !== monthlyBonusShare ||
+          roundMoney(
+            existing.month_14
+          ) !== monthlyBonusShare ||
+          roundMoney(
+            existing.month_15
+          ) !== monthlyBonusShare;
 
         if (!changed) {
           unchangedMonths += 1;
@@ -1174,6 +1477,15 @@ router.post("/staff/:staffId/reset-automatic", requireAuth, requireBonusManager,
       if (!Number.isInteger(month) || month < 1 || month > 12)
       {return res.status(400).json({message: "Valid month from 1 to 12 is required.",});}
 
+      const lastEligibleMonth = getLastEligibleBonusMonth(year);
+
+      if (month > lastEligibleMonth) {
+        return res.status(400).json({
+          message:
+            "Cannot reset a future month to Automatic.",
+        });
+      }
+
       client = await pool.connect();
       await client.query("BEGIN");
 
@@ -1195,8 +1507,10 @@ router.post("/staff/:staffId/reset-automatic", requireAuth, requireBonusManager,
           fullname,
           status,
           start_date,
-          exit_date
-        FROM public.staff
+          exit_date,
+          COALESCE(salary, 0)::numeric AS salary,
+          COALESCE(ecola, 0)::numeric AS ecola
+          FROM public.staff
         WHERE id = $1
         LIMIT 1;
         `,
@@ -1238,34 +1552,26 @@ router.post("/staff/:staffId/reset-automatic", requireAuth, requireBonusManager,
         });
       }
 
-      const historyResult = await client.query(
-        `
-        SELECT
-          id,
-          effective_date,
-          COALESCE(salary, 0)::numeric AS salary,
-          COALESCE(ecola, 0)::numeric AS ecola,
-          created_at
-        FROM public.salary_history
-        WHERE TRIM(employee_no) = $1
-          AND effective_date <= make_date($2, 12, 31)
-        ORDER BY
-          effective_date ASC, created_at ASC, id ASC;
-        `,
-        [employeeNo, year]
+      const salaryHistory = await loadBonusSalaryTimeline(
+        client,
+        staff,
+        year
       );
 
-      if (historyResult.rowCount === 0) {
+      if (salaryHistory.length === 0) {
         await client.query("ROLLBACK");
 
         return res.status(400).json({
-          message: "No Salary History available for automatic computation.",
+          message: "No automatic compensation data available.",
         });
       }
 
       const computation = computeMonthlyCompensation({
-        year, month, startDate, exitDate,
-        salaryHistory: historyResult.rows,
+        year,
+        month,
+        startDate,
+        exitDate,
+        salaryHistory,
       });
 
       if (!computation.valid) {

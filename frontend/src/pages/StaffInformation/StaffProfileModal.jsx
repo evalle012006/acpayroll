@@ -1,6 +1,17 @@
+//StaffProfileModal.jsx
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import api from "../../api/axiosClient";
-import { safeJsonArray, toStr, fmtDate, toNum, money, displayName, loanDisplayDate, compute13thMonthBreakdown, } from "./staffInfoUtils";
+import { 
+  safeJsonArray, 
+  toStr, 
+  fmtDate, 
+  toNum, 
+  money, 
+  displayName, 
+  loanDisplayDate, 
+  compute13thMonthBreakdown, 
+  applySavedBonusComputations,
+} from "./staffInfoUtils";
 
 export default function StaffProfileModal({ 
   staff, signedPhotoUrl, onClose, branchNameById, 
@@ -32,6 +43,10 @@ export default function StaffProfileModal({
   const [sapHistoryRows, setSapHistoryRows] = useState([]);
   const [loadingSapHist, setLoadingSapHist] = useState(false);
   const [errSapHist, setErrSapHist] = useState("");
+
+  const [savedBonusMonths, setSavedBonusMonths] = useState([]);
+  const [savedBonusLoading, setSavedBonusLoading] = useState(true);
+  const [savedBonusError, setSavedBonusError] = useState("");
 
   const [demotionRows, setDemotionRows] = useState([]);
   const [loadingDemotion, setLoadingDemotion] = useState(false);
@@ -90,7 +105,7 @@ export default function StaffProfileModal({
       "vice president",
       "senior vice president",
     ].includes(role);
-4
+
   const canManageAttachments =
     role === "admin" ||
     role === "it" ||
@@ -162,9 +177,18 @@ export default function StaffProfileModal({
   const educationArr = useMemo(() => safeJsonArray(staff?.education), [staff?.education]);
   const employmentArr = useMemo(() => safeJsonArray(staff?.employment_history), [staff?.employment_history]);
   const beneficiariesArr = useMemo(() => safeJsonArray(staff?.beneficiaries), [staff?.beneficiaries]);
-  const thirteenthMonthData = useMemo(
+  const automaticThirteenthMonthData = useMemo(
     () => compute13thMonthBreakdown(staff, promotionRows),
     [staff, promotionRows]
+  );
+
+  const thirteenthMonthData = useMemo(
+    () =>
+      applySavedBonusComputations(
+        automaticThirteenthMonthData,
+        savedBonusMonths
+      ),
+    [automaticThirteenthMonthData, savedBonusMonths]
   );
 
   const Chip = ({ label, active, onClick }) => (
@@ -598,6 +622,64 @@ export default function StaffProfileModal({
     loadBalances,
     loadBonus15Data,
   ]);
+
+  useEffect(() => {
+    let cancelled = false;
+      if (tab !== "balances") {
+        return;
+      }
+
+    const loadSavedBonus = async () => {
+      setSavedBonusMonths([]);
+      setSavedBonusError("");
+      setSavedBonusLoading(true);
+
+      if (!staff?.id) {
+        setSavedBonusLoading(false);
+        return;
+      }
+
+      try {
+        const year = new Date().getFullYear();
+
+        const response = await api.get(
+          `/bonus-computations/staff/${staff.id}`,
+          {
+            params: { year },
+          }
+        );
+
+        if (cancelled) return;
+
+        setSavedBonusMonths(
+          Array.isArray(response.data?.months)
+            ? response.data.months
+            : []
+        );
+      } catch (error) {
+        if (cancelled) return;
+
+        console.error(
+          "Staff Profile bonus loading error:",
+          error.response?.data?.message || error.message
+        );
+
+        setSavedBonusError(
+          "Saved bonus adjustments could not be loaded."
+        );
+      } finally {
+        if (!cancelled) {
+          setSavedBonusLoading(false);
+        }
+      }
+    };
+
+    loadSavedBonus();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [staff?.id, tab]);
 
   const historyItems = useMemo(() => {
     const items = [];
@@ -1509,14 +1591,47 @@ export default function StaffProfileModal({
                         <tr><td><strong>Total Tax</strong></td><td>{money(toNum(staff.tax))}</td></tr>
 
                         <tr><td colSpan="2"><h2>13th / 14th / 15th Month Computation ({thirteenthMonthData.year})</h2></td></tr>
+                        {savedBonusLoading && (
+                          <tr>
+                            <td colSpan="2" style={{ color: "#64748b" }}>
+                              Loading saved bonus adjustments...
+                            </td>
+                          </tr>
+                        )}
+
+                        {savedBonusError && (
+                          <tr>
+                            <td colSpan="2" style={{ color: "#ef4444" }}>
+                              {savedBonusError}
+                            </td>
+                          </tr>
+                        )}
                         <tr><td>Basic Salary</td><td>{money(thirteenthMonthData.basicSalary)}</td></tr>
                         <tr><td>Ecola</td><td>{money(thirteenthMonthData.ecola)}</td></tr>
                         <tr><td><strong>Monthly Compensation</strong></td><td>{money(thirteenthMonthData.monthlyCompensation)}</td></tr>
 
                         {thirteenthMonthData.rows.map((row) => (
                           <tr key={row.month}>
-                            <td>{row.month}</td>
-                            <td>{row.amount == null ? "-" : money(row.amount)}</td>
+                            <td>
+                              {row.month}
+
+                              {row.isManualOverride && (
+                                <span
+                                  style={{
+                                    marginLeft: 8,
+                                    color: "#f59e0b",
+                                    fontSize: 11,
+                                    fontWeight: 600,
+                                  }}
+                                >
+                                  (Manually Adjusted)
+                                </span>
+                              )}
+                            </td>
+
+                            <td>
+                              {row.amount == null ? "-" : money(row.amount)}
+                            </td>
                           </tr>
                         ))}
 
