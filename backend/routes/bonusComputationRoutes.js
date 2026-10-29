@@ -544,6 +544,17 @@ router.get("/", requireAuth, async (req, res) => {
         ON bc.staff_id = s.id
        AND bc.computation_year = $1
 
+      WHERE LOWER(TRIM(COALESCE(s.status, ''))) NOT IN (
+        'resigned',
+        'resign',
+        'awol',
+        'terminated',
+        'termination',
+        'indefinite leave',
+        'indefinite_leave',
+        'on indefinite leave'
+      )
+
       GROUP BY
         s.id,
         s.employee_no,
