@@ -273,6 +273,9 @@ router.get("/", requireAuth, async (req, res) => {
         ON bc.staff_id = s.id
        AND bc.computation_year = $1
 
+      WHERE LOWER(TRIM(COALESCE(s.status, ''))) = 'active'
+        AND s.exit_date IS NULL
+
       GROUP BY
         s.id,
         s.employee_no,
@@ -427,7 +430,7 @@ router.get("/staff/:staffId", requireAuth, async (req, res) => {
   }
 );
 
-router.post("/recalculate", requireAuth, requireBonusManager, async (req, res) => {
+router.post("/recalculate", requireAuth, requireBonusManager, async (req, res) => { 
     let client;
 
     try {
@@ -451,8 +454,17 @@ router.post("/recalculate", requireAuth, requireBonusManager, async (req, res) =
           s.status,
           s.start_date,
           s.exit_date
+
         FROM public.staff s
+
         WHERE TRIM(COALESCE(s.employee_no, '')) <> ''
+
+          AND LOWER(
+            TRIM(COALESCE(s.status, ''))
+          ) = 'active'
+
+          AND s.exit_date IS NULL
+
         ORDER BY s.id ASC;
       `);
 
