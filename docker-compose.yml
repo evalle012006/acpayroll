@@ -16,6 +16,8 @@ services:
     image: postgres:16-alpine
     container_name: acpayroll-db
     restart: unless-stopped
+    ports:
+      - "127.0.0.1:5433:5432"
     environment:
       POSTGRES_USER: ${PG_USER}
       POSTGRES_PASSWORD: ${PG_PASSWORD}

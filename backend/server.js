@@ -31,6 +31,7 @@ const pendingStaffRoutes = require("./routes/pendingStaffRoutes");
 const notificationRoutes = require("./routes/notificationRoutes");
 const chatRoutes = require("./routes/chatRoutes");
 const apiRoutes = require("./routes/apiRoutes");
+const webhookRoutes = require("./routes/webhookRoutes");
 
 const calendarRoutes = require("./routes/calendarRoutes");
 const calendarActivityRoutes = require("./routes/calendarActivityRoutes");
@@ -145,6 +146,9 @@ app.use("/api", calendarRoutes);
 
 app.use("/api", apiRoutes);
 app.use("/api", terminationRoutes);
+
+// LMS Webhook
+app.use("/api/webhook", webhookRoutes);
 
 app.get("/test", (_req, res) => {
   res.send("Backend is working!");
