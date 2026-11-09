@@ -959,6 +959,16 @@ router.post(
 
       const details = toStr(b.details || b.remarks);
 
+      const current_area = toStr(b.current_area);
+      const current_region = toStr(b.current_region);
+      const current_division = toStr(b.current_division);
+      const current_department = toStr(b.current_department);
+
+      const proposed_area = toStr(b.proposed_area);
+      const proposed_region = toStr(b.proposed_region);
+      const proposed_division = toStr(b.proposed_division);
+      const proposed_department = toStr(b.proposed_department);
+
       if (!employee_id) {
         await client.query("ROLLBACK");
         return res.status(400).json({ message: "Employee is required" });
@@ -1083,7 +1093,17 @@ router.post(
             tread_status,
             admin_order_status,
             contract_signing_status,
-            hr_final_status
+            hr_final_status,
+
+            current_area,
+            current_region,
+            current_division,
+            current_department,
+
+            proposed_area,
+            proposed_region,
+            proposed_division,
+            proposed_department
           )
         VALUES
           (
@@ -1102,7 +1122,10 @@ router.post(
             'Pending', -- tread_status
             'Pending', -- admin_order_status
             'Pending', -- contract_signing_status
-            'Pending'  -- hr_final_status
+            'Pending', -- hr_final_status
+
+            $28, $29, $30, $31,
+            $32, $33, $34, $35
           )
         RETURNING *;
         `,
@@ -1134,6 +1157,16 @@ router.post(
           attachment_mime,
           applicantRole,
           approvalStage,
+
+          toStr(staffRow.area) || null,
+          toStr(staffRow.region) || null,
+          toStr(staffRow.division) || null,
+          toStr(staffRow.department) || null,
+
+          proposed_area || null,
+          proposed_region || null,
+          proposed_division || null,
+          proposed_department || null,
         ]
       );
 
@@ -1207,8 +1240,7 @@ router.put(
 
       const b = req.body || {};
 
-      const employee_id =
-        toInt(b.employee_id) || existing.employee_id;
+      const employee_id = existing.employee_id;
 
       const effective_date =
         toDateOrNull(b.effective_date) ||
@@ -1218,9 +1250,7 @@ router.put(
         toStr(b.employee_name) ||
         toStr(existing.employee_name);
 
-      const department =
-        toStr(b.department) ||
-        toStr(existing.department);
+      const department = toStr(existing.department);
 
       const old_position =
         toStr(b.old_position) ||
@@ -1277,6 +1307,37 @@ router.put(
       const present_branch_name =
         toStr(b.present_branch_name) ||
         toStr(existing.present_branch_name);
+
+      // Current Assignment is the original employee assignment.
+      // Do not allow the frontend to overwrite this snapshot.
+
+      const current_area = toStr(existing.current_area);
+
+      const current_region = toStr(existing.current_region);
+
+      const current_division = toStr(existing.current_division);
+
+      const current_department = toStr(existing.current_department);
+
+      const proposed_area =
+        b.proposed_area !== undefined
+          ? toStr(b.proposed_area)
+          : toStr(existing.proposed_area);
+
+      const proposed_region =
+        b.proposed_region !== undefined
+          ? toStr(b.proposed_region)
+          : toStr(existing.proposed_region);
+
+      const proposed_division =
+        b.proposed_division !== undefined
+          ? toStr(b.proposed_division)
+          : toStr(existing.proposed_division);
+
+      const proposed_department =
+        b.proposed_department !== undefined
+          ? toStr(b.proposed_department)
+          : toStr(existing.proposed_department);
 
       if (!employee_id) {
         await client.query("ROLLBACK");
@@ -1347,7 +1408,17 @@ router.put(
 
           attachment_path = $19,
           attachment_name = $20,
-          attachment_mime = $21
+          attachment_mime = $21,
+
+          current_area = $22,
+          current_region = $23,
+          current_division = $24,
+          current_department = $25,
+
+          proposed_area = $26,
+          proposed_region = $27,
+          proposed_division = $28,
+          proposed_department = $29
 
         WHERE id = $1
 
@@ -1382,6 +1453,16 @@ router.put(
           attachment_path,
           attachment_name,
           attachment_mime,
+
+          current_area || null,
+          current_region || null,
+          current_division || null,
+          current_department || null,
+
+          proposed_area || null,
+          proposed_region || null,
+          proposed_division || null,
+          proposed_department || null,
         ]
       );
 
@@ -1648,8 +1729,10 @@ router.put(
         );
 
         // ========================================================
-        // ONLY HR RECEIVED / COMPLETED CHANGES ACTUAL STAFF RECORD
+        // APPLY PROMOTION TO STAFF INFORMATION
+        // ONLY AFTER FINAL HR APPROVAL
         // ========================================================
+
         await client.query(
           `
             UPDATE public.staff
@@ -1657,16 +1740,30 @@ router.put(
               "position" = $1,
               salary = $2,
               ecola = $3,
-              branch_id = $4
-            WHERE id = $5
+
+              branch_id = COALESCE($4, branch_id),
+
+              area = COALESCE(NULLIF($5, ''), area),
+              region = COALESCE(NULLIF($6, ''), region),
+              division = COALESCE(NULLIF($7, ''), division),
+              department = COALESCE(NULLIF($8, ''), department)
+
+            WHERE id = $9
           `,
           [
             order.new_position,
             toNum(order.new_salary),
             toNum(order.new_ecola),
+
             order.present_branch_id
               ? Number(order.present_branch_id)
               : null,
+
+            toStr(order.proposed_area),
+            toStr(order.proposed_region),
+            toStr(order.proposed_division),
+            toStr(order.proposed_department),
+
             order.employee_id,
           ]
         );
@@ -1715,7 +1812,7 @@ router.put(
 
         return res.json({
           message:
-            "Promotion received by HR and completed. Staff position, salary, ECOLA, and branch have been updated.",
+            "Promotion received by HR and completed. Staff position, compensation, and organizational assignment have been updated.",
           status: "Approved",
           hr_final_status: "Received",
           approval_stage: null,
@@ -2103,6 +2200,121 @@ router.put(
         return res.status(400).json({ message: "Only approved promotion can be voided." });
       }
 
+      // Prevent voiding an older promotion if the employee
+      // already has a more recently approved promotion.
+
+      const newerPromotion = await client.query(
+        `
+          SELECT id
+          FROM public.promotion_orders
+          WHERE employee_id = $1
+            AND id <> $2
+            AND LOWER(TRIM(COALESCE(status, ''))) = 'approved'
+            AND (
+              approved_at > $3
+              OR (
+                approved_at = $3
+                AND id > $2
+              )
+            )
+          LIMIT 1
+        `,
+        [
+          order.employee_id,
+          order.id,
+          order.approved_at,
+        ]
+      );
+
+      if (newerPromotion.rowCount > 0) {
+        await client.query("ROLLBACK");
+
+        return res.status(409).json({
+          message:
+            "This promotion cannot be voided because the employee has a newer approved promotion.",
+        });
+      }
+
+      // ========================================================
+      // VERIFY CURRENT STAFF STILL MATCHES APPROVED PROMOTION
+      // Prevent overwriting newer manual staff changes.
+      // ========================================================
+
+      const currentStaffRes = await client.query(
+        `
+          SELECT
+            id,
+            position,
+            salary,
+            ecola,
+            branch_id,
+            area,
+            region,
+            division,
+            department
+          FROM public.staff
+          WHERE id = $1
+          FOR UPDATE
+        `,
+        [order.employee_id]
+      );
+
+      if (currentStaffRes.rowCount === 0) {
+        await client.query("ROLLBACK");
+
+        return res.status(404).json({
+          message: "Employee staff record not found.",
+        });
+      }
+
+      const currentStaff = currentStaffRes.rows[0];
+
+      const sameText = (a, b) => norm(a) === norm(b);
+
+      const sameNumber = (a, b) =>
+        Math.abs(toNum(a) - toNum(b)) < 0.005;
+
+      const expectedBranchId =
+        order.present_branch_id != null
+          ? Number(order.present_branch_id)
+          : order.prev_branch_id != null
+            ? Number(order.prev_branch_id)
+            : null;
+
+      const staffMatchesPromotion =
+        sameText(currentStaff.position, order.new_position) &&
+        sameNumber(currentStaff.salary, order.new_salary) &&
+        sameNumber(currentStaff.ecola, order.new_ecola) &&
+        (
+          expectedBranchId == null ||
+          Number(currentStaff.branch_id) === expectedBranchId
+        ) &&
+        (
+          !toStr(order.proposed_area) ||
+          sameText(currentStaff.area, order.proposed_area)
+        ) &&
+        (
+          !toStr(order.proposed_region) ||
+          sameText(currentStaff.region, order.proposed_region)
+        ) &&
+        (
+          !toStr(order.proposed_division) ||
+          sameText(currentStaff.division, order.proposed_division)
+        ) &&
+        (
+          !toStr(order.proposed_department) ||
+          sameText(currentStaff.department, order.proposed_department)
+        );
+
+      if (!staffMatchesPromotion) {
+        await client.query("ROLLBACK");
+
+        return res.status(409).json({
+          message:
+            "Cannot void this promotion because the employee's current Staff Information no longer matches the approved promotion. Review the employee's latest assignment before proceeding.",
+        });
+      }
+
       await client.query(
         `
         UPDATE public.promotion_orders
@@ -2118,6 +2330,11 @@ router.put(
         [id]
       );
 
+      // ========================================================
+      // RESTORE ORIGINAL STAFF ASSIGNMENT
+      // WHEN APPROVED PROMOTION IS VOIDED
+      // ========================================================
+
       await client.query(
         `
           UPDATE public.staff
@@ -2125,14 +2342,29 @@ router.put(
             "position" = $1,
             salary = $2,
             ecola = $3,
-            branch_id = $4
-          WHERE id = $5
+            branch_id = COALESCE($4, branch_id),
+
+            area = COALESCE(NULLIF($5, ''), area),
+            region = COALESCE(NULLIF($6, ''), region),
+            division = COALESCE(NULLIF($7, ''), division),
+            department = COALESCE(NULLIF($8, ''), department)
+
+          WHERE id = $9
         `,
         [
           order.old_position,
           toNum(order.old_salary),
           toNum(order.old_ecola),
-          order.prev_branch_id ? Number(order.prev_branch_id) : null,
+
+          order.prev_branch_id
+            ? Number(order.prev_branch_id)
+            : null,
+
+          toStr(order.current_area),
+          toStr(order.current_region),
+          toStr(order.current_division),
+          toStr(order.current_department),
+
           order.employee_id,
         ]
       );
