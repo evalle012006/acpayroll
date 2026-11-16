@@ -186,6 +186,7 @@ export default function BonusComputation() {
   const [search, setSearch] = useState("");
   const [department, setDepartment] = useState("ALL");
   const [branch, setBranch] = useState("ALL");
+  const [employmentStatus, setEmploymentStatus] = useState("ALL");
 
   const [page, setPage] = useState(1);
   const pageSize = 25;
@@ -353,7 +354,17 @@ export default function BonusComputation() {
         branch === "ALL" ||
         String(row.branch_id || "") === branch;
 
-      if (!departmentMatch || !branchMatch) {
+      const statusMatch =
+        employmentStatus === "ALL" ||
+        String(row.status || "")
+          .trim()
+          .toLowerCase() === employmentStatus.toLowerCase();
+
+      if (
+        !departmentMatch ||
+        !branchMatch ||
+        !statusMatch
+      ) {
         return false;
       }
 
@@ -374,7 +385,7 @@ export default function BonusComputation() {
 
       return haystack.includes(q);
     });
-  }, [rows, search, department, branch]);
+  }, [rows, search, department, branch, employmentStatus]);
 
   /* =========================================================
     BONUS COMPUTATION SUMMARY
@@ -467,7 +478,7 @@ export default function BonusComputation() {
 
     useEffect(() => {
       setPage(1);
-    }, [year, department, branch, search]);
+    }, [year, department, branch, search, employmentStatus]);
 
     useEffect(() => {
       if (page > totalPages) {
@@ -699,21 +710,8 @@ export default function BonusComputation() {
   ========================================================= */
 
   const totals = useMemo(() => {
-    const now = new Date();
-
-    const lastEligibleMonth =
-      year < now.getFullYear()
-        ? 12
-        : year > now.getFullYear()
-          ? 0
-          : now.getMonth() + 1;
-
     return months.reduce(
       (acc, item) => {
-        if (Number(item.month) > lastEligibleMonth) {
-          return acc;
-        }
-
         const totalCompensation = Number(
           item.total_compensation || 0
         );
@@ -746,7 +744,7 @@ export default function BonusComputation() {
         total_bonus: 0,
       }
     );
-  }, [months, year]);
+  }, [months]);
 
   const totalBenefits = useMemo(() => {
     return (
@@ -1084,6 +1082,19 @@ export default function BonusComputation() {
       {/* FILTERS */}
 
       <div className="bonus-comp-filters">
+        <div className="bonus-filter">
+          <label>Employment Status</label>
+
+          <select
+            value={employmentStatus}
+            onChange={(e) => setEmploymentStatus(e.target.value)}
+          >
+            <option value="ALL">All Employees</option>
+            <option value="active">Active</option>
+            <option value="inactive">Inactive</option>
+          </select>
+        </div>
+
         <div className="bonus-filter">
           <label>Year</label>
 
@@ -1427,13 +1438,7 @@ export default function BonusComputation() {
                                 min="0"
                                 step="0.01"
                                 value={item.total_compensation}
-                                disabled={
-                                  year > new Date().getFullYear() ||
-                                  (
-                                    year === new Date().getFullYear() &&
-                                    item.month > new Date().getMonth() + 1
-                                  )
-                                }
+                                disabled={saving || modalLoading}
                                 onChange={(e) =>
                                   updateMonth(
                                     index,
@@ -1485,7 +1490,12 @@ export default function BonusComputation() {
                                   disabled={
                                     resettingMonth !== null ||
                                     saving ||
-                                    modalLoading
+                                    modalLoading ||
+                                    year > new Date().getFullYear() ||
+                                    (
+                                      year === new Date().getFullYear() &&
+                                      item.month > new Date().getMonth() + 1
+                                    )
                                   }
                                 >
                                 {resettingMonth === item.month

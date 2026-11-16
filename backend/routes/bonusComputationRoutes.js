@@ -466,7 +466,8 @@ router.get("/", requireAuth, async (req, res) => {
       });
     }
 
-    const lastEligibleMonth = getLastEligibleBonusMonth(year);
+    // Include all 12 months in annual bonus totals.
+    const lastEligibleMonth = 12;
 
     const result = await pool.query(
       `
@@ -476,6 +477,7 @@ router.get("/", requireAuth, async (req, res) => {
         s.fullname,
         s.position,
         s.department,
+        s.status,
         s.branch_id,
         b.code AS branch_code,
         b.name AS branch_name,
@@ -544,16 +546,7 @@ router.get("/", requireAuth, async (req, res) => {
         ON bc.staff_id = s.id
        AND bc.computation_year = $1
 
-      WHERE LOWER(TRIM(COALESCE(s.status, ''))) NOT IN (
-        'resigned',
-        'resign',
-        'awol',
-        'terminated',
-        'termination',
-        'indefinite leave',
-        'indefinite_leave',
-        'on indefinite leave'
-      )
+      WHERE 1 = 1
 
       GROUP BY
         s.id,
@@ -561,6 +554,7 @@ router.get("/", requireAuth, async (req, res) => {
         s.fullname,
         s.position,
         s.department,
+        s.status,
         s.branch_id,
         b.code,
         b.name,
@@ -917,6 +911,8 @@ router.post("/recalculate", requireAuth, requireBonusManager, async (req, res) =
               ?.is_manual_override === true
           ) {
             protectedMonths += 1;
+
+            continue;
           }
 
           const result = await client.query(
@@ -1092,14 +1088,8 @@ router.put("/staff/:staffId", requireAuth, requireBonusManager, async (req, res)
         });
       }
 
-      const lastEligibleMonth = getLastEligibleBonusMonth(year);
-
-      if (lastEligibleMonth === 0) {
-        return res.status(400).json({
-          message:
-            "Cannot manually adjust bonus computations for a future year.",
-        });
-      }
+      // Allow manual bonus adjustments for all 12 months
+      // of the selected year, including future months.
 
       const normalizedMonths = [];
 
@@ -1116,13 +1106,6 @@ router.put("/staff/:staffId", requireAuth, requireBonusManager, async (req, res)
         ) {
           return res.status(400).json({
             message: "Invalid computation month.",
-          });
-        }
-        
-        if (month > lastEligibleMonth) {
-          return res.status(400).json({
-            message:
-              `Month ${month} is a future month and cannot be manually adjusted.`,
           });
         }
 
