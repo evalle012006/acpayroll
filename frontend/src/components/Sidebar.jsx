@@ -354,10 +354,20 @@ const Sidebar = ({ collapsed }) => {
         ],
       },
       {
-        to: "/branches",
         label: "Branch Payroll",
         icon: TbGitBranch,
         module: "branch",
+        accessPath: "/branches",
+        children: [
+          {
+            to: "/branches",
+            label: "Branch Payroll",
+          },
+          {
+            to: "/main-office-payroll",
+            label: "Main Office Payroll",
+          },
+        ],
       },
       {
         to: "/logistic",
@@ -490,7 +500,7 @@ const Sidebar = ({ collapsed }) => {
       const allowed = allowedSidebar();
 
       if (allowed) {
-        return allowed.includes(item.to);
+        return allowed.includes(item.to || item.accessPath);
       }
 
       if (item.anyModule) {
@@ -499,7 +509,7 @@ const Sidebar = ({ collapsed }) => {
 
       return can(item.module, "view");
     });
-  }, [permissionMap, isSuperUser, reportPending, role, userDepartment]);
+  }, [permissionMap, isSuperUser, reportPending, financePending, hrPending, role, userDepartment]);
 
   const isPathActive = (basePath) => {
     if (basePath === "/transactions") {
@@ -534,9 +544,16 @@ const Sidebar = ({ collapsed }) => {
         if (item.children) {
           const isCalendarMenu = item.label === "Calendar";
 
-          const isActiveParent = isCalendarMenu
+          const isActiveParent =
+          item.label === "Calendar"
             ? pathname.startsWith("/transactions/travel-plan")
-            : pathname.startsWith("/reports");
+            : item.label === "Branch Payroll"
+            ? pathname.startsWith("/branches") ||
+              pathname.startsWith("/payroll") ||
+              pathname === "/main-office-payroll"
+            : item.label === "Requests"
+            ? pathname.startsWith("/reports")
+            : false;
 
           const isOpen =
             Boolean(openMenus[item.label]) ||

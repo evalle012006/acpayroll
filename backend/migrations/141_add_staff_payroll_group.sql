@@ -1,0 +1,6 @@
+BEGIN;
+
+ALTER TABLE public.staff
+ADD COLUMN IF NOT EXISTS payroll_group TEXT;
+
+COMMIT;

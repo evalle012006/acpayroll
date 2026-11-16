@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import "../styles/Payroll.css";
 import api from "../api/axiosClient";
 import { HiDotsVertical } from "react-icons/hi";
@@ -162,6 +162,15 @@ function Payroll() {
   const rawBranchParam = params.branchId ?? params.id;
   const branchParam = toStr(rawBranchParam);
 
+  const [searchParams] = useSearchParams();
+  const mainOfficeGroup = searchParams.get("main_office_group") || "";
+  const departmentId = searchParams.get("department_id");
+  const departmentName = searchParams.get("department");
+  const [payrollGroups, setPayrollGroups] = useState([]);
+  const selectedPayrollGroup = payrollGroups.find(
+    (group) => norm(group.group_key) === norm(mainOfficeGroup)
+  );
+
   const navigate = useNavigate();
 
   const user = useMemo(() => readUser(), []);
@@ -177,6 +186,7 @@ function Payroll() {
   );
 
   const [staff, setStaff] = useState([]);
+  const [mainOfficeStaff, setMainOfficeStaff] = useState([]);
   const [branch, setBranch] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -195,6 +205,10 @@ function Payroll() {
     for (const k of OVERRIDE_FIELDS) obj[k] = 0;
     return obj;
   });
+
+  const [showStaffManager, setShowStaffManager] = useState(false);
+  const [staffManagerSearch, setStaffManagerSearch] = useState("");
+  const [savingStaffId, setSavingStaffId] = useState(null);
 
   const menuWrapRef = useRef(null);
 
@@ -287,11 +301,23 @@ function Payroll() {
       setError("");
 
       try {
-        const [branchesRes, staffRes, suspensionRes] = await Promise.all([
-          api.get("/branches"),
-          api.get("/staff"),
-          api.get("/suspension-orders").catch(() => ({ data: [] })),
-        ]);
+        const [branchesRes, staffRes, suspensionRes, payrollGroupsRes] =
+          await Promise.all([
+            api.get("/branches"),
+            api.get("/staff"),
+            api.get("/suspension-orders").catch(() => ({ data: [] })),
+            api.get("/main-office-payroll-groups").catch(() => ({ data: [] })),
+          ]);
+
+        const loadedPayrollGroups = Array.isArray(payrollGroupsRes.data)
+          ? payrollGroupsRes.data
+          : [];
+
+        setPayrollGroups(loadedPayrollGroups);
+
+        const selectedGroupForReport = loadedPayrollGroups.find(
+          (group) => norm(group.group_key) === norm(mainOfficeGroup)
+        );
 
         const branches = Array.isArray(branchesRes.data) ? branchesRes.data : [];
 
@@ -312,6 +338,16 @@ function Payroll() {
         setBranch(foundBranch);
 
         const allStaff = Array.isArray(staffRes.data) ? staffRes.data : [];
+        const officeStaff =
+          norm(foundBranch.code) === "b000"
+            ? allStaff.filter(
+                (s) =>
+                  Number(s.branch_id) === Number(foundBranch.id) ||
+                  norm(s.branch_code) === norm(foundBranch.code)
+              )
+            : [];
+
+        setMainOfficeStaff(officeStaff);
 
         const byBranchId = allStaff.filter(
           (s) => Number(s.branch_id) === Number(foundBranch.id)
@@ -320,10 +356,6 @@ function Payroll() {
         const byBranchCode = allStaff.filter(
           (s) => norm(s.branch_code) === norm(foundBranch.code)
         );
-
-        const searchParams = new URLSearchParams(window.location.search);
-        const departmentId = searchParams.get("department_id");
-        const departmentName = searchParams.get("department");
 
         const filteredRaw = allStaff.filter((s) => {
           const matchBranch =
@@ -340,9 +372,19 @@ function Payroll() {
           return matchBranch && matchDepartment;
         });
 
-        const filtered = filteredRaw.filter(isActiveStaff);
+        const activeStaff = filteredRaw.filter(isActiveStaff);
 
-        setStaff(filtered);
+        const groupedStaff =
+          mainOfficeGroup && norm(foundBranch.code) === "b000"
+            ? activeStaff.filter(
+                (person) =>
+                  Number(person.payroll_group_id) ===
+                    Number(selectedGroupForReport?.id) ||
+                  norm(person.payroll_group) === norm(mainOfficeGroup)
+              )
+            : activeStaff;
+
+        setStaff(groupedStaff);
 
         const suspensions = Array.isArray(suspensionRes.data) ? suspensionRes.data : [];
         const map = {};
@@ -387,7 +429,7 @@ function Payroll() {
     };
 
     run();
-  }, [branchParam, selectedMonth]);
+  }, [branchParam, selectedMonth, departmentId, departmentName, mainOfficeGroup]);
 
   useEffect(() => {
     const loadBalances = async () => {
@@ -497,6 +539,21 @@ function Payroll() {
     },
     [scheduleBalances]
   );
+
+  const staffManagerRows = useMemo(() => {
+  const q = staffManagerSearch.trim().toLowerCase();
+
+  return mainOfficeStaff.filter((person) =>
+    [
+      person.employee_no,
+      person.fullname,
+      person.last_name,
+      person.first_name,
+      person.middle_name,
+      person.position,
+    ].some((value) => String(value ?? "").toLowerCase().includes(q))
+  );
+}, [mainOfficeStaff, staffManagerSearch]);
 
   const computedRows = useMemo(() => {
     const rows = (staff || []).map((raw) => {
@@ -704,6 +761,97 @@ function Payroll() {
     return () => document.removeEventListener("mousedown", onDown);
   }, [menuOpenFor, closeMenu]);
 
+  const assignMainOfficeStaff = async (person) => {
+  if (!selectedPayrollGroup?.id) return;
+
+  const currentGroupId = Number(person.payroll_group_id || 0);
+  const targetGroupId = Number(selectedPayrollGroup.id);
+
+  if (currentGroupId === targetGroupId) return;
+
+  if (currentGroupId) {
+    const currentGroup = payrollGroups.find(
+      (group) => Number(group.id) === currentGroupId
+    );
+
+    const confirmed = window.confirm(
+      `${person.fullname || person.employee_no} is assigned to ${
+        currentGroup?.group_name || person.payroll_group || "another group"
+      }. Move them to ${selectedPayrollGroup.group_name}?`
+    );
+
+    if (!confirmed) return;
+  }
+
+  setSavingStaffId(person.id);
+
+  try {
+    const res = await api.patch(
+      `/main-office-payroll-groups/${targetGroupId}/staff/${person.id}`
+    );
+
+    const updatedPerson = { ...person, ...res.data };
+
+    setMainOfficeStaff((current) =>
+      current.map((item) =>
+        Number(item.id) === Number(person.id) ? updatedPerson : item
+      )
+    );
+
+    setStaff((current) => {
+      const withoutPerson = current.filter(
+        (item) => Number(item.id) !== Number(person.id)
+      );
+
+      return isActiveStaff(updatedPerson)
+        ? [...withoutPerson, updatedPerson]
+        : withoutPerson;
+    });
+  } catch (err) {
+    alert(
+      err?.response?.data?.message || "Failed to assign staff to this group."
+    );
+  } finally {
+    setSavingStaffId(null);
+  }
+};
+
+const removeMainOfficeStaff = async (person) => {
+  const confirmed = window.confirm(
+    `Remove ${person.fullname || person.employee_no} from ${
+      selectedPayrollGroup?.group_name || "this payroll group"
+    }? This will not delete the employee.`
+  );
+
+  if (!confirmed || !selectedPayrollGroup?.id) return;
+
+  setSavingStaffId(person.id);
+
+  try {
+    await api.delete(
+      `/main-office-payroll-groups/${selectedPayrollGroup.id}/staff/${person.id}`
+    );
+
+    setMainOfficeStaff((current) =>
+      current.map((item) =>
+        Number(item.id) === Number(person.id)
+          ? { ...item, payroll_group_id: null, payroll_group: null }
+          : item
+      )
+    );
+
+    setStaff((current) =>
+      current.filter((item) => Number(item.id) !== Number(person.id))
+    );
+  } catch (err) {
+    alert(
+      err?.response?.data?.message || "Failed to remove staff from this group."
+    );
+  } finally {
+    setSavingStaffId(null);
+  }
+};
+
   const openManualEdit = (row) => {
     if (!canManualEdit) {
       alert("Only Admin, HR, and Accounting can edit manually.");
@@ -856,6 +1004,18 @@ function Payroll() {
             className="btn-secondary"
             style={{ padding: "9px 12px" }}
           />
+          {mainOfficeGroup && norm(branch?.code) === "b000" && canManualEdit && (
+            <button
+              className="btn-secondary"
+              type="button"
+              onClick={() => {
+                setStaffManagerSearch("");
+                setShowStaffManager(true);
+              }}
+            >
+              Add Staff
+            </button>
+          )}
           <button className="btn-secondary" onClick={() => navigate(-1)} type="button">
             ← Back
           </button>
@@ -1111,6 +1271,125 @@ function Payroll() {
         </div>
       ) : null}
 
+      {showStaffManager && selectedPayrollGroup && (
+        <div
+          className="payroll-modal-overlay"
+          onMouseDown={(e) =>
+            e.target.classList.contains("payroll-modal-overlay") &&
+            setShowStaffManager(false)
+          }
+        >
+          <div
+            className="payroll-modal"
+            style={{ width: "min(900px, 95vw)", maxWidth: 900 }}
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <div className="payroll-modal-head">
+              <div>
+                <div className="payroll-modal-title">
+                  Staff — {selectedPayrollGroup.group_name}
+                </div>
+                <div className="payroll-modal-sub">
+                  Add, move, or remove Main Office employees in this payroll group.
+                </div>
+              </div>
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={() => setShowStaffManager(false)}
+              >
+                Close
+              </button>
+            </div>
+
+            <div className="payroll-modal-body">
+              <input
+                className="input"
+                type="text"
+                placeholder="Search by employee number, name, or position..."
+                value={staffManagerSearch}
+                onChange={(e) => setStaffManagerSearch(e.target.value)}
+              />
+
+              <div style={{ maxHeight: "55vh", overflow: "auto", marginTop: 16 }}>
+                <table className="payroll-table">
+                  <thead>
+                    <tr>
+                      <th>Employee No.</th>
+                      <th>Name</th>
+                      <th>Position</th>
+                      <th>Current Group</th>
+                      <th>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {staffManagerRows.length === 0 ? (
+                      <tr>
+                        <td colSpan={5} style={{ textAlign: "center" }}>
+                          No Main Office employees found.
+                        </td>
+                      </tr>
+                    ) : (
+                      staffManagerRows.map((person) => {
+                        const assignedGroup = payrollGroups.find(
+                          (group) =>
+                            Number(group.id) === Number(person.payroll_group_id)
+                        );
+
+                        const isInThisGroup =
+                          Number(person.payroll_group_id) ===
+                            Number(selectedPayrollGroup.id) ||
+                          norm(person.payroll_group) === norm(mainOfficeGroup);
+
+                        return (
+                          <tr key={person.id}>
+                            <td>{person.employee_no || "-"}</td>
+                            <td>{person.fullname || "-"}</td>
+                            <td>{person.position || "-"}</td>
+                            <td>
+                              {assignedGroup?.group_name ||
+                                person.payroll_group ||
+                                "Unassigned"}
+                            </td>
+                            <td>
+                              {isInThisGroup ? (
+                                <button
+                                  type="button"
+                                  className="btn-secondary"
+                                  disabled={savingStaffId === person.id}
+                                  onClick={() => removeMainOfficeStaff(person)}
+                                >
+                                  {savingStaffId === person.id
+                                    ? "Please wait..."
+                                    : "Remove"}
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  className="btn-primary"
+                                  disabled={savingStaffId === person.id}
+                                  onClick={() => assignMainOfficeStaff(person)}
+                                >
+                                  {savingStaffId === person.id
+                                    ? "Please wait..."
+                                    : person.payroll_group_id
+                                      ? "Move here"
+                                      : "Add"}
+                                </button>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {editModalStaff && canManualEdit ? (
         <div
           className="payroll-modal-overlay"
@@ -1176,7 +1455,9 @@ function Payroll() {
           <div className="branch-payroll-print__title">AmberCash PH Micro Lending Corp.</div>
           <div className="branch-payroll-print__subtitle">SALARIES AND WAGES</div>
           <div className="branch-payroll-print__branch">
-            {branch ? `${branch.code} ${branch.name}` : "-"}
+            {selectedPayrollGroup?.group_name ||
+              selectedPayrollGroup?.group_key ||
+              (branch ? `${branch.code} ${branch.name}` : "-")}
           </div>
           <div className="branch-payroll-print__period">{payrollMonth}</div>
 

@@ -61,6 +61,8 @@ import ComplyPage from "./pages/travel/ComplyPage";
 import CalendarPage from "./pages/travel/CalendarPage";
 import CalendarSummaryReport from "./pages/travel/CalendarSummaryReport";
 
+import MainOfficePayroll from "./pages/MainOfficePayroll";
+
 import api from "./api/axiosClient";
 
 const PermissionContext = createContext(null);
@@ -433,6 +435,15 @@ function AppShell() {
         element={
           <Page module="branch">
             <Branches />
+          </Page>
+        }
+      />
+
+      <Route
+        path="/main-office-payroll"
+        element={
+          <Page module="branch">
+            <MainOfficePayroll />
           </Page>
         }
       />

@@ -28,6 +28,12 @@ const {
 
 const toStr = (v) => String(v ?? "").trim();
 
+const toIntOrNull = (value) => {
+  if (value === null || value === undefined || value === "") return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? Math.trunc(number) : null;
+};
+
 const toInt = (v) => {
   const n = Number(v);
   return Number.isFinite(n) ? Math.trunc(n) : null;
@@ -183,7 +189,7 @@ const STAFF_REMARKS_SQL = `
     WHEN EXISTS (
       SELECT 1
       FROM public.suspension_orders so
-      WHERE so.employee_id = s.id
+      WHERE so.employee_id::text = s.id::text
         AND LOWER(COALESCE(so.status, '')) = 'approved'
         AND CURRENT_DATE BETWEEN so.start_date AND COALESCE(so.end_date, CURRENT_DATE)
     )
@@ -192,7 +198,7 @@ const STAFF_REMARKS_SQL = `
     WHEN EXISTS (
       SELECT 1
       FROM public.leave_requests lr
-      WHERE lr.employee_id = s.id
+      WHERE lr.employee_id::text = s.id::text
         AND LOWER(COALESCE(lr.status, '')) = 'approved'
         AND CURRENT_DATE BETWEEN lr.start_date AND COALESCE(lr.end_date, CURRENT_DATE)
     )
@@ -409,7 +415,7 @@ async function insertStaffFromBody(client, body) {
         mother_fullname, mother_address, mother_occupation, mother_employer, mother_contact,
         guardian_fullname, guardian_address, guardian_occupation, guardian_employer, guardian_contact,
         sss_no, philhealth_no, tin_no, pagibig_no,
-        children, education, employment_history, beneficiaries
+        children, education, employment_history, beneficiaries, payroll_group, payroll_group_id
       )
     VALUES
       (
@@ -443,7 +449,7 @@ async function insertStaffFromBody(client, body) {
         $63,$64,$65,$66,$67,
         $68,$69,$70,$71,$72,
         $73,$74,$75,$76,
-        $77::jsonb,$78::jsonb,$79::jsonb,$80::jsonb
+        $77::jsonb,$78::jsonb,$79::jsonb,$80::jsonb,$81,$82
       )
     RETURNING id;
     `,
@@ -548,6 +554,8 @@ async function insertStaffFromBody(client, body) {
       JSON.stringify(education),
       JSON.stringify(employment_history),
       JSON.stringify(beneficiaries),
+      toStr(body.payroll_group) || null,
+      toIntOrNull(body.payroll_group_id),
     ]
   );
 
@@ -1179,8 +1187,10 @@ router.put(
           sick_leave=$82,
           emergency_leave=$83,
           maternity_leave=$84,
-          parental_leave=$85
-        WHERE id=$86
+          parental_leave=$85,
+          payroll_group=$86,
+          payroll_group_id=$87
+          WHERE id=$88
         RETURNING id, employee_no, status
         `,
         [
@@ -1290,6 +1300,9 @@ router.put(
           toNum(body.emergency_leave),
           toNum(body.maternity_leave),
           toNum(body.parental_leave),
+
+          toStr(body.payroll_group) || null,
+          toIntOrNull(body.payroll_group_id),
 
           id,
         ]
