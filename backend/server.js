@@ -31,7 +31,6 @@ const pendingStaffRoutes = require("./routes/pendingStaffRoutes");
 const notificationRoutes = require("./routes/notificationRoutes");
 const chatRoutes = require("./routes/chatRoutes");
 const apiRoutes = require("./routes/apiRoutes");
-const webhookRoutes = require("./routes/webhookRoutes");
 
 const calendarRoutes = require("./routes/calendarRoutes");
 const calendarActivityRoutes = require("./routes/calendarActivityRoutes");
@@ -63,6 +62,8 @@ const bonusComputationRoutes =
 const terminationRoutes = require("./routes/terminationRoutes");
 const { startMonthlyBalancePoster } = require("./jobs/monthlyBalancePoster");
 const { startResignationCron } = require("./jobs/resignationCron");
+const { startLmsSyncCron } = require("./jobs/lmsSyncCron");
+const lmsRoutes = require("./routes/lmsRoutes");
 
 const mainOfficePayrollGroupsRoutes =
   require("./routes/mainOfficePayrollGroupsRoutes");
@@ -94,6 +95,9 @@ app.use("/api/salary-history", salaryHistoryRoutes);
 app.use("/api/status-history", statusHistoryRoutes);
 app.use("/api/transport-history", transportationHistoryRoutes);
 app.use("/api/chat", chatRoutes);
+
+// LMS seat assignment + sync. Mounted BEFORE the generic app.use("/api", ...) routers below.
+app.use("/api/lms", lmsRoutes);
 
 app.use("/api", compRatesRoutes);
 app.use("/api", staffRoutes);
@@ -180,4 +184,5 @@ app.listen(PORT, () => {
 
   startMonthlyBalancePoster();
   startResignationCron();
+  startLmsSyncCron();
 });

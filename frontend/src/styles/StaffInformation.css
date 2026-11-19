@@ -265,9 +265,9 @@
 }
 
 .step-tab {
-  border: 1px solid rgba(255,255,255,0.12);
-  background: rgba(255,255,255,0.06);
-  color: rgba(255,255,255,0.88);
+  border: 1px solid rgba(15, 23, 42, 0.18);
+  background: #f3f4f6;
+  color: #334155;
   padding: 8px 14px;
   border-radius: 12px;
   font-weight: 700;
@@ -280,15 +280,38 @@
 }
 
 .step-tab.active {
-  background: rgba(99, 102, 241, 0.22); /* indigo-ish */
+  background: rgba(79, 70, 229, 0.12);
+  border-color: rgba(79, 70, 229, 0.55);
+  color: #3730a3;
+}
+
+.step-tab:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none;
+}
+
+[data-theme="dark"] .step-tab {
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(255,255,255,0.06);
+  color: rgba(255,255,255,0.88);
+}
+
+[data-theme="dark"] .step-tab.active {
+  background: rgba(99, 102, 241, 0.22);
   border-color: rgba(99, 102, 241, 0.45);
   color: #fff;
 }
 
-.step-tab:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-  transform: none;
+/* Plain small text used by the LMS account panel (the global .mini class is a bordered card) */
+.lms-note {
+  font-size: 12px;
+  font-weight: 600;
+  color: #64748b;
+}
+
+[data-theme="dark"] .lms-note {
+  color: #9aa7bd;
 }
 
 .leave-edit-card {
