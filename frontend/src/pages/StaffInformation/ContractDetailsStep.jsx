@@ -1,5 +1,6 @@
   import React, { useMemo } from "react";
   import { norm, toStr } from "./staffInfoUtils";
+  import { positionSelectState } from "./positionSelect";
 
   export default function ContractDetailsStep({form, branches, positionRates = [], onChange, branchSearch, setBranchSearch, }) {
     const positionOptions = Array.isArray(positionRates)
@@ -165,6 +166,8 @@
       }
     };
 
+    const posState = positionSelectState(positionOptions, form.position);
+
     return (
       <div className="modal-body staff-add-grid">
         <div className="staff-add-left" style={{ width: "100%" }}>
@@ -173,11 +176,14 @@
             <select
               className="input"
               name="position"
-              value={form.position}
+              value={posState.value}
               onChange={handlePositionChange}
               required
             >
               <option value="">Select position...</option>
+              {posState.extra ? (
+                <option value={posState.extra}>{posState.extra} (not in rate table)</option>
+              ) : null}
               {positionOptions.map((r) => (
                 <option key={r.id || r.position} value={r.position}>
                   {r.position}

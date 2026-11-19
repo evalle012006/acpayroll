@@ -4,6 +4,7 @@ import api from "../api/axiosClient";
 import StepTabs from "./StaffInformation/StepTabs";
 import StaffDetailsStep from "./StaffInformation/StaffDetailsStep";
 import ContractDetailsStep from "./StaffInformation/ContractDetailsStep";
+import LmsSeatPanel from "../components/LmsSeatPanel";
 import PersonalBalancesStep from "./StaffInformation/PersonalBalancesStep";
 import StaffProfileModal from "./StaffInformation/StaffProfileModal";
 import useStaffSignedUrls from "./StaffInformation/useStaffSignedUrls";
@@ -1371,6 +1372,11 @@ export default function StaffInformation() {
                     branchSearch={branchSearch}
                     setBranchSearch={setBranchSearch}
                   />
+                )}
+
+                {/* LMS account: admins only, existing staff only (needs a saved id) */}
+                {formStep === 2 && editStaff?.id && role === "admin" && (
+                  <LmsSeatPanel staffId={editStaff.id} />
                 )}
 
                 {formStep === 3 && (

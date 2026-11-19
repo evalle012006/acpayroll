@@ -1,6 +1,7 @@
 import React from "react";
 import EditableCell from "./EditableCell";
 import { DEPARTMENT_OPTIONS, toNum, toStr } from "./deploymentUtils";
+import { positionSelectState } from "../StaffInformation/positionSelect";
 
 export default function ContractDetailsStep({ form, branches, compRates = [], setForm, branchConfigMap }) {
   const setField = (name, value) =>
@@ -105,10 +106,15 @@ export default function ContractDetailsStep({ form, branches, compRates = [], se
                 <select
                   className="input"
                   style={{ width: 280, textAlignLast: "right" }}
-                  value={form.position}
+                  value={positionSelectState(compRates, form.position).value}
                   onChange={(e) => applyRateByPosition(e.target.value)}
                 >
                   <option value="">Select position...</option>
+                  {positionSelectState(compRates, form.position).extra ? (
+                    <option value={positionSelectState(compRates, form.position).extra}>
+                      {positionSelectState(compRates, form.position).extra} (not in rate table)
+                    </option>
+                  ) : null}
                   {(compRates || []).map((r) => (
                     <option key={r.id} value={r.position}>
                       {r.position}
