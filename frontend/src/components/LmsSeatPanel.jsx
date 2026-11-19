@@ -159,7 +159,7 @@ export default function LmsSeatPanel({ staffId, onAssigned }) {
   );
 
   const groupLabel = (key, text) => (
-    <div key={key} className="mini" style={{ padding: "6px 10px", background: "#f9fafb", fontWeight: 600 }}>
+    <div key={key} className="lms-note" style={{ padding: "6px 10px", background: "#f9fafb", fontWeight: 600 }}>
       {text}
     </div>
   );
@@ -167,22 +167,22 @@ export default function LmsSeatPanel({ staffId, onAssigned }) {
   return (
     <div className="field" style={{ marginTop: 16, padding: 12, border: "1px solid #e5e7eb", borderRadius: 8 }}>
       <label style={{ fontWeight: 600 }}>LMS account</label>
-      <div className="mini" style={{ marginBottom: 8 }}>
+      <div className="lms-note" style={{ marginBottom: 8 }}>
         Based on the saved position and branch. Save staff changes first.
       </div>
 
-      {loading ? <div className="mini">Loading…</div> : null}
+      {loading ? <div className="lms-note">Loading…</div> : null}
       {error ? <div style={{ color: "#b91c1c", marginBottom: 8 }}>{error}</div> : null}
       {notice ? <div style={{ color: "#166534", marginBottom: 8 }}>{notice}</div> : null}
 
       {issued ? (
         <div style={{ background: "#fef3c7", padding: 10, borderRadius: 6, marginBottom: 10 }}>
-          <div className="mini">Temporary password for {issued.seatLabel}</div>
+          <div className="lms-note">Temporary password for {issued.seatLabel}</div>
           <div style={{ fontFamily: "monospace", fontSize: 20, margin: "6px 0" }}>{issued.password}</div>
           <button type="button" className="btn btn-outline" onClick={copy}>
             {copied ? "Copied" : "Copy"}
           </button>
-          <div className="mini" style={{ marginTop: 6 }}>
+          <div className="lms-note" style={{ marginTop: 6 }}>
             Shown once and never stored. Give it to the staff member; they must change it at first login.
           </div>
           <button type="button" className="btn btn-ghost" onClick={() => setIssued(null)}>
@@ -194,7 +194,7 @@ export default function LmsSeatPanel({ staffId, onAssigned }) {
       {!loading && data ? (
         <>
           {data.needs_employee_no ? (
-            <div className="mini">Add an Employee No. to this staff member and save before linking an account.</div>
+            <div className="lms-note">Add an Employee No. to this staff member and save before linking an account.</div>
           ) : null}
 
           {data.current ? (
@@ -202,11 +202,11 @@ export default function LmsSeatPanel({ staffId, onAssigned }) {
               Linked account: <strong>{data.current.label}</strong>
             </div>
           ) : !data.needs_employee_no ? (
-            <div className="mini" style={{ marginBottom: 8 }}>No LMS account linked yet.</div>
+            <div className="lms-note" style={{ marginBottom: 8 }}>No LMS account linked yet.</div>
           ) : null}
 
           {!data.needs_employee_no && data.syncable === false ? (
-            <div className="mini">
+            <div className="lms-note">
               {data.reason === "excluded"
                 ? "This position does not get an LMS account."
                 : "This position is not recognised. Choose a position from the list and save."}
@@ -214,7 +214,7 @@ export default function LmsSeatPanel({ staffId, onAssigned }) {
           ) : null}
 
           {!data.needs_employee_no && data.syncable !== false && data.branch_found === false ? (
-            <div className="mini">This staff member's branch code is not in the LMS. Check the branch.</div>
+            <div className="lms-note">This staff member's branch code is not in the LMS. Check the branch.</div>
           ) : null}
 
           {!data.needs_employee_no && data.syncable && data.branch_found !== false ? (
@@ -222,7 +222,7 @@ export default function LmsSeatPanel({ staffId, onAssigned }) {
               picked ? (
                 <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
                   <div style={{ flex: 1, minWidth: 220, padding: "6px 10px", border: "1px solid #bfdbfe", background: "#eff6ff", borderRadius: 6 }}>
-                    <span className="mini">{picked.kind === "unlinked" ? "Existing account" : "Open seat"}: </span>
+                    <span className="lms-note">{picked.kind === "unlinked" ? "Existing account" : "Open seat"}: </span>
                     <strong>{picked.label}</strong>
                   </div>
                   <button type="button" className="btn btn-ghost" onClick={() => setSeatId("")} disabled={busy}>
@@ -252,7 +252,7 @@ export default function LmsSeatPanel({ staffId, onAssigned }) {
                     onChange={(e) => setQuery(e.target.value)}
                     onKeyDown={onKeyDown}
                   />
-                  <div className="mini" style={{ margin: "4px 0" }}>
+                  <div className="lms-note" style={{ margin: "4px 0" }}>
                     {matches.length} of {seats.length} {roleText} accounts
                   </div>
                   <div
@@ -262,7 +262,7 @@ export default function LmsSeatPanel({ staffId, onAssigned }) {
                     style={{ maxHeight: 220, overflowY: "auto", border: "1px solid #e5e7eb", borderRadius: 6 }}
                   >
                     {matches.length === 0 ? (
-                      <div className="mini" style={{ padding: 10 }}>No account matches “{query}”.</div>
+                      <div className="lms-note" style={{ padding: 10 }}>No account matches “{query}”.</div>
                     ) : null}
                     {openMatches.length ? groupLabel("open", "Open seats (reset, new password)") : null}
                     {openMatches.map((s, i) => renderRow(s, i))}
@@ -272,7 +272,7 @@ export default function LmsSeatPanel({ staffId, onAssigned }) {
                 </div>
               )
             ) : (
-              <div className="mini">
+              <div className="lms-note">
                 No available {roleText} accounts here. Create one in the LMS first, or ask an LMS admin to open a seat.
               </div>
             )
