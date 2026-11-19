@@ -222,7 +222,8 @@ const getInitialStatus = (reportType, employee) => {
     return STATUS_HR;
   }
 
-  // Notice to Explain follows line supervisor approval
+  // Notice to Explain starts at the Regional Manager stage; AM is not in
+  // the approval chain for new reports.
   if (reportType === "Notice to Explain") {
 
     const position = norm(employee?.position);
@@ -259,8 +260,8 @@ const getInitialStatus = (reportType, employee) => {
       return STATUS_REGIONAL;
     }
 
-    // Loan Officer / Branch Manager / other employees → AM
-    return STATUS_AREA;
+    // Loan Officer / Branch Manager / other employees → RM
+    return STATUS_REGIONAL;
   }
 
   return STATUS_HR;
