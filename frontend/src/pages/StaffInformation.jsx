@@ -91,6 +91,7 @@ export default function StaffInformation() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [branchSearch, setBranchSearch] = useState("");
+  const [payrollGroups, setPayrollGroups] = useState([]);
 
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
@@ -239,6 +240,8 @@ export default function StaffInformation() {
     employment_history: "[]",
     beneficiaries: "[]",
     position: "",
+    payroll_group: "",
+    payroll_group_id: "",
     department: "",
     area: "",
     region: "",
@@ -316,6 +319,8 @@ export default function StaffInformation() {
       employment_history: "[]",
       beneficiaries: "[]",
       position: "",
+      payroll_group: "",
+      payroll_group_id: "",
       department: "",
       area: "",
       region: "",
@@ -393,9 +398,10 @@ export default function StaffInformation() {
     setError("");
 
     try {
-      const [staffRes, branchesRes] = await Promise.allSettled([
+      const [staffRes, branchesRes, payrollGroupsRes] = await Promise.allSettled([
         api.get("/staff"),
         api.get("/branches"),
+        api.get("/main-office-payroll-groups"),
       ]);
 
       console.log("BRANCHES", branchesRes.value?.data);
@@ -416,6 +422,15 @@ export default function StaffInformation() {
         setBranches(Array.isArray(branchesRes.value.data) ? branchesRes.value.data : []);
       } else {
         setBranches([]);
+      }
+      if (payrollGroupsRes.status === "fulfilled") {
+        setPayrollGroups(
+          Array.isArray(payrollGroupsRes.value.data)
+            ? payrollGroupsRes.value.data
+            : []
+        );
+      } else {
+        setPayrollGroups([]);
       }
     } finally {
       setLoading(false);
@@ -759,6 +774,8 @@ export default function StaffInformation() {
           : JSON.stringify(s.beneficiaries ?? [], null, 2),
 
       position: String(s.position ?? ""),
+      payroll_group: String(s.payroll_group ?? ""),
+      payroll_group_id: String(s.payroll_group_id ?? ""),
       department: String(s.department ?? ""),
       area: String(s.area ?? ""),
       region: String(s.region ?? ""),
@@ -894,8 +911,15 @@ export default function StaffInformation() {
     const total_ee = toNum(form.sss_ee) + toNum(form.ph_ee) + toNum(form.hdmf_ee);
 
     return {
-      ...form,
+  ...form,
       branch_id: form.branch_id ? Number(form.branch_id) : null,
+      payroll_group_id: form.payroll_group_id
+        ? Number(form.payroll_group_id)
+        : null,
+      payroll_group:
+        payrollGroups.find(
+          (group) => String(group.id) === String(form.payroll_group_id)
+        )?.group_key || null,
       date_of_birth: form.date_of_birth || null,
       start_date: form.start_date || null,
       regularization_date: form.regularization_date || null,
@@ -1367,6 +1391,7 @@ export default function StaffInformation() {
                   <ContractDetailsStep
                     form={form}
                     branches={branches}
+                    payrollGroups={payrollGroups}
                     positionRates={positionRates}
                     onChange={onChange}
                     branchSearch={branchSearch}

@@ -2,7 +2,7 @@
   import { norm, toStr } from "./staffInfoUtils";
   import { positionSelectState } from "./positionSelect";
 
-  export default function ContractDetailsStep({form, branches, positionRates = [], onChange, branchSearch, setBranchSearch, }) {
+  export default function ContractDetailsStep({form, branches, payrollGroups = [], positionRates = [], onChange, branchSearch, setBranchSearch, }) {
     const positionOptions = Array.isArray(positionRates)
       ? [...new Map(
           positionRates
@@ -12,7 +12,10 @@
           String(a.position || "").localeCompare(String(b.position || ""))
         )
       : [];
-
+    const selectedBranch = branches.find(
+      (branch) => String(branch.id) === String(form.branch_id)
+    );
+    const isMainOffice = String(selectedBranch?.code || "").toUpperCase() === "B000";
       const filteredBranches = useMemo(() => {
       const q = norm(branchSearch);
       if (!q) return branches.slice(0, 30);
@@ -283,6 +286,25 @@
 
           </div>
           <div className="field">
+            {isMainOffice && (
+              <div className="field">
+                <label>Main Office Payroll Group</label>
+                <div>
+                  <input
+                    className="input"
+                    value={
+                      payrollGroups.find(
+                        (group) => String(group.id) === String(form.payroll_group_id)
+                      )?.group_name || "Not assigned"
+                    }
+                    readOnly
+                  />
+                  <small style={{ display: "block", marginTop: 6, opacity: 0.75 }}>
+                    Assign or move staff from the Main Office Payroll page.
+                  </small>
+                </div>
+              </div>
+            )}
             <label>Status</label>
             <select className="input" name="status" value={form.status} onChange={onChange}>
               <option value="Active">Active</option>

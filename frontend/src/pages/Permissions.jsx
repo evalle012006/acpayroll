@@ -32,6 +32,7 @@ const departments = [
 const modules = [
   "staff",
   "branch",
+  "main_office_payroll",
   "bonus",
   "salary_history",
   "status_history",
