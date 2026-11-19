@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import "../styles/Transportation.css";
 import api from "../api/axiosClient";
 import { HiDotsVertical } from "react-icons/hi";
@@ -144,6 +144,10 @@ function Transportation() {
   const params = useParams();
   const rawBranchParam = params.branchId ?? params.id;
   const branchParam = toStr(rawBranchParam);
+  const [searchParams] = useSearchParams();
+  const mainOfficeGroup = searchParams.get("main_office_group") || "";
+  const departmentId = searchParams.get("department_id");
+  const departmentName = searchParams.get("department");
 
   const navigate = useNavigate();
 
@@ -161,8 +165,12 @@ function Transportation() {
 
   const [branch, setBranch] = useState(null);
   const [staff, setStaff] = useState([]);
+  const [payrollGroups, setPayrollGroups] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const selectedPayrollGroup = payrollGroups.find(
+    (group) => norm(group.group_key) === norm(mainOfficeGroup)
+  );
 
   const [overrides, setOverrides] = useState({});
   const [approvedSuspensions, setApprovedSuspensions] = useState({});
@@ -272,11 +280,17 @@ function Transportation() {
       setError("");
 
       try {
-        const [branchesRes, staffRes, suspensionRes] = await Promise.all([
-          api.get("/branches"),
-          api.get("/staff"),
-          api.get("/suspension-orders").catch(() => ({ data: [] })),
-        ]);
+        const [branchesRes, staffRes, suspensionRes, payrollGroupsRes] =
+          await Promise.all([
+            api.get("/branches"),
+            api.get("/staff"),
+            api.get("/suspension-orders").catch(() => ({ data: [] })),
+            api.get("/main-office-payroll-groups").catch(() => ({ data: [] })),
+          ]);
+
+        setPayrollGroups(
+          Array.isArray(payrollGroupsRes.data) ? payrollGroupsRes.data : []
+        );
 
         const branches = Array.isArray(branchesRes.data) ? branchesRes.data : [];
 
@@ -306,9 +320,6 @@ function Transportation() {
           (s) => norm(s.branch_code) === norm(foundBranch.code)
         );
 
-        const searchParams = new URLSearchParams(window.location.search);
-        const departmentId = searchParams.get("department_id");
-        const departmentName = searchParams.get("department");
 
         const filteredRaw = allStaff.filter((s) => {
           const matchBranch =
@@ -325,7 +336,14 @@ function Transportation() {
           return matchBranch && matchDepartment;
         });
 
-        const filtered = filteredRaw.filter(isActiveStaff);
+        const groupFilteredRaw =
+          mainOfficeGroup && norm(foundBranch.code) === "b000"
+            ? filteredRaw.filter(
+                (person) => norm(person.payroll_group) === norm(mainOfficeGroup)
+              )
+            : filteredRaw;
+
+        const filtered = groupFilteredRaw.filter(isActiveStaff);
         setStaff(filtered);
 
         await loadOverrides(foundBranch.id);
@@ -373,7 +391,7 @@ function Transportation() {
     };
 
     run();
-  }, [branchParam, selectedMonth, loadOverrides]);
+  }, [branchParam, mainOfficeGroup, departmentId, departmentName, selectedMonth, loadOverrides,]);
 
   const applyOverrideToStaffRow = useCallback(
     (s) => {
@@ -1004,7 +1022,8 @@ function Transportation() {
             TRANSPORTATION ALLOWANCE
           </div>
           <div className="branch-payroll-print__branch">
-            {branch ? `${branch.code} ${branch.name}` : "-"}
+            {selectedPayrollGroup?.group_name ||
+              (branch ? `${branch.code} ${branch.name}` : "-")}
           </div>
           <div className="branch-payroll-print__period">{transportMonth}</div>
 

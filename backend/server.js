@@ -64,12 +64,15 @@ const terminationRoutes = require("./routes/terminationRoutes");
 const { startMonthlyBalancePoster } = require("./jobs/monthlyBalancePoster");
 const { startResignationCron } = require("./jobs/resignationCron");
 
+const mainOfficePayrollGroupsRoutes =
+  require("./routes/mainOfficePayrollGroupsRoutes");
+
 const app = express();
 
 app.use(
   cors({
     origin: process.env.FRONTEND_URL || "http://localhost:5173",
-    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
   })
 );
@@ -147,6 +150,7 @@ app.use("/api", calendarRoutes);
 app.use("/api", apiRoutes);
 app.use("/api", terminationRoutes);
 
+app.use("/api/main-office-payroll-groups", mainOfficePayrollGroupsRoutes);
 // LMS Webhook
 app.use("/api/webhook", webhookRoutes);
 

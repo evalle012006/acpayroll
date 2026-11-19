@@ -24,9 +24,18 @@ async function runMigrations() {
     `);
 
     const migrationsDir = path.join(__dirname, "../migrations");
-    const files = fs.readdirSync(migrationsDir)
-      .filter(f => f.endsWith(".sql"))
-      .sort(); // runs in order: 001_, 002_, etc.
+    const allFiles = fs.readdirSync(migrationsDir)
+      .filter((f) => f.endsWith(".sql"))
+      .sort();
+
+    const requestedFile = process.argv[2];
+    const files = requestedFile
+      ? allFiles.filter((file) => file === requestedFile)
+      : allFiles;
+
+    if (requestedFile && files.length === 0) {
+      throw new Error(`Migration file not found: ${requestedFile}`);
+    } // runs in order: 001_, 002_, etc.
 
     for (const file of files) {
       // Skip already-run migrations

@@ -974,7 +974,7 @@ export default function NoticeToExplain() {
 
             <div className="notice-approval-flow">
               <span>APPROVAL FLOW</span>
-              <b>AM → RM → AVP → VP → HR → Final File Upload</b>
+              <b>RM → AVP → VP → HR → Final File Upload</b>
             </div>
           </div>
 
