@@ -64,6 +64,7 @@ const { startMonthlyBalancePoster } = require("./jobs/monthlyBalancePoster");
 const { startResignationCron } = require("./jobs/resignationCron");
 const { startLmsSyncCron } = require("./jobs/lmsSyncCron");
 const lmsRoutes = require("./routes/lmsRoutes");
+const webhookRoutes = require("./routes/webhookRoutes");
 
 const mainOfficePayrollGroupsRoutes =
   require("./routes/mainOfficePayrollGroupsRoutes");
